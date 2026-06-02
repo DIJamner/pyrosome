@@ -380,13 +380,16 @@ Section WithVar.
    TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
 
    *)
-  Definition rule_to_log_rule n (r : rule) : sequent V V :=
+  (* The compiled sequent for [r] paired with its assumption-side rebuild
+     result (via [sequent_of_states], which now returns both).  [rule_to_log_rule]
+     projects the sequent; [rule_to_log_rule_status] the rebuild result. *)
+  Definition rule_to_log_rule_full n (r : rule) : sequent V V * Result.result unit :=
     match r with
-    | sort_rule c args =>        
+    | sort_rule c args =>
         sequent_of_states
           (add_ctx false false c)
           (fun sub => add_open_sort true false sub (scon n (id_args c)))
-    | term_rule c args t => 
+    | term_rule c args t =>
         sequent_of_states
           (add_ctx false false c)
           (* add_open_term sees the language, so it handles t *)
@@ -413,41 +416,16 @@ Section WithVar.
                (union x1 x2))
     end.
 
+  Definition rule_to_log_rule n (r : rule) : sequent V V :=
+    fst (rule_to_log_rule_full n r).
+
   (* The success/failure of the assumption-side [rebuild] used to compile [r]
-     into [rule_to_log_rule n r].  Mirrors [rule_to_log_rule] branch for
-     branch, calling [sequent_of_states_status] with the SAME assumption
-     monad, so it is exactly the rebuild that produced the sequent.  Used to
+     into [rule_to_log_rule n r] -- exactly the rebuild that produced the
+     sequent (same [rule_to_log_rule_full] call), so no recomputation.  Used to
      fail the whole reduction when the rebuild ran out of fuel, instead of
      silently building a sequent from a non-canonical egraph. *)
-  Notation sequent_of_states_status a c :=
-    (QueryOpt.sequent_of_states_status a c rf).
   Definition rule_to_log_rule_status n (r : rule) : Result.result unit :=
-    match r with
-    | sort_rule c args =>
-        sequent_of_states_status
-          (add_ctx false false c)
-          (fun sub => add_open_sort true false sub (scon n (id_args c)))
-    | term_rule c args t =>
-        sequent_of_states_status
-          (add_ctx false false c)
-          (fun sub => add_open_term true false sub (con n (id_args c)))
-    | sort_eq_rule c t1 t2 =>
-        sequent_of_states_status
-          (@!let sub <- add_ctx false false c in
-             let x1 <- add_open_sort false false sub t1 in
-             ret (sub,x1))
-          (fun '(sub,x1) =>
-             @! let x2 <- add_open_sort true false sub t2 in
-               (union x1 x2))
-    | term_eq_rule c e1 e2 t =>
-        sequent_of_states_status
-          (@!let sub <- add_ctx false false c in
-             let x1 <- add_open_term false false sub e1 in
-             ret (sub,x1))
-          (fun '(sub,x1) =>
-             @! let x2 <- add_open_term true false sub e2 in
-               (union x1 x2))
-    end.
+    snd (rule_to_log_rule_full n r).
 
   End WithLang.
   
@@ -460,28 +438,35 @@ Section WithVar.
 
      Assumes incl l l'
    *)
-  Definition rule_set_from_lang rf (l l': lang) : rule_set :=
-    build_rule_set succ _ rf (map (uncurry (rule_to_log_rule l'
-                                           (analysis_result:=unit) rf)) l).
-
   (* [Success tt] iff every rule's assumption-side rebuild succeeded; otherwise
-     the first failure (carrying its error).  Companion to [rule_set_from_lang]:
-     when this is a [Failure], the rule_set was built from a non-canonical
-     egraph and should not be trusted. *)
+     the first failure (carrying its error). *)
   Definition all_success : list (Result.result unit) -> Result.result unit :=
     fold_right (fun r acc => match r with
                              | Result.Success _ => acc
                              | Result.Failure e => Result.Failure e
                              end) (Result.Success tt).
+
+  (* Single pass over the rules: compile each to its (sequent, rebuild-status)
+     pair ONCE via [rule_to_log_rule_full], then build the rule_set from the
+     sequents and aggregate the statuses.  [rule_set_from_lang] /
+     [rule_set_from_lang_status] are the two projections; using
+     [..._with_status] directly (as [egraph_reducing_equal'] does) shares the
+     single traversal, so no rebuild is run twice. *)
+  Definition rule_set_from_lang_with_status rf (l l': lang)
+    : rule_set * Result.result unit :=
+    let pairs := map (fun '(n,r) =>
+                        rule_to_log_rule_full l' (analysis_result:=unit) rf n r) l in
+    (build_rule_set succ _ rf (map fst pairs), all_success (map snd pairs)).
+
+  (* Note: only pass in the subset of the language you want to run.
+     Often, that will be exactly the equational rules.
+
+     Assumes incl l l'
+   *)
+  Definition rule_set_from_lang rf (l l': lang) : rule_set :=
+    fst (rule_set_from_lang_with_status rf l l').
   Definition rule_set_from_lang_status rf (l l': lang) : Result.result unit :=
-    (* the dead [build_rule_set] reference forces this definition to generalize
-       over exactly the same section variables (in the same order) as
-       [rule_set_from_lang], so [build_rule_set_status] below can be applied
-       with the identical leading arguments as [build_rule_set] *)
-    let _ := build_rule_set succ _ rf
-               (map (uncurry (rule_to_log_rule l' (analysis_result:=unit) rf)) l) in
-    all_success (map (fun '(n,r) =>
-                        rule_to_log_rule_status l' (analysis_result:=unit) rf n r) l).
+    snd (rule_set_from_lang_with_status rf l l').
 
  
   Section AnalysisExtract.
@@ -997,13 +982,19 @@ Module PositiveInstantiation.
   Definition filter_eqn_rules {V} : lang V -> lang V :=
     filter (fun '(n,r) => match r with term_rule _ _ _ | sort_rule _ _ => false | _ => true end).
 
+  (* Single pass: rule_set together with its rebuild-success status. *)
+  Definition build_rule_set_with_status
+    : nat -> lang positive -> lang positive ->
+      rule_set positive positive trie_map trie_map * Result.result unit :=
+    rule_set_from_lang_with_status ptree_map_plus _ Pos.succ sort_of.
+
   Definition build_rule_set : nat -> lang positive -> lang positive -> rule_set positive positive trie_map trie_map :=
-    rule_set_from_lang ptree_map_plus _ Pos.succ sort_of (*fold_right Pos.max xH *).
+    fun rf l l' => fst (build_rule_set_with_status rf l l').
 
   (* [Success tt] iff every rule of [build_rule_set rf l l'] had a successful
      assumption-side rebuild. *)
   Definition build_rule_set_status : nat -> lang positive -> lang positive -> Result.result unit :=
-    rule_set_from_lang_status ptree_map_plus _ Pos.succ sort_of.
+    fun rf l l' => snd (build_rule_set_with_status rf l l').
 
   (*TODO: move *)
   Definition rev_rule {V} (r : rule V) :=
@@ -1096,13 +1087,19 @@ Module PositiveInstantiation.
            unsound.  Fail outright so that [Is_Success] of the whole reduction
            guarantees every rebuild succeeded (mirrors the freshness guard
            below). *)
+        (* Build each rule_set together with its rebuild status in ONE pass
+           ([build_rule_set_with_status]); if either status is a [Failure]
+           (a rule's assumption rebuild ran out of fuel) the compiled rule_set
+           is built from a non-canonical egraph and is unsound, so fail
+           outright -- [Is_Success] of the whole reduction then guarantees both
+           rebuilds succeeded (mirrors the freshness guard below). *)
+        let (rsR, stR) := build_rule_set_with_status rn pos_rules l' in
+        let (rsRR, stRR) := build_rule_set_with_status rn pos_rev_rules l' in
         ret {state (renaming V)}
-          (match build_rule_set_status rn pos_rules l',
-                 build_rule_set_status rn pos_rev_rules l' with
+          (match stR, stRR with
            | Result.Success _, Result.Success _ =>
                egraph_reducing_equal l'
-                 [(10%nat,build_rule_set rn pos_rules l');
-                  (1%nat,build_rule_set rn pos_rev_rules l')]
+                 [(10%nat, rsR); (1%nat, rsRR)]
                  renamed_inj_rules
                  rn n efuel red_fuel e1' e2'
            | Result.Failure e, _ => Result.Failure e

@@ -324,10 +324,12 @@ Section ReducingSkeleton.
        [Is_Success], and the Success/Success branch reduces the guard match
        back to the bare [egraph_reducing_equal] run for the carry-over below.
        [Hst1]/[Hst2] are kept for discharging [schedule_sound]. *)
-    destruct (PositiveInstantiation.build_rule_set_status rebuild_fuel posR Lp)
-      as [u_st1|e_st1] eqn:Hst1; [ | cbn in Hsucc; destruct Hsucc ].
-    destruct (PositiveInstantiation.build_rule_set_status rebuild_fuel posRR Lp)
-      as [u_st2|e_st2] eqn:Hst2; [ | cbn in Hsucc; destruct Hsucc ].
+    destruct (PositiveInstantiation.build_rule_set_with_status rebuild_fuel posR Lp)
+      as [rsR stR] eqn:Hbws1.
+    destruct (PositiveInstantiation.build_rule_set_with_status rebuild_fuel posRR Lp)
+      as [rsRR stRR] eqn:Hbws2.
+    destruct stR as [u_st1|e_st1]; [ | cbn in Hsucc; destruct Hsucc ].
+    destruct stRR as [u_st2|e_st2]; [ | cbn in Hsucc; destruct Hsucc ].
     cbv beta iota in Hsucc.
     (* Rename the goal sort [sort_var_to_con t] at [r3] -> [Tp]/[r7].  (The sort
        is not renamed by the computation; [t'] is our existential choice.) *)
@@ -364,8 +366,7 @@ Section ReducingSkeleton.
        exact (@reverse_eq_term_lift string _ _ _ l c t e1 e2 r7 Lp Tp E1p E2p
                 Hwf Hwfc Hdisj He1 He2 Hr7ok Hbl Hbt Hbe1 Hbe2 HwfLp HuL HuE1 HuE2 HuT Heq)).
     exists Lp, E1p, E2p, Tp,
-           [(10%nat, PositiveInstantiation.build_rule_set rebuild_fuel posR Lp);
-            (1%nat, PositiveInstantiation.build_rule_set rebuild_fuel posRR Lp)], injp.
+           [(10%nat, rsR); (1%nat, rsRR)], injp.
     split; [exact HwfLp |].
     split; [exact HwfE1p |].
     split; [exact HwfE2p |].
@@ -377,8 +378,7 @@ Section ReducingSkeleton.
     (* Is_Success carry-over: the egraph result is [Success tt]. *)
     revert Hsucc;
       generalize (egraph_reducing_equal Lp
-        [(10%nat, PositiveInstantiation.build_rule_set rebuild_fuel posR Lp);
-         (1%nat, PositiveInstantiation.build_rule_set rebuild_fuel posRR Lp)] injp
+        [(10%nat, rsR); (1%nat, rsRR)] injp
         rebuild_fuel sat_fuel efuel red_fuel E1p E2p);
       intros res Hsucc; destruct res as [u|]; [destruct u; reflexivity | destruct Hsucc].
   Admitted.

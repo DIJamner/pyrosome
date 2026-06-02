@@ -338,24 +338,22 @@ Section SequentOfStates.
      TODO: make sure to take in a sufficient fuel.
      Must be an input to be sound.
    *)
+  (* The assumption egraph, together with the result of its [rebuild].
+     Binding [res] lets a failed rebuild (insufficient fuel) be propagated
+     upward and turned into an outright failure of the whole reduction,
+     rather than silently producing a sequent built from a non-canonical
+     egraph.  The monad annotations [{state (instance X)}] pin the monad so
+     typeclass inference does not diverge. *)
   Let assumption_inst :=
-        (@! let a <- assumptions in
-           let _ <- rebuild r_fuel in
-           ret a)
+        (@! let {state (instance X)} a <- assumptions in
+           let {state (instance X)} res <- rebuild r_fuel in
+           ret (a, res))
           (empty_egraph idx_zero X).
+  (* [a] of the assumption run (the value [conclusions] is applied to). *)
+  Let assumption_val := fst (fst assumption_inst).
+  (* the assumption-side rebuild result. *)
+  Let assumption_status : Result.result unit := snd (fst assumption_inst).
   Let assumption_atoms := db_to_atoms (snd assumption_inst).(db).
-  (* The result of the assumption-side [rebuild].  Same computation as
-     [assumption_inst] (same [assumptions] / [r_fuel]), keeping its return
-     value instead of discarding it.  Exposed so that a failed rebuild
-     (insufficient fuel) can be propagated upward and turned into an outright
-     failure of the whole reduction, rather than silently producing a sequent
-     built from a non-canonical egraph.  Kept as a separate [Let] so that
-     [assumption_inst]/[conclusion_inst] are byte-identical to before. *)
-  Let assumption_status : Result.result unit :=
-        snd (fst ((@! let a <- assumptions in
-                      let res <- rebuild r_fuel in
-                      ret (a, res))
-                    (empty_egraph idx_zero X))).
 
   (*
     Start the conclusion egraph from the assumption one to handle collapsing
@@ -374,7 +372,7 @@ Section SequentOfStates.
                         let _ <- rebuild r_fuel in
                         let _ <- force_equiv in
                         ret b) in
-        snd (uncurry comp assumption_inst).
+        snd (comp assumption_val (snd assumption_inst)).
 
   (*TODO: move to the defining file *)
   Arguments db_remove {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
@@ -424,17 +422,14 @@ Section SequentOfStates.
   Definition sequent'_of_states := 
     (assumption_atoms, conclusion_atoms , conclusion_eqs_final).
 
-  (* Generates an (optimized) sequent from two egraph state monad values *)
-  Definition sequent_of_states :=
-    Build_sequent _ _ (map atom_clause assumption_atoms)
-      (map (uncurry eq_clause) conclusion_eqs_final++(map atom_clause conclusion_atoms)).
-
-  (* The success/failure of the assumption-side rebuild that produced
-     [sequent_of_states].  [Success tt] iff the rebuild had enough fuel. *)
-  Definition sequent_of_states_status : Result.result unit :=
-    (* reference [conclusions] so the section generalizes the same parameters
-       as [sequent_of_states], giving a uniform calling convention *)
-    let _ := conclusions in assumption_status.
+  (* Generates an (optimized) sequent from two egraph state monad values,
+     paired with the assumption-side rebuild result ([Success tt] iff the
+     rebuild had enough fuel).  Callers that only need the sequent take [fst];
+     the schedule builder takes [snd] to propagate a failed rebuild. *)
+  Definition sequent_of_states : sequent * Result.result unit :=
+    (Build_sequent _ _ (map atom_clause assumption_atoms)
+       (map (uncurry eq_clause) conclusion_eqs_final++(map atom_clause conclusion_atoms)),
+     assumption_status).
 (*
   Notation state_sound_for_model :=
     (state_sound_for_model _ idx_succ _ _ _ _ _).
@@ -496,7 +491,7 @@ Section SequentOfStates.
 Eqb_idx.
         clear conclusion_eqs_final live_eqn conclusion_var_in_atoms
           conclusion_eqs_verbose conclusion_atoms conclusion_inst_dedup
-          conclusion_inst assumption_atoms assumption_status assumption_inst
+          conclusion_inst assumption_atoms assumption_status assumption_val assumption_inst
           idx_zero idx_succ.
         unfold db_remove.
         destruct i0; cbn.
@@ -597,7 +592,7 @@ Eqb_idx.
 Eqb_idx.
         clear conclusion_eqs_final live_eqn conclusion_var_in_atoms
           conclusion_eqs_verbose conclusion_atoms conclusion_inst_dedup
-          conclusion_inst assumption_atoms assumption_status assumption_inst
+          conclusion_inst assumption_atoms assumption_status assumption_val assumption_inst
           idx_zero idx_succ.
         revert i; induction al;
           intros.
@@ -941,11 +936,7 @@ Section Optimize.
   (*A variant that preserves in the type that the assumption has no equations*)
   Definition optimize_sequent' := sequent'_of_states sub_and_assumptions conclusions.
   
-  Definition optimize_sequent := sequent_of_states sub_and_assumptions conclusions.
-
-  (* The assumption-side rebuild status for [optimize_sequent]. *)
-  Definition optimize_sequent_status :=
-    sequent_of_states_status sub_and_assumptions conclusions.
+  Definition optimize_sequent rf := fst (sequent_of_states sub_and_assumptions conclusions rf).
 
   
   (* Diagnostics. For debugging only*)
@@ -1058,11 +1049,6 @@ Arguments build_rule_set {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope id
   {idx_map}%_function_scope {idx_trie}%_function_scope rf rules%_list_scope.
 
 Arguments QueryOpt.sequent_of_states {idx}%_type_scope {Eqb_idx}
-  {idx_zero} {symbol}%_type_scope {symbol_map idx_map}%_function_scope
-  {idx_trie}%_function_scope {X A}%_type_scope {H}
-  assumptions {B}%_type_scope conclusions%_function_scope r_fuel.
-
-Arguments QueryOpt.sequent_of_states_status {idx}%_type_scope {Eqb_idx}
   {idx_zero} {symbol}%_type_scope {symbol_map idx_map}%_function_scope
   {idx_trie}%_function_scope {X A}%_type_scope {H}
   assumptions {B}%_type_scope conclusions%_function_scope r_fuel.

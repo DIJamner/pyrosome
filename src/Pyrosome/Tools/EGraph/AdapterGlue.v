@@ -378,47 +378,20 @@ Section WithVar.
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
             (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (term_rule c args t))).
     Proof.
-      unfold rule_to_log_rule, sequent_of_states.
-      cbn [seq_conclusions].
+      unfold rule_to_log_rule, rule_to_log_rule_full, sequent_of_states.
+      cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
-      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
-      set (e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
-      set (e_assum := snd (rebuild rf e_ctx)).
-      set (e_open  := snd (add_open_term succ sort_of l true false sub (con name (id_args c)) e_assum)).
-      set (e_rb2   := snd (rebuild rf e_open)).
-      set (e_concl := snd (force_equiv V V_Eqb V V_map V_map V_trie (X:=X) e_rb2)).
-      (* Fold the Hsnd hypothesis: its raw expression equals e_concl by definitional equality *)
-      change (egraph_sound_for_interpretation (lang_model l) i2 e_concl) in Hsnd.
-      (* Fold conclusion_inst to e_concl via the destruct trick *)
-      assert (Heq_concl :
-        snd (uncurry
-          (fun (a : list (V * V)) (x : instance) =>
-           let (x0, y) := add_open_term succ sort_of l true false a (con name (id_args c)) x in
-           let (_, y0) := rebuild rf y in
-           let (_, y1) := force_equiv V V_Eqb V V_map V_map V_trie y0 in
-           (x0, y1))
-          (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
-           let (_, y0) := rebuild rf y in (x, y0))) = e_concl).
-      { unfold e_concl, e_rb2, e_open, e_assum, e_ctx, sub.
-        unfold uncurry.
-        destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub0 e1].
-        cbn [fst snd].
-        destruct (rebuild rf e1) as [r2 e2]. cbn [fst snd].
-        destruct (add_open_term succ sort_of l true false sub0 (con name (id_args c)) e2) as [sub3 e3].
-        cbn [fst snd].
-        destruct (rebuild rf e3) as [r4 e4]. cbn [fst snd].
-        destruct (force_equiv V V_Eqb V V_map V_map V_trie e4) as [r5 e5]. cbn [fst snd].
-        reflexivity. }
-      (* Fold assumption egraph to e_assum *)
-      assert (Heq_assum :
-        snd (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
-             let (_, y0) := rebuild rf y in (x, y0)) = e_assum).
-      { unfold e_assum, e_ctx.
-        destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub0 e1].
-        cbn [snd fst].
-        destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
-      rewrite Heq_concl, Heq_assum.
+      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub e1].
+      cbn [fst snd] in *.
+      destruct (rebuild rf e1) as [r2 e_assum].
+      cbn [fst snd] in *.
+      destruct (add_open_term succ sort_of l true false sub (con name (id_args c)) e_assum) as [sub3 e_open].
+      cbn [fst snd] in *.
+      destruct (rebuild rf e_open) as [r4 e_rb2].
+      cbn [fst snd] in *.
+      destruct (force_equiv V V_Eqb V V_map V_map V_trie e_rb2) as [r5 e_concl].
+      cbn [fst snd] in *.
       apply all_app; split.
       - (* eq_clause half via uf_eqs_sound *)
         apply SemanticsUtil.all_map_in.
@@ -990,11 +963,15 @@ Section WithVar.
       (* Step B: reduce Hk to an egraph db atom.
          Mirror exactly the Heq_e rewrite used in model_satisfies_rule_adapter_term. *)
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule, sequent_of_states in Hk; cbn [seq_assumptions] in Hk;
+      unfold rule_to_log_rule, rule_to_log_rule_full in Hk.
+      cbn [seq_assumptions fst] in Hk.
+      unfold QueryOpt.sequent_of_states in Hk.
+      cbn [seq_assumptions fst] in Hk.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
+      cbn beta iota in Hk.
       assert (Heq_e :
         snd (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
-             let (_, y0) := rebuild rf y in (x, y0))
+             let (x0, y0) := rebuild rf y in (x, x0, y0))
         = snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))).
       { destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub' e1].
         cbn [snd]. destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
@@ -1207,14 +1184,16 @@ Section WithVar.
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule in Hassum |- *.
-      unfold sequent_of_states in Hassum.
-      cbn [seq_assumptions] in Hassum.
+      unfold rule_to_log_rule, rule_to_log_rule_full in Hassum |- *.
+      cbn [seq_assumptions fst] in Hassum.
+      unfold QueryOpt.sequent_of_states in Hassum.
+      cbn [seq_assumptions fst] in Hassum.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hassum.
+      cbn beta iota in Hassum.
       (* Reduce the [assumptions ;; rebuild] state computation to clean form. *)
       assert (Heq_e :
         snd (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
-             let (_, y0) := rebuild rf y in (x, y0))
+             let (x0, y0) := rebuild rf y in (x, x0, y0))
         = snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))).
       { destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub e1].
         cbn [snd]. destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
@@ -1356,44 +1335,20 @@ Section WithVar.
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
             (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (sort_rule c args))).
     Proof.
-      unfold rule_to_log_rule, sequent_of_states.
-      cbn [seq_conclusions].
+      unfold rule_to_log_rule, rule_to_log_rule_full, sequent_of_states.
+      cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
-      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
-      set (e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
-      set (e_assum := snd (rebuild rf e_ctx)).
-      set (e_open  := snd (add_open_sort succ sort_of l true false sub (scon name (id_args c)) e_assum)).
-      set (e_rb2   := snd (rebuild rf e_open)).
-      set (e_concl := snd (force_equiv V V_Eqb V V_map V_map V_trie (X:=X) e_rb2)).
-      change (egraph_sound_for_interpretation (lang_model l) i2 e_concl) in Hsnd.
-      assert (Heq_concl :
-        snd (uncurry
-          (fun (a : list (V * V)) (x : instance) =>
-           let (x0, y) := add_open_sort succ sort_of l true false a (scon name (id_args c)) x in
-           let (_, y0) := rebuild rf y in
-           let (_, y1) := force_equiv V V_Eqb V V_map V_map V_trie y0 in
-           (x0, y1))
-          (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
-           let (_, y0) := rebuild rf y in (x, y0))) = e_concl).
-      { unfold e_concl, e_rb2, e_open, e_assum, e_ctx, sub.
-        unfold uncurry.
-        destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub0 e1].
-        cbn [fst snd].
-        destruct (rebuild rf e1) as [r2 e2]. cbn [fst snd].
-        destruct (add_open_sort succ sort_of l true false sub0 (scon name (id_args c)) e2) as [sub3 e3].
-        cbn [fst snd].
-        destruct (rebuild rf e3) as [r4 e4]. cbn [fst snd].
-        destruct (force_equiv V V_Eqb V V_map V_map V_trie e4) as [r5 e5]. cbn [fst snd].
-        reflexivity. }
-      assert (Heq_assum :
-        snd (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
-             let (_, y0) := rebuild rf y in (x, y0)) = e_assum).
-      { unfold e_assum, e_ctx.
-        destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub0 e1].
-        cbn [snd fst].
-        destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
-      rewrite Heq_concl, Heq_assum.
+      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub e1].
+      cbn [fst snd] in *.
+      destruct (rebuild rf e1) as [r2 e_assum].
+      cbn [fst snd] in *.
+      destruct (add_open_sort succ sort_of l true false sub (scon name (id_args c)) e_assum) as [sub3 e_open].
+      cbn [fst snd] in *.
+      destruct (rebuild rf e_open) as [r4 e_rb2].
+      cbn [fst snd] in *.
+      destruct (force_equiv V V_Eqb V V_map V_map V_trie e_rb2) as [r5 e_concl].
+      cbn [fst snd] in *.
       apply all_app; split.
       - apply SemanticsUtil.all_map_in.
         intros p Hp.
@@ -1461,11 +1416,15 @@ Section WithVar.
       destruct HE as (_ & _ & _ & Hmapfst_sub & _).
       assert (Hmapfst : map fst sub = map fst c) by exact Hmapfst_sub.
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule, sequent_of_states in Hk; cbn [seq_assumptions] in Hk;
+      unfold rule_to_log_rule, rule_to_log_rule_full in Hk.
+      cbn [seq_assumptions fst] in Hk.
+      unfold QueryOpt.sequent_of_states in Hk.
+      cbn [seq_assumptions fst] in Hk.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
+      cbn beta iota in Hk.
       assert (Heq_e :
         snd (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
-             let (_, y0) := rebuild rf y in (x, y0))
+             let (x0, y0) := rebuild rf y in (x, x0, y0))
         = snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))).
       { destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub' e1].
         cbn [snd]. destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
@@ -1700,13 +1659,15 @@ Section WithVar.
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule in Hassum |- *.
-      unfold sequent_of_states in Hassum.
-      cbn [seq_assumptions] in Hassum.
+      unfold rule_to_log_rule, rule_to_log_rule_full in Hassum |- *.
+      cbn [seq_assumptions fst] in Hassum.
+      unfold QueryOpt.sequent_of_states in Hassum.
+      cbn [seq_assumptions fst] in Hassum.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hassum.
+      cbn beta iota in Hassum.
       assert (Heq_e :
         snd (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
-             let (_, y0) := rebuild rf y in (x, y0))
+             let (x0, y0) := rebuild rf y in (x, x0, y0))
         = snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))).
       { destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub e1].
         cbn [snd]. destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
@@ -2081,8 +2042,8 @@ Section WithVar.
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
             (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (term_eq_rule c e1 e2 t))).
     Proof.
-      unfold rule_to_log_rule, sequent_of_states.
-      cbn [seq_conclusions].
+      unfold rule_to_log_rule, rule_to_log_rule_full, sequent_of_states.
+      cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
       destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
@@ -2100,9 +2061,6 @@ Section WithVar.
       destruct (force_equiv V V_Eqb V V_map V_map V_trie e_rb_c) as [r3_c e_concl_c] eqn:Hfe.
       cbn [fst snd] in *.
       change (egraph_sound_for_interpretation (lang_model l) i2 e_concl_c) in Hsnd.
-      unfold uncurry.
-      rewrite Hao2, Hunion_c, Hr2, Hfe.
-      cbn [snd].
       apply all_app; split.
       - (* eq_clause half via uf_eqs_sound *)
         apply SemanticsUtil.all_map_in.
@@ -2160,7 +2118,10 @@ Section WithVar.
         rewrite invert_wf_term_eq_rule in Hr. destruct Hr as (_ & He1 & _ & _). exact He1. }
       intros k Hk.
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule, sequent_of_states in Hk; cbn [seq_assumptions] in Hk;
+      unfold rule_to_log_rule, rule_to_log_rule_full in Hk.
+      cbn [seq_assumptions fst] in Hk.
+      unfold QueryOpt.sequent_of_states in Hk.
+      cbn [seq_assumptions fst] in Hk.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
       cbn beta iota in Hk.
       destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
@@ -2462,9 +2423,10 @@ Section WithVar.
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule in Hassum |- *.
-      unfold sequent_of_states in Hassum.
-      cbn [seq_assumptions] in Hassum.
+      unfold rule_to_log_rule, rule_to_log_rule_full in Hassum |- *.
+      cbn [seq_assumptions fst] in Hassum.
+      unfold QueryOpt.sequent_of_states in Hassum.
+      cbn [seq_assumptions fst] in Hassum.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hassum.
       cbn beta iota in Hassum.
       destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
@@ -2838,8 +2800,8 @@ Section WithVar.
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
             (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (sort_eq_rule c t1 t2))).
     Proof.
-      unfold rule_to_log_rule, sequent_of_states.
-      cbn [seq_conclusions].
+      unfold rule_to_log_rule, rule_to_log_rule_full, sequent_of_states.
+      cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
       destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
@@ -2857,9 +2819,6 @@ Section WithVar.
       destruct (force_equiv V V_Eqb V V_map V_map V_trie e_rb_c) as [r3_c e_concl_c] eqn:Hfe.
       cbn [fst snd] in *.
       change (egraph_sound_for_interpretation (lang_model l) i2 e_concl_c) in Hsnd.
-      unfold uncurry.
-      rewrite Hao2, Hunion_c, Hr2, Hfe.
-      cbn [snd].
       apply all_app; split.
       - apply SemanticsUtil.all_map_in.
         intros p Hp.
@@ -2912,7 +2871,10 @@ Section WithVar.
         rewrite invert_wf_sort_eq_rule in Hr. destruct Hr as (_ & Ht1 & _). exact Ht1. }
       intros k Hk.
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule, sequent_of_states in Hk; cbn [seq_assumptions] in Hk;
+      unfold rule_to_log_rule, rule_to_log_rule_full in Hk.
+      cbn [seq_assumptions fst] in Hk.
+      unfold QueryOpt.sequent_of_states in Hk.
+      cbn [seq_assumptions fst] in Hk.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
       cbn beta iota in Hk.
       destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
@@ -3206,9 +3168,10 @@ Section WithVar.
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule in Hassum |- *.
-      unfold sequent_of_states in Hassum.
-      cbn [seq_assumptions] in Hassum.
+      unfold rule_to_log_rule, rule_to_log_rule_full in Hassum |- *.
+      cbn [seq_assumptions fst] in Hassum.
+      unfold QueryOpt.sequent_of_states in Hassum.
+      cbn [seq_assumptions fst] in Hassum.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hassum.
       cbn beta iota in Hassum.
       destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
@@ -3291,8 +3254,10 @@ Section WithVar.
                (db_to_atoms (db (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))))) .
-      - unfold rule_to_log_rule, sequent_of_states.
-        cbn [seq_assumptions].
+      - unfold rule_to_log_rule, rule_to_log_rule_full.
+        cbn [seq_assumptions fst].
+        unfold QueryOpt.sequent_of_states.
+        cbn [seq_assumptions fst].
         unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
         cbn beta iota.
         destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
