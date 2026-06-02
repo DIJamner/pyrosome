@@ -1651,6 +1651,47 @@ Section WithVar.
       auto.
   Qed.
 
+  (* Renaming a shared prefix [cc] followed by a [filter]ed sublist of [l]
+     yields a sublist (under [incl]) of renaming the same prefix followed by
+     the full [l] -- PROVIDED both renamings agree on every name they touch.
+     They do: the later renaming state [rb] grows from the earlier [ra] (every
+     name assigned while renaming [cc ++ l] keeps its positive id), so we can
+     read BOTH off the single function [pos_of_v rc] (rc = the final state),
+     turning each [rename_lang] into the plain [map] [Renaming.rename_lang],
+     after which [map_app] + [incl_filter] finish it.  Used to discharge the
+     [incl posR Lp] obligation of [central_msr_seqs] in the schedule_sound
+     proof (Automation.v): [Lp = rename (ctx_to_rules c ++ l)] at the initial
+     state, [posR = rename (ctx_to_rules c ++ filter lf l)] at a later state. *)
+  Lemma rename_lang_filter_incl
+    (cc l : lang) (lf : V * rule -> bool)
+    (r ra rb rc : renaming) (Lp posR : list (positive * prule)) :
+    renaming_ok r ->
+    rename_lang (cc ++ l) r = (Lp, ra) ->
+    rename_grows ra rb ->
+    renaming_ok rb ->
+    rename_lang (cc ++ filter lf l) rb = (posR, rc) ->
+    incl posR Lp.
+  Proof.
+    intros Hr HrL Hgrow Hrb HrPR.
+    pose proof (rename_lang_correct _ Hr HrL) as (Hraok & _ & _ & _).
+    pose proof (rename_lang_correct _ Hrb HrPR) as (Hrcok & Hg_bc & _ & _).
+    set (f := pos_of_v rc).
+    assert (Hfm_c : f_matches f rc) by exact (pos_of_v_matches Hrcok).
+    assert (Hfm_b : f_matches f rb)
+      by exact (f_matches_grows (f := f) Hrb Hrcok Hg_bc Hfm_c).
+    assert (Hg_ac : rename_grows ra rc)
+      by exact (rename_grows_trans Hgrow Hg_bc).
+    assert (Hfm_a : f_matches f ra)
+      by exact (f_matches_grows (f := f) Hraok Hrcok Hg_ac Hfm_c).
+    rewrite (rename_lang_via_f (f := f) _ Hr HrL Hfm_a).
+    rewrite (rename_lang_via_f (f := f) _ Hrb HrPR Hfm_c).
+    unfold Renaming.rename_lang.
+    rewrite !map_app.
+    apply incl_app.
+    - apply incl_appl, incl_refl.
+    - apply incl_appr, incl_map, incl_filter.
+  Qed.
+
   Theorem rename_preserves_eq_sort l c ts1 ts2 r r1 r2 r3 r4
     lp cp tsp1 tsp2 :
     eq_sort l c ts1 ts2 ->
