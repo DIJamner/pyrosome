@@ -199,7 +199,10 @@ Lemma rebuild_canon
   : @egraph_ok _ lt _ _ _ _ _ e1 ->
     good_worklist idx symbol symbol_map idx_map idx_trie analysis_result e1 ed_list ->
     @db_inv _ _ _ _ _ _ (fun _ => True) (snd (rebuild (S fuel) e1))
-    /\ (forall z, @is_root _ _ _ _ _ _ e1 z -> @is_root _ _ _ _ _ _ (snd (rebuild (S fuel) e1)) z).
+    /\ (forall z, @is_root _ _ _ _ _ _ e1 z -> @is_root _ _ _ _ _ _ (snd (rebuild (S fuel) e1)) z)
+    /\ (forall b, @atom_in_db _ _ _ _ _ b (snd (rebuild (S fuel) e1)).(db) ->
+           exists a, @atom_in_db _ _ _ _ _ a e1.(db)
+             /\ a.(atom_fn) = b.(atom_fn) /\ a.(atom_args) = b.(atom_args)).
 Proof.
   intros Hok1 Hgwl.
   destruct Hgwl as (Hwl_eq & Hnodup & Hall_good & Hdisj & Hdbinv & Hcov).
@@ -231,12 +234,15 @@ Proof.
           * right. intro Hnone. discriminate Hnone.
         + intro Hnonroot.
           destruct (Hcov b Hb Hnonroot) as (d & Hd_in & _). exact Hd_in. }
-    split.
+    split; [|split].
     + (* db_inv(True) of snd = e1 with worklist:=[] *)
       unfold db_inv in *. intros b Hb. cbn [db equiv] in *.
       exact (Hdbinv_true b Hb).
     + (* roots_mono *)
       intros z Hz. unfold is_root in *. cbn [equiv]. exact Hz.
+    + (* reverse image: db unchanged from e1 *)
+      intros b Hb. cbn [db] in Hb.
+      exists b. split; [exact Hb | split; reflexivity].
   - (* Case 2: todo = w::wl' => main path through D1/D2/B3 *)
     (* State e' after pull_worklist: worklist:=[], db/equiv/parents = e1's *)
     set (e' := {| db := db e1; equiv := equiv e1; parents := parents e1;
@@ -271,7 +277,7 @@ Proof.
     (* Establish union_pass_inv e1 e' ed_list *)
     assert (Hinv0 : @union_pass_inv _ lt _ _ _ _ _ e1 e' ed_list).
     { unfold union_pass_inv.
-      refine (conj Hok' (conj _ (conj _ (conj _ (conj _ (conj _ _)))))).
+      refine (conj Hok' (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _))))))).
       - intros z Hz. unfold is_root in *. cbn [equiv]. exact Hz.
       - exact I. (* worklist e' = [] all analysis_repair *)
       - (* db_inv(False) e': same as e1 *)
@@ -282,7 +288,9 @@ Proof.
         exact Hgood_d.
       - exact Hdisj.
       - intros b Hb Hnonroot. cbn [db equiv] in *.
-        exact (Hcov b Hb Hnonroot). }
+        exact (Hcov b Hb Hnonroot).
+      - (* reverse image e1 → e': db unchanged *)
+        intros b Hb. cbn [db] in Hb. exists b. split; [exact Hb | split; reflexivity]. }
     (* Apply list_Miter_repair_union_pass *)
     pose proof (@list_Miter_repair_union_pass idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result HA m Hm e1 ed_list Hnodup) as HB3.
     unfold vc in HB3. specialize (HB3 e').
@@ -293,7 +301,7 @@ Proof.
     (* HB3 : union_pass_inv e1 e_mid nil *)
     (* Extract db_inv(True) e_mid and roots_mono e1 e_mid *)
     pose proof (@union_pass_inv_db_inv_true _ _ _ lt _ _ _ _ _ e1 e_mid HB3) as Hdbinv_mid.
-    destruct HB3 as (_ & Hroots_mid & Hwl_mid_ar & _ & _ & _ & _).
+    destruct HB3 as (_ & Hroots_mid & Hwl_mid_ar & _ & _ & _ & _ & Hrev_mid).
     (* Apply rebuild fuel e_mid: analysis-only worklist *)
     pose proof (@rebuild_preserves_atom_in_db idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_trie idx_trie_ok analysis_result HA fuel) as HRB_db.
     unfold vc in HRB_db. specialize (HRB_db e_mid Hwl_mid_ar).
@@ -306,7 +314,7 @@ Proof.
     assert (Hfinal : snd ((@! (list_Miter (repair) (w :: wl')); (rebuild fuel)) e') = eF).
     { cbn [Mbind Mseq StateMonad.state_monad fst snd].
       rewrite Hmit. cbn [fst snd]. rewrite Hrb. reflexivity. }
-    split.
+    split; [|split].
     + (* db_inv(True) eF *)
       unfold db_inv. intros b Hb.
       rewrite Hfinal in Hb.
@@ -320,4 +328,10 @@ Proof.
       rewrite Hfinal.
       rewrite HRB_eq.
       exact (Hroots_mid z Hz).
+    + (* reverse image e1 → eF: via analysis-phase db preservation then union-pass reverse image *)
+      intros b Hb.
+      rewrite Hfinal in Hb.
+      assert (Hb_mid : @atom_in_db _ _ _ _ _ b e_mid.(db)).
+      { apply Hdb_iff. exact Hb. }
+      exact (Hrev_mid b Hb_mid).
 Qed.

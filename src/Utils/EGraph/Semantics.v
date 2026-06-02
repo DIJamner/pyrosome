@@ -10639,7 +10639,15 @@ Section WithMap.
                   ~ is_root e b.(atom_ret) ->
                   exists d, In d ed_rem
                     /\ b.(atom_fn) = d.(ed_atom).(atom_fn)
-                    /\ b.(atom_args) = d.(ed_atom).(atom_args)).
+                    /\ b.(atom_args) = d.(ed_atom).(atom_args))
+    (* reverse image: every atom of [e] is the (fn,args)-image of some
+       [e0] atom.  [repair_union] only re-canonicalizes the RET of the
+       parent atom (its fn/args are preserved), so this threads through
+       the whole union pass. *)
+    /\ (forall b, atom_in_db b e.(db) ->
+                  exists a, atom_in_db a e0.(db)
+                    /\ a.(atom_fn) = b.(atom_fn)
+                    /\ a.(atom_args) = b.(atom_args)).
 
   (* D1: single-step preservation for the union-pass.
      The extra hypothesis [Hd0_notin] says d0 does not occur in ed_rem;
@@ -10661,7 +10669,7 @@ Section WithMap.
     pose proof (repair_union_parents_frame d0.(ed_old) d0.(ed_new) d0.(ed_b) d0.(ed_atom)) as Hpar.
     unfold vc in Hpar. pose proof (Hpar e) as Hpar_e.
     intros Hinv.
-    destruct Hinv as (Hok & Hroots_mono_e0e & Hwl_ar & Hdbinv & Hall_good & Hdisj & Hcov).
+    destruct Hinv as (Hok & Hroots_mono_e0e & Hwl_ar & Hdbinv & Hall_good & Hdisj & Hcov & Hrev).
     cbn [all] in Hall_good.
     destruct Hall_good as (Hgood0 & Hall_good_rem).
     unfold good_ed in Hgood0.
@@ -10696,7 +10704,7 @@ Section WithMap.
     pose proof (fun a b => @eqb_spec symbol Eqb_symbol Eqb_symbol_ok a b) as Heqb_sym.
     pose proof (fun a b => @eqb_spec (list idx) (list_eqb (A:=idx)) (@list_eqb_ok idx Eqb_idx Eqb_idx_ok) a b) as Heqb_idx_list.
     unfold union_pass_inv.
-    refine (conj Hok_P (conj _ (conj _ (conj _ (conj _ (conj _ _)))))).
+    refine (conj Hok_P (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _))))))).
     - (* roots_mono e0 eP *)
       intros z Hz. unfold is_root in *.
       exact (Hroots_mono_e z (Hroots_mono_e0e z Hz)).
@@ -10807,6 +10815,31 @@ Section WithMap.
         destruct Hd_in_full as [Heq | Hd_in_rem].
         * subst d. exfalso. apply Hkey_ne. apply pair_equal_spec. exact (conj Hfn_eq Harg_eq).
         * exists d. exact (conj Hd_in_rem (conj Hfn_eq Harg_eq)).
+    - (* reverse image eP: every atom of eP comes from an e0 atom (fn,args) *)
+      intros b Hb_in.
+      destruct (eqb (atom_fn b) (atom_fn (d0.(ed_atom)))) eqn:Hfneq.
+      + destruct (eqb (atom_args b) (atom_args (d0.(ed_atom)))) eqn:Hargseq.
+        * (* same key as d0.atom: b's (fn,args) = d0.atom's; d0.atom ∈ e.db *)
+          pose proof (Heqb_sym (atom_fn b) (atom_fn (d0.(ed_atom)))) as Hfnspec.
+          rewrite Hfneq in Hfnspec.
+          pose proof (Heqb_idx_list (atom_args b) (atom_args (d0.(ed_atom)))) as Hargspec.
+          rewrite Hargseq in Hargspec.
+          specialize (Hrev d0.(ed_atom) Hain0) as (a0 & Ha0_in & Ha0_fn & Ha0_args).
+          exists a0. split; [exact Ha0_in|].
+          split; [rewrite Ha0_fn; exact (eq_sym Hfnspec)
+                 | rewrite Ha0_args; exact (eq_sym Hargspec)].
+        * (* different args → different key → b ∈ e.db *)
+          assert (Hkey_ne : (atom_fn b, atom_args b) <> (atom_fn (d0.(ed_atom)), atom_args (d0.(ed_atom)))).
+          { intros Hpair. apply pair_equal_spec in Hpair. destruct Hpair as [_ Heqargs].
+            pose proof (Heqb_idx_list (atom_args b) (atom_args (d0.(ed_atom)))) as Hargspec.
+            rewrite Hargseq in Hargspec. exact (Hargspec Heqargs). }
+          exact (Hrev b ((proj1 (Hframe b Hkey_ne)) Hb_in)).
+      + (* fn differ → different key → b ∈ e.db *)
+        assert (Hkey_ne : (atom_fn b, atom_args b) <> (atom_fn (d0.(ed_atom)), atom_args (d0.(ed_atom)))).
+        { intros Hpair. apply pair_equal_spec in Hpair. destruct Hpair as [Heqfn _].
+          pose proof (Heqb_sym (atom_fn b) (atom_fn (d0.(ed_atom)))) as Hfnspec.
+          rewrite Hfneq in Hfnspec. exact (Hfnspec Heqfn). }
+        exact (Hrev b ((proj1 (Hframe b Hkey_ne)) Hb_in)).
   Qed.
 
   (* D2: threading list_Miter repair through a list of good entries.
@@ -10844,7 +10877,7 @@ Section WithMap.
   Lemma union_pass_inv_db_inv_true e0 e
     : union_pass_inv e0 e nil -> db_inv (fun _ => True) e.
   Proof.
-    intros (Hok & Hroots_mono & Hwl_ar & Hdbinv & _ & _ & Hcov).
+    intros (Hok & Hroots_mono & Hwl_ar & Hdbinv & _ & _ & Hcov & _).
     unfold db_inv. intros b Hb_in.
     split.
     - exact (proj1 (Hdbinv b Hb_in)).

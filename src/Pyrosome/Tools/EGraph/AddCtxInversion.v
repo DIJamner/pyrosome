@@ -133,7 +133,7 @@ Section WithVar.
         pose proof (@rebuild_canon V V_Eqb V_Eqb_ok lt succ V_default
                       V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                       X _ lang_model (lang_model_ok l Hsof Hwf)
-                      fuel e1 ed_list Hok Hgwl) as [HdbT Hmono].
+                      fuel e1 ed_list Hok Hgwl) as [HdbT [Hmono _] ].
         eapply (@L_survive_canonical' V V_Eqb V_Eqb_ok lt succ V_default
                       V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                       X _ lang_model (lang_model_ok l Hsof Hwf)
