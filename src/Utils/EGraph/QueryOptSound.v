@@ -6116,21 +6116,26 @@ Section WithMap.
      The final witness [map.putmany i_c a_opt] overrides with [a_opt] on the
      assumption ids (they agree by the renaming consistency) and equals the
      conclusion interpretation [i_c] elsewhere. *)
+  (* Parametric in the rebuild fuel [rf]: the proof treats the fuel opaquely
+     (it only ever feeds [rf] to [rebuild]/[rebuild_sound], both of which hold
+     for any fuel), so soundness of the optimized sequent holds at EVERY fuel —
+     not just the [var_count^2] baked into the [optimize_sequent] notation.
+     This lets the bridge instantiate at the consumer's arbitrary [rebuild_fuel]
+     (Automation.v), matching the fuel [compile_rule]/[build_rule_set] uses. *)
   Lemma optimize_sequent_forward_atoms
-        (s : sequent) (m : model symbol) (Hm : model_ok symbol m)
+        (s : sequent) (rf : nat) (m : model symbol) (Hm : model_ok symbol m)
         (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
         (Hltt : Transitive lt)
         (atoms : list atom)
         (Hassum : s.(seq_assumptions) = map atom_clause atoms)
         (Huniq : NoDup (map (fun a => (atom_fn a, atom_args a)) atoms)) :
     model_satisfies_rule m s ->
-    model_satisfies_rule m (optimize_sequent s).
+    model_satisfies_rule m
+      (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero
+         symbol symbol_map idx_map idx_trie s rf).
   Proof.
     intros Hsat. unfold model_satisfies_rule. intros a_opt Hkeys Hconf Hass.
-    set (RFUEL := Datatypes.length (flat_map (clause_vars idx symbol) (seq_assumptions s)
-                   ++ flat_map (clause_vars idx symbol) (seq_conclusions s))
-                 * Datatypes.length (flat_map (clause_vars idx symbol) (seq_assumptions s)
-                   ++ flat_map (clause_vars idx symbol) (seq_conclusions s))) in *.
+    set (RFUEL := rf) in *.
     unfold QueryOpt.optimize_sequent in Hkeys, Hconf, Hass |- *.
     unfold sequent_of_states in Hkeys, Hconf, Hass |- *.
     cbn [seq_assumptions seq_conclusions] in Hkeys, Hconf, Hass |- *.
