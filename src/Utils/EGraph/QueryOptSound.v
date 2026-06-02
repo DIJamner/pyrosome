@@ -5863,6 +5863,33 @@ Section WithMap.
           -- exact Hin.
   Qed.
 
+  Lemma split_sum_list_in_snd :
+    forall (A B : Type) (l : list (A + B)) (b : B),
+      In b (snd (split_sum_list l)) <-> In (inr b) l.
+  Proof.
+    intros A B l b.
+    induction l as [|h t IH].
+    - cbn. tauto.
+    - cbn [split_sum_list List.fold_right].
+      destruct h as [a' | b'].
+      + cbn [snd In].
+        rewrite IH.
+        split.
+        * intros Hin. right. exact Hin.
+        * intros [Heq | Hin].
+          -- discriminate Heq.
+          -- exact Hin.
+      + cbn [snd In].
+        rewrite IH.
+        split.
+        * intros [Heq | Hin].
+          -- left. congruence.
+          -- right. exact Hin.
+        * intros [Heq | Hin].
+          -- left. injection Heq. auto.
+          -- right. exact Hin.
+  Qed.
+
   Lemma list_Mmap_state_in :
     forall (X S Y : Type) (f : X -> state S Y) (xs : list X) (s0 : S) (y : Y),
       In y (fst (list_Mmap f xs s0)) ->
@@ -5890,6 +5917,23 @@ Section WithMap.
         * exact Hfx'.
   Qed.
 
+  Lemma list_Mmap_state_length :
+    forall (Xt St0 Yt : Type) (f : Xt -> state St0 Yt) (xs : list Xt) (s0 : St0),
+      List.length (fst (list_Mmap f xs s0)) = List.length xs.
+  Proof.
+    intros Xt St0 Yt f xs.
+    induction xs as [|x xs IH]; intros s0.
+    - cbn. reflexivity.
+    - cbn [list_Mmap Mbind Mret StateMonad.state_monad].
+      destruct (f x s0) as [y0 s'] eqn:Hf.
+      destruct (list_Mmap f xs s') as [ys s''] eqn:Hrec.
+      cbn [fst List.length].
+      f_equal.
+      specialize (IH s').
+      rewrite Hrec in IH. cbn [fst] in IH.
+      exact IH.
+  Qed.
+
   Lemma in_compiled_rules_build_rule_set :
     forall (rf : nat) (rules : list sequent)
            (er : erule idx symbol),
@@ -5909,6 +5953,34 @@ Section WithMap.
     { rewrite Hssl. reflexivity. }
     rewrite Herules in Hin.
     apply split_sum_list_in_fst in Hin.
+    assert (Hcrs : crs = fst (list_Mmap (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf) rules map.empty)).
+    { rewrite Hlm. reflexivity. }
+    rewrite Hcrs in Hin.
+    apply list_Mmap_state_in in Hin.
+    destruct Hin as (rule & s & s' & Hrule_in & Hcompile).
+    exists rule, s, s'.
+    exact (conj Hrule_in Hcompile).
+  Qed.
+
+  Lemma in_compiled_const_rules_build_rule_set :
+    forall (rf : nat) (rules : list sequent)
+           (cr : const_rule idx symbol),
+      In cr (compiled_const_rules idx symbol symbol_map idx_map
+               (build_rule_set idx_succ idx_zero rf rules)) ->
+      exists rule st0 st1,
+        In rule rules /\
+        compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf rule st0 = (inr cr, st1).
+  Proof.
+    intros rf rules cr Hin.
+    unfold build_rule_set in Hin.
+    destruct (list_Mmap (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf) rules map.empty)
+      as [crs cp] eqn:Hlm.
+    destruct (split_sum_list crs) as [erules consts] eqn:Hssl.
+    cbn [compiled_const_rules] in Hin.
+    assert (Hconsts : consts = snd (split_sum_list crs)).
+    { rewrite Hssl. reflexivity. }
+    rewrite Hconsts in Hin.
+    apply split_sum_list_in_snd in Hin.
     assert (Hcrs : crs = fst (list_Mmap (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf) rules map.empty)).
     { rewrite Hlm. reflexivity. }
     rewrite Hcrs in Hin.
@@ -6082,6 +6154,41 @@ Section WithMap.
     - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc; subst.
       cbn [query_vars write_clauses write_unifications].
       repeat split; reflexivity.
+  Qed.
+
+  Lemma compile_rule_inr_fields :
+    forall rf r st0 cr st1,
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0 = (inr cr, st1) ->
+      let '(assumptions, catoms, ceqs) :=
+        QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf in
+      assumptions = []
+      /\ const_clauses idx symbol cr = catoms
+      /\ const_unifications idx symbol cr = ceqs
+      /\ const_vars idx symbol cr =
+           clauses_fvs idx Eqb_idx symbol
+             (map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms)
+             (dedup (eqb (A:=idx)) (flat_map (QueryOpt.atom_fvs idx symbol) assumptions)).
+  Proof.
+    intros rf r st0 cr st1 Hc.
+    unfold compile_rule in Hc.
+    destruct (QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
+      as [ [assumptions catoms] ceqs ] eqn:Hopt.
+    set (qvs := dedup (eqb (A:=idx)) (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc; subst.
+      cbn [const_vars const_clauses const_unifications].
+      assert (Hassm : assumptions = []).
+      { pose proof (list_Mmap_state_length _ _ _
+          (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
+          assumptions st0) as Hlen.
+        rewrite Hmap in Hlen. cbn [fst List.length] in Hlen.
+        destruct assumptions as [|a0 ass]; [reflexivity | cbn in Hlen; discriminate]. }
+      repeat split. exact Hassm.
+    - cbn [Mret StateMonad.state_monad] in Hc. discriminate Hc.
   Qed.
 
   (* ============================================================== *)
