@@ -10,7 +10,7 @@ From coqutil Require Import Map.Interface.
 
 From Utils Require Import Utils UnionFind Monad ExtraMaps Relations Maps VC.
 From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsAreUnified SemanticsUtil
-  SemanticsSaturate.
+  SemanticsSaturate SemanticsExecConst.
 Import Monad.StateMonad.
 
 (*
@@ -6261,6 +6261,107 @@ Section WithMap.
     (* Apply keystone *)
     exact (compile_rule_inl_erule_sound rf rule st0 er st1 m Hm (map_map snd Qfin) sopt
              Hcompile Halign_assum Halign_concl Hvars_eq (Hmsr_all rule Hin_rule)).
+  Qed.
+
+  (* ============================================================== *)
+  (* A3: compile_rule_inr_const_sound                                 *)
+  (* const_rule_sound for every compiled const-rule of build_rule_set *)
+  (* ============================================================== *)
+
+  Lemma compile_rule_inr_const_sound :
+    forall (m : model symbol) (Hm : Semantics.model_ok symbol m)
+           (rf : nat) (rules : list sequent) (cr : const_rule idx symbol),
+      (forall rule, In rule rules ->
+         model_satisfies_rule m
+           (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)) ->
+      In cr (compiled_const_rules idx symbol symbol_map idx_map
+               (build_rule_set idx_succ idx_zero rf rules)) ->
+      exists a_src, const_rule_sound (m := m) a_src cr.
+  Proof.
+    intros m Hm rf rules cr Hmsr_all Hin.
+    destruct (in_compiled_const_rules_build_rule_set rf rules cr Hin)
+      as (rule & st0 & st1 & Hin_rule & Hcompile).
+    specialize (Hmsr_all rule Hin_rule).
+    set (sopt := QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf) in *.
+    pose proof (compile_rule_inr_fields rf rule st0 cr st1 Hcompile) as Hfields.
+    pose proof (optimize_sequent_fields_at rule rf) as Hflds.
+    destruct (QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)
+      as [ [assumptions catoms] ceqs ] eqn:Hopt.
+    destruct Hfields as (Hassum_nil & Hcc & Hcu & Hcv).
+    destruct Hflds as (Hsa & Hsc).
+    subst assumptions.
+    cbn [flat_map] in Hcv.
+    (* concl *)
+    set (concl := map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms) in *.
+    (* forall_vars sopt = [] *)
+    assert (Hfv : Semantics.forall_vars sopt = []) by (unfold Semantics.forall_vars; unfold sopt; rewrite Hsa; reflexivity).
+    (* Apply Hmsr at the empty assignment *)
+    pose (ae := map.empty : idx_map (Semantics.domain symbol m)).
+    specialize (Hmsr_all ae).
+    assert (Hpre1 : forall x, In x (Semantics.forall_vars sopt) -> Sep.has_key x ae) by (rewrite Hfv; intros x []).
+    assert (Hpre2 : forall x, Sep.has_key x ae -> In x (Semantics.forall_vars sopt)).
+    { intros x Hk. unfold Sep.has_key, ae in Hk. rewrite map.get_empty in Hk.
+      destruct Hk. }
+    assert (Hpre3 : all (Semantics.clause_sound_for_model idx symbol idx_map m ae) sopt.(Semantics.seq_assumptions)).
+    { unfold sopt. rewrite Hsa. cbn. exact I. }
+    specialize (Hmsr_all Hpre1 Hpre2 Hpre3).
+    destruct Hmsr_all as (a' & Hext & Hconcl_snd).
+    unfold sopt in Hconcl_snd. rewrite Hsc in Hconcl_snd. fold concl in Hconcl_snd.
+    pose proof Hconcl_snd as Hconcl_all.
+    apply (all_app (Semantics.clause_sound_for_model idx symbol idx_map m a')) in Hconcl_snd.
+    destruct Hconcl_snd as (Heq_snd & Hat_snd).
+    exists a'.
+    unfold const_rule_sound.
+    (* conjunct 1 *)
+    split.
+    { rewrite Hcv. unfold QueryOpt.clauses_fvs. apply NoDup_filter. apply NoDup_dedup. }
+    split.
+    (* conjunct 2 *)
+    { rewrite Hcv. intros x Hx.
+      unfold QueryOpt.clauses_fvs in Hx. apply filter_In in Hx. destruct Hx as (Hx_dd & _).
+      apply (proj2 (@dedup_preserves_In idx eqb (eqb_boolspec idx) _ x)) in Hx_dd.
+      apply in_flat_map in Hx_dd. destruct Hx_dd as (c0 & Hc0_in & Hx_in).
+      pose proof (in_all _ _ _ Hconcl_all Hc0_in) as Hc0_snd.
+      exact (clause_sound_for_model_wf_var m Hm a' c0 x Hx_in Hc0_snd). }
+    split.
+    (* conjunct 3 *)
+    { rewrite Hcc, Hcv. intros c Hc_in x Hx.
+      unfold QueryOpt.clauses_fvs. apply filter_In. split.
+      - apply (proj1 (@dedup_preserves_In idx eqb (eqb_boolspec idx) _ x)).
+        apply in_flat_map. exists (@atom_clause idx symbol c). split.
+        + apply in_app_iff. right. apply in_map_iff. exists c. split; [reflexivity | exact Hc_in].
+        + cbn [Semantics.clause_vars]. exact Hx.
+      - cbn. reflexivity. }
+    split.
+    (* conjunct 4 *)
+    { rewrite Hcu, Hcv. intros [x y] Hxy. cbn [fst snd].
+      split.
+      - unfold QueryOpt.clauses_fvs. apply filter_In. split.
+        + apply (proj1 (@dedup_preserves_In idx eqb (eqb_boolspec idx) _ x)).
+          apply in_flat_map. exists (@eq_clause idx symbol x y). split.
+          * apply in_app_iff. left. apply in_map_iff. exists (x, y). split; [reflexivity | exact Hxy].
+          * cbn [Semantics.clause_vars]. left. reflexivity.
+        + cbn. reflexivity.
+      - unfold QueryOpt.clauses_fvs. apply filter_In. split.
+        + apply (proj1 (@dedup_preserves_In idx eqb (eqb_boolspec idx) _ y)).
+          apply in_flat_map. exists (@eq_clause idx symbol x y). split.
+          * apply in_app_iff. left. apply in_map_iff. exists (x, y). split; [reflexivity | exact Hxy].
+          * cbn [Semantics.clause_vars]. right. left. reflexivity.
+        + cbn. reflexivity. }
+    split.
+    (* conjunct 5 *)
+    { rewrite Hcc.
+      clear - Hat_snd.
+      induction catoms as [|c cs IH]; cbn in *; [exact I|].
+      destruct Hat_snd as (Hc & Hcs).
+      split; [exact Hc | exact (IH Hcs)]. }
+    (* conjunct 6 *)
+    { rewrite Hcu.
+      clear - Heq_snd.
+      induction ceqs as [|p ps IH]; cbn in *; [exact I|].
+      destruct Heq_snd as (Hp & Hps).
+      destruct p as [x y]. cbn in Hp |- *.
+      split; [exact Hp | exact (IH Hps)]. }
   Qed.
 
   (* ============================================================== *)
