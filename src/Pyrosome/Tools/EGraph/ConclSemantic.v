@@ -106,4 +106,30 @@ Section WithV.
     - exact Hc.
   Qed.
 
+  (* Reversed-equation variants: the [rev_rule]'d eq-rules of [posRR]
+     (Automation.v) swap the two sides, so [model_satisfies_rule] for the
+     reversed rule needs the SYMMETRIC equation.  The reversed rule is not in
+     [l] (only the original is), so these recover the swapped equation from the
+     original rule's membership via [eq_term_sym]/[eq_sort_sym].  Consumed by
+     the posRR eq-adapters. *)
+  Lemma term_eq_concl_rev n c e1 e2 t
+    : In (n, term_eq_rule c e1 e2 t) l ->
+      forall sg, wf_subst l [] sg c ->
+                 eq_term l [] t[/sg/] e2[/sg/] e1[/sg/].
+  Proof.
+    intros Hin sg Hsg.
+    apply eq_term_sym.
+    eapply term_eq_concl; eassumption.
+  Qed.
+
+  Lemma sort_eq_concl_rev n c t1 t2
+    : In (n, sort_eq_rule c t1 t2) l ->
+      forall sg, wf_subst l [] sg c ->
+                 eq_sort l [] t2[/sg/] t1[/sg/].
+  Proof.
+    intros Hin sg Hsg.
+    apply eq_sort_sym.
+    eapply sort_eq_concl; eassumption.
+  Qed.
+
 End WithV.
