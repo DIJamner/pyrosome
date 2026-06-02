@@ -5831,6 +5831,142 @@ Section WithMap.
   Qed.
 
   (* ============================================================== *)
+  (* M1: list_Mmap_state_in_mono                                     *)
+  (* Generic suffix-monotonicity for list_Mmap                       *)
+  (* ============================================================== *)
+
+  Lemma list_Mmap_state_in_mono
+    {Y : Type}
+    (step : sequent -> state St Y)
+    (Hwf : forall a (S : St), wf_qc_state S -> wf_qc_state (snd (step a S)))
+    (Hmono : forall a (S : St), wf_qc_state S -> forall g j v, qc_entry S g j v -> qc_entry (snd (step a S)) g j v) :
+    forall (xs : list sequent) (s0 : St) (y : Y),
+      wf_qc_state s0 ->
+      In y (fst (list_Mmap step xs s0)) ->
+      exists x s s', In x xs /\ step x s = (y, s') /\ wf_qc_state s /\
+        (forall g j v, qc_entry s' g j v ->
+           qc_entry (snd (list_Mmap step xs s0)) g j v).
+  Proof.
+    induction xs as [|x xs' IH]; intros s0 y Hwf0 Hin.
+    - cbn [list_Mmap Mbind Mret StateMonad.state_monad fst] in Hin. destruct Hin.
+    - cbn [list_Mmap Mbind Mret StateMonad.state_monad] in Hin.
+      destruct (step x s0) as [y0 s1] eqn:Hstep.
+      destruct (list_Mmap step xs' s1) as [ys s2] eqn:Hrec.
+      cbn [fst] in Hin.
+      cbn [In] in Hin.
+      assert (Hs1wf : wf_qc_state s1).
+      { assert (Heqs1 : s1 = snd (step x s0)) by (rewrite Hstep; reflexivity).
+        rewrite Heqs1. exact (Hwf x s0 Hwf0). }
+      assert (Hs2 : s2 = snd (list_Mmap step xs' s1)).
+      { rewrite Hrec. reflexivity. }
+      assert (Hsnd_total : snd (list_Mmap step (x :: xs') s0) = s2).
+      { cbn [list_Mmap Mbind Mret StateMonad.state_monad snd].
+        rewrite Hstep. rewrite Hrec. reflexivity. }
+      destruct Hin as [Heq | Hin].
+      + (* head case: y = y0 *)
+        subst y0.
+        exists x, s0, s1.
+        split. { left. reflexivity. }
+        split. { exact Hstep. }
+        split. { exact Hwf0. }
+        intros g j v Hentry.
+        rewrite Hsnd_total. rewrite Hs2.
+        exact (proj2 (list_Mmap_qc_preserves step Hwf Hmono xs' s1 Hs1wf) g j v Hentry).
+      + (* tail case: y in ys *)
+        assert (Hin' : In y (fst (list_Mmap step xs' s1))).
+        { rewrite Hrec. cbn [fst]. exact Hin. }
+        specialize (IH s1 y Hs1wf Hin') as (x' & s & s' & Hxin & Hstep' & Hwfs & Hmono').
+        exists x', s, s'.
+        split. { right. exact Hxin. }
+        split. { exact Hstep'. }
+        split. { exact Hwfs. }
+        intros g j v Hentry.
+        rewrite Hsnd_total. rewrite Hs2.
+        exact (Hmono' g j v Hentry).
+  Qed.
+
+  (* ============================================================== *)
+  (* M2: in_compiled_rules_build_rule_set_mono                       *)
+  (* Strengthened version tracking suffix-monotonicity to global St  *)
+  (* ============================================================== *)
+
+  Lemma in_compiled_rules_build_rule_set_mono
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt) :
+    forall (rf : nat) (rules : list sequent) (er : erule idx symbol),
+      In er (compiled_rules idx symbol symbol_map idx_map
+               (build_rule_set idx_succ idx_zero rf rules)) ->
+      exists rule st0 st1,
+        In rule rules /\
+        compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf rule st0 = (inl er, st1) /\
+        wf_qc_state st0 /\
+        (forall g j v, qc_entry st1 g j v ->
+           qc_entry (snd (list_Mmap (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf) rules map.empty)) g j v).
+  Proof.
+    intros rf rules er Hin.
+    unfold build_rule_set in Hin.
+    destruct (list_Mmap (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf) rules map.empty)
+      as [crs cp] eqn:Hlm.
+    destruct (split_sum_list crs) as [erules consts] eqn:Hssl.
+    cbn [compiled_rules] in Hin.
+    assert (Herules : erules = fst (split_sum_list crs)).
+    { rewrite Hssl. reflexivity. }
+    rewrite Herules in Hin.
+    apply split_sum_list_in_fst in Hin.
+    assert (Hcrs : crs = fst (list_Mmap (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf) rules map.empty)).
+    { rewrite Hlm. reflexivity. }
+    rewrite Hcrs in Hin.
+    pose proof (list_Mmap_state_in_mono
+      (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf)
+      (fun a S HS => compile_rule_preserves_wf Hlts Hltt Hlti rf a S HS)
+      (fun a S HS g j v Hentry => compile_rule_mono Hlts Hltt Hlti rf a S HS g j v Hentry)
+      rules map.empty (inl er) wf_qc_state_empty Hin)
+      as (rule & st0 & st1 & Hrule_in & Hcompile & Hwf0 & Hmono_fin).
+    exists rule, st0, st1.
+    split. { exact Hrule_in. }
+    split. { exact Hcompile. }
+    split. { exact Hwf0. }
+    intros g j v Hentry.
+    rewrite <- Hlm.
+    exact (Hmono_fin g j v Hentry).
+  Qed.
+
+  (* ============================================================== *)
+  (* M3: query_atoms_build_rule_set_eq                               *)
+  (* Build_rule_set-level assumption alignment                        *)
+  (* ============================================================== *)
+
+  Lemma query_atoms_build_rule_set_eq
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (symbol_map_plus_ok : @map_plus_ok _ _ symbol_map_plus) :
+    forall (rf : nat) (rules : list sequent) (er : erule idx symbol),
+      In er (compiled_rules idx symbol symbol_map idx_map
+               (build_rule_set idx_succ idx_zero rf rules)) ->
+      exists rule, In rule rules /\
+        Semantics.query_atoms idx idx_zero symbol symbol_map idx_map
+          (query_clauses idx symbol symbol_map idx_map
+             (build_rule_set idx_succ idx_zero rf rules)) er
+        = (let '(a,_,_) := QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf in a).
+  Proof.
+    intros rf rules er Hin.
+    pose proof (in_compiled_rules_build_rule_set_mono Hlti Hlts Hltt rf rules er Hin)
+      as (rule & st0 & st1 & Hrule_in & Hcompile & Hwf0 & Hmono_fin).
+    exists rule.
+    split. { exact Hrule_in. }
+    (* Establish that query_clauses (build_rule_set rf rules) = map_map snd Qfin *)
+    destruct (list_Mmap (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf) rules map.empty)
+      as [crs cp] eqn:Hlm.
+    assert (Hqc : query_clauses idx symbol symbol_map idx_map (build_rule_set idx_succ idx_zero rf rules) = map_map snd cp).
+    { unfold build_rule_set.
+      rewrite Hlm.
+      destruct (split_sum_list crs) as [erules consts].
+      cbn [query_clauses]. reflexivity. }
+    assert (Hmono_fin' : forall g j v, qc_entry st1 g j v -> qc_entry cp g j v).
+    { intros g j v Hentry. exact (Hmono_fin g j v Hentry). }
+    rewrite Hqc.
+    exact (query_atoms_compile_rule_eq Hlti Hlts Hltt symbol_map_plus_ok rf rule st0 st1 er cp Hwf0 Hcompile Hmono_fin').
+  Qed.
+
+  (* ============================================================== *)
   (* Good sequents                                                    *)
   (* ============================================================== *)
 
