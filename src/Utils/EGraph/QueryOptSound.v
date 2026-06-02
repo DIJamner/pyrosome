@@ -5967,6 +5967,108 @@ Section WithMap.
   Qed.
 
   (* ============================================================== *)
+  (* A1: compile_rule_inl_fields                                      *)
+  (* er field identities from compile_rule = (inl er, st1)           *)
+  (* ============================================================== *)
+
+  Lemma compile_rule_inl_fields :
+    forall rf r st0 er st1,
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0 = (inl er, st1) ->
+      let '(assumptions, catoms, ceqs) :=
+        QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf in
+      query_vars idx symbol er = dedup (eqb (A:=idx)) (flat_map (QueryOpt.atom_fvs idx symbol) assumptions)
+      /\ write_clauses idx symbol er = catoms
+      /\ write_unifications idx symbol er = ceqs.
+  Proof.
+    intros rf r st0 er st1 Hc.
+    unfold compile_rule in Hc.
+    destruct (QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
+      as [ [assumptions catoms] ceqs ] eqn:Hopt.
+    set (qvs := dedup (eqb (A:=idx)) (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc; subst.
+      cbn [query_vars write_clauses write_unifications].
+      repeat split; reflexivity.
+  Qed.
+
+  (* ============================================================== *)
+  (* A2: compiled_rules_erule_sound                                   *)
+  (* erule_sound for every compiled rule of a build_rule_set          *)
+  (* ============================================================== *)
+
+  Lemma compiled_rules_erule_sound
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (symbol_map_plus_ok : @map_plus_ok _ _ symbol_map_plus) :
+    forall (m : model symbol) (Hm : model_ok symbol m)
+           (rf : nat) (rules : list sequent) (er : erule idx symbol),
+      (forall rule, In rule rules ->
+         model_satisfies_rule m
+           (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)) ->
+      In er (compiled_rules idx symbol symbol_map idx_map
+               (build_rule_set idx_succ idx_zero rf rules)) ->
+      Semantics.erule_sound idx idx_zero symbol symbol_map idx_map m
+        (query_clauses idx symbol symbol_map idx_map
+           (build_rule_set idx_succ idx_zero rf rules)) er.
+  Proof.
+    intros m Hm rf rules er Hmsr_all Hin.
+    destruct (in_compiled_rules_build_rule_set_mono Hlti Hlts Hltt rf rules er Hin)
+      as (rule & st0 & st1 & Hin_rule & Hcompile & Hwf0 & Hmono_fin).
+    (* Set Qfin and establish query_clauses alignment *)
+    destruct (list_Mmap (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf)
+                rules map.empty) as [crs cp] eqn:Hlm.
+    set (Qfin := cp).
+    assert (Hqc : query_clauses idx symbol symbol_map idx_map (build_rule_set idx_succ idx_zero rf rules)
+                  = map_map snd Qfin).
+    { unfold build_rule_set. rewrite Hlm.
+      destruct (split_sum_list crs) as [erules consts].
+      cbn [query_clauses]. reflexivity. }
+    rewrite Hqc.
+    assert (Hmono_fin' : forall g j v, qc_entry st1 g j v -> qc_entry Qfin g j v).
+    { intros g j v Hentry. exact (Hmono_fin g j v Hentry). }
+    (* Get er field identities *)
+    pose proof (compile_rule_inl_fields rf rule st0 er st1 Hcompile) as Hfields.
+    destruct (QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)
+      as [ [assumptions catoms] ceqs ] eqn:Hopt.
+    destruct Hfields as (Hqv & Hwc & Hwu).
+    (* Set sopt := optimize_sequent rule rf *)
+    set (sopt := QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf).
+    (* Align assumptions *)
+    pose proof (query_atoms_compile_rule_eq Hlti Hlts Hltt symbol_map_plus_ok rf rule st0 st1 er Qfin Hwf0 Hcompile Hmono_fin')
+      as Hqa.
+    rewrite Hopt in Hqa.
+    pose proof (optimize_sequent_fields_at rule rf) as Hfields2.
+    rewrite Hopt in Hfields2.
+    destruct Hfields2 as (Hassm & Hconc).
+    assert (Halign_assum :
+      map (@atom_clause idx symbol)
+          (Semantics.query_atoms idx idx_zero symbol symbol_map idx_map (map_map snd Qfin) er)
+        = sopt.(Semantics.seq_assumptions)).
+    { rewrite Hqa. unfold sopt. exact (eq_sym Hassm). }
+    (* Align conclusions *)
+    assert (Halign_concl :
+      sopt.(Semantics.seq_conclusions) =
+        map (uncurry (@eq_clause idx symbol)) (write_unifications idx symbol er)
+        ++ map (@atom_clause idx symbol) (write_clauses idx symbol er)).
+    { unfold sopt. rewrite Hconc. rewrite Hwu. rewrite Hwc. reflexivity. }
+    (* Variable alignment *)
+    assert (Hvars_eq : forall x, In x (Semantics.forall_vars sopt) <-> In x (query_vars idx symbol er)).
+    { intros x.
+      pose proof (forall_vars_optimize_sequent_eq_qvs rf rule) as Hvfvs.
+      rewrite Hopt in Hvfvs.
+      specialize (Hvfvs x).
+      rewrite Hqv.
+      exact Hvfvs. }
+    (* Apply keystone *)
+    exact (compile_rule_inl_erule_sound rf rule st0 er st1 m Hm (map_map snd Qfin) sopt
+             Hcompile Halign_assum Halign_concl Hvars_eq (Hmsr_all rule Hin_rule)).
+  Qed.
+
+  (* ============================================================== *)
   (* Good sequents                                                    *)
   (* ============================================================== *)
 
