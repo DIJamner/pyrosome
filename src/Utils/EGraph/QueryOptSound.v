@@ -9,7 +9,8 @@ From Stdlib Require Import Logic.PropExtensionality
 From coqutil Require Import Map.Interface.
 
 From Utils Require Import Utils UnionFind Monad ExtraMaps Relations Maps VC.
-From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsAreUnified SemanticsUtil.
+From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsAreUnified SemanticsUtil
+  SemanticsSaturate.
 Import Monad.StateMonad.
 
 (*
@@ -6352,6 +6353,77 @@ Section WithMap.
     rewrite Hopt in Hqa.
     rewrite Hqc. rewrite Hqa.
     exact (ex_intro _ a (conj Ha_in Hx_in_a)).
+  Qed.
+
+  (* ============================================================== *)
+  (* C6: compiled_rules_run1iter_rule_hyps                           *)
+  (* Bundle all 10 run1iter_rule_hyps conjuncts for build_rule_set   *)
+  (* with conjuncts 9,10 taken as hypotheses.                        *)
+  (* ============================================================== *)
+
+  Lemma compiled_rules_run1iter_rule_hyps
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (symbol_map_plus_ok : @map_plus_ok _ _ symbol_map_plus)
+    (spaced_list_intersect : forall B, WithDefault B -> (B -> B -> B) ->
+          ne_list (idx_trie B * list bool) -> idx_trie B) :
+    forall (m : model symbol) (Hm : Semantics.model_ok symbol m)
+           (rf : nat) (rules : list sequent) (er : erule idx symbol)
+           (e : instance),
+      (forall rule, In rule rules ->
+         model_satisfies_rule m (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)) ->
+      In er (compiled_rules idx symbol symbol_map idx_map (QueryOpt.build_rule_set idx_succ idx_zero rf rules)) ->
+      (forall frontier_n sigma,
+         In sigma (intersection_keys idx idx_trie spaced_list_intersect
+                     (ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                                (query_vars idx symbol er)
+                                (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                                        idx_map idx_map_plus idx_trie unit
+                                        (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
+                                frontier_n)
+                             (query_clause_ptrs idx symbol er))) ->
+         List.length (query_vars idx symbol er) = List.length sigma) ->
+      (forall frontier_n sigma,
+         In sigma (intersection_keys idx idx_trie spaced_list_intersect
+                     (ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                                (query_vars idx symbol er)
+                                (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                                        idx_map idx_map_plus idx_trie unit
+                                        (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
+                                frontier_n)
+                             (query_clause_ptrs idx symbol er))) ->
+         forall fsym nptr cvars,
+         In (Build_erule_query_ptr idx symbol fsym nptr cvars)
+            (uncurry cons (query_clause_ptrs idx symbol er)) ->
+         map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                         (query_vars idx symbol er)
+                         (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                                 idx_map idx_map_plus idx_trie unit
+                                 (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
+                         frontier_n
+                         (Build_erule_query_ptr idx symbol fsym nptr cvars)))
+                 (map fst (filter snd (combine sigma
+                    (variable_flags idx Eqb_idx (query_vars idx symbol er) cvars))))
+         = Some tt) ->
+      SemanticsSaturate.run1iter_rule_hyps idx Eqb_idx idx_zero symbol symbol_map symbol_map_plus
+        idx_map idx_map_plus idx_trie unit spaced_list_intersect m
+        (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e er.
+  Proof.
+    intros m Hm rf rules er e Hmsr Hin H9 H10.
+    unfold SemanticsSaturate.run1iter_rule_hyps.
+    cbn zeta.
+    pose proof (in_compiled_rules_build_rule_set rf rules er Hin) as (rule & st0 & st1 & _ & Hc).
+    repeat split.
+    - exact (compile_rule_inl_NoDup_query_vars rf rule st0 er st1 Hc).
+    - exact (compile_rule_inl_NoDup_write_vars rf rule st0 er st1 Hc).
+    - exact (compiled_rules_erule_sound Hlti Hlts Hltt symbol_map_plus_ok m Hm rf rules er Hmsr Hin).
+    - exact (compiled_rules_ptr_valid Hlti Hlts Hltt symbol_map_plus_ok rf rules er Hin).
+    - exact (compiled_rules_qvar_coverage Hlti Hlts Hltt symbol_map_plus_ok rf rules er Hin).
+    - exact (compile_rule_inl_write_query_disjoint rf rule st0 er st1 Hc).
+    - exact (compile_rule_inl_write_clauses_cover rf rule st0 er st1 Hc).
+    - exact (proj1 (compile_rule_inl_write_unifs_cover rf rule st0 er st1 Hc p H)).
+    - exact (proj2 (compile_rule_inl_write_unifs_cover rf rule st0 er st1 Hc p H)).
+    - exact H9.
+    - exact H10.
   Qed.
 
   (* ============================================================== *)
