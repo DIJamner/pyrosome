@@ -201,6 +201,138 @@ Section WithVar.
     Qed.
 
     (* ============================================================ *)
+    (* assum_db_frame_eF: transports the PRE-rebuild exhaustiveness   *)
+    (* frame (assum_db_frame_pre) to the POST-rebuild egraph, for     *)
+    (* non-sort_of atoms.  Given b ∈ eF with b.fn ≠ sort_of, we      *)
+    (* recover x, n_x, s_x, xs_x witnessing the sort-skeleton tree   *)
+    (* and node derivation in eF.                                     *)
+    Lemma assum_db_frame_eF (rf : nat) c
+      (Hwfc : wf_ctx l c)
+      (Hgwl : exists ed_list, good_worklist V V V_map V_map V_trie X
+                (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                ed_list)
+      (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                (empty_egraph V_default X))))
+               = Result.Success tt)
+      : forall b,
+          ain b (snd (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                         (empty_egraph V_default X))))) ->
+          b.(atom_fn) <> sort_of ->
+          exists x n_x s_x xs_x,
+            In (x, scon n_x s_x) c
+            /\ atom_tree_sort V V_map V_trie X
+                 (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+                 (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                 (scon n_x s_x) xs_x
+            /\ atom_node V V_map V_trie X
+                 (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+                 (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                 (con n_x s_x) xs_x b.
+    Proof.
+      intros b Hb Hbfn.
+      change (empty_egraph V_default X)
+        with (@empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (e0 := @empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (sub := fst (add_ctx succ sort_of l false false c e0)) in *.
+      set (e1 := snd (add_ctx succ sort_of l false false c e0)) in *.
+      set (eF := snd (rebuild rf e1)) in *.
+      (* --- base facts at empty_egraph --- *)
+      assert (Hok0 : egraph_ok e0)
+        by exact (proj1 (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok
+                           V_map V_map_ok V_trie X lang_model)).
+      assert (Huf0 : exists roots, union_find_ok lt (Defs.equiv e0) roots)
+        by exact (ex_intro _ [] (@union_find_empty_ok V lt succ V_default V_map V_map_ok)).
+      assert (Hdb0 : db_ctx_inv X e0)
+        by (intros aa Hin; exfalso;
+            unfold Semantics.atom_in_db in Hin;
+            unfold e0 in Hin; cbn [Defs.db empty_egraph] in Hin;
+            rewrite map.get_empty in Hin; exact Hin).
+      (* --- add_ctx_egraph_ok: structural envelope --- *)
+      pose proof (@Theorems.add_ctx_egraph_ok V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as HE.
+      unfold vc in HE. specialize (HE e0).
+      fold sub e1 in HE.
+      specialize (HE Huf0 Hdb0 Hok0).
+      destruct HE as (Huf1 & Hdb1 & Hroots1 & Hmapfst & Hok1).
+      (* --- assum_db_frame_pre: PRE-rebuild exhaustiveness frame --- *)
+      pose proof (@Theorems.assum_db_frame_pre V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as Hframe_vc.
+      unfold vc in Hframe_vc. specialize (Hframe_vc e0).
+      fold sub e1 in Hframe_vc.
+      assert (He0_sortof : forall a, ain a e0 -> a.(atom_fn) = sort_of)
+        by (intros a Ha; exfalso;
+            unfold ain, Semantics.atom_in_egraph, Semantics.atom_in_db in Ha;
+            unfold e0 in Ha; cbn [Defs.db empty_egraph] in Ha;
+            rewrite map.get_empty in Ha; exact Ha).
+      specialize (Hframe_vc Huf0 Hdb0 He0_sortof).
+      (* Hframe_vc : forall a ∈ e1, a.fn ≠ sort_of →
+           ∃ x n_x s_x xs_x. In ... /\ atom_tree_sort X e1 sub ... /\ atom_node X e1 sub ... a *)
+      (* --- rebuild_canon: 3-conjunct including reverse image --- *)
+      destruct rf as [|fuel].
+      { exfalso. cbn in Hsucc. discriminate Hsucc. }
+      destruct Hgwl as [ed_list Hgwl].
+      pose proof (@rebuild_canon V V_Eqb V_Eqb_ok lt succ V_default
+                    V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                    X _ lang_model (lang_model_ok l Hsof Hwf)
+                    fuel e1 ed_list Hok1 Hgwl) as (HdbT & Hmono & Hrev).
+      (* --- canonicalizing survival --- *)
+      pose proof (rebuild_survives_canonical e1 (S fuel) Hok1 (ex_intro _ _ Hgwl) Hsucc) as Hsurv.
+      (* --- build Hsurv_exact from Hsurv (for use with atom_tree_sort_survives) --- *)
+      assert (Hrefl : forall xl,
+                 all (is_root X e1) xl ->
+                 all2 (UnionFind.uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e1)) xl xl)
+        by (induction xl as [|z xl IHxl]; cbn; [trivial|];
+            intros [Hz Hxl]; split; [apply Relations.PER_clo_base; exact Hz | apply IHxl; exact Hxl]).
+      assert (Hsurv_exact : forall a0 : atom,
+                 ain a0 e1 ->
+                 all (is_root X e1) (atom_args a0) ->
+                 is_root X e1 (atom_ret a0) ->
+                 ain a0 eF)
+        by (intros a0 Ha0_in Ha0_args Ha0_ret;
+            apply Hsurv; [ | exact Ha0_args | exact Ha0_ret ];
+            exists a0; split; [| exact Ha0_in];
+            unfold Semantics.atom_canonical_equiv; split; [reflexivity|]; split;
+            [apply Hrefl; exact Ha0_args | apply Relations.PER_clo_base; exact Ha0_ret]).
+      (* --- reverse image: b ∈ eF → a ∈ e1 with same fn+args --- *)
+      unfold ain, Semantics.atom_in_egraph in Hb. fold eF in Hb.
+      destruct (Hrev b Hb) as (a & Ha_e1_db & Hafn & Haargs).
+      assert (Ha_e1_in : ain a e1) by (unfold ain, Semantics.atom_in_egraph; exact Ha_e1_db).
+      assert (Hafn_ne : atom_fn a <> sort_of) by (rewrite Hafn; exact Hbfn).
+      (* --- apply pre-frame to a --- *)
+      destruct (Hframe_vc a Ha_e1_in Hafn_ne) as (x & n_x & s_x & xs_x & Hxin & Htree_e1 & Hnode_e1).
+      (* --- wf_sort for the sort skeleton --- *)
+      pose proof (@Core.in_ctx_wf V V_Eqb V_Eqb_ok l c x (scon n_x s_x) Hwf Hwfc Hxin) as Hwst.
+      (* --- fold e1/sub for transport lemmas --- *)
+      fold e1 sub in Htree_e1, Hnode_e1.
+      (* --- transport atom_tree_sort from e1 to eF --- *)
+      pose proof (@Theorems.atom_tree_sort_survives V V_Eqb V_default V_map V_trie sort_of X l Hsof
+                    e1 eF sub c Hdb1 Hsurv_exact (scon n_x s_x) Hwst xs_x Htree_e1) as Htree_eF.
+      (* --- transport atom_node_sort from e1 to eF --- *)
+      pose proof (@Theorems.atom_node_sort_survives V V_Eqb V_default V_map V_trie sort_of X l Hsof
+                    e1 eF sub c Hdb1 Hsurv_exact n_x s_x Hwst xs_x a Hnode_e1) as Hnode_eF_a.
+      (* --- determinism: extract a ∈ eF.db from atom_node, then a = b --- *)
+      assert (Ha_eF_in : atom_in_db V V V_map V_trie X a (db eF))
+        by (clear - Hnode_eF_a;
+            induction Hnode_eF_a as [n0 s0 sids0 xe0 HF2_0 Hain0
+                                    | n0 s0 sids0 xe0 si0 sid0 a0 HF2_0 Hain0 Hcomb0 Hnode0 IH0];
+            [unfold Semantics.atom_in_egraph in Hain0; exact Hain0 | exact IH0]).
+      assert (Hret_eq : atom_ret a = atom_ret b)
+        by (unfold Semantics.atom_in_db, "<$>", Is_Some_satisfying in Ha_eF_in, Hb;
+            rewrite Hafn, Haargs in Ha_eF_in;
+            destruct (map.get (Defs.db eF) (atom_fn b)) as [tbl|];
+              cbn in Ha_eF_in, Hb; [|contradiction];
+            destruct (map.get tbl (atom_args b)) as [entry|];
+              cbn in Ha_eF_in, Hb; [|contradiction];
+            congruence).
+      assert (Hab : a = b)
+        by (destruct a as [afn aargs aret]; destruct b as [bfn bargs bret];
+            cbn [atom_fn atom_args atom_ret] in *; subst; reflexivity).
+      (* --- conclude --- *)
+      exists x, n_x, s_x, xs_x.
+      split; [exact Hxin|].
+      split; [exact Htree_eF|].
+      rewrite <- Hab. exact Hnode_eF_a.
+    Qed.
+
+    (* ============================================================ *)
     (* Assembly: from an adversary [a] sound on the rebuilt           *)
     (* assumption egraph's atoms, recover a wf substitution of [c].   *)
     (* Linearly chains add_ctx_egraph_ok + add_ctx_readback +         *)
