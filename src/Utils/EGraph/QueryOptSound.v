@@ -6370,25 +6370,27 @@ Section WithMap.
   (* ============================================================== *)
 
   Lemma rs_saturation_const_conjunct
+    (A : Type) (HA : analysis idx symbol A)
     (m : model symbol) (Hm : Semantics.model_ok symbol m)
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
     (rf : nat) (rules : list sequent) :
     (forall rule, In rule rules ->
        model_satisfies_rule m
          (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)) ->
-    forall (i : idx_map (Semantics.domain symbol m)) e,
-      egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e ->
-      egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie unit m i e ->
-      egraph_ok idx lt symbol symbol_map idx_map idx_trie unit
-        (snd (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie unit
+    forall (i : idx_map (Semantics.domain symbol m))
+           (e : Defs.instance idx symbol symbol_map idx_map idx_trie A),
+      egraph_ok idx lt symbol symbol_map idx_map idx_trie A e ->
+      egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie A m i e ->
+      egraph_ok idx lt symbol symbol_map idx_map idx_trie A
+        (snd (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie A
                 (build_rule_set idx_succ idx_zero rf rules) e))
       /\ exists i', map.extends i' i
-                    /\ egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie unit m i'
-                         (snd (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie unit
+                    /\ egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie A m i'
+                         (snd (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie A
                                  (build_rule_set idx_succ idx_zero rf rules) e)).
   Proof.
     intros Hmsr i e Hok Hsnd.
-    exact (SemanticsExecConst.process_const_rules_sound
+    exact (SemanticsExecConst.process_const_rules_sound (analysis_result := A) (H := HA)
              Hlti Hlts Hltt Hm (build_rule_set idx_succ idx_zero rf rules)
              (fun cr Hin => compile_rule_inr_const_sound m Hm rf rules cr Hmsr Hin)
              i e Hok Hsnd).
