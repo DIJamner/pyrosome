@@ -4940,24 +4940,27 @@ Section WithMap.
        (needed to show the restriction a_c has the right domain) *)
   Lemma compile_rule_inl_erule_sound :
     forall rf r st0 er st1 (m : model symbol) (Hm : Semantics.model_ok symbol m)
-           (qc : symbol_map (idx_map (list nat * nat))),
+           (qc : symbol_map (idx_map (list nat * nat))) (sopt : sequent),
       compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0
         = (inl er, st1) ->
-      (* Assumption alignment: query_atoms of er = seq_assumptions of optimize_sequent r *)
+      (* Assumption alignment: query_atoms of er = seq_assumptions of the optimized sequent.
+         [sopt] is abstract (any sequent satisfying the alignment) so this keystone is
+         independent of the optimize fuel; the consumer instantiates [sopt] at the
+         optimize_sequent of [r] at the same fuel [compile_rule] used. *)
       map (@atom_clause idx symbol)
           (Semantics.query_atoms idx idx_zero symbol symbol_map idx_map qc er)
-        = (optimize_sequent r).(Semantics.seq_assumptions) ->
-      (* Conclusion alignment: seq_conclusions of optimize_sequent r = er's write fields *)
-      (optimize_sequent r).(Semantics.seq_conclusions) =
+        = sopt.(Semantics.seq_assumptions) ->
+      (* Conclusion alignment: seq_conclusions of sopt = er's write fields *)
+      sopt.(Semantics.seq_conclusions) =
         map (uncurry (@eq_clause idx symbol)) (write_unifications idx symbol er)
         ++ map (@atom_clause idx symbol) (write_clauses idx symbol er) ->
       (* Variable alignment: forall_vars ↔ query_vars *)
-      (forall x, In x (Semantics.forall_vars (optimize_sequent r)) <->
+      (forall x, In x (Semantics.forall_vars sopt) <->
                  In x (query_vars idx symbol er)) ->
-      model_satisfies_rule m (optimize_sequent r) ->
+      model_satisfies_rule m sopt ->
       Semantics.erule_sound idx idx_zero symbol symbol_map idx_map m qc er.
   Proof.
-    intros rf r st0 er st1 m Hm qc Hc Halign_assum Halign_concl Hvars_eq Hmsr.
+    intros rf r st0 er st1 m Hm qc sopt Hc Halign_assum Halign_concl Hvars_eq Hmsr.
     (* Step 1: destruct compile_rule to learn er's fields *)
     unfold compile_rule in Hc.
     destruct (QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map
@@ -4996,7 +4999,7 @@ Section WithMap.
       rewrite Halign_assum in Hcsnd_map.
       rename Hcsnd_map into Hcsnd_aq.
       (* Step 4b: a_c agrees with a_q on forall_vars *)
-      assert (Hagree : forall x, In x (forall_vars (optimize_sequent r)) ->
+      assert (Hagree : forall x, In x (forall_vars sopt) ->
                 map.get a_q x = map.get a_c x);
         [ intros x Hx;
           unfold a_c; rewrite get_restrict_assignment;
@@ -5006,11 +5009,11 @@ Section WithMap.
         | idtac ].
       (* Step 4c: clause_sound a_c on seq_assumptions *)
       pose proof (all_clause_sound_for_model_agree m a_q a_c
-                    (seq_assumptions (optimize_sequent r))
+                    (seq_assumptions sopt)
                     (fun x Hx => Hagree x Hx)
                     Hcsnd_aq) as Hcsnd_ac.
       (* Step 4d: confinement — every key of a_c is in forall_vars *)
-      assert (Hconf : forall x, Sep.has_key x a_c -> In x (forall_vars (optimize_sequent r)));
+      assert (Hconf : forall x, Sep.has_key x a_c -> In x (forall_vars sopt));
         [ intros x Hkey;
           unfold Sep.has_key in Hkey; unfold a_c in Hkey;
           rewrite get_restrict_assignment in Hkey;
@@ -5020,7 +5023,7 @@ Section WithMap.
           | exact (False_ind _ Hkey) ]
         | idtac ].
       (* Step 4e: coverage — every forall_var is a key of a_c *)
-      assert (Hcov : forall x, In x (forall_vars (optimize_sequent r)) -> Sep.has_key x a_c);
+      assert (Hcov : forall x, In x (forall_vars sopt) -> Sep.has_key x a_c);
         [ intros x Hx;
           unfold Sep.has_key, a_c; rewrite get_restrict_assignment;
           assert (Hin_qvs : In x qvs) by exact (proj1 (Hvars_eq x) Hx);
