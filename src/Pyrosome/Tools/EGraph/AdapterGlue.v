@@ -934,11 +934,13 @@ Section WithVar.
           * exact (Hwf_i2 k d Hk_get).
     Qed.
 
-    (* ===== Clean assumption-coverage lemma (the single remaining Admitted on the term path) ===== *)
+    (* ===== Clean assumption-coverage lemma (now PROVEN: the term path is axiom-free) ===== *)
     (* For every id k appearing in an assumption clause var, k is covered by
        an atom_tree in the assumption egraph. *)
     Lemma assum_ids_covered name c args t
         (Hin : In (name, term_rule c args t) l)
+        (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                  (empty_egraph V_default X)))) = Result.Success tt)
       : forall k,
           In k (forall_vars
                   (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_rule c args t))) ->
@@ -948,7 +950,146 @@ Section WithVar.
         \/ (exists ts, wf_sort l c ts
              /\ atom_tree_sort (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
                                (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
-    Admitted.
+    Proof.
+      set (sub := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) in *.
+      set (e_assum := snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))) in *.
+      intros k Hk.
+      (* Step A: derive wf_ctx *)
+      assert (Hwfc : wf_ctx l c).
+      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
+        rewrite invert_wf_term_rule in Hr. destruct Hr as [Hc _]. exact Hc. }
+      (* Step A: derive good_worklist *)
+      pose proof (@add_ctx_good_worklist V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+                    succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as Hgwl.
+      (* Step A: derive map fst sub = map fst c from add_ctx_egraph_ok,
+         using the same pattern as in AddCtxInversion.v (change + set e0 + fold). *)
+      change (empty_egraph V_default X)
+        with (@empty_egraph V V_default V V_map V_map V_trie X) in sub, e_assum, Hgwl, Hsucc.
+      set (e0 := @empty_egraph V V_default V V_map V_map V_trie X) in sub, e_assum, Hgwl, Hsucc.
+      assert (Hok0 : Semantics.egraph_ok V lt V V_map V_map V_trie X e0)
+        by exact (proj1 (@Semantics.empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok
+                           V_map V_map_ok V_trie X (lang_model l))).
+      assert (Huf0 : exists roots, union_find_ok lt (Defs.equiv e0) roots)
+        by exact (ex_intro _ [] (@union_find_empty_ok V lt succ V_default V_map V_map_ok)).
+      assert (Hdb0 : Theorems.db_ctx_inv V V_map V_trie sort_of X e0)
+        by (intros aa Hin0; exfalso;
+            unfold Semantics.atom_in_db in Hin0;
+            unfold e0 in Hin0; cbn [Defs.db Defs.empty_egraph] in Hin0;
+            rewrite map.get_empty in Hin0; exact Hin0).
+      pose proof (@Theorems.add_ctx_egraph_ok V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+                    succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as HE.
+      unfold vc in HE.
+      specialize (HE e0).
+      fold sub in HE.
+      specialize (HE Huf0 Hdb0 Hok0).
+      destruct HE as (_ & _ & _ & Hmapfst_sub & _).
+      (* Hmapfst_sub : map fst (fst (add_ctx ... e0)) = map fst c.
+         Since sub = fst (add_ctx ... (empty_egraph V_default X)) and e0 = @empty_egraph ...,
+         these are definitionally equal: *)
+      assert (Hmapfst : map fst sub = map fst c) by exact Hmapfst_sub.
+      (* Step B: reduce Hk to an egraph db atom.
+         Mirror exactly the Heq_e rewrite used in model_satisfies_rule_adapter_term. *)
+      unfold forall_vars in Hk.
+      unfold rule_to_log_rule, sequent_of_states in Hk; cbn [seq_assumptions] in Hk;
+      unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
+      assert (Heq_e :
+        snd (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
+             let (_, y0) := rebuild rf y in (x, y0))
+        = snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))).
+      { destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub' e1].
+        cbn [snd]. destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
+      rewrite Heq_e in Hk. fold e_assum in Hk.
+      (* Hk : In k (flat_map clause_vars (map atom_clause (db_to_atoms (db e_assum)))) *)
+      rewrite in_flat_map in Hk. destruct Hk as (cl & Hcl_in & Hk_in).
+      rewrite in_map_iff in Hcl_in. destruct Hcl_in as (A & Hcl_eq & HA_in).
+      subst cl.
+      cbn [clause_vars] in Hk_in.
+      (* HA_in : In A (db_to_atoms (db e_assum)); convert to atom_in_egraph *)
+      assert (HA : @Semantics.atom_in_egraph V V V_map V_map V_trie X A e_assum).
+      { apply (proj1 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default
+                        V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok A (Defs.db e_assum))).
+        exact HA_in. }
+      (* Step C: case split on atom_fn A = sort_of *)
+      destruct (eqb (Defs.atom_fn A) sort_of) eqn:Heqfn.
+      - (* sort_of branch: Heqfn : eqb (atom_fn A) sort_of = true,
+           eqb_spec gives atom_fn A = sort_of *)
+        pose proof (@eqb_spec V V_Eqb V_Eqb_ok (Defs.atom_fn A) sort_of) as Hsp.
+        rewrite Heqfn in Hsp.
+        (* Hsp : atom_fn A = sort_of *)
+        rename Hsp into Hsof_A.
+        pose proof (@assum_sortof_frame_eF V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+                      succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
+                      rf c Hwfc Hgwl Hsucc A HA Hsof_A) as (nm & x' & Hargs_A & Hin_sub_raw).
+        (* Hin_sub_raw : In (nm, x') (fst (add_ctx ... e0)), definitionally = In (nm, x') sub *)
+        assert (Hin_sub : In (nm, x') sub) by exact Hin_sub_raw.
+        pose proof (@add_ctx_readback_eF V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+                      succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
+                      rf c Hwfc Hgwl Hsucc) as Hrbef.
+        fold sub e_assum in Hrbef.
+        pose proof (@CtxReadback.ctx_readback_eF_lookup V V_Eqb V_Eqb_ok V_default V_map V_trie
+                      sort_of X l Hwf
+                      e_assum c sub Hwfc (eq_sym Hmapfst) Hrbef nm x' Hin_sub)
+          as (t' & xs' & Hin_c' & Htree' & Hatom').
+        (* Hk_in : In k (atom_ret A :: atom_args A) *)
+        rewrite Hargs_A in Hk_in. cbn [In] in Hk_in.
+        (* Determinism: atom_ret A = xs' *)
+        assert (HA' : @Semantics.atom_in_db V V V_map V_trie X
+                        (Defs.Build_atom sort_of [x'] (Defs.atom_ret A)) (Defs.db e_assum)).
+        { unfold Semantics.atom_in_egraph in HA.
+          destruct A as [afn aargs aret].
+          cbn [Defs.atom_fn Defs.atom_args Defs.atom_ret] in Hsof_A, Hargs_A, HA.
+          subst afn. inversion Hargs_A; subst aargs. exact HA. }
+        assert (Hret : Defs.atom_ret A = xs').
+        { unfold Semantics.atom_in_db, "<$>", Is_Some_satisfying in HA', Hatom'.
+          cbn [Defs.atom_fn Defs.atom_args Defs.atom_ret] in HA'.
+          unfold Semantics.atom_in_egraph in Hatom'.
+          unfold Semantics.atom_in_db, "<$>", Is_Some_satisfying in Hatom'.
+          cbn [Defs.atom_fn Defs.atom_args Defs.atom_ret] in Hatom'.
+          destruct (map.get (Defs.db e_assum) sort_of) as [tbl|];
+            cbn in HA', Hatom'; [|contradiction].
+          destruct (map.get tbl [x']) as [entry|];
+            cbn in HA', Hatom'; [|contradiction].
+          congruence. }
+        destruct Hk_in as [Hk_ret | Hk_rest].
+        { (* k = atom_ret A = xs': RIGHT disjunct (sort) *)
+          right.
+          exists t'. split.
+          * exact (@Core.in_ctx_wf V V_Eqb V_Eqb_ok l c nm t' Hwf Hwfc Hin_c').
+          * rewrite <- Hk_ret, Hret. exact Htree'. }
+        destruct Hk_rest as [Hk_x' | contra].
+        2: { destruct contra. }
+        (* k = x': LEFT disjunct (term var nm) *)
+          left.
+          exists (var nm), t'. split.
+          * apply Core.wf_term_var. exact Hin_c'.
+          * rewrite <- Hk_x'.
+            assert (Hafsub : all_fresh sub).
+            { apply NoDup_fresh. rewrite Hmapfst. apply NoDup_fresh.
+              exact (wf_ctx_all_fresh Hwfc). }
+            assert (Hlk : named_list_lookup default sub nm = x').
+            { clear -V_Eqb_ok Hafsub Hin_sub.
+              induction sub as [| [m w] sub' IH]; cbn in *; [contradiction|].
+              destruct Hafsub as [Hfr Hafsub'].
+              destruct Hin_sub as [Heq | Hin_sub'].
+              - inversion Heq; subst m w. eqb_case nm nm; congruence.
+              - eqb_case nm m.
+                + exfalso. apply Hfr. apply pair_fst_in with (a:=x'). exact Hin_sub'.
+                + apply IH; auto. }
+            rewrite <- Hlk. apply (@Theorems.at_var V V_Eqb V_default V_map V_trie X e_assum sub nm).
+      - (* non-sort_of branch *)
+        pose proof (eqb_spec (Defs.atom_fn A) sort_of) as Hsp.
+        rewrite Heqfn in Hsp.
+        (* Hsp : atom_fn A <> sort_of *)
+        rename Hsp into Hnsof_A.
+        pose proof (@assum_db_frame_eF V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+                      succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
+                      rf c Hwfc Hgwl Hsucc A HA Hnsof_A) as (x & n_x & s_x & xs_x & Hxin & Htree & Hnode).
+        fold sub e_assum in Htree, Hnode.
+        pose proof (@Core.in_ctx_wf V V_Eqb V_Eqb_ok l c x (scon n_x s_x) Hwf Hwfc Hxin) as Hwst.
+        pose proof (atom_tree_sort_node_covered e_assum sub c n_x s_x Hwst xs_x Htree A Hnode)
+          as (_ & Hcov).
+        exact (Hcov k Hk_in).
+    Qed.
 
     (* ===== Residual coverage obligation (conclusion vars only) ===== *)
     (* Now proved by threading the confinement hypothesis Hconf through
@@ -964,6 +1105,8 @@ Section WithVar.
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
                            (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_rule c args t))))
+        (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                  (empty_egraph V_default X)))) = Result.Success tt)
       : forall k da d,
           In k (flat_map (clause_vars V V) (seq_conclusions
                    (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
@@ -977,7 +1120,7 @@ Section WithVar.
                                (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
     Proof.
       intros k da d Hk Ha Hi2k.
-      apply (assum_ids_covered name c args t Hin k).
+      apply (assum_ids_covered name c args t Hin Hsucc k).
       apply Hconf.
       unfold Sep.has_key. rewrite Ha. exact I.
     Qed.
@@ -1038,7 +1181,7 @@ Section WithVar.
                   (exists e t', wf_term l c e t' /\ atom_tree e_assum sub e k)
                 \/ (exists ts, wf_sort l c ts /\ atom_tree_sort e_assum sub ts k)).
       { intros k da d HP Ha Hi2k.
-        exact (Hcover_concl_term name c args t a i2 sg Hin Hsg Hsnd_a Hconf k da d HP Ha Hi2k). }
+        exact (Hcover_concl_term name c args t a i2 sg Hin Hsg Hsnd_a Hconf Hsucc k da d HP Ha Hi2k). }
       assert (Hagree : forall k d da, P k -> map.get i2 k = Some d ->
                   map.get a k = Some da -> domain_eq V (lang_model l) d da).
       { exact (assumption_ids_agree a i2 e_assum sub c P
