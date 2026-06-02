@@ -159,6 +159,22 @@ Section WithVar.
         exact (@interprets_to_preserved V m Hm _ iargs a'args iret a'ret Hc Hall2 Heq_ret).
   Qed.
 
+  Lemma list_Mmap_Success_In {A B} (f : A -> Result.result B) (xs : list A) (ys : list B) :
+    list_Mmap f xs = Result.Success ys ->
+    forall y, In y ys -> exists x, In x xs /\ f x = Result.Success y.
+  Proof.
+    revert ys; induction xs as [|x xs IH]; intros ys Hmap y Hy.
+    - cbn in Hmap. injection Hmap as <-. destruct Hy.
+    - cbn [list_Mmap] in Hmap.
+      destruct (f x) as [b|e] eqn:Hfx; cbn in Hmap; [| discriminate Hmap].
+      destruct (list_Mmap f xs) as [bl|e] eqn:Hrest; cbn in Hmap; [| discriminate Hmap].
+      injection Hmap as <-.
+      destruct Hy as [<-|Hy].
+      + exists x. split; [left; reflexivity | exact Hfx].
+      + destruct (IH bl eq_refl y Hy) as (x' & Hin & Hf).
+        exists x'. split; [right; exact Hin | exact Hf].
+  Qed.
+
   Section Adapter.
     Context (l : lang) (Hwf : wf_lang l) (Hsof : fresh sort_of l) (rf : nat).
 
@@ -3377,6 +3393,28 @@ Section WithVar.
       destruct (rebuild rf e_open) as [res e_rb].
       cbn [fst snd] in H |- *.
       destruct res as [u|e]; [destruct u; reflexivity | discriminate H].
+    Qed.
+
+    Lemma central_msr_seqs (posX : lang) (seqs : list (sequent V V))
+        (Hincl : incl posX l)
+        (Hmap : list_Mmap (fun '(n,r) =>
+                  @rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf n r) posX
+                = Result.Success seqs)
+      : forall rule, In rule seqs ->
+          model_satisfies_rule V V V_map (lang_model l)
+            (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie rule rf).
+    Proof.
+      intros rule Hrule.
+      destruct (list_Mmap_Success_In _ posX seqs Hmap rule Hrule)
+        as ([n r] & Hin_posX & Hfr).
+      assert (Hin_l : In (n, r) l) by (apply Hincl; exact Hin_posX).
+      pose proof (rule_to_log_rule_Success_seq n r rule Hfr) as Heq.
+      subst rule.
+      destruct r as [c args | c args t | c t1 t2 | c e1 e2 t].
+      - exact (central_obligation_sort    n c args   Hin_l (status_Hsucc_sort    n c args   _ Hfr)).
+      - exact (central_obligation_term    n c args t Hin_l (status_Hsucc_term    n c args t _ Hfr)).
+      - exact (central_obligation_sort_eq n c t1 t2  Hin_l (status_Hsucc_sort_eq n c t1 t2 _ Hfr)).
+      - exact (central_obligation_term_eq n c e1 e2 t Hin_l (status_Hsucc_term_eq n c e1 e2 t _ Hfr)).
     Qed.
 
   End Adapter.
