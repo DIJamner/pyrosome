@@ -5535,6 +5535,216 @@ Section WithMap.
   Qed.
 
   (* ============================================================== *)
+  (* E1: optimize_sequent fields parametric in rf                    *)
+  (* ============================================================== *)
+
+  Lemma optimize_sequent_fields_at : forall (r : sequent) (rf : nat),
+    let '(assumptions, catoms, ceqs) :=
+      QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf in
+    (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf).(Semantics.seq_assumptions)
+      = map (@atom_clause idx symbol) assumptions
+    /\ (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf).(Semantics.seq_conclusions)
+      = map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms.
+  Proof.
+    intros r rf.
+    unfold QueryOpt.optimize_sequent', QueryOpt.optimize_sequent, QueryOpt.sequent'_of_states, QueryOpt.sequent_of_states.
+    cbn. split; reflexivity.
+  Qed.
+
+  (* ============================================================== *)
+  (* E2: compile_query_clause list round-trip                        *)
+  (* ============================================================== *)
+
+  Lemma list_Mmap_cqc_reconstruct
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (symbol_map_plus_ok : @map_plus_ok _ _ symbol_map_plus) :
+    forall (qvs : list idx) (NDqvs : NoDup qvs)
+           (assumptions : list (Defs.atom idx symbol))
+           (Hsub : forall a, In a assumptions ->
+                   forall x, In x (Defs.atom_ret a :: Defs.atom_args a) -> In x qvs)
+           (S0 : St) (Hwf0 : wf_qc_state S0)
+           (Qfin : St)
+           (Hmono : forall g j v,
+              qc_entry (snd (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions S0)) g j v
+              -> qc_entry Qfin g j v),
+      map (fun ptr => let '(Build_erule_query_ptr _ _ f n cv_list) := ptr in
+             let '(cargs,cv) := match map.get (map_map snd Qfin) f with
+               | Some q_f => match map.get q_f n with Some c => c | None => ([],0) end
+               | None => ([],0) end in
+             Build_atom f (map (fun k => nth k cv_list idx_zero) cargs) (nth cv cv_list idx_zero))
+          (fst (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions S0))
+        = assumptions.
+  Proof.
+    intros qvs NDqvs assumptions.
+    induction assumptions as [|a rest IH].
+    - intros. cbn [list_Mmap Mbind Mret StateMonad.state_monad fst map]. reflexivity.
+    - intros Hsub S0 Hwf0 Qfin Hmono.
+      cbn [list_Mmap Mbind Mret StateMonad.state_monad].
+      destruct (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs a S0) as [ptr S1] eqn:Hcqc.
+      destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) rest S1) as [ptrs S2] eqn:Hrec.
+      cbn [fst map].
+      assert (HS1_snd : S1 = snd (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs a S0)) by (rewrite Hcqc; reflexivity).
+      assert (Hwf_S1 : wf_qc_state S1) by (rewrite HS1_snd; apply (compile_query_clause_preserves_wf Hlts Hltt qvs a S0 Hwf0)).
+      assert (Hmono' : forall g0 j0 v0,
+          qc_entry (snd (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) rest S1)) g0 j0 v0
+          -> qc_entry Qfin g0 j0 v0).
+      { intros g0 j0 v0 Hentry.
+        apply Hmono.
+        cbn [list_Mmap Mbind Mret StateMonad.state_monad].
+        rewrite Hcqc; cbn [fst snd]. rewrite Hrec; cbn [fst snd].
+        rewrite Hrec in Hentry; cbn [snd] in Hentry. exact Hentry. }
+      assert (Htail : map (fun ptr => let '(Build_erule_query_ptr _ _ f n cv_list) := ptr in
+             let '(cargs,cv) := match map.get (map_map snd Qfin) f with
+               | Some q_f => match map.get q_f n with Some c => c | None => ([],0) end
+               | None => ([],0) end in
+             Build_atom f (map (fun k => nth k cv_list idx_zero) cargs) (nth cv cv_list idx_zero)) ptrs = rest).
+      { pose proof (IH (fun a' Hin' => Hsub a' (or_intror Hin')) S1 Hwf_S1 Qfin Hmono') as IHapp.
+        rewrite Hrec in IHapp; cbn [fst] in IHapp. exact IHapp. }
+      destruct a as [f args out].
+      unfold compile_query_clause in Hcqc.
+      cbn [Mbind Mret StateMonad.state_monad] in Hcqc.
+      set (clause_vars := sort_by_position_in idx Eqb_idx (out :: args) qvs) in *.
+      set (sub := combine clause_vars (seq 0 (length clause_vars))) in *.
+      set (cc := {| atom_fn := f;
+                    atom_args := map (named_list_lookup 0 sub) args;
+                    atom_ret := named_list_lookup 0 sub out |}) in *.
+      destruct (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S0) as [i S1'] eqn:Hhc.
+      cbn [Mret StateMonad.state_monad] in Hcqc.
+      assert (Hptr_eq : ptr = {| query_ptr_symbol := f; query_ptr_ptr := i; query_ptr_args := clause_vars |}).
+      { injection Hcqc; intros _ Hp. exact (eq_sym Hp). }
+      assert (HS1'_eq : S1' = S1).
+      { injection Hcqc; intros HS _. exact HS. }
+      cbn. rewrite Hptr_eq. cbn.
+      pose proof (hash_clause_sets cc S0) as Hsets.
+      cbn [Defs.atom_fn Defs.atom_args Defs.atom_ret] in Hsets.
+      assert (HS1'snd : S1' = snd (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S0)) by (rewrite Hhc; reflexivity).
+      assert (Hi_eq : i = fst (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S0)) by (rewrite Hhc; reflexivity).
+      rewrite <- HS1'snd, <- Hi_eq in Hsets.
+      rewrite HS1'_eq in Hsets.
+      assert (Hwf_S1' : wf_qc_state S1').
+      { rewrite HS1'snd. apply (hash_clause_preserves_wf Hlts Hltt cc S0 Hwf0). }
+      pose proof (proj2 (list_Mmap_qc_preserves
+        (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
+        (compile_query_clause_preserves_wf Hlts Hltt qvs)
+        (compile_query_clause_mono Hlti qvs)
+        rest S1 Hwf_S1) f i _ Hsets) as Hentry_S2.
+      assert (HS2eq : S2 = snd (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) rest S1)) by (rewrite Hrec; reflexivity).
+      pose proof (Hmono' f i _ Hentry_S2) as Hentry_Qfin.
+      destruct Hentry_Qfin as (last & m & HgetQf & HgetMi).
+      rewrite (@map_map_spec symbol symbol_map symbol_map_plus symbol_map_plus_ok (idx * idx_map (list nat * nat)) (idx_map (list nat * nat)) snd Qfin f).
+      assert (Hom : option_map snd (map.get Qfin f) = Some m) by (rewrite HgetQf; reflexivity).
+      cbn [option_map] in Hom.
+      change (match option_map snd (map.get Qfin f) with Some q_f => match map.get q_f i with Some c => c | None => ([], 0) end | None => ([], 0) end) with (match option_map snd (map.get Qfin f) with Some q_f => match map.get q_f i with Some c => c | None => ([], 0) end | None => ([], 0) end).
+      rewrite Hom. rewrite HgetMi. cbn [atom_args atom_ret].
+      assert (Hargs : map (fun k => nth k clause_vars idx_zero) (atom_args cc) = args).
+      { unfold clause_vars, sub. apply map_nth_named_list_lookup_combine_seq.
+        { apply NoDup_filter. exact NDqvs. }
+        { intros x Hx. apply filter_In. split.
+          { apply (Hsub {| atom_fn := f; atom_args := args; atom_ret := out |}).
+            { left. reflexivity. } { right. exact Hx. } }
+          { apply Is_true_implies_eq_true.
+            apply (proj2 (@inb_is_In idx Eqb_idx Eqb_idx_ok x (out :: args))).
+            right. exact Hx. } } }
+      assert (Hret : nth (atom_ret cc) clause_vars idx_zero = out).
+      { unfold clause_vars, sub. apply nth_named_list_lookup_combine_seq.
+        { apply NoDup_filter. exact NDqvs. }
+        { apply filter_In. split.
+          { apply (Hsub {| atom_fn := f; atom_args := args; atom_ret := out |}).
+            { left. reflexivity. } { left. reflexivity. } }
+          { apply Is_true_implies_eq_true.
+            apply (proj2 (@inb_is_In idx Eqb_idx Eqb_idx_ok out (out :: args))).
+            left. reflexivity. } } }
+      rewrite Hargs. rewrite Hret.
+      f_equal. exact Htail.
+  Qed.
+
+  (* ============================================================== *)
+  (* E3: query_atoms of compiled rule = optimize_sequent' assumptions *)
+  (* ============================================================== *)
+
+  Lemma query_atoms_compile_rule_eq
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (symbol_map_plus_ok : @map_plus_ok _ _ symbol_map_plus) :
+    forall (rf : nat) (rule : sequent) (st0 st1 : St) (er : erule idx symbol) (Qfin : St),
+      wf_qc_state st0 ->
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf rule st0 = (inl er, st1) ->
+      (forall g j v, qc_entry st1 g j v -> qc_entry Qfin g j v) ->
+      Semantics.query_atoms idx idx_zero symbol symbol_map idx_map (map_map snd Qfin) er
+        = (let '(assumptions,_,_) := QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf in assumptions).
+  Proof.
+    intros rf rule st0 st1 er Qfin Hwf0 Hc Hmono.
+    unfold compile_rule in Hc.
+    destruct (QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)
+      as [ [assumptions catoms] ceqs ] eqn:Hopt.
+    set (qvs := dedup eqb (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+      subst st1. subst er.
+      cbn [Semantics.query_atoms query_clause_ptrs uncurry].
+      unfold Semantics.query_atoms.
+      cbn [query_clause_ptrs uncurry].
+      change (map (fun '{| query_ptr_symbol := f; query_ptr_ptr := n; query_ptr_args := cv_list |} =>
+               let '(cargs,cv) := match map.get (map_map snd Qfin) f with
+                 | Some q_f => match map.get q_f n with Some c => c | None => ([],0) end
+                 | None => ([],0) end in
+               {| atom_fn := f; atom_args := map (fun k => nth k cv_list idx_zero) cargs; atom_ret := nth cv cv_list idx_zero |})
+               (c :: cs))
+        with (map (fun ptr => let '(Build_erule_query_ptr _ _ f n cv_list) := ptr in
+               let '(cargs,cv) := match map.get (map_map snd Qfin) f with
+                 | Some q_f => match map.get q_f n with Some c => c | None => ([],0) end
+                 | None => ([],0) end in
+               Build_atom f (map (fun k => nth k cv_list idx_zero) cargs) (nth cv cv_list idx_zero))
+               (c :: cs)).
+      assert (Hfst : fst (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0) = c :: cs).
+      { rewrite Hmap. reflexivity. }
+      rewrite <- Hfst.
+      apply (list_Mmap_cqc_reconstruct Hlti Hlts Hltt symbol_map_plus_ok qvs).
+      1: apply NoDup_dedup; exact (@eqb_boolspec idx Eqb_idx Eqb_idx_ok).
+      1: { intros a Hina x Hx. unfold qvs.
+           apply (proj1 (@dedup_preserves_In idx eqb (@eqb_boolspec idx Eqb_idx Eqb_idx_ok) (flat_map (atom_fvs idx symbol) assumptions) x)).
+           apply (proj2 (in_flat_map (atom_fvs idx symbol) assumptions x)).
+           exact (ex_intro _ a (conj Hina Hx)). }
+      1: exact Hwf0.
+      1: { intros g j v Hentry.
+           apply Hmono.
+           assert (Hsnd : snd (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0) = st').
+           { rewrite Hmap. reflexivity. }
+           rewrite Hsnd in Hentry. exact Hentry. }
+  Qed.
+
+  (* ============================================================== *)
+  (* E4: forall_vars of optimize_sequent ↔ dedup atom_fvs of assums *)
+  (* ============================================================== *)
+
+  Lemma forall_vars_optimize_sequent_eq_qvs :
+    forall (rf : nat) (rule : sequent),
+      let assumptions := (let '(a,_,_) := QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf in a) in
+      forall y, In y (Semantics.forall_vars (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf))
+            <-> In y (dedup (eqb (A:=idx)) (flat_map (QueryOpt.atom_fvs idx symbol) assumptions)).
+  Proof.
+    intros rf rule y.
+    unfold Semantics.forall_vars.
+    pose proof (optimize_sequent_fields_at rule rf) as Hfields.
+    destruct (QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)
+      as [ [assumptions catoms] ceqs ] eqn:Hopt.
+    destruct Hfields as [Hassm _].
+    rewrite Hassm.
+    assert (Heq : flat_map (Semantics.clause_vars idx symbol) (map (@atom_clause idx symbol) assumptions) = flat_map (QueryOpt.atom_fvs idx symbol) assumptions).
+    { rewrite flat_map_concat_map. rewrite List.map_map.
+      rewrite <- flat_map_concat_map. apply flat_map_ext.
+      intros a. destruct a. reflexivity. }
+    intros y0. rewrite Heq.
+    split.
+    - apply (proj1 (@dedup_preserves_In idx eqb (@eqb_boolspec idx Eqb_idx Eqb_idx_ok) _ y0)).
+    - apply (proj2 (@dedup_preserves_In idx eqb (@eqb_boolspec idx Eqb_idx Eqb_idx_ok) _ y0)).
+  Qed.
+
+  (* ============================================================== *)
   (* Connecting compiled_rules of build_rule_set to compile_rule     *)
   (* ============================================================== *)
 
