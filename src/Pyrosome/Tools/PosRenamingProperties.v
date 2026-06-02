@@ -1944,6 +1944,216 @@ Section WithVar.
     - intros v1 v2 [] _ _.
   Qed.
 
+  (* ============================================================== *)
+  (* Reserved lower bound: all allocated positives are >= 2,        *)
+  (* so xH (= sort_of = 1) is never a rule name in rename_lang.     *)
+  (* ============================================================== *)
+
+  Definition reserved (r : renaming) : Prop :=
+    Pos.le 2 r.(next_id) /\ (forall v p, In (v, p) r.(v_to_p) -> Pos.le 2 p).
+
+  Lemma reserved_init : reserved init_renaming.
+  Proof.
+    unfold reserved, init_renaming; cbn; split.
+    - apply Pos.le_refl.
+    - intros ? ? [].
+  Qed.
+
+  Lemma alloc_reserved {n : V} {r : renaming} : reserved r -> reserved (snd (alloc n r)).
+  Proof.
+    intros [Hle Hin].
+    unfold alloc; cbn.
+    rewrite Pos.add_1_r.
+    unfold reserved; cbn.
+    split.
+    - apply Pos.le_trans with (m := r.(next_id)).
+      + exact Hle.
+      + apply Pos.lt_le_incl; apply Pos.lt_succ_diag_r.
+    - intros v p Hp.
+      destruct Hp as [Heq | Hrest].
+      + inversion Heq; subst. exact Hle.
+      + exact (Hin v p Hrest).
+  Qed.
+
+  Lemma to_p_reserved {v : V} {r : renaming} {p : positive} {r' : renaming} :
+    reserved r -> to_p v r = (p, r') -> Pos.le 2 p /\ reserved r'.
+  Proof.
+    intros Hr Hto.
+    unfold to_p in Hto.
+    destruct (named_list_lookup_err r.(v_to_p) v) eqn:Hlook.
+    - inversion Hto; subst p r'.
+      split.
+      + apply (proj2 Hr v p0).
+        eapply named_list_lookup_err_in.
+        symmetry; exact Hlook.
+      + exact Hr.
+    - unfold alloc in Hto.
+      inversion Hto; subst p r'.
+      split.
+      + exact (proj1 Hr).
+      + apply alloc_reserved; exact Hr.
+  Qed.
+
+  Lemma list_Mmap_reserved {A B} (f : A -> state renaming B) :
+    (forall (a:A) (r0:renaming) b (r1:renaming), reserved r0 -> f a r0 = (b, r1) -> reserved r1) ->
+    forall (xs:list A) (r:renaming) ys (r':renaming),
+      reserved r -> list_Mmap f xs r = (ys, r') -> reserved r'.
+  Proof.
+    intros Hf xs.
+    induction xs as [|a xs IH]; intros r ys r' Hr; cbn.
+    - intros Heq; inversion Heq; subst. exact Hr.
+    - destruct (f a r) as [b r1] eqn:Hr1.
+      destruct (list_Mmap f xs r1) as [bs r2] eqn:Hr2.
+      intros Heq; inversion Heq; clear Heq; subst ys r'.
+      apply (IH r1 bs r2).
+      + exact (Hf a r b r1 Hr Hr1).
+      + exact Hr2.
+  Qed.
+
+  Lemma rename_term_reserved {e r e' r'} : reserved r -> rename_term e r = (e', r') -> reserved r'.
+  Proof.
+    revert r e' r'.
+    induction e using term_ind; intros r e' r' Hr; cbn.
+    - destruct (to_p n r) as [p r1] eqn:Hto.
+      intros Heq; inversion Heq; subst.
+      exact (proj2 (to_p_reserved Hr Hto)).
+    - assert (Hlist : forall r0 s r0',
+                 reserved r0 ->
+                 list_Mmap rename_term l r0 = (s, r0') ->
+                 reserved r0').
+      { clear r e' r' Hr.
+        induction l as [|a l IHl]; intros r0 s r0' Hr0; cbn.
+        - intros Heq; inversion Heq; subst. exact Hr0.
+        - destruct H as [Ha Hrest].
+          destruct (rename_term a r0) as [b r1] eqn:Hr1.
+          destruct (list_Mmap rename_term l r1) as [bs r2] eqn:Hr2.
+          intros Heq; inversion Heq; clear Heq; subst s r0'.
+          apply (IHl Hrest r1 bs r2).
+          + exact (Ha r0 b r1 Hr0 Hr1).
+          + exact Hr2. }
+      destruct (list_Mmap rename_term l r) as [sp r1] eqn:Hr1.
+      destruct (to_p n r1) as [p r2] eqn:Hto.
+      intros Heq; inversion Heq; clear Heq; subst e' r'.
+      exact (proj2 (to_p_reserved (Hlist r sp r1 Hr Hr1) Hto)).
+  Qed.
+
+  Lemma rename_sort_reserved {t r t' r'} : reserved r -> rename_sort t r = (t', r') -> reserved r'.
+  Proof.
+    destruct t as [n s]; cbn.
+    intros Hr.
+    destruct (list_Mmap rename_term s r) as [s1 r1] eqn:Hr1.
+    destruct (to_p n r1) as [p r2] eqn:Hto.
+    intros Heq; inversion Heq; clear Heq; subst t' r'.
+    assert (Hr1ok : reserved r1).
+    { eapply (list_Mmap_reserved rename_term).
+      - intros a r0 b r1' Hr0 Hf. exact (rename_term_reserved Hr0 Hf).
+      - exact Hr.
+      - exact Hr1. }
+    exact (proj2 (to_p_reserved Hr1ok Hto)).
+  Qed.
+
+  Lemma rename_ctx_reserved {c r c' r'} : reserved r -> rename_ctx c r = (c', r') -> reserved r'.
+  Proof.
+    revert r c' r'.
+    induction c as [|p c IH]; intros r c' r' Hr; unfold rename_ctx; cbn.
+    - intros Heq; inversion Heq; clear Heq; subst c' r'. exact Hr.
+    - destruct p as [x ts].
+      destruct (rename_sort ts r) as [ts1 r1] eqn:Hr1.
+      destruct (to_p x r1) as [x1 r2] eqn:Hto.
+      destruct (rename_ctx c r2) as [c1 r3] eqn:Hr3.
+      pose proof Hr3 as Hr3'.
+      unfold rename_ctx in Hr3'; cbn in Hr3'.
+      intros Heq; rewrite Hr3' in Heq.
+      inversion Heq; clear Heq; subst c' r'.
+      pose proof (rename_sort_reserved Hr Hr1) as Hr1ok.
+      pose proof (proj2 (to_p_reserved Hr1ok Hto)) as Hr2ok.
+      exact (IH r2 c1 r3 Hr2ok Hr3).
+  Qed.
+
+  Lemma rename_rule_reserved {rr r rr' r'} : reserved r -> rename_rule rr r = (rr', r') -> reserved r'.
+  Proof.
+    intros Hr.
+    destruct rr as [c args | c args ts | c ts1 ts2 | c e1 e2 ts]; cbn.
+    - (* sort_rule *)
+      destruct (rename_ctx c r) as [c1 r1] eqn:Hrc.
+      destruct (list_Mmap to_p args r1) as [args1 r2] eqn:Hra.
+      intros Heq; inversion Heq; clear Heq; subst rr' r'.
+      pose proof (rename_ctx_reserved Hr Hrc) as Hr1ok.
+      eapply (list_Mmap_reserved to_p).
+      + intros a r0 b r1' Hr0 Hf. exact (proj2 (to_p_reserved Hr0 Hf)).
+      + exact Hr1ok.
+      + exact Hra.
+    - (* term_rule *)
+      destruct (rename_ctx c r) as [c1 r1] eqn:Hrc.
+      destruct (list_Mmap to_p args r1) as [args1 r2] eqn:Hra.
+      destruct (rename_sort ts r2) as [ts1' r3] eqn:Hrt.
+      intros Heq; inversion Heq; clear Heq; subst rr' r'.
+      pose proof (rename_ctx_reserved Hr Hrc) as Hr1ok.
+      assert (Hr2ok : reserved r2).
+      { eapply (list_Mmap_reserved to_p).
+        - intros a r0 b r1' Hr0 Hf. exact (proj2 (to_p_reserved Hr0 Hf)).
+        - exact Hr1ok.
+        - exact Hra. }
+      exact (rename_sort_reserved Hr2ok Hrt).
+    - (* sort_eq_rule *)
+      destruct (rename_ctx c r) as [c1 r1] eqn:Hrc.
+      destruct (rename_sort ts1 r1) as [ts1' r2] eqn:Hr2.
+      destruct (rename_sort ts2 r2) as [ts2' r3] eqn:Hr3.
+      intros Heq; inversion Heq; clear Heq; subst rr' r'.
+      pose proof (rename_ctx_reserved Hr Hrc) as Hr1ok.
+      pose proof (rename_sort_reserved Hr1ok Hr2) as Hr2ok.
+      exact (rename_sort_reserved Hr2ok Hr3).
+    - (* term_eq_rule *)
+      destruct (rename_ctx c r) as [c1 r1] eqn:Hrc.
+      destruct (rename_term e1 r1) as [e1' r2] eqn:Hre1.
+      destruct (rename_term e2 r2) as [e2' r3] eqn:Hre2.
+      destruct (rename_sort ts r3) as [ts'' r4] eqn:Hrt.
+      intros Heq; inversion Heq; clear Heq; subst rr' r'.
+      pose proof (rename_ctx_reserved Hr Hrc) as Hr1ok.
+      pose proof (rename_term_reserved Hr1ok Hre1) as Hr2ok.
+      pose proof (rename_term_reserved Hr2ok Hre2) as Hr3ok.
+      exact (rename_sort_reserved Hr3ok Hrt).
+  Qed.
+
+  Lemma rename_lang_reserved {l r lp r'} :
+    reserved r -> rename_lang l r = (lp, r') ->
+    reserved r' /\ (forall p, In p (map fst lp) -> Pos.le 2 p).
+  Proof.
+    revert r lp r'.
+    induction l as [|p l IH]; intros r lp r' Hr; unfold rename_lang; cbn.
+    - intros Heq; inversion Heq; clear Heq; subst lp r'.
+      split; auto; intros ? [].
+    - destruct p as [x rr].
+      destruct (rename_rule rr r) as [rr1 r1] eqn:Hrr.
+      destruct (to_p x r1) as [x1 r2] eqn:Hto.
+      destruct (rename_lang l r2) as [l1 r3] eqn:Hrl.
+      pose proof Hrl as Hrl'.
+      unfold rename_lang in Hrl'; cbn in Hrl'.
+      intros Heq; rewrite Hrl' in Heq.
+      inversion Heq; clear Heq; subst lp r'.
+      pose proof (rename_rule_reserved Hr Hrr) as Hr1ok.
+      pose proof (to_p_reserved Hr1ok Hto) as [Hx1 Hr2ok].
+      specialize (IH r2 l1 r3 Hr2ok Hrl) as [Hr3ok Hl1].
+      split; [exact Hr3ok|].
+      intros p Hin; cbn in Hin.
+      destruct Hin as [Heq | Hrest].
+      + subst p. exact Hx1.
+      + exact (Hl1 p Hrest).
+  Qed.
+
+  Lemma rename_lang_fresh_xH {l r} : reserved r -> fresh xH (fst (rename_lang l r)).
+  Proof.
+    intros Hr.
+    destruct (rename_lang l r) as [lp r'] eqn:Hrl.
+    cbn.
+    unfold fresh.
+    intros Hin.
+    pose proof (proj2 (rename_lang_reserved Hr Hrl) xH Hin) as Hle.
+    unfold Pos.le in Hle.
+    cbn in Hle.
+    apply Hle. reflexivity.
+  Qed.
+
   (* [of_p r] is injective on the set of positives bound by [r]. *)
   Lemma of_p_inj_on_pbound r :
     renaming_ok r ->
