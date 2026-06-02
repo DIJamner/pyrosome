@@ -1061,5 +1061,138 @@ Section WithVar.
         exact (Hcov b Hb_ctx Hnr_ctx). }
     Qed.
 
+    Lemma eq_ctx_inversion (rf : nat) (a : interp) c e1 t
+        (Hwfc : wf_ctx l c) (Hwfe1 : wf_term l c e1 t)
+      : fst (rebuild rf (snd (add_open_term succ sort_of l false false
+                (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                e1
+                (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+          = Result.Success tt ->
+        (forall al, @Semantics.atom_in_egraph V V V_map V_map V_trie X al
+                (snd (rebuild rf (snd (add_open_term succ sort_of l false false
+                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  e1
+                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
+              -> @Semantics.atom_sound_for_model V V V_map lang_model a al) ->
+        exists sg, wf_subst l [] sg c
+                /\ map fst sg = map fst c
+                /\ (forall x, In x (map fst (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))) ->
+                      map.get a (named_list_lookup default
+                                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) x)
+                        = Some (inl (named_list_lookup default sg x))).
+    Proof.
+      intros Hsucc Hsound.
+      change (empty_egraph V_default X)
+        with (@empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (e0 := @empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (sub := fst (add_ctx succ sort_of l false false c e0)) in *.
+      set (e_ctx := snd (add_ctx succ sort_of l false false c e0)) in *.
+      set (e_open := snd (add_open_term succ sort_of l false false sub e1 e_ctx)) in *.
+      set (eF := snd (rebuild rf e_open)) in *.
+      (* --- base facts at empty_egraph --- *)
+      assert (Hok0 : egraph_ok V lt V V_map V_map V_trie X e0)
+        by exact (proj1 (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok
+                           V_map V_map_ok V_trie X lang_model)).
+      assert (Huf0 : exists roots, union_find_ok lt (Defs.equiv e0) roots)
+        by exact (ex_intro _ [] (@union_find_empty_ok V lt succ V_default V_map V_map_ok)).
+      assert (Hdb0 : db_ctx_inv V V_map V_trie sort_of X e0)
+        by (intros aa Hin; exfalso;
+            unfold Semantics.atom_in_db in Hin;
+            unfold e0 in Hin; cbn [Defs.db empty_egraph] in Hin;
+            rewrite map.get_empty in Hin; exact Hin).
+      (* --- add_ctx_egraph_ok: structural envelope --- *)
+      pose proof (@Theorems.add_ctx_egraph_ok V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as HE.
+      unfold vc in HE. specialize (HE e0).
+      fold sub e_ctx in HE.
+      specialize (HE Huf0 Hdb0 Hok0).
+      destruct HE as (Huf1 & Hdb1 & Hroots1 & Hmapfst & Hok1).
+      (* --- add_ctx_readback: model-free per-var readback --- *)
+      pose proof (@Theorems.add_ctx_readback V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as HR.
+      unfold vc in HR. specialize (HR e0).
+      fold sub e_ctx in HR.
+      specialize (HR Huf0 Hdb0).
+      destruct HR as (_ & _ & _ & _ & Hrb).
+      (* --- source e_open facts from add_open_term_all_roots --- *)
+      assert (Hmapfst' : map fst c = map fst sub) by (symmetry; exact Hmapfst).
+      pose proof (@Theorems.add_open_term_all_roots V V_Eqb V_Eqb_ok V_default V_map V_map_ok
+                    V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
+                    c sub e1 t Hwfe1 Hwfc Hmapfst') as Hroots.
+      unfold vc in Hroots. specialize (Hroots e_ctx).
+      fold e_open in Hroots.
+      unfold Theorems.open_roots_post in Hroots.
+      specialize (Hroots Huf1 Hdb1 Hroots1).
+      fold e_open in Hroots.
+      destruct Hroots as (Henv & _).
+      unfold Theorems.roots_env in Henv.
+      destruct Henv as (Huf_open & Hdb_open & Hdb_incl & Hroots_mono).
+      (* --- egraph_ok e_open from add_open_worklist_frame --- *)
+      assert (Hbase_keys : all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_ctx))) sub)
+        by (eapply all_wkn; [| exact Hroots1];
+            intros p _ Hp; apply (Theorems.is_root_has_key V V_map V_trie X e_ctx (snd p)); exact Hp).
+      (* We need analyses_cover for e_ctx; get it from add_ctx_good_worklist_vc *)
+      pose proof (add_ctx_good_worklist_vc c Hwfc) as Hvc_full.
+      unfold vc in Hvc_full. specialize (Hvc_full e0).
+      assert (Hpke0 : parents_keys_in_equiv V V V_map V_map V_trie X e0)
+        by (intros y [s Hs]; unfold e0 in Hs; cbn [parents empty_egraph] in Hs;
+            rewrite map.get_empty in Hs; discriminate).
+      assert (Hac0 : SemanticsAnalysesCover.analyses_cover V V V_map V_map V_trie X e0)
+        by (intros z Hz; exfalso; unfold Sep.has_key in Hz; unfold e0 in Hz;
+            cbn [equiv empty_egraph UnionFind.parent UnionFind.empty] in Hz;
+            rewrite map.get_empty in Hz; exact Hz).
+      assert (Hwl0 : Defs.worklist e0 = []) by reflexivity.
+      specialize (Hvc_full Huf0
+                           (fun aa Hin => ltac:(exfalso; unfold Semantics.atom_in_db in Hin;
+                                                unfold e0 in Hin; cbn [Defs.db empty_egraph] in Hin;
+                                                rewrite map.get_empty in Hin; exact Hin))
+                           Hok0 Hpke0 Hac0 Hwl0).
+      destruct Hvc_full as (_ & _ & _ & _ & _ & _ & Hac1 & _).
+      fold sub e_ctx in Hac1.
+      pose proof (@Theorems.add_open_worklist_frame V V_Eqb V_Eqb_ok V_default V_map V_map_ok
+                    V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf
+                    l (add_open_sort succ sort_of l false false) Hwf (incl_refl l)
+                    c Hwfc) as Hwlf.
+      pose proof (proj1 Hwlf e1 t Hwfe1 sub Hmapfst') as Hwlf_term.
+      unfold vc in Hwlf_term. specialize (Hwlf_term e_ctx).
+      unfold Theorems.open_wlframe_post in Hwlf_term.
+      specialize (Hwlf_term Hok1 Hac1 Hbase_keys).
+      fold e_open in Hwlf_term.
+      destruct Hwlf_term as (_ & Hok_open & _ & _ & _).
+      unfold add_open_term in e_open.
+      fold e_open in Hok_open.
+      (* --- equiv_extends e_ctx e_open from add_open_node_atoms --- *)
+      pose proof (@Theorems.add_open_node_atoms V V_Eqb V_Eqb_ok V_default V_map V_map_ok
+                    V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
+                    l (add_open_sort succ sort_of l false false) Hwf (incl_refl l)
+                    c Hwfc) as Hnodes.
+      pose proof (proj1 Hnodes e1 t Hwfe1 sub Hmapfst') as Hnode_term.
+      unfold vc in Hnode_term. specialize (Hnode_term e_ctx).
+      unfold Theorems.open_atomtree_post in Hnode_term.
+      specialize (Hnode_term Huf1 Hdb1 Hroots1).
+      cbn [fst snd] in Hnode_term.
+      fold e_open in Hnode_term.
+      destruct Hnode_term as (_ & _ & _ & Hext).
+      (* --- lift ctx_readback from e_ctx to e_open via ctx_readback_mono --- *)
+      pose proof (@Theorems.ctx_readback_mono V V_Eqb V_default V_map V_trie sort_of X
+                    e_ctx e_open sub c Hdb_incl Hroots_mono Hext Hrb) as Hrb_open.
+      (* --- Hroots_open: sub roots in e_open --- *)
+      assert (Hroots_open : all (fun p => is_root V V_map V_trie X e_open (snd p)) sub)
+        by (eapply all_wkn; [| exact Hroots1];
+            intros p _ Hp; exact (Hroots_mono (snd p) Hp)).
+      (* --- good_worklist e_open from good_worklist_eq_assum --- *)
+      pose proof (good_worklist_eq_assum c e1 t Hwfc Hwfe1) as Hgwl_open.
+      unfold add_open_term in Hgwl_open.
+      fold e0 sub e_ctx e_open in Hgwl_open.
+      (* --- rebuild_survives_canonical for e_open --- *)
+      pose proof (@rebuild_survives_canonical V V_Eqb V_Eqb_ok V_default V_map V_map_ok
+                    V_trie V_trie_ok succ sort_of lt X HX l Hwf Hsof
+                    e_open rf Hok_open Hgwl_open Hsucc) as Hsurv.
+      (* --- ctx_readback_to_eF for e_open --- *)
+      pose proof (@CtxReadback.ctx_readback_to_eF V V_Eqb V_default V_map V_trie sort_of X l Hsof
+                    e_open eF Hdb_open Hsurv c sub Hwfc Hroots_open Hrb_open) as Hrbef.
+      (* --- ctx_readback_wf_subst: finish --- *)
+      exact (@CtxReadback.ctx_readback_wf_subst V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of X l Hwf Hsof
+               eF a Hsound c sub Hwfc (eq_sym Hmapfst) Hrbef).
+    Qed.
+
   End AddCtxInvert.
 End WithVar.
