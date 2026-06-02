@@ -6692,10 +6692,11 @@ Section WithMap.
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
     (symbol_map_plus_ok : @map_plus_ok _ _ symbol_map_plus)
     (spaced_list_intersect : forall B, WithDefault B -> (B -> B -> B) ->
-          ne_list (idx_trie B * list bool) -> idx_trie B) :
+          ne_list (idx_trie B * list bool) -> idx_trie B)
+    (A : Type) (HA : analysis idx symbol A) :
     forall (m : model symbol) (Hm : Semantics.model_ok symbol m)
            (rf : nat) (rules : list sequent) (er : erule idx symbol)
-           (e : instance),
+           (e : Defs.instance idx symbol symbol_map idx_map idx_trie A),
       (forall rule, In rule rules ->
          model_satisfies_rule m (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)) ->
       In er (compiled_rules idx symbol symbol_map idx_map (QueryOpt.build_rule_set idx_succ idx_zero rf rules)) ->
@@ -6704,7 +6705,7 @@ Section WithMap.
                      (ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
                                 (query_vars idx symbol er)
                                 (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                                        idx_map idx_map_plus idx_trie unit
+                                        idx_map idx_map_plus idx_trie A
                                         (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
                                 frontier_n)
                              (query_clause_ptrs idx symbol er))) ->
@@ -6714,7 +6715,7 @@ Section WithMap.
                      (ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
                                 (query_vars idx symbol er)
                                 (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                                        idx_map idx_map_plus idx_trie unit
+                                        idx_map idx_map_plus idx_trie A
                                         (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
                                 frontier_n)
                              (query_clause_ptrs idx symbol er))) ->
@@ -6724,7 +6725,7 @@ Section WithMap.
          map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
                          (query_vars idx symbol er)
                          (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                                 idx_map idx_map_plus idx_trie unit
+                                 idx_map idx_map_plus idx_trie A
                                  (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
                          frontier_n
                          (Build_erule_query_ptr idx symbol fsym nptr cvars)))
@@ -6732,7 +6733,7 @@ Section WithMap.
                     (variable_flags idx Eqb_idx (query_vars idx symbol er) cvars))))
          = Some tt) ->
       SemanticsSaturate.run1iter_rule_hyps idx Eqb_idx idx_zero symbol symbol_map symbol_map_plus
-        idx_map idx_map_plus idx_trie unit spaced_list_intersect m
+        idx_map idx_map_plus idx_trie A spaced_list_intersect m
         (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e er.
   Proof.
     intros m Hm rf rules er e Hmsr Hin H9 H10.
