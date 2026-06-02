@@ -1726,5 +1726,60 @@ Section WithVar.
                Hsucc Hsnd_atoms Hconf).
     Qed.
 
+    (* ===== central obligation (bridge piece): the OPTIMIZED sequent of a
+       term rule is satisfied by lang_model, composing the term adapter with
+       optimize_sequent_forward_atoms.  This is the per-rule msr fact the
+       downstream [compiled_rules_run1iter_rule_hyps] consumes. ===== *)
+    Lemma central_obligation_term name c args t
+        (Hin : In (name, term_rule c args t) l)
+        (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                         (empty_egraph V_default X)))) = Success tt)
+      : model_satisfies_rule V V V_map (lang_model l)
+          (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
+             (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
+                X HX rf name (term_rule c args t)) rf).
+    Proof.
+      apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default
+               V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+               (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
+                  X HX rf name (term_rule c args t)) rf (lang_model l)
+               (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
+               lt_asymmetric lt_succ lt_trans
+               (db_to_atoms (db (snd (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                                         (empty_egraph V_default X)))))))).
+      - cbn;
+        destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub e1];
+        cbn [snd];
+        destruct (rebuild rf e1) as [r2 e2]; reflexivity.
+      - apply (@db_to_atoms_NoDup_fn_args V V_Eqb V_Eqb_ok V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok).
+      - exact (model_satisfies_rule_adapter_term name c args t Hin Hsucc).
+    Qed.
+
+    (* ===== central obligation: sort rule (mirror of the term version) ===== *)
+    Lemma central_obligation_sort name c args
+        (Hin : In (name, sort_rule c args) l)
+        (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                         (empty_egraph V_default X)))) = Success tt)
+      : model_satisfies_rule V V V_map (lang_model l)
+          (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
+             (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
+                X HX rf name (sort_rule c args)) rf).
+    Proof.
+      apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default
+               V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+               (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
+                  X HX rf name (sort_rule c args)) rf (lang_model l)
+               (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
+               lt_asymmetric lt_succ lt_trans
+               (db_to_atoms (db (snd (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                                         (empty_egraph V_default X)))))))).
+      - cbn;
+        destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub e1];
+        cbn [snd];
+        destruct (rebuild rf e1) as [r2 e2]; reflexivity.
+      - apply (@db_to_atoms_NoDup_fn_args V V_Eqb V_Eqb_ok V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok).
+      - exact (model_satisfies_rule_adapter_sort name c args Hin Hsucc).
+    Qed.
+
   End Adapter.
 End WithVar.
