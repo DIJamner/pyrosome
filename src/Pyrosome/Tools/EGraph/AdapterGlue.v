@@ -3417,5 +3417,25 @@ Section WithVar.
       - exact (central_obligation_term_eq n c e1 e2 t Hin_l (status_Hsucc_term_eq n c e1 e2 t _ Hfr)).
     Qed.
 
+    Lemma msr_of_build_rule_set (posX : lang) (rsX : rule_set V V V_map V_map)
+        (Hincl : incl posX l)
+        (Hbrs : rule_set_from_lang V_map_plus V_trie succ sort_of rf posX l = Result.Success rsX)
+      : exists seqs,
+          rsX = QueryOpt.build_rule_set succ V_default rf seqs
+          /\ (forall rule, In rule seqs ->
+                model_satisfies_rule V V V_map (lang_model l)
+                  (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie rule rf)).
+    Proof.
+      intros.
+      unfold rule_set_from_lang in Hbrs.
+      destruct (list_Mmap (fun '(n,r) => rule_to_log_rule V_map V_trie succ sort_of l rf n r) posX)
+        as [seqs|e] eqn:Hlm; cbn [Mbind] in Hbrs; [| discriminate Hbrs ].
+      simpl in Hbrs.
+      injection Hbrs as Hbrs.
+      exists seqs. split.
+      - symmetry; exact Hbrs.
+      - exact (central_msr_seqs posX seqs Hincl Hlm).
+    Qed.
+
   End Adapter.
 End WithVar.
