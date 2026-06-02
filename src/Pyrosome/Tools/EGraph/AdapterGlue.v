@@ -2023,5 +2023,36 @@ Section WithVar.
         + exact (ex_intro _ i1 (conj Hsnd_assum Hext_1_2a)).
     Qed.
 
+    (* ===== Lemma: conclusion_i2_sound_assum_eq ===== *)
+    Lemma conclusion_i2_sound_assum_eq name c e1 e2 t (sg : subst)
+        (Hin : In (name, term_eq_rule c e1 e2 t) l)
+        (Hsg : wf_subst l [] sg c)
+      : let sub     := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+        let e_ctx   := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+        let x1      := fst (add_open_term succ sort_of l false false sub e1 e_ctx) in
+        let e_open1 := snd (add_open_term succ sort_of l false false sub e1 e_ctx) in
+        let e_assum := snd (rebuild rf e_open1) in
+        let x2      := fst (add_open_term succ sort_of l true false sub e2 e_assum) in
+        let e_open2 := snd (add_open_term succ sort_of l true false sub e2 e_assum) in
+        let e_union := snd (@Defs.union V V_Eqb V V_map V_map V_trie unit HX x1 x2 e_open2) in
+        let e_concl := snd (force_equiv V V_Eqb V V_map V_map V_trie (X:=unit) (snd (rebuild rf e_union))) in
+        exists i2,
+          egraph_sound_for_interpretation (lang_model l) i2 e_concl
+          /\ args_in_instance l (map snd sg) i2 (map snd sub)
+          /\ (forall al, atom_in_egraph al e_assum ->
+                atom_sound_for_model V V V_map (lang_model l) i2 al).
+    Proof.
+      cbn zeta.
+      pose proof (conclusion_egraph_sound_eq name c e1 e2 t sg Hin Hsg) as H.
+      cbn zeta in H.
+      destruct H as (i2 & Hsnd_concl & Hai2 & i1 & Hsnd_i1 & Hext12).
+      exists i2.
+      split; [exact Hsnd_concl|].
+      split; [exact Hai2|].
+      intros al Hin_al.
+      exact (QueryOptSound.atom_sound_extend V lt succ V_default V V_map (lang_model l)
+               i1 i2 al Hext12 (egraph_atoms_sound i1 _ Hsnd_i1 al Hin_al)).
+    Qed.
+
   End Adapter.
 End WithVar.
