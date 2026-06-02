@@ -4453,6 +4453,91 @@ Section WithMap.
     split; [exact Hwl1 | exact (conj Hfwd1 Hvars1)].
   Qed.
 
+  (* Helper: map f (flat_map g l) = flat_map (fun x => map f (g x)) l *)
+  Lemma map_flat_map_dist {A B C} (f : B -> C) (g : A -> list B) (l : list A) :
+    map f (flat_map g l) = flat_map (fun x => map f (g x)) l.
+  Proof.
+    induction l as [|a rest IH]; cbn.
+    - reflexivity.
+    - rewrite map_app. rewrite IH. reflexivity.
+  Qed.
+
+  (* Helper: NoDup of flat_map g l when elements of different g-images are
+     disjoint by a tag function. *)
+  Lemma NoDup_flat_map_by_tag {A B K} (tag : A -> K) (key : B -> K) (g : A -> list B) (l : list A) :
+    NoDup (map tag l) ->
+    (forall x, In x l -> NoDup (g x)) ->
+    (forall x b, In x l -> In b (g x) -> key b = tag x) ->
+    NoDup (flat_map g l).
+  Proof.
+    induction l as [|a rest IH]; intros Htag Hinner Hkey; cbn.
+    - constructor.
+    - inversion Htag as [|? ? Hnotin Hrest]; subst.
+      rewrite NoDup_app_iff. repeat split.
+      + apply Hinner. left. reflexivity.
+      + apply IH.
+        * exact Hrest.
+        * intros x Hx. apply Hinner. right. exact Hx.
+        * intros x b Hx Hbx. exact (Hkey x b (or_intror Hx) Hbx).
+      + intros b Hb1 Hb2.
+        apply in_flat_map in Hb2.
+        destruct Hb2 as (x & Hx & Hbx).
+        apply Hnotin.
+        pose proof (Hkey a b (or_introl eq_refl) Hb1) as Hka.
+        pose proof (Hkey x b (or_intror Hx) Hbx) as Hkx.
+        rewrite <- Hka. rewrite Hkx.
+        apply in_map. exact Hx.
+      + intros b Hb1 Hb2.
+        apply in_flat_map in Hb1.
+        destruct Hb1 as (x & Hx & Hbx).
+        apply Hnotin.
+        pose proof (Hkey a b (or_introl eq_refl) Hb2) as Hka.
+        pose proof (Hkey x b (or_intror Hx) Hbx) as Hkx.
+        rewrite <- Hka. rewrite Hkx.
+        apply in_map. exact Hx.
+  Qed.
+
+  (* The (atom_fn, atom_args) pairs of db_to_atoms are unique because they
+     correspond to the nested map keys of the db, which are unique. *)
+  Lemma db_to_atoms_NoDup_fn_args (d : db_map idx symbol symbol_map idx_trie unit) :
+    NoDup (map (fun a => (atom_fn a, atom_args a)) (db_to_atoms d)).
+  Proof.
+    unfold db_to_atoms, Semantics.db_to_atoms.
+    rewrite map_flat_map_dist.
+    apply NoDup_flat_map_by_tag with (tag := fst) (key := fst).
+    - apply FinFun.Injective_map_NoDup_in.
+      + intros (s1, t1) (s2, t2) H1 H2 Heq. cbn in Heq. subst s2.
+        apply Properties.map.tuples_spec in H1.
+        apply Properties.map.tuples_spec in H2.
+        congruence.
+      + apply Properties.map.tuples_NoDup.
+    - intros (f, tbl) Hft.
+      unfold table_atoms, Semantics.table_atoms. cbn.
+      apply FinFun.Injective_map_NoDup_in.
+      + intros a1 a2 Ha1 Ha2 Heq.
+        apply in_map_iff in Ha1. destruct Ha1 as ((k1, e1) & Hrta1 & Hk1).
+        apply in_map_iff in Ha2. destruct Ha2 as ((k2, e2) & Hrta2 & Hk2).
+        unfold row_to_atom, Semantics.row_to_atom in Hrta1, Hrta2.
+        subst a1 a2. cbn in Heq. injection Heq. intros Hargs. subst k2.
+        apply Properties.map.tuples_spec in Hk1.
+        apply Properties.map.tuples_spec in Hk2.
+        congruence.
+      + apply FinFun.Injective_map_NoDup_in.
+        * intros (k1, e1) (k2, e2) Hk1 Hk2 Heq. injection Heq. intros _ Hk. subst k1.
+          apply Properties.map.tuples_spec in Hk1.
+          apply Properties.map.tuples_spec in Hk2.
+          congruence.
+        * apply Properties.map.tuples_NoDup.
+    - intros (f, tbl) (fn_sym, args_k) Hft Hfnk.
+      unfold table_atoms, Semantics.table_atoms in Hfnk. cbn in Hfnk.
+      rewrite in_map_iff in Hfnk.
+      destruct Hfnk as (a & Heq & Ha).
+      apply in_map_iff in Ha.
+      destruct Ha as ((k, e) & Hrta & Hke).
+      unfold row_to_atom, Semantics.row_to_atom in Hrta.
+      subst a. cbn in Heq. injection Heq. intros _ Hfn. subst fn_sym. cbn. reflexivity.
+  Qed.
+
   Lemma in_db_to_atoms_iff_atom_in_db (a : atom) (d : db_map idx symbol symbol_map idx_trie unit) :
     In a (db_to_atoms d) <-> atom_in_db a d.
   Proof.
