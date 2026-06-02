@@ -19,23 +19,25 @@ Import Monad.StateMonad.
   precondition (which excludes the orphan-eqs edge case where the
   optimiser would be unsound).
 
-  Status (multi-session work in progress):
+  Status:
 
-  - Main theorem [optimize_sequent_equiv] is Qed-proved by composing
-    [optimize_sequent_forward] and [optimize_sequent_reverse].
-  - Both direction lemmas have full proofs of the empty-empty branch
-    of [destruct seq_assumptions; destruct seq_conclusions], and
-    `admit` for the three non-empty branches.
-  - The remaining work is L11 [clauses_to_instance_sound], which
-    builds the renaming<->assignment bridge between source variables
-    (used by [model_satisfies_rule m s]) and canonical e-graph ids
-    (used by [model_satisfies_rule m (optimize_sequent s)]).  Once
-    L11 lands, the three non-empty branches reduce to standard
-    state-monad reasoning over [rebuild_sound], [union_sound],
-    [alloc_sound], [update_entry_sound], [force_equiv_sound].
+  - ON THE egraph_sound PATH: [optimize_sequent_forward_atoms]
+    (atom-only, hash-consed assumptions as produced by
+    [rule_to_log_rule]).  This lemma is FULLY PROVED, 0 axioms
+    ("Closed under the global context"), and is the form consumed by
+    Phase 6 / schedule_sound.  It is what downstream soundness needs.
 
-  See /root/.claude/plans/queryopt-v-is-a-file-hidden-nest.md for the
-  full strategy and L11's intended signature.
+  - OFF the egraph_sound PATH (general bidirectional equivalence, a
+    SEPARATE and still-incomplete deliverable -- NOT the goal):
+    [optimize_sequent_equiv], composed from [optimize_sequent_forward]
+    and [optimize_sequent_reverse].  Each direction proves only the
+    empty-empty branch and `admit`s the three non-empty branches.
+    Verified via [Print Assumptions egraph_sound]: these three lemmas
+    do NOT appear among egraph_sound's assumptions.  Do not mistake
+    them for remaining work on egraph_sound (see the quarantine banner
+    above [optimize_sequent_forward] below).  The general theorem would
+    need L11 [clauses_to_instance_sound], the renaming<->assignment
+    bridge between source variables and canonical e-graph ids.
 *)
 
 Section WithMap.
@@ -7703,6 +7705,24 @@ Section WithMap.
                  symbol_map symbol_map_ok idx_map idx_trie idx_trie_ok unit AA e_c2 a0 Ha0))) ] ].
   Qed.
 
+  (* ================================================================ *)
+  (* OFF THE egraph_sound PATH -- DO NOT mistake these admits for      *)
+  (* remaining work on egraph_sound.                                   *)
+  (*                                                                   *)
+  (* The three lemmas below ([optimize_sequent_forward],               *)
+  (* [optimize_sequent_reverse], [optimize_sequent_equiv]) are the     *)
+  (* GENERAL bidirectional equivalence -- a separate, still-incomplete *)
+  (* deliverable.  egraph_sound consumes the PROVEN, 0-axiom sibling   *)
+  (* [optimize_sequent_forward_atoms] (above), NOT these.              *)
+  (*                                                                   *)
+  (* Verified 2026-06-02 via [Print Assumptions egraph_sound]:         *)
+  (* egraph_sound rests on EXACTLY ONE axiom                           *)
+  (* ([egraph_reducing_equal'_to_pos], Admitted only because of its    *)
+  (* single internal [schedule_sound] admit).  None of the three       *)
+  (* lemmas below appear among its assumptions; they are consumed by   *)
+  (* nothing outside this file's own [optimize_sequent_equiv].         *)
+  (* The 6 admits here are therefore safe to ignore for egraph_sound.  *)
+  (* ================================================================ *)
   Lemma optimize_sequent_forward (s : sequent) (m : model symbol) :
     good_sequent s ->
     model_satisfies_rule m s ->
