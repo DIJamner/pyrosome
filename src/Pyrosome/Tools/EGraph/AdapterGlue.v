@@ -1887,5 +1887,141 @@ Section WithVar.
       - exact Hroot.
     Qed.
 
+    (* ===== conclusion forward chain: given wf_subst for a term_eq_rule,
+       produce a sound interpretation for the conclusion egraph
+       (after add_open_term e2 + union x1 x2 + rebuild + force_equiv). ===== *)
+    Lemma conclusion_egraph_sound_eq name c e1 e2 t (sg : subst)
+        (Hin : In (name, term_eq_rule c e1 e2 t) l)
+        (Hsg : wf_subst l [] sg c)
+      : let sub     := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+        let e_ctx   := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+        let x1      := fst (add_open_term succ sort_of l false false sub e1 e_ctx) in
+        let e_open1 := snd (add_open_term succ sort_of l false false sub e1 e_ctx) in
+        let e_assum := snd (rebuild rf e_open1) in
+        let x2      := fst (add_open_term succ sort_of l true false sub e2 e_assum) in
+        let e_open2 := snd (add_open_term succ sort_of l true false sub e2 e_assum) in
+        let e_union := snd (@Defs.union V V_Eqb V V_map V_map V_trie unit HX x1 x2 e_open2) in
+        let e_concl := snd (force_equiv V V_Eqb V V_map V_map V_trie (X:=unit) (snd (rebuild rf e_union))) in
+        exists i2,
+          egraph_sound_for_interpretation (lang_model l) i2 e_concl
+          /\ args_in_instance l (map snd sg) i2 (map snd sub)
+          /\ (exists i1, egraph_sound_for_interpretation (lang_model l) i1 e_assum /\ map.extends i2 i1).
+    Proof.
+      cbn zeta.
+      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (x1     := fst (add_open_term succ sort_of l false false sub e1 e_ctx)).
+      set (e_open1 := snd (add_open_term succ sort_of l false false sub e1 e_ctx)).
+      set (e_assum := snd (rebuild rf e_open1)).
+      set (x2     := fst (add_open_term succ sort_of l true false sub e2 e_assum)).
+      set (e_open2 := snd (add_open_term succ sort_of l true false sub e2 e_assum)).
+      set (e_union := snd (@Defs.union V V_Eqb V V_map V_map V_trie unit HX x1 x2 e_open2)).
+      (* Step 1: wf facts from rule membership *)
+      pose proof (rule_in_wf _ _ Hwf Hin) as Hr.
+      rewrite app_nil_r in Hr. rewrite invert_wf_term_eq_rule in Hr.
+      destruct Hr as (Hwfc & Hwfe1 & Hwfe2 & _).
+      (* Step 2: use assumption_egraph_sound_eq for the base *)
+      pose proof (assumption_egraph_sound_eq c e1 t sg Hwfc Hwfe1 Hsg)
+        as (Hok_assum & i1 & Hsnd_assum & Hfst_sub & Hai1 & Hroot1).
+      fold e_ctx sub x1 e_open1 e_assum in Hok_assum, Hsnd_assum, Hfst_sub, Hai1, Hroot1.
+      (* with_names_from c (map snd sg) = sg *)
+      assert (Heq_wn : with_names_from c (map snd sg) = sg).
+      { pose proof (wf_subst_dom_eq Hsg) as Hdom. revert Hdom. clear -sg c. revert sg.
+        induction c as [|[n0 t0] c_rest IH]; destruct sg as [|[n1 e0] sg_rest];
+          cbn; intros Hdom; auto; try discriminate.
+        inversion Hdom; subst. f_equal. apply IH. exact H1. }
+      (* Step 3: add_open_term_sound on e2 starting from e_assum, i1 *)
+      pose proof (@Theorems.add_open_term_sound
+                    V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+                    succ sort_of lt lt_asymmetric lt_succ lt_trans
+                    X HX l Hwf Hsof true
+                    c sub (map snd sg) e2 t
+                    (@Theorems.wf_args_from_wf_subst V V_Eqb l [] sg c Hsg)
+                    Hwfe2 Hwfc (eq_sym Hfst_sub) i1)
+        as Hvc_open2.
+      unfold vc in Hvc_open2. specialize (Hvc_open2 e_assum).
+      unfold Theorems.open_term_post in Hvc_open2.
+      specialize (Hvc_open2 Hok_assum Hsnd_assum Hai1).
+      destruct Hvc_open2 as [i2a (Hext_open2 & Hroot2)].
+      fold e_open2 x2 in Hext_open2, Hroot2.
+      destruct Hext_open2 as (Hok_open2 & Hext_1_2a & Hsnd_open2 & Hkey_mono_1_2a).
+      rewrite Heq_wn in Hroot2.
+      (* Step 4: has_key x2 in e_open2 *)
+      assert (Hkey_x2 : Sep.has_key x2 (parent (equiv e_open2))).
+      { apply (Semantics.interpretation_exact V V V_map V_map V_trie unit
+                 (lang_model l) i2a e_open2 Hsnd_open2 x2).
+        unfold Is_Some, option_relation in *.
+        destruct (map.get i2a x2); [exact I | discriminate Hroot2]. }
+      (* Step 5: has_key x1 in e_open2 via e_assum + key monotonicity *)
+      assert (Hkey_x1 : Sep.has_key x1 (parent (equiv e_open2))).
+      { apply Hkey_mono_1_2a.
+        apply (Semantics.interpretation_exact V V V_map V_map V_trie unit
+                 (lang_model l) i1 e_assum Hsnd_assum x1).
+        unfold Is_Some, option_relation in *.
+        destruct (map.get i1 x1); [exact I | discriminate Hroot1]. }
+      (* Step 6: eq_sound_for_model i2a x1 x2 via term_eq_concl *)
+      assert (Heq_xy : Semantics.eq_sound_for_model V V V_map (lang_model l) i2a x1 x2).
+      { unfold Semantics.eq_sound_for_model, Is_Some_satisfying, option_relation in *.
+        destruct (map.get i1 x1) as [v1|] eqn:Hg1; [|discriminate Hroot1].
+        pose proof (Properties.map.extends_get Hg1 Hext_1_2a) as Hg1'.
+        rewrite Hg1'.
+        destruct (map.get i2a x2) as [v2|] eqn:Hg2; [|discriminate Hroot2].
+        cbn [Is_Some_satisfying].
+        pose proof (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf) as Hlm_ok.
+        pose proof (@ConclSemantic.term_eq_concl V V_Eqb l Hwf name c e1 e2 t Hin sg Hsg)
+          as Heq_e1e2.
+        exact (let Hle12 := @Theorems.lm_eq_terms V V_Eqb l e1[/sg/] e2[/sg/] t[/sg/] Heq_e1e2 in
+               @PER_Transitive _ _ (domain_eq_PER V (model_ok:=Hlm_ok)) _ _ _
+                (@PER_Transitive _ _ (domain_eq_PER V (model_ok:=Hlm_ok)) _ _ _ Hroot1 Hle12)
+                (@PER_Symmetric _ _ (domain_eq_PER V (model_ok:=Hlm_ok)) _ _ Hroot2)). }
+      (* Step 7: union step — preserves soundness and ok *)
+      pose proof (@QueryOptSound.union_preserves_egraph_sound_for_interpretation
+                    V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie
+                    (lang_model l)
+                    (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
+                    x1 x2 i2a)
+        as Hvc_union.
+      unfold vc in Hvc_union.
+      specialize (Hvc_union e_open2 Hok_open2 Hsnd_open2 Hkey_x1 Hkey_x2 Heq_xy).
+      fold e_union in Hvc_union.
+      pose proof (@QueryOptSound.union_preserves_egraph_ok
+                    V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie
+                    x1 x2)
+        as Hvc_union_ok.
+      unfold vc in Hvc_union_ok.
+      specialize (Hvc_union_ok e_open2 Hok_open2 Hkey_x1 Hkey_x2).
+      fold e_union in Hvc_union_ok.
+      (* Step 8: rebuild_sound on e_union *)
+      pose proof (@Semantics.rebuild_sound
+                    V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+                    V_map V_map_ok V_map V_map_ok
+                    V_trie V_trie_ok unit HX
+                    (lang_model l)
+                    (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
+                    (fun _ => True) rf)
+        as Hvc_rb.
+      unfold vc in Hvc_rb. specialize (Hvc_rb e_union). cbn [snd] in Hvc_rb.
+      specialize (Hvc_rb Hvc_union_ok).
+      destruct Hvc_rb as [Hok_rb Hde_rb].
+      pose proof (proj1 (Hde_rb i2a) Hvc_union) as Hsnd_rb.
+      set (e_rb := snd (rebuild rf e_union)).
+      (* Step 9: force_equiv_preserves_sound *)
+      pose proof (@QueryOptSound.force_equiv_preserves_sound
+                    V V_Eqb V_Eqb_ok lt V V_map V_map V_map_ok V_trie
+                    (lang_model l) i2a e_rb
+                    (Semantics.egraph_equiv_ok V lt V V_map V_map V_trie unit e_rb Hok_rb)
+                    Hsnd_rb)
+        as Hsnd_concl.
+      (* Step 10: assemble *)
+      exists i2a.
+      split.
+      - exact Hsnd_concl.
+      - split.
+        + exact (@Theorems.args_in_instance_monotone
+                    V V_Eqb V_map sort_of l (map snd sg) i1 i2a
+                    (map snd sub) Hext_1_2a Hai1).
+        + exact (ex_intro _ i1 (conj Hsnd_assum Hext_1_2a)).
+    Qed.
+
   End Adapter.
 End WithVar.
