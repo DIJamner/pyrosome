@@ -208,6 +208,57 @@ Section WithVar.
             apply Hsof; eapply pair_fst_in; exact Hin end.
     Qed.
 
+    (* Projection of [ctx_readback_eF]: given a companion pair [(nm,x')] in
+       [sub], recover the ctx var [nm]'s sort [t], an [atom_tree_sort] for it
+       over the FULL [sub] (the per-var tree is built over the suffix below
+       [nm]; we weaken it up to the full sub via [atom_tree_sort_sub_cons_fresh],
+       valid because each prepended later-bound name is fresh for [t]), and the
+       canonical [sort_of([x']) -> xs] atom.  Consumed by [assum_ids_covered]'s
+       sort_of branch (cover the companion's sort root [xs = x']'s sort_of-ret). *)
+    Lemma ctx_readback_eF_lookup (eF : instance X)
+      : forall c sub, wf_ctx l c ->
+          map fst c = map fst sub ->
+          ctx_readback_eF eF sub c ->
+          forall nm x', In (nm, x') sub ->
+            exists t xs, In (nm, t) c
+                  /\ atom_tree_sort X eF sub t xs
+                  /\ ain (Build_atom sort_of [x'] xs) eF.
+    Proof.
+      pose proof (wf_lang_implies_ws_noext Hwf) as Hwsl.
+      induction c as [|[x tx] c' IH]; intros sub Hwfc Hdom Hrb nm x' Hin.
+      - destruct sub as [|[? ?] ?]; cbn in Hdom; [|discriminate].
+        cbn in Hin. contradiction.
+      - destruct sub as [|[x0 x'x] sub']; cbn [map fst] in Hdom; [discriminate|].
+        injection Hdom as Hx Hdom'. subst x0.
+        apply invert_wf_ctx_cons in Hwfc.
+        destruct Hwfc as [Hfresh [Hwfc' Hwst] ].
+        cbn [ctx_readback_eF] in Hrb.
+        destruct Hrb as [ [xs [Htree Hatom_sof] ] Hrb' ].
+        cbn [In] in Hin. destruct Hin as [Heq | Hin'].
+        + injection Heq as Hnm Hx'eq. subst nm x'.
+          destruct tx as [ntx stx].
+          exists (scon ntx stx), xs.
+          split; [left; reflexivity|].
+          split; [| exact Hatom_sof].
+          refine (@Theorems.atom_tree_sort_sub_cons_fresh V V_Eqb V_Eqb_ok V_default
+                    V_map V_trie X eF sub' x x'x ntx stx xs _ Htree).
+          eapply (@Theorems.ws_sort_fresh_not_fv V V_Eqb x (map fst c') ntx stx);
+            [ exact Hfresh |].
+          eapply wf_sort_implies_ws; eassumption.
+        + specialize (IH sub' Hwfc' Hdom' Hrb' nm x' Hin').
+          destruct IH as (t & xs0 & Hin_c' & Htree' & Hatom').
+          destruct t as [nt st].
+          exists (scon nt st), xs0.
+          split; [right; exact Hin_c'|].
+          split; [| exact Hatom'].
+          refine (@Theorems.atom_tree_sort_sub_cons_fresh V V_Eqb V_Eqb_ok V_default
+                    V_map V_trie X eF sub' x x'x nt st xs0 _ Htree').
+          eapply (@Theorems.ws_sort_fresh_not_fv V V_Eqb x (map fst c') nt st);
+            [ exact Hfresh |].
+          assert (Hwf_t : wf_sort l c' (scon nt st)) by (eapply in_ctx_wf; eauto).
+          eapply wf_sort_implies_ws; eassumption.
+    Qed.
+
     (* ============================================================== *)
     (* P5 bridge: ctx_readback (pre-rebuild, model-free) -> ctx_readback_eF
        (post-rebuild eF).  The canonicalizing survival is taken as the
