@@ -332,6 +332,71 @@ Section WithVar.
       rewrite <- Hab. exact Hnode_eF_a.
     Qed.
 
+    (* POST-rebuild sort_of frame: every sort_of atom of eF has its single
+       argument equal to a ctx-var companion (a [sub] entry).  Transport of
+       [assum_sortof_frame_pre] to eF via [rebuild_canon]'s reverse image
+       (the companion arg is a root, so its canonical image is itself). *)
+    Lemma assum_sortof_frame_eF (rf : nat) c
+      (Hwfc : wf_ctx l c)
+      (Hgwl : exists ed_list, good_worklist V V V_map V_map V_trie X
+                (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                ed_list)
+      (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                (empty_egraph V_default X))))
+               = Result.Success tt)
+      : forall b,
+          ain b (snd (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                         (empty_egraph V_default X))))) ->
+          b.(atom_fn) = sort_of ->
+          exists nm x', b.(atom_args) = [x'] /\
+            In (nm, x') (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+    Proof.
+      intros b Hb Hbfn.
+      change (empty_egraph V_default X)
+        with (@empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (e0 := @empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (sub := fst (add_ctx succ sort_of l false false c e0)) in *.
+      set (e1 := snd (add_ctx succ sort_of l false false c e0)) in *.
+      set (eF := snd (rebuild rf e1)) in *.
+      assert (Hok0 : egraph_ok e0)
+        by exact (proj1 (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok
+                           V_map V_map_ok V_trie X lang_model)).
+      assert (Huf0 : exists roots, union_find_ok lt (Defs.equiv e0) roots)
+        by exact (ex_intro _ [] (@union_find_empty_ok V lt succ V_default V_map V_map_ok)).
+      assert (Hdb0 : db_ctx_inv X e0)
+        by (intros aa Hin; exfalso;
+            unfold Semantics.atom_in_db in Hin;
+            unfold e0 in Hin; cbn [Defs.db empty_egraph] in Hin;
+            rewrite map.get_empty in Hin; exact Hin).
+      pose proof (@Theorems.add_ctx_egraph_ok V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as HE.
+      unfold vc in HE. specialize (HE e0).
+      fold sub e1 in HE.
+      specialize (HE Huf0 Hdb0 Hok0).
+      destruct HE as (Huf1 & Hdb1 & Hroots1 & Hmapfst & Hok1).
+      pose proof (@Theorems.assum_sortof_frame_pre V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as Hsf_vc.
+      unfold vc in Hsf_vc. specialize (Hsf_vc e0).
+      fold sub e1 in Hsf_vc.
+      assert (He0_nosof : forall a, ain a e0 -> a.(atom_fn) <> sort_of)
+        by (intros a Ha; exfalso;
+            unfold ain, Semantics.atom_in_egraph, Semantics.atom_in_db in Ha;
+            unfold e0 in Ha; cbn [Defs.db empty_egraph] in Ha;
+            rewrite map.get_empty in Ha; exact Ha).
+      specialize (Hsf_vc Huf0 Hdb0 He0_nosof).
+      destruct rf as [|fuel].
+      { exfalso. cbn in Hsucc. discriminate Hsucc. }
+      destruct Hgwl as [ed_list Hgwl].
+      pose proof (@rebuild_canon V V_Eqb V_Eqb_ok lt succ V_default
+                    V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                    X _ lang_model (lang_model_ok l Hsof Hwf)
+                    fuel e1 ed_list Hok1 Hgwl) as (HdbT & Hmono & Hrev).
+      unfold ain, Semantics.atom_in_egraph in Hb. fold eF in Hb.
+      destruct (Hrev b Hb) as (a & Ha_e1_db & Hafn & Haargs).
+      assert (Ha_e1_in : ain a e1) by (unfold ain, Semantics.atom_in_egraph; exact Ha_e1_db).
+      assert (Hafn_sof : atom_fn a = sort_of) by (rewrite Hafn; exact Hbfn).
+      destruct (Hsf_vc a Ha_e1_in Hafn_sof) as (nm & x' & Hargs_a & Hin_sub).
+      exists nm, x'. split; [ rewrite <- Haargs; exact Hargs_a | exact Hin_sub ].
+    Qed.
+
     (* ============================================================ *)
     (* Assembly: from an adversary [a] sound on the rebuilt           *)
     (* assumption egraph's atoms, recover a wf substitution of [c].   *)
