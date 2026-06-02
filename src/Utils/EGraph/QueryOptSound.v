@@ -4741,6 +4741,352 @@ Section WithMap.
   Qed.
 
   (* ============================================================== *)
+  (* Bridge (iii): compile_rule_inl_erule_sound                      *)
+  (* ============================================================== *)
+
+  (* Helper: restrict an assignment to a list of keys *)
+  Definition restrict_assignment {A} (qv : list idx) (a : idx_map A) : idx_map A :=
+    map.fold (fun acc k v => if inb k qv then map.put acc k v else acc) map.empty a.
+
+  Lemma get_restrict_assignment {A} (qv : list idx) (a : idx_map A) (x : idx) :
+    map.get (restrict_assignment qv a) x = if inb x qv then map.get a x else None.
+  Proof.
+    unfold restrict_assignment.
+    eapply (@map.fold_spec idx A (idx_map A) (idx_map_ok A)
+      (idx_map A)
+      (fun m acc => map.get acc x = if inb x qv then map.get m x else None)
+      (fun acc k v => if inb k qv then map.put acc k v else acc)
+      map.empty).
+    - rewrite !map.get_empty. destruct (inb x qv); reflexivity.
+    - intros k v m acc Hnotk IH.
+      destruct (inb k qv) eqn:Hkq; destruct (eqb x k) eqn:Hxk.
+      + pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok x k) as Hbs.
+        rewrite Hxk in Hbs. subst k.
+        rewrite !map.get_put_same. rewrite Hkq. reflexivity.
+      + pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok x k) as Hbs.
+        rewrite Hxk in Hbs.
+        rewrite !map.get_put_diff by exact Hbs.
+        exact IH.
+      + pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok x k) as Hbs.
+        rewrite Hxk in Hbs. subst k.
+        rewrite map.get_put_same.
+        rewrite Hkq in IH. rewrite Hkq. exact IH.
+      + pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok x k) as Hbs.
+        rewrite Hxk in Hbs.
+        rewrite map.get_put_diff by exact Hbs.
+        exact IH.
+  Qed.
+
+  (* list_Mmap congruence under pointwise agreement *)
+  Lemma list_Mmap_get_agree' {D} (a1 a2 : idx_map D) (xs : list idx) :
+    (forall x, In x xs -> map.get a1 x = map.get a2 x) ->
+    list_Mmap (map.get a1) xs = list_Mmap (map.get a2) xs.
+  Proof.
+    intros Hagree.
+    induction xs as [|x xs IH]; cbn.
+    - reflexivity.
+    - rewrite (Hagree x (or_introl eq_refl)).
+      destruct (map.get a2 x) as [v|]; cbn.
+      + rewrite (IH (fun z Hz => Hagree z (or_intror Hz))). reflexivity.
+      + reflexivity.
+  Qed.
+
+  (* Soundness agree lemmas: recast soundness under pointwise agreement *)
+  Lemma atom_sound_for_model_agree (m : model symbol) (a1 a2 : idx_map m.(Semantics.domain symbol))
+      (at_ : atom) :
+    (forall x, In x (at_.(atom_ret) :: at_.(atom_args)) -> map.get a1 x = map.get a2 x) ->
+    Semantics.atom_sound_for_model idx symbol idx_map m a1 at_ ->
+    Semantics.atom_sound_for_model idx symbol idx_map m a2 at_.
+  Proof.
+    intros Hagree Hsnd.
+    unfold Semantics.atom_sound_for_model in *.
+    destruct (list_Mmap (map.get a1) at_.(atom_args)) as [args|] eqn:Hargs.
+    - destruct (map.get a1 at_.(atom_ret)) as [out|] eqn:Hret; cbn in Hsnd.
+      + rewrite (list_Mmap_get_agree' a1 a2 _ (fun z Hz => Hagree z (or_intror Hz))) in Hargs.
+        rewrite Hargs. cbn [Is_Some_satisfying].
+        rewrite <- (Hagree _ (or_introl eq_refl)). rewrite Hret.
+        cbn [Is_Some_satisfying]. exact Hsnd.
+      + contradiction.
+    - contradiction.
+  Qed.
+
+  Lemma eq_sound_for_model_agree (m : model symbol) (a1 a2 : idx_map m.(Semantics.domain symbol))
+      (x y : idx) :
+    map.get a1 x = map.get a2 x -> map.get a1 y = map.get a2 y ->
+    Semantics.eq_sound_for_model idx symbol idx_map m a1 x y ->
+    Semantics.eq_sound_for_model idx symbol idx_map m a2 x y.
+  Proof.
+    intros Hx Hy Hsnd.
+    unfold Semantics.eq_sound_for_model in *.
+    destruct (map.get a1 x) as [vx|] eqn:Hgx; cbn in Hsnd; [| contradiction].
+    destruct (map.get a1 y) as [vy|] eqn:Hgy; cbn in Hsnd; [| contradiction].
+    rewrite <- Hx. rewrite <- Hy. cbn [Is_Some_satisfying]. exact Hsnd.
+  Qed.
+
+  Lemma clause_sound_for_model_agree (m : model symbol) (a1 a2 : idx_map m.(Semantics.domain symbol))
+      (c : clause) :
+    (forall x, In x (Semantics.clause_vars idx symbol c) -> map.get a1 x = map.get a2 x) ->
+    Semantics.clause_sound_for_model idx symbol idx_map m a1 c ->
+    Semantics.clause_sound_for_model idx symbol idx_map m a2 c.
+  Proof.
+    intros Hagree Hsnd.
+    destruct c as [x y | at_]; cbn [Semantics.clause_sound_for_model Semantics.clause_vars] in *.
+    - eapply eq_sound_for_model_agree.
+      + apply Hagree. left. reflexivity.
+      + apply Hagree. right. left. reflexivity.
+      + exact Hsnd.
+    - eapply atom_sound_for_model_agree.
+      + intros z Hz. apply Hagree. exact Hz.
+      + exact Hsnd.
+  Qed.
+
+  Lemma all_clause_sound_for_model_agree (m : model symbol) (a1 a2 : idx_map m.(Semantics.domain symbol))
+      (cs : list clause) :
+    (forall x, In x (flat_map (Semantics.clause_vars idx symbol) cs) -> map.get a1 x = map.get a2 x) ->
+    all (Semantics.clause_sound_for_model idx symbol idx_map m a1) cs ->
+    all (Semantics.clause_sound_for_model idx symbol idx_map m a2) cs.
+  Proof.
+    intros Hagree.
+    induction cs as [| c cs IH]; cbn; intros H; [exact H|].
+    destruct H as [Hc Hcs].
+    split.
+    - eapply clause_sound_for_model_agree.
+      + intros x Hx. apply Hagree. apply in_or_app. left. exact Hx.
+      + exact Hc.
+    - apply IH.
+      + intros x Hx. apply Hagree. apply in_or_app. right. exact Hx.
+      + exact Hcs.
+  Qed.
+
+  (* Helper: every var of a sound clause has a wf domain value *)
+  Lemma clause_sound_for_model_wf_var (m : model symbol) (Hm : Semantics.model_ok symbol m)
+      (a : idx_map m.(Semantics.domain symbol)) (c : clause) (x : idx) :
+    In x (Semantics.clause_vars idx symbol c) ->
+    Semantics.clause_sound_for_model idx symbol idx_map m a c ->
+    exists d, map.get a x = Some d /\ m.(Semantics.domain_wf symbol) d.
+  Proof.
+    intros Hx Hsnd.
+    destruct c as [u v | at_].
+    - cbn [Semantics.clause_vars] in Hx.
+      unfold Semantics.clause_sound_for_model, Semantics.eq_sound_for_model in Hsnd.
+      destruct (map.get a u) as [vu|] eqn:Hgu; cbn [Is_Some_satisfying] in Hsnd.
+      2: exact (False_ind _ Hsnd).
+      destruct (map.get a v) as [vv|] eqn:Hgv; cbn [Is_Some_satisfying] in Hsnd.
+      2: exact (False_ind _ Hsnd).
+      cbn [In] in Hx.
+      destruct Hx as [ Hxu | [ Hxv | Hfalse ] ].
+      + subst x. exists vu. split; [exact Hgu|].
+        unfold Semantics.domain_wf. transitivity vv; [exact Hsnd | symmetry; exact Hsnd].
+      + subst x. exists vv. split; [exact Hgv|].
+        unfold Semantics.domain_wf. transitivity vu; [symmetry; exact Hsnd | exact Hsnd].
+      + destruct Hfalse.
+    - cbn [Semantics.clause_vars] in Hx.
+      unfold Semantics.clause_sound_for_model, Semantics.atom_sound_for_model in Hsnd.
+      destruct (list_Mmap (map.get a) at_.(atom_args)) as [args|] eqn:Hargs;
+        cbn [Is_Some_satisfying] in Hsnd. 2: exact (False_ind _ Hsnd).
+      destruct (map.get a at_.(atom_ret)) as [out|] eqn:Hret;
+        cbn [Is_Some_satisfying] in Hsnd. 2: exact (False_ind _ Hsnd).
+      destruct Hx as [ Hxret | Hxarg ].
+      + subst x. exists out. split; [exact Hret|].
+        eapply Semantics.interprets_to_implies_wf_conclusion; [exact Hm | exact Hsnd].
+      + assert (Harg_vals : exists vx, map.get a x = Some vx /\ In vx args).
+        * clear out Hret Hsnd.
+          revert x args Hxarg Hargs.
+          induction at_.(atom_args) as [ | a0 rest IH2]; intros x args Hx Hm2.
+          -- destruct Hx.
+          -- cbn in Hm2.
+             destruct (map.get a a0) as [va0|] eqn:Ha0; cbn in Hm2; [| discriminate].
+             destruct (list_Mmap (map.get a) rest) as [vrest|] eqn:Hrest; cbn in Hm2; [| discriminate].
+             inversion Hm2; subst args.
+             destruct Hx as [ Hxa0 | Hxrest ].
+             ++ subst x. exists va0. split; [exact Ha0 | left; reflexivity].
+             ++ destruct (IH2 x vrest Hxrest eq_refl) as [ vx [ Hvx Hin ] ].
+                exists vx. split; [exact Hvx | right; exact Hin].
+        * destruct Harg_vals as [ vx [ Hvx Hinvx ] ].
+          exists vx. split; [exact Hvx|].
+          pose proof (@Semantics.interprets_to_implies_wf_args symbol m Hm (atom_fn at_) args out Hsnd) as Hall.
+          exact (in_all _ _ _ Hall Hinvx).
+  Qed.
+
+  (* Bridge: the compiled-rule's sequent fields equal those of optimize_sequent at matching fuel *)
+  Lemma optimize_sequent_fields :
+    forall r,
+      let fuel := (let var_count :=
+            length (flat_map (Semantics.clause_vars idx symbol) r.(Semantics.seq_assumptions)
+                    ++ flat_map (Semantics.clause_vars idx symbol) r.(Semantics.seq_conclusions))
+          in var_count * var_count) in
+      let '(assumptions, catoms, ceqs) :=
+        QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r fuel in
+      (optimize_sequent r).(Semantics.seq_assumptions) = map (@atom_clause idx symbol) assumptions /\
+      (optimize_sequent r).(Semantics.seq_conclusions) =
+        map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms.
+  Proof.
+    intros r.
+    unfold QueryOpt.optimize_sequent', QueryOpt.sequent'_of_states.
+    cbn. split; reflexivity.
+  Qed.
+
+  (* KEYSTONE: compile_rule_inl_erule_sound
+     Connects model_satisfies_rule (on the optimizer's sequent) to erule_sound
+     (the saturation engine's per-rule soundness).
+
+     Hypotheses:
+     - Halign_assum: map atom_clause (query_atoms qc er) = seq_assumptions (optimize_sequent r)
+       (bridges the qc-pointer reconstruction to the optimizer's atom list)
+     - Halign_concl: seq_conclusions (optimize_sequent r) = write_unifs ++ write_clauses
+       (bridges the optimizer's conclusion list to er's write fields; follows from
+        optimize_sequent_fields when rf = var_count^2)
+     - Hvars_eq: the forall_vars of (optimize_sequent r) coincide with query_vars er
+       (needed to show the restriction a_c has the right domain) *)
+  Lemma compile_rule_inl_erule_sound :
+    forall rf r st0 er st1 (m : model symbol) (Hm : Semantics.model_ok symbol m)
+           (qc : symbol_map (idx_map (list nat * nat))),
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0
+        = (inl er, st1) ->
+      (* Assumption alignment: query_atoms of er = seq_assumptions of optimize_sequent r *)
+      map (@atom_clause idx symbol)
+          (Semantics.query_atoms idx idx_zero symbol symbol_map idx_map qc er)
+        = (optimize_sequent r).(Semantics.seq_assumptions) ->
+      (* Conclusion alignment: seq_conclusions of optimize_sequent r = er's write fields *)
+      (optimize_sequent r).(Semantics.seq_conclusions) =
+        map (uncurry (@eq_clause idx symbol)) (write_unifications idx symbol er)
+        ++ map (@atom_clause idx symbol) (write_clauses idx symbol er) ->
+      (* Variable alignment: forall_vars ↔ query_vars *)
+      (forall x, In x (Semantics.forall_vars (optimize_sequent r)) <->
+                 In x (query_vars idx symbol er)) ->
+      model_satisfies_rule m (optimize_sequent r) ->
+      Semantics.erule_sound idx idx_zero symbol symbol_map idx_map m qc er.
+  Proof.
+    intros rf r st0 er st1 m Hm qc Hc Halign_assum Halign_concl Hvars_eq Hmsr.
+    (* Step 1: destruct compile_rule to learn er's fields *)
+    unfold compile_rule in Hc.
+    destruct (QueryOpt.optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map
+                idx_map idx_trie r rf)
+      as [ [assumptions catoms] ceqs ] eqn:Hopt.
+    set (qvs := dedup (eqb (A:=idx)) (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    set (cvars := clauses_fvs idx Eqb_idx symbol
+      (map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms) qvs) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map
+                           idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+      subst st1.
+      (* H0 : Build_erule ... = er *)
+      subst er.
+      (* Now: query_vars er = qvs, write_clauses er = catoms, write_unifications er = ceqs *)
+      cbn [query_vars write_clauses write_unifications write_vars] in *.
+      (* Step 2: unfold erule_sound and introduce a_q *)
+      unfold Semantics.erule_sound.
+      intros a_q Hwf_q Hsnd_q.
+      (* Step 3: define a_c = restrict a_q to qvs *)
+      set (a_c := restrict_assignment qvs a_q).
+      (* Step 4a: convert atom_sound a_q to clause_sound a_q on seq_assumptions *)
+      (* Build all (clause_sound a_q) (map atom_clause (query_atoms qc er)) from Hsnd_q *)
+      pose proof (all_map_in (@atom_clause idx symbol)
+                    (Semantics.clause_sound_for_model idx symbol idx_map m a_q)
+                    (query_atoms idx idx_zero symbol symbol_map idx_map qc
+                       {| query_vars := qvs; query_clause_ptrs := (c, cs);
+                          write_vars := cvars; write_clauses := catoms;
+                          write_unifications := ceqs |})
+                    (fun at_ Hat_ => in_all _ _ _ Hsnd_q Hat_)) as Hcsnd_map.
+      rewrite Halign_assum in Hcsnd_map.
+      rename Hcsnd_map into Hcsnd_aq.
+      (* Step 4b: a_c agrees with a_q on forall_vars *)
+      assert (Hagree : forall x, In x (forall_vars (optimize_sequent r)) ->
+                map.get a_q x = map.get a_c x);
+        [ intros x Hx;
+          unfold a_c; rewrite get_restrict_assignment;
+          assert (Hin_qvs : In x qvs) by exact (proj1 (Hvars_eq x) Hx);
+          apply (proj2 (@inb_is_In idx Eqb_idx Eqb_idx_ok x qvs)) in Hin_qvs;
+          destruct (inb x qvs); [reflexivity | exact (False_ind _ Hin_qvs)]
+        | idtac ].
+      (* Step 4c: clause_sound a_c on seq_assumptions *)
+      pose proof (all_clause_sound_for_model_agree m a_q a_c
+                    (seq_assumptions (optimize_sequent r))
+                    (fun x Hx => Hagree x Hx)
+                    Hcsnd_aq) as Hcsnd_ac.
+      (* Step 4d: confinement — every key of a_c is in forall_vars *)
+      assert (Hconf : forall x, Sep.has_key x a_c -> In x (forall_vars (optimize_sequent r)));
+        [ intros x Hkey;
+          unfold Sep.has_key in Hkey; unfold a_c in Hkey;
+          rewrite get_restrict_assignment in Hkey;
+          destruct (inb x qvs) eqn:Hinb;
+          [ apply (proj2 (Hvars_eq x));
+            apply (@inb_is_In idx Eqb_idx Eqb_idx_ok x qvs); rewrite Hinb; exact I
+          | exact (False_ind _ Hkey) ]
+        | idtac ].
+      (* Step 4e: coverage — every forall_var is a key of a_c *)
+      assert (Hcov : forall x, In x (forall_vars (optimize_sequent r)) -> Sep.has_key x a_c);
+        [ intros x Hx;
+          unfold Sep.has_key, a_c; rewrite get_restrict_assignment;
+          assert (Hin_qvs : In x qvs) by exact (proj1 (Hvars_eq x) Hx);
+          assert (Htrue : Is_true (inb x qvs)) by (apply (@inb_is_In idx Eqb_idx Eqb_idx_ok); exact Hin_qvs);
+          destruct (inb x qvs) eqn:Hinb;
+          [ destruct (Hwf_q x (proj1 (Hvars_eq x) Hx)) as [ d Hd ];
+            destruct Hd as [ Hd1 _ ];
+            rewrite Hd1; exact I
+          | exact (False_ind _ Htrue) ]
+        | idtac ].
+      (* Step 5: apply model_satisfies_rule to get a' *)
+      destruct (Hmsr a_c Hcov Hconf Hcsnd_ac) as [ a' Hext_ccl ].
+      destruct Hext_ccl as [ Hext Hccl ].
+      exists a'.
+      cbn [write_clauses write_unifications write_vars query_vars].
+      (* Extract Hccl_eqs and Hccl_atoms from Hccl *)
+      pose proof Hccl as Hccl_full.
+      rewrite Halign_concl in Hccl_full.
+      rewrite all_app in Hccl_full.
+      destruct Hccl_full as [ Hccl_eqs Hccl_atoms ].
+      split.
+      { (* query_vars: get a' x = get a_q x for x in qvs *)
+        intros x Hx_qvs.
+        assert (Hac_eq : map.get a_c x = map.get a_q x);
+          [ unfold a_c; rewrite get_restrict_assignment;
+            assert (Htrue : Is_true (inb x qvs)) by (apply (@inb_is_In idx Eqb_idx Eqb_idx_ok); exact Hx_qvs);
+            destruct (inb x qvs); [reflexivity | exact (False_ind _ Htrue)]
+          | idtac ].
+        destruct (Hwf_q x Hx_qvs) as [ d Hd ].
+        destruct Hd as [ Hd1 _ ].
+        rewrite <- Hac_eq in Hd1.
+        rewrite (Hext _ _ Hd1). congruence. }
+      split.
+      { (* write_vars: use clause_sound_for_model_wf_var for both ceqs and catoms *)
+        intros x Hx_wv.
+        unfold cvars in Hx_wv. unfold clauses_fvs in Hx_wv.
+        apply filter_In in Hx_wv as [ Hx_flat Hbool ].
+        apply (proj2 (@dedup_preserves_In idx eqb (@eqb_boolspec idx Eqb_idx Eqb_idx_ok) _ x)) in Hx_flat.
+        rewrite flat_map_app in Hx_flat.
+        apply in_app_iff in Hx_flat as [ Hx_eqs | Hx_atoms ].
+        * apply in_flat_map in Hx_eqs as [ cl [ Hin_cl Hx_cl ] ].
+          apply in_map_iff in Hin_cl as [ p [ Hcleq Hin_p ] ].
+          subst cl.
+          pose proof (in_all _ _ _ Hccl_eqs (in_map _ _ _ Hin_p)) as Hcl_snd.
+          exact (clause_sound_for_model_wf_var m Hm a' (uncurry eq_clause p) x Hx_cl Hcl_snd).
+        * apply in_flat_map in Hx_atoms as [ cl [ Hin_cl Hx_cl ] ].
+          apply in_map_iff in Hin_cl as [ at_ [ Hcleq Hin_at ] ].
+          subst cl.
+          pose proof (in_all _ _ _ Hccl_atoms (in_map _ _ _ Hin_at)) as Hcl_snd.
+          exact (clause_sound_for_model_wf_var m Hm a' (atom_clause at_) x Hx_cl Hcl_snd). }
+      split.
+      { (* write_clauses: all atom_sound a' catoms *)
+        apply all_wkn with (P := fun at_ => Semantics.clause_sound_for_model idx symbol idx_map m a' (atom_clause at_)).
+        - intros at_ _ Hc_. exact Hc_.
+        - rewrite <- all_map. exact Hccl_atoms. }
+      { (* write_unifications: all eq_sound a' ceqs *)
+        apply all_wkn with (P := fun p => Semantics.clause_sound_for_model idx symbol idx_map m a' (uncurry (@eq_clause idx symbol) p)).
+        - intros uv _ Hc_.
+          destruct uv as [u v].
+          cbn [uncurry Semantics.clause_sound_for_model Semantics.eq_sound_for_model] in Hc_.
+          cbn [fst snd Semantics.eq_sound_for_model].
+          exact Hc_.
+        - rewrite <- all_map. exact Hccl_eqs. }
+  Qed.
+
+  (* ============================================================== *)
   (* Connecting compiled_rules of build_rule_set to compile_rule     *)
   (* ============================================================== *)
 
