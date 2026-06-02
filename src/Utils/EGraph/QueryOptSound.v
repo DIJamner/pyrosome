@@ -5635,7 +5635,7 @@ Section WithMap.
       = map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms.
   Proof.
     intros r rf.
-    unfold QueryOpt.optimize_sequent', QueryOpt.optimize_sequent, QueryOpt.sequent'_of_states, QueryOpt.sequent_of_states.
+    unfold QueryOpt.optimize_sequent', QueryOpt.optimize_sequent, QueryOpt.sequent'_of_states, QueryOpt.sequent_of_states_seq.
     cbn. split; reflexivity.
   Qed.
 
@@ -7475,7 +7475,7 @@ Section WithMap.
     intros Hsat. unfold model_satisfies_rule. intros a_opt Hkeys Hconf Hass.
     set (RFUEL := rf) in *.
     unfold QueryOpt.optimize_sequent in Hkeys, Hconf, Hass |- *.
-    unfold sequent_of_states in Hkeys, Hconf, Hass |- *.
+    unfold sequent_of_states_seq in Hkeys, Hconf, Hass |- *.
     cbn [seq_assumptions seq_conclusions] in Hkeys, Hconf, Hass |- *.
     (* Reduce the state-monad pipeline to named egraphs. *)
     rewrite Hassum in Hkeys, Hconf, Hass |- *.

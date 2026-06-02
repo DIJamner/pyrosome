@@ -378,7 +378,7 @@ Section WithVar.
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
             (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (term_rule c args t))).
     Proof.
-      unfold rule_to_log_rule, rule_to_log_rule_full, sequent_of_states.
+      unfold rule_to_log_rule, QueryOpt.sequent_of_states_seq.
       cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
@@ -963,9 +963,9 @@ Section WithVar.
       (* Step B: reduce Hk to an egraph db atom.
          Mirror exactly the Heq_e rewrite used in model_satisfies_rule_adapter_term. *)
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule, rule_to_log_rule_full in Hk.
+      unfold rule_to_log_rule in Hk.
       cbn [seq_assumptions fst] in Hk.
-      unfold QueryOpt.sequent_of_states in Hk.
+      unfold QueryOpt.sequent_of_states_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
       cbn beta iota in Hk.
@@ -1184,9 +1184,9 @@ Section WithVar.
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule, rule_to_log_rule_full in Hassum |- *.
+      unfold rule_to_log_rule in Hassum |- *.
       cbn [seq_assumptions fst] in Hassum.
-      unfold QueryOpt.sequent_of_states in Hassum.
+      unfold QueryOpt.sequent_of_states_seq in Hassum.
       cbn [seq_assumptions fst] in Hassum.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hassum.
       cbn beta iota in Hassum.
@@ -1335,7 +1335,7 @@ Section WithVar.
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
             (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (sort_rule c args))).
     Proof.
-      unfold rule_to_log_rule, rule_to_log_rule_full, sequent_of_states.
+      unfold rule_to_log_rule, QueryOpt.sequent_of_states_seq.
       cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
@@ -1416,9 +1416,9 @@ Section WithVar.
       destruct HE as (_ & _ & _ & Hmapfst_sub & _).
       assert (Hmapfst : map fst sub = map fst c) by exact Hmapfst_sub.
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule, rule_to_log_rule_full in Hk.
+      unfold rule_to_log_rule in Hk.
       cbn [seq_assumptions fst] in Hk.
-      unfold QueryOpt.sequent_of_states in Hk.
+      unfold QueryOpt.sequent_of_states_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
       cbn beta iota in Hk.
@@ -1659,9 +1659,9 @@ Section WithVar.
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule, rule_to_log_rule_full in Hassum |- *.
+      unfold rule_to_log_rule in Hassum |- *.
       cbn [seq_assumptions fst] in Hassum.
-      unfold QueryOpt.sequent_of_states in Hassum.
+      unfold QueryOpt.sequent_of_states_seq in Hassum.
       cbn [seq_assumptions fst] in Hassum.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hassum.
       cbn beta iota in Hassum.
@@ -2042,7 +2042,7 @@ Section WithVar.
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
             (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (term_eq_rule c e1 e2 t))).
     Proof.
-      unfold rule_to_log_rule, rule_to_log_rule_full, sequent_of_states.
+      unfold rule_to_log_rule, QueryOpt.sequent_of_states_seq.
       cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
@@ -2118,9 +2118,9 @@ Section WithVar.
         rewrite invert_wf_term_eq_rule in Hr. destruct Hr as (_ & He1 & _ & _). exact He1. }
       intros k Hk.
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule, rule_to_log_rule_full in Hk.
+      unfold rule_to_log_rule in Hk.
       cbn [seq_assumptions fst] in Hk.
-      unfold QueryOpt.sequent_of_states in Hk.
+      unfold QueryOpt.sequent_of_states_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
       cbn beta iota in Hk.
@@ -2423,9 +2423,9 @@ Section WithVar.
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule, rule_to_log_rule_full in Hassum |- *.
+      unfold rule_to_log_rule in Hassum |- *.
       cbn [seq_assumptions fst] in Hassum.
-      unfold QueryOpt.sequent_of_states in Hassum.
+      unfold QueryOpt.sequent_of_states_seq in Hassum.
       cbn [seq_assumptions fst] in Hassum.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hassum.
       cbn beta iota in Hassum.
@@ -2800,7 +2800,7 @@ Section WithVar.
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
             (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (sort_eq_rule c t1 t2))).
     Proof.
-      unfold rule_to_log_rule, rule_to_log_rule_full, sequent_of_states.
+      unfold rule_to_log_rule, QueryOpt.sequent_of_states_seq.
       cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
@@ -2871,9 +2871,9 @@ Section WithVar.
         rewrite invert_wf_sort_eq_rule in Hr. destruct Hr as (_ & Ht1 & _). exact Ht1. }
       intros k Hk.
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule, rule_to_log_rule_full in Hk.
+      unfold rule_to_log_rule in Hk.
       cbn [seq_assumptions fst] in Hk.
-      unfold QueryOpt.sequent_of_states in Hk.
+      unfold QueryOpt.sequent_of_states_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
       cbn beta iota in Hk.
@@ -3168,9 +3168,9 @@ Section WithVar.
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule, rule_to_log_rule_full in Hassum |- *.
+      unfold rule_to_log_rule in Hassum |- *.
       cbn [seq_assumptions fst] in Hassum.
-      unfold QueryOpt.sequent_of_states in Hassum.
+      unfold QueryOpt.sequent_of_states_seq in Hassum.
       cbn [seq_assumptions fst] in Hassum.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hassum.
       cbn beta iota in Hassum.
@@ -3254,9 +3254,9 @@ Section WithVar.
                (db_to_atoms (db (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))))) .
-      - unfold rule_to_log_rule, rule_to_log_rule_full.
+      - unfold rule_to_log_rule.
         cbn [seq_assumptions fst].
-        unfold QueryOpt.sequent_of_states.
+        unfold QueryOpt.sequent_of_states_seq.
         cbn [seq_assumptions fst].
         unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
         cbn beta iota.
@@ -3291,7 +3291,7 @@ Section WithVar.
       cbn [fst snd] in H |- *.
       destruct (rebuild rf e_ctx) as [res e_rb].
       cbn [fst snd] in H |- *.
-      exact H.
+      destruct res as [u|e]; [destruct u; reflexivity | discriminate H].
     Qed.
 
     Lemma status_Hsucc_sort name c args
@@ -3307,7 +3307,7 @@ Section WithVar.
       cbn [fst snd] in H |- *.
       destruct (rebuild rf e_ctx) as [res e_rb].
       cbn [fst snd] in H |- *.
-      exact H.
+      destruct res as [u|e]; [destruct u; reflexivity | discriminate H].
     Qed.
 
     Lemma status_Hsucc_term_eq name c e1 e2 t
@@ -3329,7 +3329,7 @@ Section WithVar.
       cbn [fst snd] in H |- *.
       destruct (rebuild rf e_open) as [res e_rb].
       cbn [fst snd] in H |- *.
-      exact H.
+      destruct res as [u|e]; [destruct u; reflexivity | discriminate H].
     Qed.
 
     Lemma status_Hsucc_sort_eq name c t1 t2
@@ -3351,7 +3351,7 @@ Section WithVar.
       cbn [fst snd] in H |- *.
       destruct (rebuild rf e_open) as [res e_rb].
       cbn [fst snd] in H |- *.
-      exact H.
+      destruct res as [u|e]; [destruct u; reflexivity | discriminate H].
     Qed.
 
   End Adapter.

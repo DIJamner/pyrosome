@@ -375,15 +375,53 @@ Section WithVar.
    *)
     Context (rf : nat).
     Notation sequent_of_states a c := (sequent_of_states a c rf).
+    Notation sequent_of_states_seq a c := (QueryOpt.sequent_of_states_seq a c rf).
   (*
-    
+
    TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
 
    *)
-  (* The compiled sequent for [r] paired with its assumption-side rebuild
-     result (via [sequent_of_states], which now returns both).  [rule_to_log_rule]
-     projects the sequent; [rule_to_log_rule_status] the rebuild result. *)
-  Definition rule_to_log_rule_full n (r : rule) : sequent V V * Result.result unit :=
+  (* The compiled sequent for [r], ignoring whether its assumption-side rebuild
+     succeeded (used where the sequent is needed unconditionally: the optimizer
+     and the source-rule adapter, whose soundness holds regardless). *)
+  Definition rule_to_log_rule n (r : rule) : sequent V V :=
+    match r with
+    | sort_rule c args =>
+        sequent_of_states_seq
+          (add_ctx false false c)
+          (fun sub => add_open_sort true false sub (scon n (id_args c)))
+    | term_rule c args t =>
+        sequent_of_states_seq
+          (add_ctx false false c)
+          (* add_open_term sees the language, so it handles t *)
+          (fun sub => add_open_term true false sub (con n (id_args c)))
+    (* TODO: this currently only goes one direction.
+       As a design question, is that what I want?
+     *)
+    | sort_eq_rule c t1 t2 =>
+        sequent_of_states_seq
+          (@!let sub <- add_ctx false false c in
+             let x1 <- add_open_sort false false sub t1 in
+             ret (sub,x1))
+          (fun '(sub,x1) =>
+             @! let x2 <- add_open_sort true false sub t2 in
+               (union x1 x2))
+    | term_eq_rule c e1 e2 t =>
+        sequent_of_states_seq
+          (@!let sub <- add_ctx false false c in
+             let x1 <- add_open_term false false sub e1 in
+             ret (sub,x1))
+          (* TODO: should I add that t is its sort?*)
+          (fun '(sub,x1) =>
+             @! let x2 <- add_open_term true false sub e2 in
+               (union x1 x2))
+    end.
+
+  (* The compiled sequent for [r], or the assumption-side rebuild's [Failure]
+     if it ran out of fuel (via [sequent_of_states : result sequent]).  This is
+     the single computation whose result drives both the rule_set and the
+     guard, so no rebuild is run twice. *)
+  Definition rule_to_log_rule_full n (r : rule) : Result.result (sequent V V) :=
     match r with
     | sort_rule c args =>
         sequent_of_states
@@ -392,11 +430,7 @@ Section WithVar.
     | term_rule c args t =>
         sequent_of_states
           (add_ctx false false c)
-          (* add_open_term sees the language, so it handles t *)
           (fun sub => add_open_term true false sub (con n (id_args c)))
-    (* TODO: this currently only goes one direction.
-       As a design question, is that what I want?
-     *)
     | sort_eq_rule c t1 t2 =>
         sequent_of_states
           (@!let sub <- add_ctx false false c in
@@ -410,22 +444,17 @@ Section WithVar.
           (@!let sub <- add_ctx false false c in
              let x1 <- add_open_term false false sub e1 in
              ret (sub,x1))
-          (* TODO: should I add that t is its sort?*)
           (fun '(sub,x1) =>
              @! let x2 <- add_open_term true false sub e2 in
                (union x1 x2))
     end.
 
-  Definition rule_to_log_rule n (r : rule) : sequent V V :=
-    fst (rule_to_log_rule_full n r).
-
-  (* The success/failure of the assumption-side [rebuild] used to compile [r]
-     into [rule_to_log_rule n r] -- exactly the rebuild that produced the
-     sequent (same [rule_to_log_rule_full] call), so no recomputation.  Used to
-     fail the whole reduction when the rebuild ran out of fuel, instead of
-     silently building a sequent from a non-canonical egraph. *)
+  (* [Success tt] iff [r]'s assumption-side rebuild succeeded. *)
   Definition rule_to_log_rule_status n (r : rule) : Result.result unit :=
-    snd (rule_to_log_rule_full n r).
+    match rule_to_log_rule_full n r with
+    | Result.Success _ => Result.Success tt
+    | Result.Failure e => Result.Failure e
+    end.
 
   End WithLang.
   
@@ -438,25 +467,31 @@ Section WithVar.
 
      Assumes incl l l'
    *)
-  (* [Success tt] iff every rule's assumption-side rebuild succeeded; otherwise
-     the first failure (carrying its error). *)
-  Definition all_success : list (Result.result unit) -> Result.result unit :=
+  (* [Success tt] iff every element is a [Success]; otherwise the first
+     failure (carrying its error). *)
+  Definition all_success {A} : list (Result.result A) -> Result.result unit :=
     fold_right (fun r acc => match r with
                              | Result.Success _ => acc
                              | Result.Failure e => Result.Failure e
                              end) (Result.Success tt).
 
-  (* Single pass over the rules: compile each to its (sequent, rebuild-status)
-     pair ONCE via [rule_to_log_rule_full], then build the rule_set from the
-     sequents and aggregate the statuses.  [rule_set_from_lang] /
-     [rule_set_from_lang_status] are the two projections; using
-     [..._with_status] directly (as [egraph_reducing_equal'] does) shares the
-     single traversal, so no rebuild is run twice. *)
+  (* Single pass over the rules: compile each ONCE via [rule_to_log_rule_full]
+     (a [result sequent]), then build the rule_set from the sequents
+     (the rebuild-failure case yields the empty sequent -- unreachable on the
+     sound path, where the aggregated status is [Success]) and aggregate the
+     statuses.  [rule_set_from_lang] / [rule_set_from_lang_status] are the two
+     projections; using [..._with_status] directly (as [egraph_reducing_equal']
+     does) shares the single traversal, so no rebuild is run twice. *)
   Definition rule_set_from_lang_with_status rf (l l': lang)
     : rule_set * Result.result unit :=
-    let pairs := map (fun '(n,r) =>
-                        rule_to_log_rule_full l' (analysis_result:=unit) rf n r) l in
-    (build_rule_set succ _ rf (map fst pairs), all_success (map snd pairs)).
+    let results := map (fun '(n,r) =>
+                          rule_to_log_rule_full l' (analysis_result:=unit) rf n r) l in
+    (build_rule_set succ _ rf
+       (map (fun rs => match rs with
+                       | Result.Success s => s
+                       | Result.Failure _ => Build_sequent _ _ [] []
+                       end) results),
+     all_success results).
 
   (* Note: only pass in the subset of the language you want to run.
      Often, that will be exactly the equational rules.

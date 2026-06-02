@@ -422,14 +422,21 @@ Section SequentOfStates.
   Definition sequent'_of_states := 
     (assumption_atoms, conclusion_atoms , conclusion_eqs_final).
 
-  (* Generates an (optimized) sequent from two egraph state monad values,
-     paired with the assumption-side rebuild result ([Success tt] iff the
-     rebuild had enough fuel).  Callers that only need the sequent take [fst];
-     the schedule builder takes [snd] to propagate a failed rebuild. *)
-  Definition sequent_of_states : sequent * Result.result unit :=
-    (Build_sequent _ _ (map atom_clause assumption_atoms)
-       (map (uncurry eq_clause) conclusion_eqs_final++(map atom_clause conclusion_atoms)),
-     assumption_status).
+  (* The (optimized) sequent from two egraph state monad values, ignoring
+     whether the assumption-side rebuild succeeded.  Used by the optimizer,
+     whose soundness holds regardless of the rebuild's fuel. *)
+  Definition sequent_of_states_seq : sequent :=
+    Build_sequent _ _ (map atom_clause assumption_atoms)
+      (map (uncurry eq_clause) conclusion_eqs_final++(map atom_clause conclusion_atoms)).
+
+  (* The same sequent, or the rebuild's [Failure] if it ran out of fuel.
+     Used by the source-rule compiler so a failed rebuild fails the whole
+     reduction instead of silently producing a non-canonical sequent. *)
+  Definition sequent_of_states : Result.result sequent :=
+    match assumption_status with
+    | Result.Success _ => Result.Success sequent_of_states_seq
+    | Result.Failure e => Result.Failure e
+    end.
 (*
   Notation state_sound_for_model :=
     (state_sound_for_model _ idx_succ _ _ _ _ _).
@@ -936,7 +943,7 @@ Section Optimize.
   (*A variant that preserves in the type that the assumption has no equations*)
   Definition optimize_sequent' := sequent'_of_states sub_and_assumptions conclusions.
   
-  Definition optimize_sequent rf := fst (sequent_of_states sub_and_assumptions conclusions rf).
+  Definition optimize_sequent rf := sequent_of_states_seq sub_and_assumptions conclusions rf.
 
   
   (* Diagnostics. For debugging only*)
@@ -1049,6 +1056,11 @@ Arguments build_rule_set {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope id
   {idx_map}%_function_scope {idx_trie}%_function_scope rf rules%_list_scope.
 
 Arguments QueryOpt.sequent_of_states {idx}%_type_scope {Eqb_idx}
+  {idx_zero} {symbol}%_type_scope {symbol_map idx_map}%_function_scope
+  {idx_trie}%_function_scope {X A}%_type_scope {H}
+  assumptions {B}%_type_scope conclusions%_function_scope r_fuel.
+
+Arguments QueryOpt.sequent_of_states_seq {idx}%_type_scope {Eqb_idx}
   {idx_zero} {symbol}%_type_scope {symbol_map idx_map}%_function_scope
   {idx_trie}%_function_scope {X A}%_type_scope {H}
   assumptions {B}%_type_scope conclusions%_function_scope r_fuel.
