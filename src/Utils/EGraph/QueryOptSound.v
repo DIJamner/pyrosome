@@ -5089,6 +5089,127 @@ Section WithMap.
         - rewrite <- all_map. exact Hccl_eqs. }
   Qed.
 
+  (* Helper: named_list_lookup result is independent of the default
+     when the key is present in the list (assuming enough values). *)
+  Lemma named_list_lookup_default_indep :
+    forall {B : Type} (qs : list idx) (vs : list B) (k : idx) (d1 d2 : B),
+      NoDup qs -> In k qs -> List.length qs <= List.length vs ->
+      named_list_lookup d1 (combine qs vs) k = named_list_lookup d2 (combine qs vs) k.
+  Proof.
+    induction qs as [| q qs' IH]; intros vs k d1 d2 HND HIn Hlen.
+    - inversion HIn.
+    - destruct vs as [| v vs'].
+      + cbn [List.length] in Hlen. Lia.lia.
+      + cbn [combine named_list_lookup].
+        destruct (eqb k q) eqn:Heq.
+        * reflexivity.
+        * inversion HND as [ | ? ? Hna HND']; subst.
+          assert (HIn' : In k qs'). {
+            destruct HIn as [-> | HIn'].
+            - rewrite eqb_refl_true in Heq; [ discriminate | exact Eqb_idx_ok].
+            - exact HIn'. }
+          cbn [List.length] in Hlen.
+          apply IH; [ exact HND' | exact HIn' | Lia.lia ].
+  Qed.
+
+  (* Helper: the lookup of x in (combine l (seq base (length l)))
+     returns base + position-of-x-in-l, given NoDup and a witness. *)
+  Lemma named_list_lookup_combine_seq_position :
+    forall (l : list idx) (x : idx) (base n : nat),
+      NoDup l ->
+      nth_error l n = Some x ->
+      named_list_lookup base (combine l (seq base (List.length l))) x = base + n.
+  Proof.
+    induction l as [| a l' IH]; intros x base n HND Hnth.
+    - destruct n; discriminate.
+    - cbn [List.length seq combine named_list_lookup].
+      destruct n as [| n'].
+      + cbn [nth_error] in Hnth. injection Hnth; intro Heq; subst a.
+        rewrite eqb_refl_true; [ | exact Eqb_idx_ok]. Lia.lia.
+      + cbn [nth_error] in Hnth.
+        inversion HND as [ | ? ? H_notin H_nd' ]; subst.
+        assert (Hneq : eqb x a = false). {
+          apply eqb_ineq_false; [ exact Eqb_idx_ok | ].
+          left. intro Hxa. subst x.
+          exact (H_notin (nth_error_In _ _ Hnth)). }
+        rewrite Hneq.
+        specialize (IH x (S base) n' H_nd' Hnth).
+        assert (Hdi : named_list_lookup base (combine l' (seq (S base) (Datatypes.length l'))) x
+                    = named_list_lookup (S base) (combine l' (seq (S base) (Datatypes.length l'))) x). {
+          apply named_list_lookup_default_indep; [ exact H_nd' | apply nth_error_In in Hnth; exact Hnth | ].
+          rewrite List.seq_length. Lia.lia. }
+        Lia.lia.
+  Qed.
+
+  (* Lemma 1: round-trip for a single element.
+     named_list_lookup 0 (combine l (seq 0 n)) x gives the position k of x in l,
+     and nth k l = x. *)
+  Lemma nth_named_list_lookup_combine_seq :
+    forall (l : list idx) (x : idx),
+      NoDup l -> In x l ->
+      nth (named_list_lookup 0 (combine l (seq 0 (List.length l))) x) l idx_zero = x.
+  Proof.
+    intros l x HND HIn.
+    pose proof (In_nth_error l x HIn) as [n Hnth_err].
+    assert (Hpos : named_list_lookup 0 (combine l (seq 0 (List.length l))) x = n). {
+      pose proof (named_list_lookup_combine_seq_position l x 0 n HND Hnth_err).
+      Lia.lia. }
+    rewrite Hpos.
+    apply nth_error_nth with (x := x).
+    exact Hnth_err.
+  Qed.
+
+  (* Lemma 2: map corollary — applying the round-trip pointwise. *)
+  Lemma map_nth_named_list_lookup_combine_seq :
+    forall (l : list idx) (args : list idx),
+      NoDup l -> (forall x, In x args -> In x l) ->
+      map (fun k => nth k l idx_zero)
+          (map (named_list_lookup 0 (combine l (seq 0 (List.length l)))) args) = args.
+  Proof.
+    intros l args HND Hargs.
+    rewrite List.map_map.
+    apply map_ext_id.
+    intros x HIn.
+    pose proof (In_nth_error l x (Hargs x HIn)) as [n Hn].
+    assert (Hpos : named_list_lookup 0 (combine l (seq 0 (List.length l))) x = n). {
+      pose proof (named_list_lookup_combine_seq_position l x 0 n HND Hn).
+      Lia.lia. }
+    rewrite Hpos.
+    apply nth_error_nth with (x := x).
+    exact Hn.
+  Qed.
+
+  (* Lemma 3: map_inverse_get correctness —
+     if map_inverse_get m v = Some i, then map.get m i = Some v. *)
+  Lemma map_inverse_get_correct :
+    forall {value} {Eqb_v : Eqb value} (Hok_v : Eqb_ok Eqb_v)
+           (m : idx_map value) (v : value) (i : idx),
+      QueryOpt.map_inverse_get m v = Some i -> map.get m i = Some v.
+  Proof.
+    intros value Eqb_v Hok_v m v i Hinv.
+    unfold QueryOpt.map_inverse_get in Hinv.
+    revert Hinv.
+    apply (@map.fold_spec idx value (idx_map value) (idx_map_ok value)
+        (option idx)
+        (fun m' r => r = Some i -> map.get m' i = Some v)).
+    - intro H. discriminate H.
+    - intros k v' m' r Hget IH Hfold.
+      destruct (eqb v v') eqn:Heqv.
+      + injection Hfold; intro Heqi; subst k.
+        rewrite map.get_put_same.
+        f_equal.
+        pose proof (@eqb_spec value Eqb_v Hok_v v v') as Hspec.
+        rewrite Heqv in Hspec. exact (eq_sym Hspec).
+      + apply IH in Hfold.
+        destruct (eqb i k) eqn:Hik.
+        * pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok i k) as Hspec.
+          rewrite Hik in Hspec. subst k.
+          rewrite Hget in Hfold. discriminate.
+        * rewrite map.get_put_diff; [ exact Hfold | ].
+          pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok i k) as Hspec.
+          rewrite Hik in Hspec. exact Hspec.
+  Qed.
+
   (* ============================================================== *)
   (* Connecting compiled_rules of build_rule_set to compile_rule     *)
   (* ============================================================== *)
