@@ -1781,5 +1781,111 @@ Section WithVar.
       - exact (model_satisfies_rule_adapter_sort name c args Hin Hsucc).
     Qed.
 
+    (* ============================================================== *)
+    (* ===== EQ-RULE ADAPTER (term_eq_rule / sort_eq_rule) ========== *)
+    (* ============================================================== *)
+
+    (* ----- Lemma A: assumption-side forward soundness for eq rules -----
+       The eq-rule assumption egraph is
+         e_assum := rebuild rf (add_open_term false false sub e1 (add_ctx c empty)).
+       Mirror of [assumption_egraph_sound] (line 183) but with an
+       [add_open_term_sound] step inserted between [add_ctx_sound] and
+       [rebuild_sound].  Additionally exposes the root id [x1]'s value:
+       the forward witness interpretation [i1] maps [x1] to [inl e1[/sg/]]. *)
+    Lemma assumption_egraph_sound_eq c e1 t (sg : subst)
+        (Hwfc : wf_ctx l c) (Hwfe1 : wf_term l c e1 t) (Hsg : wf_subst l [] sg c)
+      : let sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+        let e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+        let x1     := fst (add_open_term succ sort_of l false false sub e1 e_ctx) in
+        let e_open := snd (add_open_term succ sort_of l false false sub e1 e_ctx) in
+        let e_assum := snd (rebuild rf e_open) in
+        egraph_ok e_assum
+        /\ exists i1,
+             egraph_sound_for_interpretation (lang_model l) i1 e_assum
+             /\ map fst sub = map fst c
+             /\ args_in_instance l (map snd sg) i1 (map snd sub)
+             /\ option_relation (domain_eq V (lang_model l))
+                  (map.get i1 x1) (Some (inl e1[/sg/])).
+    Proof.
+      cbn zeta.
+      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (x1     := fst (add_open_term succ sort_of l false false sub e1 e_ctx)).
+      set (e_open := snd (add_open_term succ sort_of l false false sub e1 e_ctx)).
+      set (e_assum := snd (rebuild rf e_open)).
+      (* Step 1: empty egraph is ok and sound *)
+      destruct (Semantics.empty_sound_for_interpretation
+                  V lt succ V_default V V_map (V_map_ok) V_map (V_map_ok)
+                  V_trie X (lang_model l))
+        as [Hok_empty Hsnd_empty].
+      (* Step 2: add_ctx_sound gives ctx_post *)
+      pose proof (@Theorems.add_ctx_sound
+                    V V_Eqb V_Eqb_ok V_default V_map (V_map_ok) V_trie V_trie_ok
+                    succ sort_of lt lt_asymmetric lt_succ lt_trans
+                    X HX l Hwf Hsof false
+                    sg c Hsg Hwfc
+                    map.empty)
+        as Hvc_ctx.
+      unfold vc in Hvc_ctx.
+      specialize (Hvc_ctx (empty_egraph V_default X)).
+      unfold Theorems.ctx_post in Hvc_ctx.
+      specialize (Hvc_ctx Hok_empty Hsnd_empty).
+      destruct Hvc_ctx as [i1 (Hext1 & Hfst1 & Hai1)].
+      destruct Hext1 as (Hok_ctx & _ & Hsnd_ctx & _).
+      change (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))) with e_ctx in Hok_ctx, Hsnd_ctx.
+      change (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) with sub in Hfst1, Hai1.
+      (* Step 3: add_open_term_sound on e1 *)
+      pose proof (@Theorems.add_open_term_sound
+                    V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+                    succ sort_of lt lt_asymmetric lt_succ lt_trans
+                    X HX l Hwf Hsof false
+                    c sub (map snd sg) e1 t
+                    (@Theorems.wf_args_from_wf_subst V V_Eqb l [] sg c Hsg)
+                    Hwfe1 Hwfc
+                    (eq_sym Hfst1) i1)
+        as Hvc_open.
+      unfold vc in Hvc_open.
+      specialize (Hvc_open e_ctx).
+      unfold Theorems.open_term_post in Hvc_open.
+      specialize (Hvc_open Hok_ctx Hsnd_ctx Hai1).
+      destruct Hvc_open as [i2 (Hext_open & Hroot)].
+      change (snd (add_open_term succ sort_of l false false sub e1 e_ctx)) with e_open in Hext_open.
+      change (fst (add_open_term succ sort_of l false false sub e1 e_ctx)) with x1 in Hroot.
+      destruct Hext_open as (Hok_open & Hext12 & Hsnd_open & _).
+      (* Rewrite with_names_from c (map snd sg) = sg *)
+      assert (Heq_wn : with_names_from c (map snd sg) = sg).
+      { pose proof (wf_subst_dom_eq Hsg) as Hdom.
+        revert Hdom. clear -sg c. revert sg.
+        induction c as [|[n0 t0] c_rest IH]; destruct sg as [|[n1 e1] sg_rest];
+          cbn; intros Hdom; auto; try discriminate.
+        inversion Hdom; subst. f_equal. apply IH. exact H1. }
+      rewrite Heq_wn in Hroot.
+      (* Step 4: rebuild_sound on e_open *)
+      pose proof (@Semantics.rebuild_sound
+                    V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+                    V_map V_map_ok V_map V_map_ok
+                    V_trie V_trie_ok unit HX
+                    (lang_model l)
+                    (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
+                    (fun _ => True) rf)
+        as Hvc_rb.
+      unfold vc in Hvc_rb.
+      specialize (Hvc_rb e_open).
+      cbn [snd] in Hvc_rb.
+      specialize (Hvc_rb Hok_open).
+      destruct Hvc_rb as [Hok_assum Hde_assum].
+      pose proof (proj1 (Hde_assum i2) Hsnd_open) as Hsnd_assum.
+      fold e_assum in Hok_assum, Hsnd_assum.
+      (* Step 5: assemble *)
+      split; [exact Hok_assum|].
+      exists i2. split; [exact Hsnd_assum|].
+      split; [exact Hfst1|].
+      split.
+      - exact (@Theorems.args_in_instance_monotone
+                 V V_Eqb V_map sort_of l (map snd sg) i1 i2
+                 (map snd sub) Hext12 Hai1).
+      - exact Hroot.
+    Qed.
+
   End Adapter.
 End WithVar.
