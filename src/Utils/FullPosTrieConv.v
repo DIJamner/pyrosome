@@ -875,6 +875,349 @@ Section FptSim.
         cbn [fpt_partition_tries partition_tries map pr_map]; apply IH.
   Qed.
 
+  (* ---- Helper B: both-free predicate + element preservation for list_intersect'. ---- *)
+
+  (* Both-free fpt': no fpt_both constructors appear. *)
+  Inductive fpt_both_free' : @FullPosTrie.fpt' B -> Prop :=
+  | fpt_bf_leaf (a : B) : fpt_both_free' (FullPosTrie.fpt_leaf a)
+  | fpt_bf_node (m : PTree.tree' (@FullPosTrie.fpt' B)) :
+      (forall p c, PTree.get' p m = Some c -> fpt_both_free' c) ->
+      fpt_both_free' (FullPosTrie.fpt_node m).
+
+  (* All elements of a PTree.tree' fpt' are both-free. *)
+  Local Definition bf_tree' (m : PTree.tree' (@FullPosTrie.fpt' B)) : Prop :=
+    forall p c, PTree.get' p m = Some c -> fpt_both_free' c.
+
+  (* Helper: bf_tree' of a result built by tree'_of_tuple_k.
+     If l_opt/r_opt hold bf subtrees and c_opt holds a bf element,
+     then any element of the result tree is bf. *)
+  Local Lemma bf_of_result
+      (l_opt : option (PTree.tree' (@FullPosTrie.fpt' B)))
+      (c_opt : option (@FullPosTrie.fpt' B))
+      (r_opt : option (PTree.tree' (@FullPosTrie.fpt' B)))
+      (m : PTree.tree' (@FullPosTrie.fpt' B)) :
+    TrieMap.tree'_of_tuple_k (l_opt, c_opt, r_opt) Some None = Some m ->
+    (forall vl, l_opt = Some vl -> bf_tree' vl) ->
+    (forall vc, c_opt = Some vc -> fpt_both_free' vc) ->
+    (forall vr, r_opt = Some vr -> bf_tree' vr) ->
+    bf_tree' m.
+  Proof.
+    destruct l_opt as [vl|], c_opt as [vc|], r_opt as [vr|];
+      cbn [TrieMap.tree'_of_tuple_k]; try discriminate;
+      intros Hm Hl Hc Hr; injection Hm as <-;
+      unfold bf_tree'; intros p ct Hpct; destruct p; cbn [PTree.get'] in Hpct;
+      try discriminate Hpct.
+    all: try (injection Hpct as <-; exact (Hc vc eq_refl)).
+    all: try (exact (Hl vl eq_refl p ct Hpct)).
+    all: try (exact (Hr vr eq_refl p ct Hpct)).
+  Qed.
+
+  (* Element preservation for list_intersect'_pre_cbv. *)
+  Local Lemma lin_list_intersect'_bf
+      (ef : bool -> @FullPosTrie.fpt' B -> list (@FullPosTrie.fpt' B) -> option (@FullPosTrie.fpt' B))
+      (Hef : forall b x xs r, ef b x xs = Some r -> fpt_both_free' r) :
+    forall (is_rev : bool) (hd : PTree.tree' (@FullPosTrie.fpt' B))
+           (args : list (PTree.tree' (@FullPosTrie.fpt' B))),
+    forall m, TrieMap.list_intersect'_pre_cbv ef hd is_rev args = Some m ->
+    bf_tree' m.
+  Proof.
+    intros is_rev hd. revert is_rev.
+    induction hd as [r IHr | y | y r IHr | l IHl | l IHl r IHr | l IHl y | l IHl y r IHr];
+      intros is_rev args m Hm p c Hpc.
+    all: cbn [TrieMap.list_intersect'_pre_cbv TrieMap.list_intersect'F
+              TrieMap.tree'_tuple_k TrieMap.tree'_tuple fst snd] in Hm.
+    all: rewrite TrieMap.hfin3_to_tuple_un_k in Hm.
+    (* Node001 r *)
+    - destruct (TrieMap.hfin3_to_tuple (TrieMap.gather_tries args
+         (@TrieMap.initial_acc (PTree.tree' _) _ (PTree.tree' _) (None, None, Some r))))
+         as [[acc_l acc_c] acc_r] eqn:Hacc.
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2
+           Mbind Mret option_monad] in Hm.
+      destruct acc_r as [rs|]; [|discriminate Hm].
+      destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|] eqn:Hvr;
+        [|discriminate Hm]. injection Hm as <-.
+      destruct p; cbn [PTree.get'] in Hpc.
+      + exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+      + discriminate Hpc.
+      + discriminate Hpc.
+    (* Node010 y *)
+    - destruct (TrieMap.hfin3_to_tuple (TrieMap.gather_tries args
+         (@TrieMap.initial_acc (PTree.tree' _) _ (PTree.tree' _) (None, Some y, None))))
+         as [[acc_l acc_c] acc_r] eqn:Hacc.
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2
+           Mbind Mret option_monad] in Hm.
+      destruct acc_c as [cs|]; [|discriminate Hm].
+      destruct (ef is_rev y cs) as [vc|] eqn:Hvc; [|discriminate Hm].
+      injection Hm as <-.
+      destruct p; cbn [PTree.get'] in Hpc.
+      + discriminate Hpc.
+      + discriminate Hpc.
+      + injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+    (* Node011 y r *)
+    - destruct (TrieMap.hfin3_to_tuple (TrieMap.gather_tries args
+         (@TrieMap.initial_acc (PTree.tree' _) _ (PTree.tree' _) (None, Some y, Some r))))
+         as [[acc_l acc_c] acc_r] eqn:Hacc.
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2
+           Mbind Mret option_monad] in Hm.
+      destruct acc_c as [cs|]; destruct acc_r as [rs|].
+      + (* acc_c = Some cs, acc_r = Some rs *)
+        destruct (ef is_rev y cs) as [vc|] eqn:Hvc;
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|] eqn:Hvr.
+        * (* vc = Some, vr = Some: result = Node011 vc vr *)
+          injection Hm as <-.
+          destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- discriminate Hpc.
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * (* vc = Some, vr = None: result = Node010 vc *)
+          injection Hm as <-.
+          destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- discriminate Hpc.
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * (* vc = None, vr = Some: result = Node001 vr *)
+          injection Hm as <-.
+          destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- discriminate Hpc.
+          -- discriminate Hpc.
+        * (* vc = None, vr = None: result = None *)
+          discriminate Hm.
+      + (* acc_c = Some cs, acc_r = None: center only *)
+        destruct (ef is_rev y cs) as [vc|] eqn:Hvc; [|discriminate Hm].
+        injection Hm as <-.
+        destruct p; cbn [PTree.get'] in Hpc.
+        * discriminate Hpc.
+        * discriminate Hpc.
+        * injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+      + (* acc_c = None, acc_r = Some rs: right only *)
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|] eqn:Hvr;
+          [|discriminate Hm]. injection Hm as <-.
+        destruct p; cbn [PTree.get'] in Hpc.
+        * exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+        * discriminate Hpc.
+        * discriminate Hpc.
+      + (* acc_c = None, acc_r = None: result = None *)
+        discriminate Hm.
+    (* Node100 l *)
+    - destruct (TrieMap.hfin3_to_tuple (TrieMap.gather_tries args
+         (@TrieMap.initial_acc (PTree.tree' _) _ (PTree.tree' _) (Some l, None, None))))
+         as [[acc_l acc_c] acc_r] eqn:Hacc.
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2
+           Mbind Mret option_monad] in Hm.
+      destruct acc_l as [ls|]; [|discriminate Hm].
+      destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|] eqn:Hvl;
+        [|discriminate Hm]. injection Hm as <-.
+      destruct p; cbn [PTree.get'] in Hpc.
+      + discriminate Hpc.
+      + exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+      + discriminate Hpc.
+    (* Node101 l r *)
+    - destruct (TrieMap.hfin3_to_tuple (TrieMap.gather_tries args
+         (@TrieMap.initial_acc (PTree.tree' _) _ (PTree.tree' _) (Some l, None, Some r))))
+         as [[acc_l acc_c] acc_r] eqn:Hacc.
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2
+           Mbind Mret option_monad] in Hm.
+      destruct acc_l as [ls|]; destruct acc_r as [rs|].
+      + (* ls=Some, rs=Some *)
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|] eqn:Hvl;
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|] eqn:Hvr.
+        * injection Hm as <-.
+          destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- discriminate Hpc.
+        * injection Hm as <-.
+          destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- discriminate Hpc.
+        * injection Hm as <-.
+          destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- discriminate Hpc.
+          -- discriminate Hpc.
+        * discriminate Hm.
+      + destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|] eqn:Hvl;
+          [|discriminate Hm]. injection Hm as <-.
+        destruct p; cbn [PTree.get'] in Hpc.
+        * discriminate Hpc.
+        * exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+        * discriminate Hpc.
+      + destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|] eqn:Hvr;
+          [|discriminate Hm]. injection Hm as <-.
+        destruct p; cbn [PTree.get'] in Hpc.
+        * exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+        * discriminate Hpc.
+        * discriminate Hpc.
+      + discriminate Hm.
+    (* Node110 l y *)
+    - destruct (TrieMap.hfin3_to_tuple (TrieMap.gather_tries args
+         (@TrieMap.initial_acc (PTree.tree' _) _ (PTree.tree' _) (Some l, Some y, None))))
+         as [[acc_l acc_c] acc_r] eqn:Hacc.
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2
+           Mbind Mret option_monad] in Hm.
+      destruct acc_l as [ls|]; destruct acc_c as [cs|].
+      + (* ls=Some, cs=Some *)
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|] eqn:Hvl;
+        destruct (ef is_rev y cs) as [vc|] eqn:Hvc.
+        * injection Hm as <-.
+          destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * injection Hm as <-.
+          destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- discriminate Hpc.
+        * injection Hm as <-.
+          destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- discriminate Hpc.
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * discriminate Hm.
+      + destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|] eqn:Hvl;
+          [|discriminate Hm]. injection Hm as <-.
+        destruct p; cbn [PTree.get'] in Hpc.
+        * discriminate Hpc.
+        * exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+        * discriminate Hpc.
+      + destruct (ef is_rev y cs) as [vc|] eqn:Hvc; [|discriminate Hm].
+        injection Hm as <-.
+        destruct p; cbn [PTree.get'] in Hpc.
+        * discriminate Hpc.
+        * discriminate Hpc.
+        * injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+      + discriminate Hm.
+    (* Node111 l y r *)
+    - destruct (TrieMap.hfin3_to_tuple (TrieMap.gather_tries args
+         (@TrieMap.initial_acc (PTree.tree' _) _ (PTree.tree' _) (Some l, Some y, Some r))))
+         as [[acc_l acc_c] acc_r] eqn:Hacc.
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2
+           Mbind Mret option_monad] in Hm.
+      destruct acc_l as [ls|]; destruct acc_c as [cs|]; destruct acc_r as [rs|].
+      + (* ls=Some, cs=Some, rs=Some: 8 subcases *)
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|] eqn:Hvl;
+        destruct (ef is_rev y cs) as [vc|] eqn:Hvc;
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|] eqn:Hvr.
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- discriminate Hpc.
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- discriminate Hpc.
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- discriminate Hpc.
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- discriminate Hpc.
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- discriminate Hpc.
+          -- discriminate Hpc.
+        * discriminate Hm.
+      + (* ls=Some, cs=Some, rs=None: 4 subcases *)
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|] eqn:Hvl;
+        destruct (ef is_rev y cs) as [vc|] eqn:Hvc.
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- discriminate Hpc.
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- discriminate Hpc.
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * discriminate Hm.
+      + (* ls=Some, cs=None, rs=Some: 4 subcases *)
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|] eqn:Hvl;
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|] eqn:Hvr.
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- discriminate Hpc.
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+          -- discriminate Hpc.
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- discriminate Hpc.
+          -- discriminate Hpc.
+        * discriminate Hm.
+      + (* ls=Some, cs=None, rs=None *)
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|] eqn:Hvl;
+          [|discriminate Hm]. injection Hm as <-.
+        destruct p; cbn [PTree.get'] in Hpc.
+        * discriminate Hpc.
+        * exact (IHl (negb is_rev) ls vl Hvl p c Hpc).
+        * discriminate Hpc.
+      + (* ls=None, cs=Some, rs=Some: 4 subcases *)
+        destruct (ef is_rev y cs) as [vc|] eqn:Hvc;
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|] eqn:Hvr.
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- discriminate Hpc.
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- discriminate Hpc.
+          -- discriminate Hpc.
+          -- injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+        * injection Hm as <-. destruct p; cbn [PTree.get'] in Hpc.
+          -- exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+          -- discriminate Hpc.
+          -- discriminate Hpc.
+        * discriminate Hm.
+      + (* ls=None, cs=Some, rs=None *)
+        destruct (ef is_rev y cs) as [vc|] eqn:Hvc; [|discriminate Hm].
+        injection Hm as <-.
+        destruct p; cbn [PTree.get'] in Hpc.
+        * discriminate Hpc.
+        * discriminate Hpc.
+        * injection Hpc as <-. exact (Hef is_rev y cs vc Hvc).
+      + (* ls=None, cs=None, rs=Some *)
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|] eqn:Hvr;
+          [|discriminate Hm]. injection Hm as <-.
+        destruct p; cbn [PTree.get'] in Hpc.
+        * exact (IHr (negb is_rev) rs vr Hvr p c Hpc).
+        * discriminate Hpc.
+        * discriminate Hpc.
+      + (* ls=None, cs=None, rs=None *)
+        discriminate Hm.
+  Qed.
+
+  (* Wrapper: list_intersect (the public function) preserves both-free. *)
+  Lemma list_intersect_bf
+      (ef : bool -> @FullPosTrie.fpt' B -> list (@FullPosTrie.fpt' B) -> option (@FullPosTrie.fpt' B))
+      (Hef : forall b x xs r, ef b x xs = Some r -> fpt_both_free' r)
+      (hd : PTree.tree' (@FullPosTrie.fpt' B))
+      (args : list (PTree.tree' (@FullPosTrie.fpt' B)))
+      (m : PTree.tree' (@FullPosTrie.fpt' B)) :
+    TrieMap.list_intersect ef hd args = Some m ->
+    bf_tree' m.
+  Proof.
+    intro Hm.
+    change (TrieMap.list_intersect'_pre_cbv ef hd false args = Some m) in Hm.
+    exact (lin_list_intersect'_bf ef Hef false hd args Hm).
+  Qed.
+
   (* ---- HARD A: list_intersect naturality. ---- *)
   (* Helper: option_all over Datatypes.option_map'd list *)
   Local Lemma lin_option_all_Dmap {A1 A2 : Type} (f : A1 -> A2) (l : list (Datatypes.option A1)) :
@@ -1202,6 +1545,85 @@ Section FptSim.
           { rewrite !map_map. apply map_ext. intros x. apply fpt_proj_sim. }
   Qed.
 
+  (* ---- Helper B2: fpt_spaced_intersect'' only produces both-free fpt' values. ---- *)
+  Lemma fpt_spaced_intersect''_both_free :
+    forall (fuel : nat)
+           (cil : list (list bool)) (ptl : list (@FullPosTrie.fpt' B))
+           (ci0 : list bool) (cil' : list (list bool))
+           (pt0 : @FullPosTrie.fpt' B) (ptl' : list (@FullPosTrie.fpt' B))
+           (r : @FullPosTrie.fpt' B),
+    fpt_spaced_intersect'' merge fuel cil ptl ci0 cil' pt0 ptl' = Some r ->
+    fpt_both_free' r.
+  Proof.
+    induction fuel as [|fuel' IH]; intros cil ptl ci0 cil' pt0 ptl' r Hr.
+    - discriminate Hr.
+    - destruct ci0 as [|ci0_hd ci0_tl].
+      + (* ci0 = [] *)
+        destruct pt0 as [a|m|a m]; cbn [fpt_spaced_intersect''] in Hr.
+        * injection Hr as <-. constructor.
+        * discriminate Hr.
+        * discriminate Hr.
+      + (* ci0 = ci0_hd :: ci0_tl *)
+        cbn [fpt_spaced_intersect''] in Hr.
+        set (initial_part :=
+          if ci0_hd then fpt_have_true_part [] [] ci0_tl pt0 [] []
+          else fpt_just_false_part ci0_tl pt0 [] []) in *.
+        set (part :=
+          fpt_partition_tries cil' ptl'
+            (fpt_partition_tries cil ptl initial_part)) in *.
+        destruct part as [ci0' pt0' oc ot | oc ot t_ci0 t_pt0 t_cil t_ptl] eqn:Hpart.
+        * (* just_false_part: recurse *)
+          exact (IH oc ot ci0' [] pt0' [] r Hr).
+        * (* have_true_part: list_intersect *)
+          cbn [fpt_spaced_intersect''] in Hr.
+          set (true_cil_rev := rev t_cil) in *.
+          set (pt_intersect :=
+            TrieMap.list_intersect
+              (fun is_forward =>
+                 fpt_spaced_intersect'' merge fuel' oc ot t_ci0
+                   (if is_forward then t_cil else true_cil_rev))
+              (fpt_proj_node_unchecked t_pt0)
+              (map fpt_proj_node_unchecked t_ptl)) in *.
+          destruct pt_intersect as [m_res|] eqn:Hli; [|discriminate Hr].
+          cbn [option_map] in Hr. injection Hr as <-.
+          constructor.
+          unfold pt_intersect in Hli.
+          apply list_intersect_bf with
+            (ef := (fun is_forward : bool =>
+               fpt_spaced_intersect'' merge fuel' oc ot t_ci0
+                 (if is_forward then t_cil else true_cil_rev) :
+               @FullPosTrie.fpt' B -> list (@FullPosTrie.fpt' B) -> option (@FullPosTrie.fpt' B)))
+            (hd := fpt_proj_node_unchecked t_pt0)
+            (args := map fpt_proj_node_unchecked t_ptl)
+            (m := m_res);
+            [intros b x xs r' Hr';
+             exact (IH oc ot t_ci0 (if b then t_cil else true_cil_rev) x xs r' Hr')
+            | exact Hli].
+  Qed.
+
+  (* ---- Helper B3: both-free + depth'-after-injection = fpt_depth'. ---- *)
+  Lemma both_free_depth_reflect :
+    forall (t : @FullPosTrie.fpt' B),
+    fpt_both_free' t ->
+    forall n, depth' (pt'_of_fpt' t) n -> fpt_depth' t n.
+  Proof.
+    apply (FullPosTrie.fpt'_strong_ind B
+      (fun t => fpt_both_free' t -> forall n, depth' (pt'_of_fpt' t) n -> fpt_depth' t n)).
+    - (* fpt_leaf a *)
+      intros a _Hbf n Hd. inversion Hd; subst. constructor.
+    - (* fpt_node m *)
+      intros m IHm Hbf n Hd.
+      inversion Hbf as [|m0 Hchildren Hm0]; subst.
+      rewrite pt'_of_fpt'_fpt_node in Hd.
+      inversion Hd as [|m1 n0 Hchildren_d Hm1 Hn1]; subst.
+      constructor. intros p c Hgp.
+      apply (IHm p c Hgp (Hchildren p c Hgp) n0).
+      apply (Hchildren_d p).
+      rewrite tree'_map'_get, Hgp. reflexivity.
+    - (* fpt_both a m -- excluded by fpt_both_free' *)
+      intros a m _IHm Hbf. inversion Hbf.
+  Qed.
+
   (* ---- Helper: list_Mmap id commutes with option_map pt'_of_fpt'. ---- *)
   Lemma list_Mmap_option_map_pt :
     forall (l : list (@FullPosTrie.fpt B)),
@@ -1403,11 +1825,7 @@ Section BridgeSection.
     - reflexivity.
   Qed.
 
-  (** Lemma 3: [fpt_spaced_intersect_native] has uniform depth N.
-      Admitted: the reflect direction [depth (option_map pt'_of_fpt' t) N → fpt_depth t N]
-      requires that the native fixpoint only ever constructs [fpt_leaf]/[fpt_node]
-      (no [fpt_both]).  A direct proof mirrors [pt_spaced_intersect_depth] for the
-      native algorithm; structurally identical, just using fpt constructors.  *)
+  (** Lemma 3: [fpt_spaced_intersect_native] has uniform depth N. *)
   Lemma fpt_spaced_intersect_native_depth
     (tries : @FullPosTrie.fpt B * list bool)
     (rest  : list (@FullPosTrie.fpt B * list bool))
@@ -1417,7 +1835,58 @@ Section BridgeSection.
     (forall p, In p (tries :: rest) -> fpt_depth (fst p) (length (filter id (snd p)))) ->
     (forall p, In p (tries :: rest) -> length (snd p) = N) ->
     fpt_depth (@fpt_spaced_intersect_native B _ merge (tries, rest)) N.
-  Proof. intros. admit. Admitted.
+  Proof.
+    intros _Hdepth Hbools Hfd Hlen.
+    (* Build wf_tries for cvt' using repeat xH N as witness. *)
+    assert (Hwf' : @wf_tries B (repeat xH N) (cvt' tries, map cvt' rest)).
+    { eapply (wf_tries_cvt'_at (repeat xH N)).
+      - rewrite repeat_length. reflexivity.
+      - exact Hfd.
+      - exact Hlen. }
+    (* Apply pt_spaced_intersect_depth to get depth of the cvt' join. *)
+    (* combined_bools of cvt' = combined_bools of cvt = repeat true N *)
+    assert (Hcbools' : @combined_bools B (cvt' tries, map cvt' rest) = repeat true N).
+    { exact (eq_trans (eq_sym (combined_bools_cvt_cvt' tries rest)) Hbools). }
+    assert (HfilterN : length (filter id (repeat true N)) = N).
+    { clear. induction N as [|n IHn]; cbn [filter id repeat length]; [reflexivity | congruence]. }
+    (* pt_spaced_intersect_depth gives depth N for the cvt' join. *)
+    pose proof (@pt_spaced_intersect_depth B _ merge merge_comm merge_assoc
+                 (cvt' tries, map cvt' rest) (repeat xH N) Hwf') as Hdepth'.
+    set (cb := @combined_bools B (cvt' tries, map cvt' rest)) in *.
+    rewrite Hcbools', HfilterN in Hdepth'.
+    (* Hdepth' : depth (pt_spaced_intersect merge (cvt' tries, map cvt' rest)) N *)
+    (* Use simulation lemma. *)
+    (* Case-split on the native result. *)
+    destruct (fpt_spaced_intersect_native merge (tries, rest)) as [t'|] eqn:Hnat.
+    - (* Some t': derive fpt_depth' t' N *)
+      cbn [fpt_depth].
+      (* Use the sim lemma to get pt'_of_fpt' t' = inner of pt_spaced_intersect *)
+      pose proof (@fpt_spaced_intersect_native_sim B _ merge (tries, rest)) as Hsim.
+      cbn [fst snd] in Hsim.
+      rewrite Hnat in Hsim. cbn [option_map] in Hsim.
+      (* Hdepth' says depth (pt_spaced_intersect merge (cvt' ...)) N *)
+      (* Hsim says Some (pt'_of_fpt' t') = pt_spaced_intersect merge (cvt' ...) *)
+      (* Combine: depth' (pt'_of_fpt' t') N *)
+      assert (Hdepth'' : depth' (pt'_of_fpt' t') N).
+      { rewrite <- Hsim in Hdepth'. exact Hdepth'. }
+      (* Get both-free for t' by tracing fpt_spaced_intersect_native's internal call. *)
+      assert (Hbf : fpt_both_free' t').
+      { unfold fpt_spaced_intersect_native in Hnat.
+        change (fst (tries, rest)) with tries in Hnat.
+        change (snd (tries, rest)) with rest in Hnat.
+        destruct (split rest) as [ptl cil] eqn:Hsplit.
+        destruct tries as [pt0_opt ci0].
+        cbn [fst snd] in Hnat.
+        destruct pt0_opt as [pt0'|]; [|discriminate Hnat].
+        destruct (@list_Mmap option _ _ option_monad id ptl) as [ptl'|] eqn:Hmm;
+          [|discriminate Hnat].
+        exact (fpt_spaced_intersect''_both_free merge
+                 (S (length ci0)) cil ptl' ci0 [] pt0' [] Hnat). }
+      (* Reflect: both-free + depth' (pt'_of_fpt' t') N → fpt_depth' t' N *)
+      exact (both_free_depth_reflect Hbf Hdepth'').
+    - (* None: fpt_depth None N = True *)
+      exact I.
+  Qed.
 
   (** Lemma 2: get-level bridge.
       fpt_get native sigma = fpt_get via_conv sigma when sigma has length N. *)
