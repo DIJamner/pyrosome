@@ -53,6 +53,32 @@ Section VariableFlags.
           cbn [filter id]. exact IH.
   Qed.
 
+  Lemma variable_flags_eq_map_filter (p : idx -> bool) (qv : list idx) :
+    NoDup qv -> variable_flags idx Eqb_idx qv (filter p qv) = map p qv.
+  Proof.
+    induction qv as [|qx qv' IH]; intro Hnd.
+    - reflexivity.
+    - inversion Hnd as [|? ? Hnotin Hnd']; subst.
+      cbn [filter variable_flags map].
+      destruct (p qx) eqn:Hp.
+      + (* p qx = true *)
+        rewrite eqb_refl_true by exact Eqb_idx_ok.
+        cbn. f_equal. apply IH. exact Hnd'.
+      + (* p qx = false *)
+        destruct (filter p qv') as [|cx cvs'] eqn:Hf.
+        * (* filter p qv' = [] *)
+          cbn [variable_flags]. f_equal.
+          rewrite IH; [| exact Hnd']. reflexivity.
+        * (* filter p qv' = cx :: cvs' *)
+          assert (Hcx_in : In cx qv'). {
+            assert (Hin : In cx (filter p qv')) by (rewrite Hf; left; reflexivity).
+            apply filter_In in Hin. apply Hin. }
+          assert (Hqx_ne_cx : qx <> cx). {
+            intro Heq. subst. apply Hnotin. exact Hcx_in. }
+          rewrite (@eqb_ineq_false idx Eqb_idx Eqb_idx_ok qx cx (or_introl Hqx_ne_cx)).
+          cbn. f_equal. apply IH. exact Hnd'.
+  Qed.
+
 End VariableFlags.
 
 (* ============================================================================
