@@ -225,3 +225,48 @@ HARD (Admitted placeholders to discharge in M2b):
 In the have_true branch the final wrap is `option_map fpt_node (list_intersect …)`; combine with
 `pt'_of_fpt'_fpt_node` so `option_map pt'_of_fpt' (option_map fpt_node X)
 = option_map pos_trie_node (option_map (tree'_map' pt'_of_fpt') X)`, then apply naturality.
+
+## STATUS after M0–M6 (commit 5f03186, pushed long_horizon)
+
+DONE: the running e-graph join is conversion-free. Public `fpt_spaced_intersect` =
+`fpt_spaced_intersect_native` (direct fpt' join, no fpt_to_pt/pt_to_fpt rebuilds).
+`Print Assumptions egraph_sound` = EXACTLY TWO localized admits (independently verified
+via scratch coqc), nothing else:
+  1. `FullPosTrieConv.list_intersect_natural`
+  2. `FullPosTrieConv.fpt_spaced_intersect_native_depth`
+FullPosTrieConv / QcAlignment / Automation all build.
+
+REMAINING (restore axiom-free): discharge the two admits.
+
+### Admit 1: list_intersect_natural (FullPosTrieConv.v ~line 974)
+`forall {Bf Bp} (g) (ef eg), (forall b x xs, option_map g (ef b x xs) = eg b (g x) (map g xs))
+ -> forall hd args, option_map (tree'_map' g) (TrieMap.list_intersect ef hd args)
+    = TrieMap.list_intersect eg (tree'_map' g hd) (map (tree'_map' g) args).`
+IMPORTANT: the per-`b` elts-correspondence hypothesis is sufficient; do NOT route through
+`list_intersect_correct` (that drags in spurious `map_elts_wf`/`elts_intersect_rev`
+obligations that are NOT generally true for arbitrary ef/eg). Prove by DIRECT induction on
+the `list_intersect'_pre_cbv` fix structure (induct on `hd : tree' Bf`), pushing `tree'_map' g`
+through `tree'_tuple_k`/`gather_tries`/`tree'_of_tuple_k` and applying the hypothesis at the
+`elts_intersect`/leaf positions. The recursion alternates `is_rev`; the same flag logic runs on
+both sides so it cancels. Template for tree'-level reasoning: `list_intersect_correct'`
+(TrieMap.v:1481) and the `gather_tries`/`tree'_tuple` helper lemmas in TrieMap.v.
+
+### Admit 2: fpt_spaced_intersect_native_depth (FullPosTrieConv.v ~line 1268)
+`<Hdepth Hbools Hfd Hlen> -> fpt_depth (fpt_spaced_intersect_native merge (tries,rest)) N.`
+Route (preferred, reuses sim once natural is discharged):
+  - native is BOTH-FREE: define `fpt_both_free'` (leaf ok, node ok if all children ok, both NOT)
+    and prove `fpt_spaced_intersect'' merge fuel … = Some t -> fpt_both_free' t` by induction on
+    fuel; the node case needs "list_intersect of both-free-producing elts has all-both-free
+    elements" — a `list_intersect` predicate-preservation lemma (generic, similar shape to
+    natural). 
+  - `fpt_both_free' t -> depth' (pt'_of_fpt' t) n -> fpt_depth' t n` (clean structural; on
+    both-free trees pt'_of_fpt' is leaf↔leaf node↔node so depth reflects).
+  - then: sim (`fpt_spaced_intersect_native_sim`) gives option_map pt'_of_fpt' native =
+    pt_spaced_intersect (cvt' inputs); `pt_spaced_intersect_depth` (PosListMapIntersectSpec.v:3802)
+    gives depth N of that (needs wf_tries(cvt') — build from Hfd via pt'_of_fpt'_has_depth' +
+    combined_bools(cvt')=combined_bools(cvt)=repeat true N); reflect via both-free → fpt_depth.
+  Alternative: direct fuel-induction mirroring `pt_spaced_intersect_depth` (also needs a
+  `list_intersect` depth/predicate lemma). Either way one more generic list_intersect lemma.
+
+Both admits reduce to generic structural lemmas about `TrieMap.list_intersect` (naturality +
+predicate-preservation). Discharging them restores `egraph_sound` to axiom-free.
