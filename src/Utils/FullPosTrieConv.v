@@ -113,6 +113,92 @@ Inductive fpt_depth' {A} : @FullPosTrie.fpt' A -> nat -> Prop :=
 Definition fpt_depth {A} (t : @FullPosTrie.fpt A) (n : nat) : Prop :=
   match t with None => True | Some t' => fpt_depth' t' n end.
 
+(* Depth of fpt_singleton matches key length. *)
+Lemma fpt_singleton_depth' {A} (k : list positive) (v : A) :
+  fpt_depth' (FullPosTrie.fpt_singleton k v) (length k).
+Proof.
+  induction k as [|p k' IH].
+  - constructor.
+  - cbn [FullPosTrie.fpt_singleton length].
+    constructor.
+    intros q c Hget.
+    destruct (Pos.eq_dec q p) as [->|Hne].
+    + rewrite PTree.gss0 in Hget. injection Hget as <-. exact IH.
+    + rewrite PTree.gso0 in Hget by auto. discriminate.
+Qed.
+
+(* fpt_put' preserves fpt_depth' when the key has the correct length.
+   Note: fpt_depth' has no fpt_both constructor, so fpt_both inputs are vacuously
+   impossible at any S-depth (inversion closes those goals automatically). *)
+Lemma fpt_put'_depth' {A} (k : list positive) (v : A) (t : FullPosTrie.fpt' A) (n : nat) :
+  length k = n ->
+  fpt_depth' t n ->
+  fpt_depth' (FullPosTrie.fpt_put' t k v) n.
+Proof.
+  revert t n. induction k as [|p k' IH]; intros t n Hlen Hd.
+  - subst n. destruct t as [a | m | a m]; cbn [FullPosTrie.fpt_put'].
+    + constructor.
+    + inversion Hd.
+    + inversion Hd.
+  - destruct n as [|n']; [discriminate|].
+    injection Hlen as Hlen'.
+    destruct t as [a | m | a m].
+    + inversion Hd.
+    + inversion Hd as [|m0 n0 Hchild Hm Hn]; subst.
+      cbn [FullPosTrie.fpt_put'].
+      constructor. intros q c Hget.
+      unfold FullPosTrie.fpt_child_put in Hget.
+      destruct (PTree.get' p m) as [c0|] eqn:Hgp;
+        destruct (Pos.eq_dec q p) as [->|Hne].
+      * rewrite FullPosTrie.fpt_gss' in Hget. injection Hget as <-.
+        apply IH with (n := length k'); [reflexivity | exact (Hchild p c0 Hgp)].
+      * rewrite FullPosTrie.fpt_gso' in Hget by auto.
+        exact (Hchild q c Hget).
+      * rewrite FullPosTrie.fpt_gss' in Hget. injection Hget as <-.
+        exact (fpt_singleton_depth' k' v).
+      * rewrite FullPosTrie.fpt_gso' in Hget by auto.
+        exact (Hchild q c Hget).
+    + inversion Hd as [|m0 n0 Hchild Hm Hn]; subst.
+Qed.
+
+(* fpt_put preserves fpt_depth when the key has the correct length. *)
+Lemma fpt_put_depth {A} (k : list positive) (v : A) (m : FullPosTrie.fpt A) (n : nat) :
+  length k = n ->
+  fpt_depth m n ->
+  fpt_depth (FullPosTrie.fpt_put m k v) n.
+Proof.
+  intros Hlen Hd.
+  destruct m as [t|].
+  - cbn [FullPosTrie.fpt_put fpt_depth] in *.
+    apply fpt_put'_depth'; assumption.
+  - cbn [FullPosTrie.fpt_put fpt_depth].
+    rewrite <- Hlen. exact (fpt_singleton_depth' k v).
+Qed.
+
+(* pt_to_fpt preserves uniform depth: a depth-n pos_trie maps to a depth-n fpt. *)
+Lemma pt_to_fpt_depth {B} (t : @pos_trie B) (n : nat) :
+  depth t n -> fpt_depth (pt_to_fpt t) n.
+Proof.
+  intros Hdepth.
+  unfold pt_to_fpt.
+  change (@map.fold (list positive) B (@pos_trie_map B) (@FullPosTrie.fpt B)
+            (fun acc k v => @map.put (list positive) B (@FullPosTrie.full_pos_trie_map B) acc k v)
+            (@map.empty (list positive) B (@FullPosTrie.full_pos_trie_map B)) t)
+    with (pt_fold (fun (acc : @FullPosTrie.fpt B) k v =>
+                     @map.put (list positive) B (@FullPosTrie.full_pos_trie_map B) acc k v)
+                  (@map.empty (list positive) B (@FullPosTrie.full_pos_trie_map B)) t).
+  apply (@pt_fold_spec' B n (@FullPosTrie.fpt B)
+           (fun (_ : @pos_trie B) (acc : @FullPosTrie.fpt B) => fpt_depth acc n)).
+  - (* base: fpt_depth None n *)
+    exact I.
+  - (* step: fpt_depth acc n -> fpt_depth (fpt_put acc k v) n *)
+    intros k v m r Hk Hdm Hgetm IH.
+    change (@map.put (list positive) B (@FullPosTrie.full_pos_trie_map B) r k v)
+      with (FullPosTrie.fpt_put r k v).
+    apply fpt_put_depth; [exact Hk | exact IH].
+  - exact Hdepth.
+Qed.
+
 (* Keys reachable in a uniform-depth fpt' have length n. *)
 Lemma fpt_depth'_key_length {A} (t : FullPosTrie.fpt' A) (n : nat) :
   fpt_depth' t n -> forall k v, FullPosTrie.fpt_get' t k = Some v -> length k = n.
@@ -271,6 +357,47 @@ Proof.
       pose proof (find_none _ _ Hf (k, v) Hin) as Hnn.
       cbn [fst] in Hnn. rewrite lkeqb_refl in Hnn. discriminate.
     + reflexivity.
+Qed.
+
+(* fold_left of pt_put over a list of length-n keys into a depth-n acc
+   preserves depth n. *)
+Lemma fold_left_pt_put_depth {B} (l : list (list positive * B)) (n : nat) :
+  (forall p, In p l -> length (fst p) = n) ->
+  forall acc, depth acc n ->
+  depth (fold_left (fun (a : @pos_trie B) p => pt_put a (fst p) (snd p)) l acc) n.
+Proof.
+  induction l as [|[k v] l' IH]; intros Hlen acc Hacc.
+  - exact Hacc.
+  - cbn [fold_left fst snd].
+    apply IH.
+    + intros p Hp. apply Hlen. right. exact Hp.
+    + assert (Hk : length k = n) by (apply (Hlen (k, v)); left; reflexivity).
+      rewrite <- Hk. apply pt_put_depth. rewrite Hk. exact Hacc.
+Qed.
+
+(* fpt_to_pt preserves uniform depth: a depth-n fpt maps to a depth-n pos_trie. *)
+Lemma fpt_to_pt_has_depth' {B} (t : @FullPosTrie.fpt B) (n : nat) :
+  fpt_depth t n -> depth (fpt_to_pt t) n.
+Proof.
+  intros Hdepth.
+  unfold fpt_to_pt.
+  change (@map.fold (list positive) B (@FullPosTrie.full_pos_trie_map B) (@pos_trie B)
+            (fun acc k v => @map.put (list positive) B (@pos_trie_map B) acc k v)
+            (@map.empty (list positive) B (@pos_trie_map B)) t)
+    with (FullPosTrie.fpt_fold
+            (fun (acc : @pos_trie B) k v => pt_put acc k v)
+            (@None (@pos_trie' B)) t).
+  rewrite FullPosTrie.fpt_fold_elements.
+  cbv beta.
+  set (elems := FullPosTrie.fpt_elements t).
+  assert (Hlen : forall p, In p elems -> length (fst p) = n).
+  { intros [k0 v0] Hin. cbn [fst].
+    assert (Hgk0 : FullPosTrie.fpt_get t k0 = Some v0).
+    { apply FullPosTrie.fpt_elements_spec. exact Hin. }
+    eapply fpt_depth_key_length; eassumption. }
+  apply fold_left_pt_put_depth.
+  - exact Hlen.
+  - exact I.
 Qed.
 
 (* ============================================================================
