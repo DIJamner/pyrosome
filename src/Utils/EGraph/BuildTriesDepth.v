@@ -7,7 +7,7 @@
    e-graph instantiation, so that H9/H10 at Automation.v can be closed and
    [egraph_sound] becomes axiom-free.  See WIP/trie4_P2_build_tries_depth_design.md.
    ============================================================================ *)
-From Stdlib Require Import Lists.List Uint63 BinNums PArith.
+From Stdlib Require Import Lists.List Uint63 BinNums PArith Arith Lia.
 Import ListNotations.
 From coqutil Require Import Map.Interface.
 From Utils Require Import Utils Monad Default ExtraMaps.
@@ -164,3 +164,197 @@ Section BuildTries.
   Qed.
 
 End BuildTries.
+
+(* ============================================================================
+   (C) [clen_compiled_eq_length_cvars]:
+   the compiled-clause length equals the number of clause variables.
+
+   Given qv (all query variables, NoDup) and out::args ⊆ qv,
+   let cvars := filter (inb - (out::args)) qv  (the clause variables in order)
+   and sub   := combine cvars (seq 0 (length cvars))  (position map).
+   Then clen (map (lookup sub) args, lookup sub out) = length cvars.
+   ============================================================================ *)
+
+(* Helper: Eqb_ok for positive *)
+Lemma positive_Eqb_ok' : Eqb_ok positive_Eqb.
+Proof. intros a b; unfold eqb, positive_Eqb; destruct (Pos.eqb_spec a b); auto. Qed.
+
+(* Helper: inb x l = true <-> In x l for positive *)
+Lemma inb_positive_true (x : positive) (l : list positive) :
+  inb x l = true <-> In x l.
+Proof.
+  unfold inb. rewrite existsb_exists. split.
+  - intros [y [Hin Heq]]. unfold eqb, positive_Eqb in Heq.
+    destruct (Pos.eqb_spec x y) as [E|E]; [subst; exact Hin | discriminate].
+  - intro H. exists x. split; [exact H|]. unfold eqb, positive_Eqb. apply Pos.eqb_refl.
+Qed.
+
+(* Helper: named_list_lookup result is either the default or in (map snd l) *)
+Lemma named_list_lookup_default_or_in (d : nat) (l : list (positive * nat)) (x : positive) :
+  named_list_lookup d l x = d \/ In (named_list_lookup d l x) (map snd l).
+Proof.
+  induction l as [|[k v] l' IH]. { left; reflexivity. }
+  cbn [named_list_lookup map snd]. destruct (eqb x k) eqn:Heq.
+  - right. left. reflexivity.
+  - destruct IH as [IH | IH]; [left; exact IH | right; right; exact IH].
+Qed.
+
+(* Helper: map snd (combine la lb) = lb when length la = length lb *)
+Lemma map_snd_combine_gen {A B : Type} (la : list A) (lb : list B) :
+  length la = length lb -> map snd (combine la lb) = lb.
+Proof.
+  revert lb. induction la as [|a la IH]; intros [|b lb] Hlen; cbn in *;
+    try discriminate; try reflexivity.
+  f_equal. apply IH. Lia.lia.
+Qed.
+
+(* Helper: lookup in (combine cvars (seq 0 n)) is always < n when n >= 1 *)
+Lemma named_list_lookup_combine_seq_lt (cvars : list positive) (x : positive) :
+  1 <= length cvars ->
+  named_list_lookup 0 (combine cvars (seq 0 (length cvars))) x < length cvars.
+Proof.
+  intro Hn.
+  pose proof (named_list_lookup_default_or_in 0 (combine cvars (seq 0 (length cvars))) x) as [Hdef | Hin].
+  - rewrite Hdef. Lia.lia.
+  - rewrite (map_snd_combine_gen cvars (seq 0 (length cvars))) in Hin.
+    + apply in_seq in Hin. Lia.lia.
+    + rewrite length_seq. reflexivity.
+Qed.
+
+(* Helper: default independence when key is present *)
+Lemma named_list_lookup_present_indep (d1 d2 : nat) (l : list (positive * nat)) (x : positive) :
+  (exists v, In (x, v) l) -> named_list_lookup d1 l x = named_list_lookup d2 l x.
+Proof.
+  intros [v Hin]. induction l as [|[k w] l' IH]. { inversion Hin. }
+  cbn [named_list_lookup]. destruct (eqb x k) eqn:Heq. { reflexivity. }
+  apply IH. destruct Hin as [Hin | Hin].
+  - injection Hin as -> ->. rewrite eqb_refl_true in Heq by exact positive_Eqb_ok'. discriminate.
+  - exact Hin.
+Qed.
+
+(* Helper: (nth i l d, base+i) ∈ combine l (seq base (length l)) *)
+Lemma in_combine_seq_nth (l : list positive) (i : nat) (d : positive) (base : nat) :
+  i < length l -> In (nth i l d, base + i) (combine l (seq base (length l))).
+Proof.
+  revert i base. induction l as [|x l' IH]; intros i base Hlt. { cbn in Hlt. Lia.lia. }
+  cbn [length] in Hlt. cbn [combine seq].
+  destruct i as [|i'].
+  - cbn [nth]. left. f_equal. Lia.lia.
+  - right. cbn [nth]. replace (base + S i') with (S base + i') by Lia.lia. apply IH. Lia.lia.
+Qed.
+
+(* Helper: NoDup l -> lookup of (nth i l d) in (combine l (seq 0 n)) = i *)
+Lemma named_list_lookup_combine_seq_nth (l : list positive) (i : nat) (d : positive) :
+  NoDup l -> i < length l ->
+  named_list_lookup 0 (combine l (seq 0 (length l))) (nth i l d) = i.
+Proof.
+  intros Hnd Hlt.
+  pose proof (in_combine_seq_nth l i d 0 Hlt) as Hin. cbn [Nat.add] in Hin.
+  rewrite (named_list_lookup_present_indep 0 i _ _ (ex_intro _ i Hin)).
+  revert i Hnd Hlt Hin.
+  cut (forall base i, NoDup l -> i < length l ->
+       named_list_lookup (base + i) (combine l (seq base (length l))) (nth i l d) = base + i).
+  { intros H i Hnd' Hlt' _. specialize (H 0 i Hnd' Hlt'). cbn in H. exact H. }
+  induction l as [|x l' IH]; intros base i Hnd' Hlt'. { cbn in Hlt'. Lia.lia. }
+  cbn [combine seq nth named_list_lookup length] in *.
+  inversion Hnd' as [|? ? Hnotin Hnd'']; subst.
+  destruct i as [|i'].
+  - cbn [nth]. rewrite eqb_refl_true by exact positive_Eqb_ok'. Lia.lia.
+  - cbn [nth].
+    assert (Hneq : eqb (nth i' l' d) x = false). {
+      apply eqb_ineq_false; [exact positive_Eqb_ok'|left].
+      intro Heq. subst. apply Hnotin. apply nth_In. Lia.lia. }
+    rewrite Hneq. replace (base + S i') with (S base + i') by Lia.lia.
+    apply IH; [exact Hnd'' | Lia.lia].
+Qed.
+
+(* Helper: fold_right Nat.max upper bound *)
+Lemma fold_right_max_lt (l : list nat) (cv : nat) (B : nat) :
+  (forall y, In y l -> y < B) -> cv < B -> fold_right Nat.max cv l < B.
+Proof.
+  induction l as [|x l' IH]; intros Hx Hcv. { exact Hcv. }
+  cbn [fold_right]. apply Nat.max_lub_lt.
+  - apply Hx. left. reflexivity.
+  - apply IH; [| exact Hcv]. intros y Hy. apply Hx. right. exact Hy.
+Qed.
+
+(* Helper: fold_right Nat.max >= any element of the list *)
+Lemma fold_right_max_ge_in (l : list nat) (cv v : nat) :
+  In v l -> v <= fold_right Nat.max cv l.
+Proof.
+  induction l as [|x l' IH]; intros Hin. { inversion Hin. }
+  cbn [fold_right]. destruct Hin as [-> | Hin]. { Lia.lia. }
+  specialize (IH Hin). Lia.lia.
+Qed.
+
+(* Helper: fold_right Nat.max >= its seed cv *)
+Lemma fold_right_max_ge_cv (l : list nat) (cv : nat) :
+  cv <= fold_right Nat.max cv l.
+Proof.
+  induction l as [|x l' IH]; cbn [fold_right]; Lia.lia.
+Qed.
+
+Lemma clen_compiled_eq_length_cvars
+  (qv args : list positive) (out : positive)
+  (Hnd : NoDup qv)
+  (Hsub : incl (out :: args) qv) :
+  let cvars := filter (fun x => inb x (out :: args)) qv in
+  let sub := combine cvars (seq 0 (length cvars)) in
+  clen (map (named_list_lookup 0 sub) args, named_list_lookup 0 sub out) = length cvars.
+Proof.
+  intros cvars sub.
+  unfold clen.
+  set (n := length cvars).
+  (* cvars is NoDup (filter preserves NoDup) *)
+  assert (Hcvnd : NoDup cvars) by (apply NoDup_filter; exact Hnd).
+  (* out ∈ cvars: it passes the filter since out ∈ out::args *)
+  assert (Hout_cvars : In out cvars). {
+    apply filter_In. split.
+    - apply Hsub. left. reflexivity.
+    - apply inb_positive_true. left. reflexivity. }
+  (* every element of cvars is in out::args (by filter definition) *)
+  assert (Hcvars_sub : forall x, In x cvars -> In x (out :: args)). {
+    intros x Hx. apply filter_In in Hx. destruct Hx as [_ Hinb].
+    apply inb_positive_true. exact Hinb. }
+  (* n >= 1 since out ∈ cvars *)
+  assert (Hn1 : 1 <= n). {
+    unfold n. destruct cvars as [|? ?]. { inversion Hout_cvars. }
+    cbn [length]. Lia.lia. }
+  fold n in sub.
+  (* every lookup value < n (upper bound for each element) *)
+  assert (Hlt_n : forall x, named_list_lookup 0 sub x < n). {
+    intro x. unfold sub, n.
+    apply named_list_lookup_combine_seq_lt. exact Hn1. }
+  (* Upper bound: clen <= n *)
+  assert (Hle : S (fold_right Nat.max (named_list_lookup 0 sub out)
+                    (map (named_list_lookup 0 sub) args)) <= n). {
+    apply Nat.le_succ_l.
+    apply fold_right_max_lt.
+    - intros y Hy. apply in_map_iff in Hy. destruct Hy as [x [<- _]]. apply Hlt_n.
+    - apply Hlt_n. }
+  (* Lower bound: the last element of cvars has lookup value n-1 *)
+  set (lastv := nth (n - 1) cvars xH).
+  assert (Hlastv_cvars : In lastv cvars). {
+    apply nth_In. unfold lastv. Lia.lia. }
+  assert (Hlastv_lookup : named_list_lookup 0 sub lastv = n - 1). {
+    unfold sub, lastv.
+    apply named_list_lookup_combine_seq_nth; [exact Hcvnd | Lia.lia]. }
+  assert (Hlastv_in : In lastv (out :: args)) by (apply Hcvars_sub; exact Hlastv_cvars).
+  (* Lower bound: n-1 appears in the fold, so clen >= n *)
+  assert (Hge : n <= S (fold_right Nat.max (named_list_lookup 0 sub out)
+                         (map (named_list_lookup 0 sub) args))). {
+    destruct Hlastv_in as [Heq | Hin_args].
+    - (* lastv = out: the seed cv equals n-1 *)
+      rewrite <- Heq in Hlastv_lookup.
+      pose proof (fold_right_max_ge_cv (map (named_list_lookup 0 sub) args)
+                    (named_list_lookup 0 sub out)).
+      rewrite Hlastv_lookup in *. Lia.lia.
+    - (* lastv ∈ args: n-1 appears in the mapped list *)
+      assert (Hin_map : In (n - 1) (map (named_list_lookup 0 sub) args)). {
+        apply in_map_iff. exists (nth (n-1) cvars xH).
+        split. { exact Hlastv_lookup. } exact Hin_args. }
+      pose proof (fold_right_max_ge_in (map (named_list_lookup 0 sub) args)
+                    (named_list_lookup 0 sub out) (n-1) Hin_map).
+      Lia.lia. }
+  Lia.lia.
+Qed.
