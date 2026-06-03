@@ -747,36 +747,80 @@ Proof.
   set (tries_ne := ne_map (toc_fn frontier_n) (Defs.query_clause_ptrs positive positive er)).
   set (cvt := fun (q : @FullPosTrie.full_pos_trie_map unit * list bool) =>
                (FullPosTrieConv.fpt_to_pt (fst q), snd q)).
-  set (R := compat_intersect merge_fn (cvt (fst tries_ne), map cvt (snd tries_ne))).
   (* Get depth *)
   pose proof (trie_intersect_depth rf rules er Hin e frontier_n) as Hdepth.
   change (depth (compat_intersect merge_fn (cvt (fst tries_ne), map cvt (snd tries_ne))) N)
     in Hdepth.
-  (* Unfold intersection_keys *)
+  (* Hbools: combined_bools = repeat true N *)
+  pose proof (intersection_inputs_combined_bools rf rules er Hin e frontier_n) as Hbools.
+  change (PosListMapIntersectSpec.combined_bools
+            (cvt (fst tries_ne), map cvt (snd tries_ne)) = repeat true N) in Hbools.
+  (* Hfd: each input has uniform fpt_depth = #true flags *)
+  pose proof (fun q Hq => trie_inputs_fpt_depth rf rules er Hin e frontier_n q Hq) as Hfd.
+  (* Hlenp: each input's bool list has length = N.
+     For each p = toc_fn frontier_n ptr, snd p = variable_flags qv cvars,
+     and length (variable_flags qv cvars) = length qv = N. *)
+  (* Helper to compute snd (toc_fn frontier_n ptr) = variable_flags qv cvars for any ptr *)
+  assert (Htoc_snd : forall f0 n0 cvars0,
+    snd (toc_fn frontier_n (Defs.Build_erule_query_ptr positive positive f0 n0 cvars0))
+    = Defs.variable_flags positive positive_Eqb qv cvars0).
+  { intros f0 n0 cvars0.
+    unfold toc_fn. unfold Defs.trie_of_clause. cbn [Defs.query_ptr_args snd].
+    destruct (map.get DBT f0) as [tl0|].
+    - destruct (unwrap_with_default (map.get tl0 n0)) as [tot fr].
+      destruct (eqb n0 frontier_n); reflexivity.
+    - reflexivity. }
+  assert (Hlenp : forall p, In p (fst tries_ne :: snd tries_ne) -> length (snd p) = N).
+  { intros p Hp.
+    (* Each element is toc_fn frontier_n ptr for some ptr *)
+    unfold tries_ne, ne_map in Hp. cbn [fst snd] in Hp.
+    destruct Hp as [Hhead | Hrest].
+    - (* p = toc_fn frontier_n (fst ptrs) *)
+      subst p.
+      destruct (fst (Defs.query_clause_ptrs positive positive er)) as [f0 n0 cvars0].
+      rewrite (Htoc_snd f0 n0 cvars0).
+      exact (@BuildTriesDepth.variable_flags_length positive positive_Eqb qv cvars0).
+    - (* p ∈ map (toc_fn frontier_n) (snd ptrs) *)
+      apply in_map_iff in Hrest.
+      destruct Hrest as [ptr [Heq Hptr_in]].
+      subst p.
+      destruct ptr as [f0 n0 cvars0].
+      rewrite (Htoc_snd f0 n0 cvars0).
+      exact (@BuildTriesDepth.variable_flags_length positive positive_Eqb qv cvars0). }
+  (* HnatD: fpt_spaced_intersect_native has uniform depth N *)
+  pose proof (@FullPosTrieConv.fpt_spaced_intersect_native_depth unit _
+                merge_fn merge_comm_pf merge_assoc_pf
+                (fst tries_ne) (snd tries_ne) N
+                Hdepth Hbools Hfd Hlenp) as HnatD.
+  (* Unfold intersection_keys in Hin_sig, then expose native *)
   unfold Defs.intersection_keys in Hin_sig.
   change (In sigma (@map.keys (list positive) unit (@FullPosTrie.full_pos_trie_map unit)
              (FullPosTrieConv.fpt_spaced_intersect merge_fn tries_ne))) in Hin_sig.
-  (* fpt_spaced_intersect merge_fn tries_ne = pt_to_fpt R *)
-  assert (Hsimp : FullPosTrieConv.fpt_spaced_intersect merge_fn tries_ne =
-                  FullPosTrieConv.pt_to_fpt R).
-  { unfold FullPosTrieConv.fpt_spaced_intersect, FullPosTrieConv.fpt_spaced_intersect_via_conv,
-      R, tries_ne. cbn [fst snd]. reflexivity. }
-  rewrite Hsimp in Hin_sig.
-  (* map.in_keys_inv: In sigma (map.keys (pt_to_fpt R)) -> fpt_get (pt_to_fpt R) sigma <> None *)
+  unfold FullPosTrieConv.fpt_spaced_intersect in Hin_sig.
+  (* in_keys_inv on the native map *)
   assert (Hbs : forall x y : list positive,
     BoolSpec (x = y) (x <> y) (if list_eq_dec Pos.eq_dec x y then true else false)).
   { intros x y. destruct (list_eq_dec Pos.eq_dec x y); constructor; assumption. }
   pose proof (@Properties.map.in_keys_inv (list positive) unit
                 (@FullPosTrie.full_pos_trie_map unit) (@FullPosTrie.full_pos_trie_map_ok unit)
-                _ Hbs sigma (FullPosTrieConv.pt_to_fpt R) Hin_sig) as Hget_ne.
+                _ Hbs sigma
+                (FullPosTrieConv.fpt_spaced_intersect_native merge_fn (fst tries_ne, snd tries_ne))
+                Hin_sig) as Hget_ne.
   change (@map.get (list positive) unit (@FullPosTrie.full_pos_trie_map unit)
-            (FullPosTrieConv.pt_to_fpt R) sigma)
-    with (FullPosTrie.fpt_get (FullPosTrieConv.pt_to_fpt R) sigma) in Hget_ne.
-  destruct (FullPosTrie.fpt_get (FullPosTrieConv.pt_to_fpt R) sigma) as [v|] eqn:Hfget.
-  - (* fpt_depth_key_length *)
-    pose proof (FullPosTrieConv.pt_to_fpt_depth R N Hdepth) as HfptD.
-    symmetry.
-    exact (@FullPosTrieConv.fpt_depth_key_length unit (FullPosTrieConv.pt_to_fpt R) N HfptD sigma v Hfget).
+            (FullPosTrieConv.fpt_spaced_intersect_native merge_fn (fst tries_ne, snd tries_ne)) sigma)
+    with (FullPosTrie.fpt_get
+            (FullPosTrieConv.fpt_spaced_intersect_native merge_fn (fst tries_ne, snd tries_ne))
+            sigma) in Hget_ne.
+  (* HnatD mentions (fst tries_ne, snd tries_ne) which is tries_ne by eta *)
+  change (fpt_depth (FullPosTrieConv.fpt_spaced_intersect_native merge_fn
+                       (fst tries_ne, snd tries_ne)) N) in HnatD.
+  destruct (FullPosTrie.fpt_get
+              (FullPosTrieConv.fpt_spaced_intersect_native merge_fn (fst tries_ne, snd tries_ne))
+              sigma) as [v|] eqn:Hfget.
+  - symmetry.
+    exact (@FullPosTrieConv.fpt_depth_key_length unit
+             (FullPosTrieConv.fpt_spaced_intersect_native merge_fn (fst tries_ne, snd tries_ne))
+             N HnatD sigma v Hfget).
   - exfalso. apply Hget_ne. reflexivity.
 Qed.
 
@@ -852,11 +896,7 @@ Proof.
   unfold Defs.intersection_keys in Hin_sig.
   change (In sigma (@map.keys (list positive) unit (@FullPosTrie.full_pos_trie_map unit)
              (FullPosTrieConv.fpt_spaced_intersect merge_fn tries_ne))) in Hin_sig.
-  assert (Hsimp : FullPosTrieConv.fpt_spaced_intersect merge_fn tries_ne =
-                  FullPosTrieConv.pt_to_fpt R).
-  { unfold FullPosTrieConv.fpt_spaced_intersect, FullPosTrieConv.fpt_spaced_intersect_via_conv,
-      R, tries_ne. cbn [fst snd]. reflexivity. }
-  rewrite Hsimp in Hin_sig.
+  (* Hin_sig is already in native form; fpt_spaced_intersect_inputs_hit takes native keys *)
   (* p = toc_fn frontier_n (Build_erule_query_ptr fsym nptr cvars) in tries::rest *)
   set (p := toc_fn frontier_n (Defs.Build_erule_query_ptr positive positive fsym nptr cvars)).
   assert (Hp_in : In p (fst tries_ne :: snd tries_ne)).
