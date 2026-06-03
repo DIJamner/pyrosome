@@ -456,36 +456,6 @@ Section ReducingStep.
        equality: from the strong form's [g] soundness + denotations,
        [are_unified_eq_sound] -> [eq_sound_to_eq_term] -> conversion to the
        wanted sort ([term_sorts_eq]/[eq_term_conv]). *)
-    Lemma egraph_reducing_equal_step_sound
-      (schedule : list (nat * rule_set V V V_map V_map))
-      (rfuel sat_fuel : nat)
-      (a b : term V) (t : sort V) :
-      wf_term l [] a t -> wf_term l [] b t ->
-      schedule_sound_real schedule ->
-      let '(res, x1, x2, g) :=
-        egraph_reducing_equal_step V_map_plus V_trie succ sort_of spaced_list_intersect
-          l schedule rfuel sat_fuel a b in
-      res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l [] t a b.
-    Proof.
-      intros Ha Hb Hsched.
-      pose proof (egraph_reducing_equal_step_sound_strong schedule rfuel sat_fuel a b t t Ha Hb Hsched) as Hstrong.
-      revert Hstrong.
-      destruct (egraph_reducing_equal_step V_map_plus V_trie succ sort_of spaced_list_intersect
-                  l schedule rfuel sat_fuel a b) as [ [ [ res x1 ] x2 ] g ].
-      intros [ i3 [ Hok_g [ Hsnd_g [ Hr1g Hr2g ] ] ] ] Hres Hunified.
-      assert (Hisx1 : Is_Some (map.get i3 x1)) by (unfold option_relation in Hr1g; destruct (map.get i3 x1); [exact I | discriminate Hr1g]).
-      assert (Hisx2 : Is_Some (map.get i3 x2)) by (unfold option_relation in Hr2g; destruct (map.get i3 x2); [exact I | discriminate Hr2g]).
-      pose proof Hsnd_g as Hsnd_gc.
-      destruct Hsnd_gc as [ _ Hexact _ _ ].
-      assert (Hk1 : Sep.has_key x1 (UnionFind.parent (equiv g))) by (apply Hexact; exact Hisx1).
-      assert (Hk2 : Sep.has_key x2 (UnionFind.parent (equiv g))) by (apply Hexact; exact Hisx2).
-      pose proof (@are_unified_eq_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie (option positive) lang_model x1 x2 g i3 Hok_g Hsnd_g Hk1 Hk2 Hunified) as Hes.
-      pose proof (@eq_sound_to_eq_term V V_Eqb V_Eqb_ok V_map sort_of l sort_of_fresh wfl i3 x1 x2 a b Hes Hr1g Hr2g) as Het.
-      destruct Het as [ t' Heq ].
-      eapply eq_term_conv; [ exact Heq | ].
-      eapply term_sorts_eq with (e := a); eauto using eq_term_wf_l with lang_core.
-    Qed.
-
 End ReducingStep.
 
 (* ============================================================== *)
@@ -565,70 +535,6 @@ Section CongSubgoals.
         { eapply eq_term_refl; eauto. }
       }
       { discriminate. }
-  Qed.
-
-  Lemma cong_subgoals_sound inj_list (e1 e2 : term) (t : sort) :
-    wf_term l [] e1 t -> wf_term l [] e2 t ->
-    all (fun p => let '(a,b) := p in exists s, eq_term l [] s a b)
-        (@cong_subgoals V V_Eqb l inj_list (e1,e2)) ->
-    eq_term l [] t e1 e2.
-  Proof.
-    intros Hwf1 Hwf2 Hall.
-    unfold cong_subgoals in Hall.
-    destruct e1 as [x1 | n1 s1], e2 as [x2 | n2 s2]; simpl in Hall.
-    1-3: (destruct Hall as [ [se Heq] _];
-          eapply eq_term_conv; [ exact Heq |];
-          eapply term_sorts_eq; eauto using wf_ctx_nil;
-          eapply eq_term_wf_r; eauto using wf_ctx_nil).
-    (* con/con case *)
-    destruct (eqb n1 n2) eqn:Hn12;
-    [ | (simpl in Hall; destruct Hall as [ [se Heq] _];
-         eapply eq_term_conv; [ exact Heq |];
-         eapply term_sorts_eq; eauto using wf_ctx_nil;
-         eapply eq_term_wf_r; eauto using wf_ctx_nil) ].
-    pose proof (@eqb_spec _ _ V_Eqb_ok n1 n2) as Hn12eq.
-    rewrite Hn12 in Hn12eq. subst n2.
-    destruct (named_list_lookup_err inj_list n1) as [inj_args|] eqn:Hinj;
-    [ | (simpl in Hall; destruct Hall as [ [se Heq] _];
-         eapply eq_term_conv; [ exact Heq |];
-         eapply term_sorts_eq; eauto using wf_ctx_nil;
-         eapply eq_term_wf_r; eauto using wf_ctx_nil) ].
-    destruct (named_list_lookup_err l n1) as [r|] eqn:Hl1;
-    [ | (simpl in Hall; destruct Hall as [ [se Heq] _];
-         eapply eq_term_conv; [ exact Heq |];
-         eapply term_sorts_eq; eauto using wf_ctx_nil;
-         eapply eq_term_wf_r; eauto using wf_ctx_nil) ].
-    destruct r as [ | c args t_rule | |];
-    try (simpl in Hall; destruct Hall as [ [se Heq] _];
-         eapply eq_term_conv; [ exact Heq |];
-         eapply term_sorts_eq; eauto using wf_ctx_nil;
-         eapply eq_term_wf_r; eauto using wf_ctx_nil).
-    (* term_rule case *)
-    destruct (select_inj_args c inj_args s1 s2) as [subs|] eqn:Hselect;
-    [ | (simpl in Hall; destruct Hall as [ [se Heq] _];
-         eapply eq_term_conv; [ exact Heq |];
-         eapply term_sorts_eq; eauto using wf_ctx_nil;
-         eapply eq_term_wf_r; eauto using wf_ctx_nil) ].
-    assert (Hin1 : In (n1, term_rule c args t_rule) l) by
-      (apply named_list_lookup_err_in; auto).
-    apply WfCutElim.invert_wf_term_con in Hwf1.
-    destruct Hwf1 as (c1 & args1 & t1 & Hinwf1 & Hwfargs1 & Ht1or1).
-    apply WfCutElim.invert_wf_term_con in Hwf2.
-    destruct Hwf2 as (c2 & args2 & t2 & Hinwf2 & Hwfargs2 & Ht2or2).
-    pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf1 Hin1) as Heq1.
-    inversion Heq1; subst c1 args1 t1; clear Heq1.
-    pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf2 Hin1) as Heq2.
-    inversion Heq2; subst c2 args2 t2; clear Heq2.
-    assert (Hwfc : wf_ctx l c) by (eauto with lang_core).
-    eapply select_inj_args_sound in Hselect; eauto.
-    eapply eq_term_conv.
-    { eapply term_con_congruence; eauto. }
-    { destruct Ht2or2 as [Ht2 | Ht2].
-      + exact Ht2.
-      + subst. eapply eq_sort_refl.
-        eapply wf_sort_subst_monotonicity; eauto.
-        * eapply term_rule_in_sort_wf; eauto.
-        * eapply wf_subst_from_wf_args; eauto. }
   Qed.
 
   (* Existential-sort variant: the two sides may be wf at *different* sorts
@@ -896,21 +802,5 @@ Section CongMain.
         apply in_flat_map. exists (a,b). split; [ exact Hin | exact Hp ].
   Qed.
 
-  Lemma egraph_reducing_equal_sound_generic
-    (schedule : list (nat * rule_set V V V_map V_map))
-    (rfuel sat_fuel efuel red_fuel : nat) inj (e1 e2 : term V) (t : sort V) :
-    wf_term l [] e1 t -> wf_term l [] e2 t ->
-    schedule_sound_real V V_map V_map_plus V_trie succ sort_of lt spaced_list_intersect l schedule ->
-    egraph_reducing_cong V_map_plus V_trie succ sort_of spaced_list_intersect l schedule rfuel sat_fuel efuel red_fuel inj [(e1,e2)] = Result.Success tt ->
-    eq_term l [] t e1 e2.
-  Proof.
-    intros Hwf1 Hwf2 Hsched Hsucc.
-    assert (Hwfg : forall a b, In (a,b) [(e1,e2)] -> (exists ta, wf_term l [] a ta) /\ (exists tb, wf_term l [] b tb))
-      by (intros aa bb Hinp; destruct Hinp as [Heqp | Hf]; [ | inversion Hf ];
-          injection Heqp as Ha Hb; subst; split; [ exists t; exact Hwf1 | exists t; exact Hwf2 ]).
-    destruct (egraph_reducing_cong_sound schedule rfuel sat_fuel efuel Hsched red_fuel inj [(e1,e2)] Hwfg Hsucc e1 e2 (or_introl eq_refl)) as [s Heq].
-    eapply eq_term_conv; [ exact Heq | ].
-    eapply (term_sorts_eq (e := e1)); [ exact wfl | constructor | exact (eq_term_wf_l wfl ltac:(constructor) Heq) | exact Hwf1 ].
-  Qed.
   (* CONGMAIN-END-MARKER *)
 End CongMain.

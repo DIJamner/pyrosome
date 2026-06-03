@@ -62,27 +62,6 @@ Section Slice.
       + eapply IH; [ exact Hall2' | exact Hky_ys ].
   Qed.
 
-  Lemma has_key_to_domain
-    (m0 : model symbol) (i0 : idx_map (domain symbol m0)) (e0 : instance)
-    (Hsnd0 : Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m0 i0 e0)
-    (v : idx)
-    (Hkv : Sep.has_key v (parent (equiv e0)))
-    : exists d, map.get i0 v = Some d.
-  Proof.
-    unfold Sep.has_key in Hkv.
-    destruct (map.get (parent (equiv e0)) v) as [vr|] eqn:Hgv; [ | tauto ].
-    assert (Hperv : uf_rel_PER (equiv e0) v v).
-    { unfold uf_rel_PER.
-      eapply PER_clo_trans;
-        [ apply PER_clo_base; exact Hgv
-        | apply PER_clo_sym; apply PER_clo_base; exact Hgv ]. }
-    pose proof (rel_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m0 i0 e0 Hsnd0 v v Hperv) as Heqv.
-    unfold eq_sound_for_model in Heqv.
-    destruct (map.get i0 v) as [d|] eqn:Hgiv.
-    - exact (ex_intro _ d eq_refl).
-    - exact (False_rect _ Heqv).
-  Qed.
-
 End Slice.
 
 (* ===== External (top-level, explicit binders) ===== *)

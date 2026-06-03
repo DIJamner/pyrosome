@@ -132,48 +132,9 @@ Section ReducingSkeleton.
      [fpt_spaced_intersect], a conversion wrapper over [compat_intersect]).  So
      these soundness lemmas are now UNCONDITIONAL (no trie-lawfulness
      assumption left to confine). *)
-  Lemma egraph_reducing_equal_step_sound
-    (l' : lang positive) (sched : pos_schedule) (rfuel sat_fuel : nat)
-    (a b : term positive) (t : sort positive) :
-    wf_lang l' -> wf_term l' [] a t -> wf_term l' [] b t ->
-    schedule_sound l' sched ->
-    let '(res, x1, x2, g) := red_eq_step l' sched rfuel sat_fuel a b in
-    res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l' [] t a b.
-  Proof.
-    intros Hwf Ha Hb [Hfresh Hsched].
-    exact (@ReducingCong.egraph_reducing_equal_step_sound positive positive_Eqb positive_Eqb_ok
-             positive_default TrieMap.trie_map TrieMap.ptree_map_plus (@TrieMapFold.trie_map_ok)
-             TrieMap.ptree_map_plus_ok (@FullPosTrie.full_pos_trie_map) (@FullPosTrie.full_pos_trie_map_ok)
-             Pos.succ PosListMap.sort_of Pos.lt
-             pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
-             (@fpt_spaced_intersect) l' Hwf Hfresh sched rfuel sat_fuel a b t Ha Hb Hsched).
-  Qed.
-
   (* The positive instantiation of the (now fully proven, generic)
      congruence-reduction soundness, UNCONDITIONAL via the two real [map.ok]
      instances above. *)
-  Lemma egraph_reducing_equal_sound_pos
-    (l' : lang positive) (sched : pos_schedule)
-    (rfuel sat_fuel efuel red_fuel : nat) inj
-    (e1 e2 : term positive) (t : sort positive) :
-    wf_lang l' -> wf_term l' [] e1 t -> wf_term l' [] e2 t ->
-    schedule_sound l' sched ->
-    PositiveInstantiation.egraph_reducing_equal l' sched inj
-      rfuel sat_fuel efuel red_fuel e1 e2 = Success tt ->
-    eq_term l' [] t e1 e2.
-  Proof.
-    intros Hwf He1 He2 [Hfresh Hsched] Hsucc.
-    unfold PositiveInstantiation.egraph_reducing_equal,
-      Defs.egraph_reducing_equal in Hsucc.
-    exact (@ReducingCong.egraph_reducing_equal_sound_generic positive positive_Eqb positive_Eqb_ok
-             positive_default TrieMap.trie_map TrieMap.ptree_map_plus (@TrieMapFold.trie_map_ok)
-             TrieMap.ptree_map_plus_ok (@FullPosTrie.full_pos_trie_map) (@FullPosTrie.full_pos_trie_map_ok)
-             Pos.succ PosListMap.sort_of Pos.lt
-             pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
-             (@fpt_spaced_intersect) l' Hwf Hfresh sched rfuel sat_fuel efuel red_fuel inj
-             e1 e2 t He1 He2 Hsched Hsucc).
-  Qed.
-
   (* Bridge: the generic congruence lemma concludes a per-goal EXISTENTIAL-sort
      equality ([In (a,b) goals -> exists s, eq_term l [] s a b]); recover the
      [all2]-at-the-declared-types shape by coercing each existential sort to the

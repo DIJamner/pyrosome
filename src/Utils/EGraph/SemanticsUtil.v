@@ -16,18 +16,6 @@ Section Util.
           (idx_map : forall A, map.map idx A) (idx_map_ok : forall A, map.ok (idx_map A))
           (m : model symbol).
 
-  Lemma get_of_list_map_snd (B C : Type) (f : B -> C) (l : list (idx * B)) (k : idx) :
-    map.get (map.of_list (map (fun p => (fst p, f (snd p))) l)) k
-    = option_map f (map.get (map.of_list l) k).
-  Proof.
-    induction l as [|[a b] l IH]; cbn [map map.of_list fst snd].
-    - rewrite ?map.get_empty. reflexivity.
-    - pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok a k) as Hbs.
-      destruct (eqb a k) eqn:Hak.
-      + subst a. rewrite !map.get_put_same. reflexivity.
-      + rewrite !(map.get_put_diff _ _ _ _ (not_eq_sym Hbs)). exact IH.
-  Qed.
-
   (* For a [named_list] with [NoDup] keys, the coqutil [of_list] map and the
      Pyrosome [named_list_lookup] agree on present keys. *)
   Lemma named_list_lookup_of_list (B : Type) (dflt : B) (l : list (idx * B)) (k : idx) :

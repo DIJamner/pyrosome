@@ -61,45 +61,6 @@ Qed.
 
 (* D2: worklist_dedup is the identity on a list of union_repair      *)
 (* entries with pairwise distinct olds (same old => same entry).     *)
-Lemma worklist_dedup_id
-  {idx : Type} {Eqb_idx : Eqb idx} {Eqb_idx_ok : Eqb_ok Eqb_idx}
-  l
-  : (forall a, In a l -> exists old new_idx b, a = @union_repair idx old new_idx b) ->
-    List.NoDup l ->
-    (forall old1 new1 b1 old2 new2 b2,
-       In (@union_repair idx old1 new1 b1) l ->
-       In (@union_repair idx old2 new2 b2) l ->
-       old1 = old2 -> new1 = new2 /\ b1 = b2) ->
-    worklist_dedup idx Eqb_idx l = l.
-Proof.
-  induction l as [|a l IH].
-  - intros; reflexivity.
-  - intros Hall_ur Hnodup Hdist_old.
-    cbn [worklist_dedup].
-    destruct (Hall_ur a (or_introl eq_refl)) as (old & new_idx & b & Heqa). subst a.
-    inversion Hnodup as [|? ? Hnotin Hnodup_l]. subst.
-    assert (Hall_ur_l : forall x, In x l -> exists o n bb, x = @union_repair idx o n bb).
-    { intros x Hx. exact (Hall_ur x (or_intror Hx)). }
-    assert (Hdist_l : forall old1 new1 b1 old2 new2 b2,
-       In (@union_repair idx old1 new1 b1) l ->
-       In (@union_repair idx old2 new2 b2) l ->
-       old1 = old2 -> new1 = new2 /\ b1 = b2).
-    { intros old1 new1 b1 old2 new2 b2 H1 H2 Heq.
-      exact (Hdist_old old1 new1 b1 old2 new2 b2 (or_intror H1) (or_intror H2) Heq). }
-    specialize (IH Hall_ur_l Hnodup_l Hdist_l). rewrite IH.
-    destruct (List.existsb (entry_subsumed_by idx Eqb_idx (union_repair idx old new_idx b)) l) eqn:Hexb.
-    * exfalso.
-      rewrite List.existsb_exists in Hexb.
-      destruct Hexb as (x & Hx_in & Hx_sub).
-      destruct (Hall_ur_l x Hx_in) as (old' & new' & b' & Heqx). subst x.
-      cbn [entry_subsumed_by] in Hx_sub.
-      apply andb_prop in Hx_sub as [Hxold _].
-      pose proof (eqb_spec old old') as Hspec; rewrite Hxold in Hspec.
-      destruct (Hdist_old old new_idx b old' new' b' (or_introl eq_refl) (or_intror Hx_in) Hspec) as [Hnew Hb].
-      subst. apply Hnotin. exact Hx_in.
-    * reflexivity.
-Qed.
-
 (* D3: good_worklist: the structural precondition that rebuild_canon *)
 (* requires on the worklist.                                          *)
 Definition good_worklist
@@ -120,32 +81,6 @@ Definition good_worklist
                   /\ atom_args b = atom_args (ed_atom _ _ d)).
 
 (* Helper: NoDup (map ed_to_entry ed_list) from NoDup ed_list + pairwise disjoint olds. *)
-Local Lemma NoDup_map_ed_to_entry
-  {idx symbol : Type}
-  ed_list
-  (Hnodup : List.NoDup ed_list)
-  (Hdisj : forall dj dk, In dj ed_list -> In dk ed_list -> dj <> dk -> @ed_disjoint idx symbol dj dk)
-  : List.NoDup (map (ed_to_entry idx symbol) ed_list).
-Proof.
-  induction ed_list as [|d0 rest IH].
-  - constructor.
-  - inversion Hnodup as [|? ? Hnotin_d0 Hnodup_rest]. subst.
-    constructor.
-    + intro Hin_map.
-      apply in_map_iff in Hin_map.
-      destruct Hin_map as (dk & Hdk_eq & Hdk_in).
-      unfold ed_to_entry in Hdk_eq. injection Hdk_eq as Hold_eq _ _.
-      assert (Hd0_ne_dk : d0 <> dk).
-      { intros Heq. subst dk. exact (Hnotin_d0 Hdk_in). }
-      pose proof (Hdisj d0 dk (or_introl eq_refl) (or_intror Hdk_in) Hd0_ne_dk) as Hdisj_0k.
-      destruct Hdisj_0k as (_ & Hne_old & _).
-      exact (Hne_old Hold_eq).
-    + apply IH.
-      * exact Hnodup_rest.
-      * intros dj dk Hdj Hdk Hne.
-        exact (Hdisj dj dk (or_intror Hdj) (or_intror Hdk) Hne).
-Qed.
-
 (* Direct: worklist_dedup (map ed_to_entry ed_list) is the identity  *)
 (* given NoDup ed_list + pairwise disjoint olds.                     *)
 Local Lemma worklist_dedup_ed_list
