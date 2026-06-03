@@ -952,11 +952,13 @@ Module PositiveInstantiation.
     filter (fun '(n,r) => match r with term_rule _ _ _ | sort_rule _ _ => false | _ => true end).
 
   (* The rule_set, or the [Failure] of the first rule whose assumption rebuild
-     ran out of fuel. *)
+     ran out of fuel.  We pin the db trie to [full_pos_trie_map] so that the
+     compiled sequents match the query-side trie used by schedule_sound /
+     rs_saturation_hyps. *)
   Definition build_rule_set
     : nat -> lang positive -> lang positive ->
       Result.result (rule_set positive positive trie_map trie_map) :=
-    rule_set_from_lang ptree_map_plus _ Pos.succ sort_of.
+    rule_set_from_lang ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ sort_of.
 
   (*TODO: move *)
   Definition rev_rule {V} (r : rule V) :=

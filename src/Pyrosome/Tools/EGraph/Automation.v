@@ -22,6 +22,7 @@ From coqutil Require Import Map.Interface.
 From Utils Require Import Monad Result.
 From Pyrosome.Tools Require Import PosRenaming PosRenamingProperties RenamingBridge.
 From Pyrosome.Tools.EGraph Require Import RenamingCoincide.
+From Pyrosome.Tools.EGraph Require Import AdapterGlue.
 From Pyrosome.Theory Require ClosedCore.
 From Stdlib Require Import NArith.
 From Stdlib Require Import Classes.RelationClasses.
@@ -370,9 +371,141 @@ Section ReducingSkeleton.
     split; [exact HwfE1p |].
     split; [exact HwfE2p |].
     split.
-    { (* schedule_sound: the Phase-6 obligation (build_rule_set soundness via
-         optimize_sequent_forward + pt_spaced_intersect_correct).  Still open. *)
-      admit. }
+    { (* schedule_sound: discharge via msr_of_build_rule_set +
+         rs_saturation_const_conjunct + compiled_rules_run1iter_rule_hyps.
+         The two trie H9/H10 goals (intersection_keys length / map.get) are left
+         as admit, gated on the separate trie-lawfulness work. *)
+      (* Build Hsof (freshness) *)
+      assert (Hsof : fresh PosListMap.sort_of Lp).
+      { change PosListMap.sort_of with xH.
+        replace Lp with (fst (rename_lang (ctx_to_rules c ++ l)
+          {| p_to_v := map.empty; v_to_p := []; next_id := xO xH |}))
+          by (rewrite HrL; reflexivity).
+        apply rename_lang_fresh_xH; [typeclasses eauto | exact (reserved_init string)]. }
+      (* Extract rename_grows chains from the two rename_term steps *)
+      pose proof (rename_term_correct _ Hr1ok HrE1) as (_ & Hgrows12 & _).
+      pose proof (rename_term_correct _ Hr2ok HrE2) as (_ & Hgrows23 & _).
+      pose proof (rename_grows_trans Hgrows12 Hgrows23) as Hgrows13.
+      (* Extract renaming_ok r4 and grows r3 r4 from rename_lang posR step *)
+      pose proof (rename_lang_correct _ Hr3ok HrPR) as (Hr4ok & Hgrows34 & _).
+      pose proof (rename_grows_trans Hgrows13 Hgrows34) as Hgrows14.
+      (* Unfold build_rule_set to expose full_pos_trie_map *)
+      unfold PositiveInstantiation.build_rule_set in Hbrs1, Hbrs2.
+      (* incl posR Lp via rename_lang_filter_incl *)
+      assert (Hincl_R : incl posR Lp).
+      { exact (@rename_lang_filter_incl string _ _ _
+                 (ctx_to_rules c) l lf
+                 {| p_to_v := map.empty; v_to_p := []; next_id := xO xH |}
+                 r1 r3 r4 Lp posR (init_renaming_ok string) HrL Hgrows13 Hr3ok HrPR). }
+      (* forall (n,r') in posRR, exists r0 in Lp, r' = rev_rule r0 *)
+      assert (Hrev_RR : forall n r', In (n, r') posRR ->
+                exists r0, In (n, r0) Lp /\ r' = PositiveInstantiation.rev_rule r0).
+      { exact (@AdapterGlue.rename_lang_rev_filter_recovers string _ _ _
+                 (ctx_to_rules c) l (fun p => reversible p && lf p)
+                 (@AdapterGlue.ctx_to_rules_rev_id string c)
+                 {| p_to_v := map.empty; v_to_p := []; next_id := xO xH |}
+                 r1 r4 r5 Lp posRR
+                 (init_renaming_ok string) HrL Hgrows14 Hr4ok HrPRR). }
+      (* Get seqsR and HmsrR *)
+      destruct (@AdapterGlue.msr_of_build_rule_set
+                  positive positive_Eqb positive_Eqb_ok positive_default
+                  TrieMap.trie_map TrieMap.ptree_map_plus (fun A => @TrieMapFold.trie_map_ok A)
+                  (@FullPosTrie.full_pos_trie_map) (fun A => @FullPosTrie.full_pos_trie_map_ok A)
+                  Pos.succ PosListMap.sort_of Pos.lt pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+                  Lp HwfLp Hsof rebuild_fuel posR rsR Hincl_R Hbrs1)
+        as (seqsR & HrsR_eq & HmsrR).
+      (* Get seqsRR and HmsrRR *)
+      destruct (@AdapterGlue.msr_of_build_rule_set_rev
+                  positive positive_Eqb positive_Eqb_ok positive_default
+                  TrieMap.trie_map TrieMap.ptree_map_plus (fun A => @TrieMapFold.trie_map_ok A)
+                  (@FullPosTrie.full_pos_trie_map) (fun A => @FullPosTrie.full_pos_trie_map_ok A)
+                  Pos.succ PosListMap.sort_of Pos.lt pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+                  Lp HwfLp Hsof rebuild_fuel posRR rsRR Hrev_RR Hbrs2)
+        as (seqsRR & HrsRR_eq & HmsrRR).
+      (* Now prove schedule_sound *)
+      unfold schedule_sound.
+      split.
+      - (* fresh PosListMap.sort_of Lp -- already in Hsof *)
+        exact Hsof.
+      - (* schedule_sound_real: for each (n,rs) in [(10,rsR);(1,rsRR)], rs_saturation_hyps rs *)
+        intros n rs Hin_sched.
+        cbn in Hin_sched.
+        pose proof (@Theorems.lang_model_ok positive positive_Eqb positive_Eqb_ok
+                      PosListMap.sort_of Lp Hsof HwfLp) as Hmok.
+        destruct Hin_sched as [E | HIn'].
+        { (* n=10, rs=rsR *)
+          injection E as Hn Hrs. rewrite <- Hrs.
+          rewrite HrsR_eq.
+          unfold SchedSat.rs_saturation_hyps.
+          split.
+          - (* const conjunct *)
+            intros e i Hok Hsnd.
+            exact (@QueryOptSound.rs_saturation_const_conjunct
+                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default
+                     positive positive_Eqb positive_Eqb_ok
+                     TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
+                     TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A)
+                     (@FullPosTrie.full_pos_trie_map) (fun A => @FullPosTrie.full_pos_trie_map_ok A)
+                     (option positive) (@Defs.depth positive)
+                     (Theorems.lang_model positive PosListMap.sort_of Lp)
+                     Hmok pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+                     rebuild_fuel seqsR HmsrR i e Hok Hsnd).
+          - (* per-rule conjunct *)
+            intros e er Hin_er.
+            apply (@QueryOptSound.compiled_rules_run1iter_rule_hyps
+                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default
+                     positive positive_Eqb positive_Eqb_ok
+                     TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
+                     TrieMap.trie_map TrieMap.ptree_map_plus
+                     (fun A => @TrieMapFold.trie_map_ok A)
+                     (@FullPosTrie.full_pos_trie_map)
+                     pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+                     TrieMap.ptree_map_plus_ok
+                     (@fpt_spaced_intersect)
+                     (option positive) (@Defs.depth positive)
+                     (Theorems.lang_model positive PosListMap.sort_of Lp)
+                     Hmok rebuild_fuel seqsR er e HmsrR Hin_er).
+            + admit. (* H9: length (query_vars er) = length sigma for all sigma in intersection_keys *)
+            + admit. (* H10: map.get (trie_of_clause ...) ... = Some tt *)
+        }
+        destruct HIn' as [E | HEmpty].
+        { (* n=1, rs=rsRR *)
+          injection E as Hn Hrs. rewrite <- Hrs.
+          rewrite HrsRR_eq.
+          unfold SchedSat.rs_saturation_hyps.
+          split.
+          - (* const conjunct *)
+            intros e i Hok Hsnd.
+            exact (@QueryOptSound.rs_saturation_const_conjunct
+                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default
+                     positive positive_Eqb positive_Eqb_ok
+                     TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
+                     TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A)
+                     (@FullPosTrie.full_pos_trie_map) (fun A => @FullPosTrie.full_pos_trie_map_ok A)
+                     (option positive) (@Defs.depth positive)
+                     (Theorems.lang_model positive PosListMap.sort_of Lp)
+                     Hmok pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+                     rebuild_fuel seqsRR HmsrRR i e Hok Hsnd).
+          - (* per-rule conjunct *)
+            intros e er Hin_er.
+            apply (@QueryOptSound.compiled_rules_run1iter_rule_hyps
+                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default
+                     positive positive_Eqb positive_Eqb_ok
+                     TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
+                     TrieMap.trie_map TrieMap.ptree_map_plus
+                     (fun A => @TrieMapFold.trie_map_ok A)
+                     (@FullPosTrie.full_pos_trie_map)
+                     pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+                     TrieMap.ptree_map_plus_ok
+                     (@fpt_spaced_intersect)
+                     (option positive) (@Defs.depth positive)
+                     (Theorems.lang_model positive PosListMap.sort_of Lp)
+                     Hmok rebuild_fuel seqsRR er e HmsrRR Hin_er).
+            + admit. (* H9: length (query_vars er) = length sigma for all sigma in intersection_keys *)
+            + admit. (* H10: map.get (trie_of_clause ...) ... = Some tt *)
+        }
+        destruct HEmpty.
+    }
     split; [| exact Hrev].
     (* Is_Success carry-over: the egraph result is [Success tt]. *)
     revert Hsucc;
