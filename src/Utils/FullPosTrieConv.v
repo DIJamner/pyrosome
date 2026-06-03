@@ -468,6 +468,251 @@ Proof.
 Qed.
 
 (* ============================================================================
+   M1 — NATIVE FPT' SPACED JOIN
+
+   Definitions that operate directly on [FullPosTrie.fpt'] with no
+   fold-rebuild conversion.  Mirrors the [pos_trie'] join in PosListMap.v
+   (pt_spaced_intersect' / pt_spaced_intersect).
+   ============================================================================ *)
+
+Section FptNativeJoin.
+  Context {B : Type} `{Hdef : WithDefault B}.
+  Context (merge : B -> B -> B).
+
+  Local Notation fpt' := (@FullPosTrie.fpt' B).
+  Local Notation fpt  := (@FullPosTrie.fpt  B).
+
+  (* M1-1: proj_node_map — mirror proj_node_map_unchecked (PosListMap.v:412).
+     leaf a  => PTree.Node010 (fpt_leaf default)   [dead sentinel]
+     node m  => m
+     both _m => m                                   [fpt_both dead under fpt_depth'] *)
+  Definition fpt_proj_node_unchecked (p : fpt') : PTree.tree' fpt' :=
+    match p with
+    | FullPosTrie.fpt_leaf _ => PTree.Node010 (FullPosTrie.fpt_leaf default)
+    | FullPosTrie.fpt_node m => m
+    | FullPosTrie.fpt_both _ m => m
+    end.
+
+  (* M1-2: leaf_intersect — mirror leaf_intersect (PosListMap.v:424).
+     Structural on the list; dead cases (node/both) pass through unchanged. *)
+  Fixpoint fpt_leaf_intersect (a : B) (ptl : list fpt') : B :=
+    match ptl with
+    | [] => a
+    | (FullPosTrie.fpt_leaf a') :: ptl' => fpt_leaf_intersect (merge a a') ptl'
+    | (FullPosTrie.fpt_node _)  :: ptl' => fpt_leaf_intersect a ptl'   (* dead *)
+    | (FullPosTrie.fpt_both _ _) :: ptl' => fpt_leaf_intersect a ptl'  (* dead *)
+    end.
+
+  (* M1-3: partition_result / partition_tries — clone of PosListMap.v:468-502
+     with carrier fpt' instead of pos_trie'. *)
+  Variant fpt_partition_result :=
+    | fpt_just_false_part
+        (ci0 : list bool) (pt0 : fpt')
+        (cil : list (list bool)) (ptl : list fpt')
+    | fpt_have_true_part
+        (f_cil : list (list bool)) (f_ptl : list fpt')
+        (t_ci0 : list bool) (t_pt0 : fpt')
+        (t_cil : list (list bool)) (t_ptl : list fpt').
+
+  Fixpoint fpt_partition_tries
+      (cil : list (list bool)) (ptl : list fpt')
+      (acc : fpt_partition_result) : fpt_partition_result :=
+    match cil, ptl, acc with
+    | [], [], _ => acc
+    | (false :: l1) :: cil', pt :: ptl',
+      fpt_just_false_part ci0 pt0 other_cil other_tries =>
+        fpt_partition_tries cil' ptl'
+          (fpt_just_false_part l1 pt (ci0 :: other_cil) (pt0 :: other_tries))
+    | (false :: l1) :: cil', pt :: ptl',
+      fpt_have_true_part other_cil other_tries t_ci0 t_pt0 true_cil true_tries =>
+        fpt_partition_tries cil' ptl'
+          (fpt_have_true_part (l1 :: other_cil) (pt :: other_tries)
+             t_ci0 t_pt0 true_cil true_tries)
+    | (true :: l1) :: cil', pt :: ptl',
+      fpt_just_false_part ci0 pt0 other_cil other_tries =>
+        fpt_partition_tries cil' ptl'
+          (fpt_have_true_part (ci0 :: other_cil) (pt0 :: other_tries)
+             l1 pt [] [])
+    | (true :: l1) :: cil', pt :: ptl',
+      fpt_have_true_part other_cil other_tries t_ci0 t_pt0 true_cil true_tries =>
+        fpt_partition_tries cil' ptl'
+          (fpt_have_true_part other_cil other_tries
+             l1 pt (t_ci0 :: true_cil) (t_pt0 :: true_tries))
+    | [] :: _, _, _  (* should never happen *)
+    | _, _, _ => acc
+    end.
+
+  (* M1-4: fpt_spaced_intersect'' — mirror pt_spaced_intersect' (PosListMap.v:852).
+     Structural on [fuel]; no nested-fix guard issue.
+     Uses TrieMap.list_intersect instantiated at B:=fpt', C:=fpt'. *)
+  Fixpoint fpt_spaced_intersect''
+      (fuel : nat)
+      (cil : list (list bool)) (ptl : list fpt')
+      (ci0 : list bool) (cil' : list (list bool)) (pt0 : fpt') (ptl' : list fpt')
+      : option fpt' :=
+    match fuel, ci0, pt0 with
+    | S _, [], FullPosTrie.fpt_node _
+    | S _, [], FullPosTrie.fpt_both _ _ (* dead under fpt_depth' *)
+    | O,   _,  _ => None   (* should never happen *)
+    | S _, [], FullPosTrie.fpt_leaf a =>
+        Some (FullPosTrie.fpt_leaf
+                (fpt_leaf_intersect (fpt_leaf_intersect a ptl) ptl'))
+    | S fuel', ci0_hd :: ci0_tl, _ =>
+        let initial_part :=
+          if ci0_hd
+          then fpt_have_true_part [] [] ci0_tl pt0 [] []
+          else fpt_just_false_part ci0_tl pt0 [] []
+        in
+        let part :=
+          fpt_partition_tries cil' ptl'
+            (fpt_partition_tries cil ptl initial_part)
+        in
+        match part with
+        | fpt_just_false_part ci0' pt0' oc ot =>
+            fpt_spaced_intersect'' fuel' oc ot ci0' [] pt0' []
+        | fpt_have_true_part oc ot t_ci0 t_pt0 t_cil t_ptl =>
+            let true_cil_rev := rev t_cil in
+            let pt_intersect :=
+              TrieMap.list_intersect
+                (fun is_forward =>
+                   fpt_spaced_intersect'' fuel' oc ot t_ci0
+                     (if is_forward then t_cil else true_cil_rev))
+                (fpt_proj_node_unchecked t_pt0)
+                (map fpt_proj_node_unchecked t_ptl)
+            in
+            option_map FullPosTrie.fpt_node pt_intersect
+        end
+    end.
+
+  (* M1-5: fpt_spaced_intersect_native — mirror pt_spaced_intersect (PosListMap.v:891).
+     Input type matches fpt_spaced_intersect_via_conv for drop-in use.
+     Note: [list_Mmap id ptl] with [ptl : list fpt = list (option fpt')] uses the
+     option monad (M = option, A = B = fpt') — we pin the monad explicitly to avoid
+     Rocq inferring the list monad. *)
+  Definition fpt_spaced_intersect_native
+      (tries : (fpt * list bool) * list (fpt * list bool))
+      : fpt :=
+    let '(ptl, cil) := split (snd tries) in
+    let '(pt0, ci0) := fst tries in
+    let fuel := S (length ci0) in
+    match pt0, @list_Mmap option _ _ option_monad id ptl with
+    | Some pt0', Some ptl' =>
+        fpt_spaced_intersect'' fuel cil ptl' ci0 [] pt0' []
+    | _, _ => None
+    end.
+
+End FptNativeJoin.
+
+(* ============================================================================
+   M1b — STRUCTURAL INJECTION fpt' -> pos_trie'
+   (proof-convenience only; no performance requirement)
+   ============================================================================ *)
+
+(* M1b-6: tree'_map' — structural map on PTree.tree' (plain Fixpoint, no guard issue). *)
+Fixpoint tree'_map' {X Y : Type} (f : X -> Y) (m : PTree.tree' X) : PTree.tree' Y :=
+  match m with
+  | PTree.Node001 r        => PTree.Node001 (tree'_map' f r)
+  | PTree.Node010 y        => PTree.Node010 (f y)
+  | PTree.Node011 y r      => PTree.Node011 (f y) (tree'_map' f r)
+  | PTree.Node100 l        => PTree.Node100 (tree'_map' f l)
+  | PTree.Node101 l r      => PTree.Node101 (tree'_map' f l) (tree'_map' f r)
+  | PTree.Node110 l y      => PTree.Node110 (tree'_map' f l) (f y)
+  | PTree.Node111 l y r    => PTree.Node111 (tree'_map' f l) (f y) (tree'_map' f r)
+  end.
+
+(* Key lemma: get' on tree'_map' f m equals option_map f (get' on m). *)
+Lemma tree'_map'_get {X Y : Type} (f : X -> Y) (m : PTree.tree' X) (p : positive) :
+  PTree.get' p (tree'_map' f m) = option_map f (PTree.get' p m).
+Proof.
+  revert p.
+  induction m as [r IHr | y | y r IHr | l IHl | l IHl r IHr | l IHl y | l IHl y r IHr];
+    intros p; destruct p; cbn;
+    try reflexivity;
+    try (apply IHr);
+    try (apply IHl).
+Qed.
+
+(* M1b-7: pt'_of_fpt' — structural injection fpt' B -> pos_trie' B.
+   [fpt_both] is dead under [fpt_depth'] so we treat it like [fpt_node].
+   Guard: the recursion goes through tree'_map', which is opaque to the guard
+   checker — we use the same nested-fix technique as fpt'_strong_ind
+   (FullPosTrie.v:586). *)
+Fixpoint pt'_of_fpt' {B : Type} (t : @FullPosTrie.fpt' B) : @pos_trie' B :=
+  match t with
+  | FullPosTrie.fpt_leaf a => pos_trie_leaf a
+  | FullPosTrie.fpt_node m =>
+      pos_trie_node
+        (let fix IH_tree (m' : PTree.tree' (@FullPosTrie.fpt' B))
+               : PTree.tree' (@pos_trie' B) :=
+           match m' with
+           | PTree.Node001 r     => PTree.Node001 (IH_tree r)
+           | PTree.Node010 y     => PTree.Node010 (pt'_of_fpt' y)
+           | PTree.Node011 y r   => PTree.Node011 (pt'_of_fpt' y) (IH_tree r)
+           | PTree.Node100 l     => PTree.Node100 (IH_tree l)
+           | PTree.Node101 l r   => PTree.Node101 (IH_tree l) (IH_tree r)
+           | PTree.Node110 l y   => PTree.Node110 (IH_tree l) (pt'_of_fpt' y)
+           | PTree.Node111 l y r => PTree.Node111 (IH_tree l) (pt'_of_fpt' y) (IH_tree r)
+           end
+         in IH_tree m)
+  | FullPosTrie.fpt_both _ m =>
+      pos_trie_node
+        (let fix IH_tree (m' : PTree.tree' (@FullPosTrie.fpt' B))
+               : PTree.tree' (@pos_trie' B) :=
+           match m' with
+           | PTree.Node001 r     => PTree.Node001 (IH_tree r)
+           | PTree.Node010 y     => PTree.Node010 (pt'_of_fpt' y)
+           | PTree.Node011 y r   => PTree.Node011 (pt'_of_fpt' y) (IH_tree r)
+           | PTree.Node100 l     => PTree.Node100 (IH_tree l)
+           | PTree.Node101 l r   => PTree.Node101 (IH_tree l) (IH_tree r)
+           | PTree.Node110 l y   => PTree.Node110 (IH_tree l) (pt'_of_fpt' y)
+           | PTree.Node111 l y r => PTree.Node111 (IH_tree l) (pt'_of_fpt' y) (IH_tree r)
+           end
+         in IH_tree m)
+  end.
+
+(* The inner [let fix IH_tree] in pt'_of_fpt' equals tree'_map' pt'_of_fpt'. *)
+Lemma pt'_of_fpt'_fpt_node {B : Type} (m : PTree.tree' (@FullPosTrie.fpt' B)) :
+  pt'_of_fpt' (FullPosTrie.fpt_node m) = pos_trie_node (tree'_map' pt'_of_fpt' m).
+Proof.
+  cbn [pt'_of_fpt'].
+  f_equal.
+  induction m as [r IHr | y | y r IHr | l IHl | l IHl r IHr | l IHl y | l IHl y r IHr];
+    cbn; try (rewrite <- IHr); try (rewrite <- IHl); reflexivity.
+Qed.
+
+(* M1b-8: get-lemma — fpt_get' agrees with pt_get' through pt'_of_fpt'.
+   Proved by fpt'_strong_ind; the fpt_both case is vacuous under fpt_depth'. *)
+Lemma pt'_of_fpt'_get {B : Type} (t : @FullPosTrie.fpt' B) (n : nat) :
+  fpt_depth' t n ->
+  forall k, length k = n ->
+    FullPosTrie.fpt_get' t k = pt_get' (pt'_of_fpt' t) k.
+Proof.
+  revert n.
+  apply (FullPosTrie.fpt'_strong_ind B
+    (fun t => forall n, fpt_depth' t n ->
+                forall k, length k = n ->
+                  FullPosTrie.fpt_get' t k = pt_get' (pt'_of_fpt' t) k)).
+  - (* fpt_leaf a *)
+    intros a n Hd k Hk.
+    inversion Hd; subst. destruct k; [reflexivity | discriminate].
+  - (* fpt_node m — use tree'_map'_get + pt'_of_fpt'_fpt_node *)
+    intros m IHm n Hd k Hk.
+    inversion Hd as [| m0 n0 Hchild Hm0 Hn0]; subst.
+    destruct k as [| p k'].
+    + discriminate.
+    + rewrite pt'_of_fpt'_fpt_node.
+      cbn [FullPosTrie.fpt_get' pt_get'].
+      rewrite tree'_map'_get.
+      destruct (PTree.get' p m) as [c |] eqn:Hgp; cbn [option_map].
+      * apply (IHm p c Hgp n0 (Hchild p c Hgp) k').
+        cbn [length] in Hn0. injection Hn0 as Hn0'. exact (eq_sym Hn0').
+      * reflexivity.
+  - (* fpt_both — vacuous under fpt_depth' (no fpt_both constructor) *)
+    intros a m _IHm n Hd k _Hk.
+    inversion Hd.
+Qed.
+
+(* ============================================================================
    INTERSECT INHERITANCE.
 
    [fpt_spaced_intersect] is a conversion wrapper:
