@@ -400,6 +400,58 @@ Proof.
   - exact I.
 Qed.
 
+(* Builder (converse of [trie_fold'_andb_get_inv]): if every entry's value
+   satisfies [f], the [andb]-fold over the trie is true. *)
+Lemma trie_fold'_andb_get_build {B : Type} (f : B -> bool)
+  (m : PTree.tree' B) (revnum : positive) :
+  (forall p v, PTree.get' p m = Some v -> Is_true (f v)) ->
+  Is_true (TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                              true m revnum).
+Proof.
+  revert revnum.
+  induction m as [m IH | a | a m IH | m IH | m1 IH1 m2 IH2 | m IH a | m1 IH1 a m2 IH2];
+    intros revnum Hall; cbn.
+  - apply IH. intros p v Hget. apply (Hall (xI p)). cbn. exact Hget.
+  - apply Hall with (p := xH). reflexivity.
+  - rewrite (trie_fold'_andb_factor f m (xI revnum) (f a)).
+    apply Is_true_eq_left. apply Bool.andb_true_iff. split.
+    + apply Is_true_eq_true. apply (Hall xH). reflexivity.
+    + apply Is_true_eq_true. apply IH. intros p v Hget. apply (Hall (xI p)). cbn. exact Hget.
+  - apply IH. intros p v Hget. apply (Hall (xO p)). cbn. exact Hget.
+  - rewrite (trie_fold'_andb_factor f m1 (xO revnum) _).
+    apply Is_true_eq_left. apply Bool.andb_true_iff. split.
+    + apply Is_true_eq_true. apply IH2. intros p v Hget. apply (Hall (xI p)). cbn. exact Hget.
+    + apply Is_true_eq_true. apply IH1. intros p v Hget. apply (Hall (xO p)). cbn. exact Hget.
+  - rewrite (trie_fold'_andb_factor f m (xO revnum) (f a)).
+    apply Is_true_eq_left. apply Bool.andb_true_iff. split.
+    + apply Is_true_eq_true. apply (Hall xH). reflexivity.
+    + apply Is_true_eq_true. apply IH. intros p v Hget. apply (Hall (xO p)). cbn. exact Hget.
+  - rewrite (trie_fold'_andb_factor f m1 (xO revnum) _).
+    apply Is_true_eq_left. apply Bool.andb_true_iff. split.
+    + apply Is_true_eq_true. rewrite (trie_fold'_andb_factor f m2 (xI revnum) (f a)).
+      apply Is_true_eq_left. apply Bool.andb_true_iff. split.
+      * apply Is_true_eq_true. apply (Hall xH). reflexivity.
+      * apply Is_true_eq_true. apply IH2. intros p v Hget. apply (Hall (xI p)). cbn. exact Hget.
+    + apply Is_true_eq_true. apply IH1. intros p v Hget. apply (Hall (xO p)). cbn. exact Hget.
+Qed.
+
+(* Reverse bridge: the [depth'] Prop entails the [has_depth'] boolean.
+   [P3] needs [Is_true (has_depth' ...)] for [wf_input], but [fpt_to_pt_has_depth']
+   and [pt_spaced_intersect_depth] produce the [depth'] Prop. *)
+Lemma depth'_to_has_depth' {B} (n : nat) (pt : @pos_trie' B) :
+  depth' pt n -> Is_true (has_depth' n pt).
+Proof.
+  revert pt. induction n; intros pt Hd.
+  - inversion Hd; subst. cbn. exact I.
+  - inversion Hd; subst. cbn [has_depth'].
+    change (Is_true (TrieMap.trie_fold'
+                       (fun res (_:positive) (w:@pos_trie' B) =>
+                          res && has_depth' n w)
+                       true m xH)).
+    apply trie_fold'_andb_get_build.
+    intros p v Hget. apply IHn. apply (H1 p v Hget).
+Qed.
+
 (* ============================================================================
    INTERSECT INHERITANCE.
 
