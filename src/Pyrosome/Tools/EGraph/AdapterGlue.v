@@ -1912,8 +1912,11 @@ Section WithVar.
     (* ===== conclusion forward chain: given wf_subst for a term_eq_rule,
        produce a sound interpretation for the conclusion egraph
        (after add_open_term e2 + union x1 x2 + rebuild + force_equiv). ===== *)
-    Lemma conclusion_egraph_sound_eq name c e1 e2 t (sg : subst)
-        (Hin : In (name, term_eq_rule c e1 e2 t) l)
+    Lemma conclusion_egraph_sound_eq c e1 e2 t (sg : subst)
+        (Hwfc : wf_ctx l c)
+        (Hwfe1 : wf_term l c e1 t)
+        (Hwfe2 : wf_term l c e2 t)
+        (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_term l [] t[/sg0/] e1[/sg0/] e2[/sg0/])
         (Hsg : wf_subst l [] sg c)
       : let sub     := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
         let e_ctx   := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
@@ -1938,10 +1941,6 @@ Section WithVar.
       set (x2     := fst (add_open_term succ sort_of l true false sub e2 e_assum)).
       set (e_open2 := snd (add_open_term succ sort_of l true false sub e2 e_assum)).
       set (e_union := snd (@Defs.union V V_Eqb V V_map V_map V_trie unit HX x1 x2 e_open2)).
-      (* Step 1: wf facts from rule membership *)
-      pose proof (rule_in_wf _ _ Hwf Hin) as Hr.
-      rewrite app_nil_r in Hr. rewrite invert_wf_term_eq_rule in Hr.
-      destruct Hr as (Hwfc & Hwfe1 & Hwfe2 & _).
       (* Step 2: use assumption_egraph_sound_eq for the base *)
       pose proof (assumption_egraph_sound_eq c e1 t sg Hwfc Hwfe1 Hsg)
         as (Hok_assum & i1 & Hsnd_assum & Hfst_sub & Hai1 & Hroot1).
@@ -1990,8 +1989,7 @@ Section WithVar.
         destruct (map.get i2a x2) as [v2|] eqn:Hg2; [|discriminate Hroot2].
         cbn [Is_Some_satisfying].
         pose proof (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf) as Hlm_ok.
-        pose proof (@ConclSemantic.term_eq_concl V V_Eqb l Hwf name c e1 e2 t Hin sg Hsg)
-          as Heq_e1e2.
+        pose proof (Heqf sg Hsg) as Heq_e1e2.
         exact (let Hle12 := @Theorems.lm_eq_terms V V_Eqb l e1[/sg/] e2[/sg/] t[/sg/] Heq_e1e2 in
                @PER_Transitive _ _ (domain_eq_PER V (model_ok:=Hlm_ok)) _ _ _
                 (@PER_Transitive _ _ (domain_eq_PER V (model_ok:=Hlm_ok)) _ _ _ Hroot1 Hle12)
@@ -2046,8 +2044,11 @@ Section WithVar.
     Qed.
 
     (* ===== Lemma: conclusion_i2_sound_assum_eq ===== *)
-    Lemma conclusion_i2_sound_assum_eq name c e1 e2 t (sg : subst)
-        (Hin : In (name, term_eq_rule c e1 e2 t) l)
+    Lemma conclusion_i2_sound_assum_eq c e1 e2 t (sg : subst)
+        (Hwfc : wf_ctx l c)
+        (Hwfe1 : wf_term l c e1 t)
+        (Hwfe2 : wf_term l c e2 t)
+        (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_term l [] t[/sg0/] e1[/sg0/] e2[/sg0/])
         (Hsg : wf_subst l [] sg c)
       : let sub     := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
         let e_ctx   := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
@@ -2065,7 +2066,7 @@ Section WithVar.
                 atom_sound_for_model V V V_map (lang_model l) i2 al).
     Proof.
       cbn zeta.
-      pose proof (conclusion_egraph_sound_eq name c e1 e2 t sg Hin Hsg) as H.
+      pose proof (conclusion_egraph_sound_eq c e1 e2 t sg Hwfc Hwfe1 Hwfe2 Heqf Hsg) as H.
       cbn zeta in H.
       destruct H as (i2 & Hsnd_concl & Hai2 & i1 & Hsnd_i1 & Hext12).
       exists i2.
@@ -2077,9 +2078,7 @@ Section WithVar.
     Qed.
 
     (* ===== R2-eq: lift i2 soundness on e_concl to all seq_conclusions clauses (eq rule) ===== *)
-    Lemma concl_clauses_sound_eq name c e1 e2 t (sg : subst)
-        (Hin : In (name, term_eq_rule c e1 e2 t) l)
-        (Hsg : wf_subst l [] sg c)
+    Lemma concl_clauses_sound_eq name c e1 e2 t
         (i2 : V_map (domain V (lang_model l)))
         (Hsnd : egraph_sound_for_interpretation (lang_model l) i2
                   (snd (force_equiv V V_Eqb V V_map V_map V_trie (X:=unit)
@@ -2151,7 +2150,8 @@ Section WithVar.
        k is covered by an atom_tree (term) or atom_tree_sort (sort) in the
        combined assumption egraph e_assum = rebuild rf (add_open_term ... e1 ...). *)
     Lemma eq_assum_ids_covered name c e1 e2 t
-        (Hin : In (name, term_eq_rule c e1 e2 t) l)
+        (Hwfc : wf_ctx l c)
+        (Hwfe1 : wf_term l c e1 t)
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   e1
@@ -2171,12 +2171,6 @@ Section WithVar.
                   e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
     Proof.
-      assert (Hwfc : wf_ctx l c).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_term_eq_rule in Hr. destruct Hr as (Hc & _ & _ & _). exact Hc. }
-      assert (Hwfe1 : wf_term l c e1 t).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_term_eq_rule in Hr. destruct Hr as (_ & He1 & _ & _). exact He1. }
       intros k Hk.
       unfold forall_vars in Hk.
       unfold rule_to_log_seq in Hk.
@@ -2311,7 +2305,9 @@ Section WithVar.
     (* ===== R2-eq Lemma 2: Hcover_concl_eq ===== *)
     Lemma Hcover_concl_eq name c e1 e2 t
         (a i2 : V_map (domain V (lang_model l)))
-        (sg : subst) (Hin : In (name, term_eq_rule c e1 e2 t) l)
+        (sg : subst)
+        (Hwfc : wf_ctx l c)
+        (Hwfe1 : wf_term l c e1 t)
         (Hsg : wf_subst l [] sg c)
         (Hsnd_a : forall al, atom_in_egraph al
                     (snd (rebuild rf (snd (add_open_term succ sort_of l false false
@@ -2342,7 +2338,7 @@ Section WithVar.
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
     Proof.
       intros k da d Hk Ha Hi2k.
-      apply (eq_assum_ids_covered name c e1 e2 t Hin Hsucc k).
+      apply (eq_assum_ids_covered name c e1 e2 t Hwfc Hwfe1 Hsucc k).
       apply Hconf.
       unfold Sep.has_key. rewrite Ha. exact I.
     Qed.
@@ -2393,7 +2389,10 @@ Section WithVar.
                     map.get a (named_list_lookup default
                                 (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) x)
                       = Some (inl (named_list_lookup default sg x)))
-        (Hin : In (name, term_eq_rule c e1 e2 t) l)
+        (Hwfc : wf_ctx l c)
+        (Hwfe1 : wf_term l c e1 t)
+        (Hwfe2 : wf_term l c e2 t)
+        (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_term l [] t[/sg0/] e1[/sg0/] e2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   e1
@@ -2415,17 +2414,11 @@ Section WithVar.
       set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) in *.
       set (e_assum := snd (rebuild rf (snd (add_open_term succ sort_of l false false sub e1
                         (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))) in *.
-      assert (Hwfc : wf_ctx l c).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_term_eq_rule in Hr. destruct Hr as (Hc & _ & _ & _). exact Hc. }
-      assert (Hwfe1 : wf_term l c e1 t).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_term_eq_rule in Hr. destruct Hr as (_ & He1 & _ & _). exact He1. }
-      pose proof (conclusion_i2_sound_assum_eq name c e1 e2 t sg Hin Hsg)
+      pose proof (conclusion_i2_sound_assum_eq c e1 e2 t sg Hwfc Hwfe1 Hwfe2 Heqf Hsg)
         as (i2 & Hsnd_concl_i2 & Hai2 & Hsnd_i2_assum).
       cbn zeta in Hsnd_concl_i2, Hai2, Hsnd_i2_assum.
       fold sub e_assum in Hai2, Hsnd_i2_assum.
-      pose proof (concl_clauses_sound_eq name c e1 e2 t sg Hin Hsg i2 Hsnd_concl_i2)
+      pose proof (concl_clauses_sound_eq name c e1 e2 t i2 Hsnd_concl_i2)
         as Hclauses.
       assert (Hwf_i2 : forall k d, map.get i2 k = Some d ->
                          domain_eq V (lang_model l) d d).
@@ -2450,7 +2443,7 @@ Section WithVar.
                   (exists e' t', wf_term l c e' t' /\ atom_tree e_assum sub e' k)
                 \/ (exists ts, wf_sort l c ts /\ atom_tree_sort e_assum sub ts k)).
       { intros k da d HP Ha Hi2k.
-        exact (Hcover_concl_eq name c e1 e2 t a i2 sg Hin Hsg Hsnd_a Hconf Hsucc k da d HP Ha Hi2k). }
+        exact (Hcover_concl_eq name c e1 e2 t a i2 sg Hwfc Hwfe1 Hsg Hsnd_a Hconf Hsucc k da d HP Ha Hi2k). }
       assert (Hagree : forall k d da, P k -> map.get i2 k = Some d ->
                   map.get a k = Some da -> domain_eq V (lang_model l) d da).
       { exact (assumption_ids_agree a i2 e_assum sub c P
@@ -2467,7 +2460,10 @@ Section WithVar.
 
     (* ===== (B0) term-eq-rule adapter ===== *)
     Lemma model_satisfies_rule_adapter_term_eq name c e1 e2 t
-        (Hin : In (name, term_eq_rule c e1 e2 t) l)
+        (Hwfc : wf_ctx l c)
+        (Hwfe1 : wf_term l c e1 t)
+        (Hwfe2 : wf_term l c e2 t)
+        (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_term l [] t[/sg0/] e1[/sg0/] e2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   e1
@@ -2491,12 +2487,6 @@ Section WithVar.
       destruct (rebuild rf e_open1_c) as [r1_c e_assum_c] eqn:Hr1.
       cbn [fst snd] in *.
       clear Hkeys.
-      assert (Hwfc : wf_ctx l c).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_term_eq_rule in Hr. destruct Hr as (Hc & _ & _ & _). exact Hc. }
-      assert (Hwfe1 : wf_term l c e1 t).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_term_eq_rule in Hr. destruct Hr as (_ & He1 & _ & _). exact He1. }
       pose proof (assumption_atoms_sound (lang_model l) a _ Hassum) as Hsnd_atoms.
       (* Lift Hsnd_atoms to use the unfolded form for eq_assumption_inversion *)
       assert (Hsnd_atoms_uf : forall al : atom,
@@ -2543,13 +2533,16 @@ Section WithVar.
         rewrite Hac in Hx. cbn [fst] in Hx.
         rewrite Hac. cbn [fst].
         exact (Hfaith' x Hx). }
-      exact (term_eq_rule_concl_obligation name c e1 e2 t a sg Hsg Hmapfst_sg Hfaith_orig Hin
-               Hsucc_uf Hsnd_atoms_uf Hconf).
+      exact (term_eq_rule_concl_obligation name c e1 e2 t a sg Hsg Hmapfst_sg Hfaith_orig
+               Hwfc Hwfe1 Hwfe2 Heqf Hsucc_uf Hsnd_atoms_uf Hconf).
     Qed.
 
-    (* ===== central obligation: term_eq rule ===== *)
-    Lemma central_obligation_term_eq name c e1 e2 t
-        (Hin : In (name, term_eq_rule c e1 e2 t) l)
+    (* ===== central obligation core: term_eq rule (parameterized on wf/eq hyps) ===== *)
+    Lemma central_obligation_term_eq_core name c e1 e2 t
+        (Hwfc : wf_ctx l c)
+        (Hwfe1 : wf_term l c e1 t)
+        (Hwfe2 : wf_term l c e2 t)
+        (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_term l [] t[/sg0/] e1[/sg0/] e2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   e1
@@ -2575,7 +2568,57 @@ Section WithVar.
         destruct (rebuild rf e_o) as [r2 e2x];
         cbn [fst snd]; reflexivity.
       - apply (@db_to_atoms_NoDup_fn_args V V_Eqb V_Eqb_ok V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok).
-      - exact (model_satisfies_rule_adapter_term_eq name c e1 e2 t Hin Hsucc).
+      - exact (model_satisfies_rule_adapter_term_eq name c e1 e2 t Hwfc Hwfe1 Hwfe2 Heqf Hsucc).
+    Qed.
+
+    (* ===== central obligation: term_eq rule (public wrapper, keeps original signature) ===== *)
+    Lemma central_obligation_term_eq name c e1 e2 t
+        (Hin : In (name, term_eq_rule c e1 e2 t) l)
+        (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
+                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  e1
+                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+               = Result.Success tt)
+      : model_satisfies_rule V V V_map (lang_model l)
+          (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
+             (rule_to_log_seq name (term_eq_rule c e1 e2 t)) rf).
+    Proof.
+      assert (Hwfc : wf_ctx l c)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_term_eq_rule in Hr; destruct Hr as (h&_&_&_); exact h).
+      assert (Hwfe1 : wf_term l c e1 t)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_term_eq_rule in Hr; destruct Hr as (_&h&_&_); exact h).
+      assert (Hwfe2 : wf_term l c e2 t)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_term_eq_rule in Hr; destruct Hr as (_&_&h&_); exact h).
+      exact (central_obligation_term_eq_core name c e1 e2 t Hwfc Hwfe1 Hwfe2
+               (@ConclSemantic.term_eq_concl V V_Eqb l Hwf name c e1 e2 t Hin) Hsucc).
+    Qed.
+
+    (* ===== central obligation: reversed term_eq rule ===== *)
+    Lemma central_obligation_term_eq_rev name c e1 e2 t
+        (Hin : In (name, term_eq_rule c e1 e2 t) l)
+        (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
+                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  e2
+                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+               = Result.Success tt)
+      : model_satisfies_rule V V V_map (lang_model l)
+          (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
+             (rule_to_log_seq name (term_eq_rule c e2 e1 t)) rf).
+    Proof.
+      assert (Hwfc : wf_ctx l c)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_term_eq_rule in Hr; destruct Hr as (h&_&_&_); exact h).
+      assert (Hwfe1 : wf_term l c e1 t)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_term_eq_rule in Hr; destruct Hr as (_&h&_&_); exact h).
+      assert (Hwfe2 : wf_term l c e2 t)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_term_eq_rule in Hr; destruct Hr as (_&_&h&_); exact h).
+      exact (central_obligation_term_eq_core name c e2 e1 t Hwfc Hwfe2 Hwfe1
+               (@ConclSemantic.term_eq_concl_rev V V_Eqb l Hwf name c e1 e2 t Hin) Hsucc).
     Qed.
 
     (* ============================================================== *)
@@ -2673,8 +2716,11 @@ Section WithVar.
     Qed.
 
     (* ----- Lemma 2: conclusion_egraph_sound_sort_eq ----- *)
-    Lemma conclusion_egraph_sound_sort_eq name c t1 t2 (sg : subst)
-        (Hin : In (name, sort_eq_rule c t1 t2) l)
+    Lemma conclusion_egraph_sound_sort_eq c t1 t2 (sg : subst)
+        (Hwfc : wf_ctx l c)
+        (Hwft1 : wf_sort l c t1)
+        (Hwft2 : wf_sort l c t2)
+        (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_sort l [] t1[/sg0/] t2[/sg0/])
         (Hsg : wf_subst l [] sg c)
       : let sub     := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
         let e_ctx   := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
@@ -2699,9 +2745,6 @@ Section WithVar.
       set (x2     := fst (add_open_sort succ sort_of l true false sub t2 e_assum)).
       set (e_open2 := snd (add_open_sort succ sort_of l true false sub t2 e_assum)).
       set (e_union := snd (@Defs.union V V_Eqb V V_map V_map V_trie unit HX x1 x2 e_open2)).
-      pose proof (rule_in_wf _ _ Hwf Hin) as Hr.
-      rewrite app_nil_r in Hr. rewrite invert_wf_sort_eq_rule in Hr.
-      destruct Hr as (Hwfc & Hwft1 & Hwft2).
       pose proof (assumption_egraph_sound_sort_eq c t1 sg Hwfc Hwft1 Hsg)
         as (Hok_assum & i1 & Hsnd_assum & Hfst_sub & Hai1 & Hroot1).
       fold e_ctx sub x1 e_open1 e_assum in Hok_assum, Hsnd_assum, Hfst_sub, Hai1, Hroot1.
@@ -2744,8 +2787,7 @@ Section WithVar.
         destruct (map.get i2a x2) as [v2|] eqn:Hg2; [|discriminate Hroot2].
         cbn [Is_Some_satisfying].
         pose proof (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf) as Hlm_ok.
-        pose proof (@ConclSemantic.sort_eq_concl V V_Eqb l Hwf name c t1 t2 Hin sg Hsg)
-          as Heq_t1t2.
+        pose proof (Heqf sg Hsg) as Heq_t1t2.
         exact (let Hle12 := @Theorems.lm_eq_sorts V V_Eqb l t1[/sg/] t2[/sg/] Heq_t1t2 in
                @PER_Transitive _ _ (domain_eq_PER V (model_ok:=Hlm_ok)) _ _ _
                 (@PER_Transitive _ _ (domain_eq_PER V (model_ok:=Hlm_ok)) _ _ _ Hroot1 Hle12)
@@ -2796,8 +2838,11 @@ Section WithVar.
     Qed.
 
     (* ----- Lemma 3: conclusion_i2_sound_assum_sort_eq ----- *)
-    Lemma conclusion_i2_sound_assum_sort_eq name c t1 t2 (sg : subst)
-        (Hin : In (name, sort_eq_rule c t1 t2) l)
+    Lemma conclusion_i2_sound_assum_sort_eq c t1 t2 (sg : subst)
+        (Hwfc : wf_ctx l c)
+        (Hwft1 : wf_sort l c t1)
+        (Hwft2 : wf_sort l c t2)
+        (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_sort l [] t1[/sg0/] t2[/sg0/])
         (Hsg : wf_subst l [] sg c)
       : let sub     := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
         let e_ctx   := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
@@ -2815,7 +2860,7 @@ Section WithVar.
                 atom_sound_for_model V V V_map (lang_model l) i2 al).
     Proof.
       cbn zeta.
-      pose proof (conclusion_egraph_sound_sort_eq name c t1 t2 sg Hin Hsg) as H.
+      pose proof (conclusion_egraph_sound_sort_eq c t1 t2 sg Hwfc Hwft1 Hwft2 Heqf Hsg) as H.
       cbn zeta in H.
       destruct H as (i2 & Hsnd_concl & Hai2 & i1 & Hsnd_i1 & Hext12).
       exists i2.
@@ -2827,9 +2872,7 @@ Section WithVar.
     Qed.
 
     (* ----- Lemma 4: concl_clauses_sound_sort_eq ----- *)
-    Lemma concl_clauses_sound_sort_eq name c t1 t2 (sg : subst)
-        (Hin : In (name, sort_eq_rule c t1 t2) l)
-        (Hsg : wf_subst l [] sg c)
+    Lemma concl_clauses_sound_sort_eq name c t1 t2
         (i2 : V_map (domain V (lang_model l)))
         (Hsnd : egraph_sound_for_interpretation (lang_model l) i2
                   (snd (force_equiv V V_Eqb V V_map V_map V_trie (X:=unit)
@@ -2896,7 +2939,8 @@ Section WithVar.
 
     (* ----- Lemma 5: eq_sort_assum_ids_covered ----- *)
     Lemma eq_sort_assum_ids_covered name c t1 t2
-        (Hin : In (name, sort_eq_rule c t1 t2) l)
+        (Hwfc : wf_ctx l c)
+        (Hwft1 : wf_sort l c t1)
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   t1
@@ -2916,12 +2960,6 @@ Section WithVar.
                   t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
     Proof.
-      assert (Hwfc : wf_ctx l c).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_sort_eq_rule in Hr. destruct Hr as (Hc & _ & _). exact Hc. }
-      assert (Hwft1 : wf_sort l c t1).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_sort_eq_rule in Hr. destruct Hr as (_ & Ht1 & _). exact Ht1. }
       intros k Hk.
       unfold forall_vars in Hk.
       unfold rule_to_log_seq in Hk.
@@ -3048,7 +3086,9 @@ Section WithVar.
     (* ----- Lemma 6: Hcover_concl_sort_eq ----- *)
     Lemma Hcover_concl_sort_eq name c t1 t2
         (a i2 : V_map (domain V (lang_model l)))
-        (sg : subst) (Hin : In (name, sort_eq_rule c t1 t2) l)
+        (sg : subst)
+        (Hwfc : wf_ctx l c)
+        (Hwft1 : wf_sort l c t1)
         (Hsg : wf_subst l [] sg c)
         (Hsnd_a : forall al, atom_in_egraph al
                     (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
@@ -3079,7 +3119,7 @@ Section WithVar.
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
     Proof.
       intros k da d Hk Ha Hi2k.
-      apply (eq_sort_assum_ids_covered name c t1 t2 Hin Hsucc k).
+      apply (eq_sort_assum_ids_covered name c t1 t2 Hwfc Hwft1 Hsucc k).
       apply Hconf.
       unfold Sep.has_key. rewrite Ha. exact I.
     Qed.
@@ -3130,7 +3170,10 @@ Section WithVar.
                     map.get a (named_list_lookup default
                                 (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) x)
                       = Some (inl (named_list_lookup default sg x)))
-        (Hin : In (name, sort_eq_rule c t1 t2) l)
+        (Hwfc : wf_ctx l c)
+        (Hwft1 : wf_sort l c t1)
+        (Hwft2 : wf_sort l c t2)
+        (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_sort l [] t1[/sg0/] t2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   t1
@@ -3152,17 +3195,11 @@ Section WithVar.
       set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) in *.
       set (e_assum := snd (rebuild rf (snd (add_open_sort succ sort_of l false false sub t1
                         (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))) in *.
-      assert (Hwfc : wf_ctx l c).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_sort_eq_rule in Hr. destruct Hr as (Hc & _ & _). exact Hc. }
-      assert (Hwft1 : wf_sort l c t1).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_sort_eq_rule in Hr. destruct Hr as (_ & Ht1 & _). exact Ht1. }
-      pose proof (conclusion_i2_sound_assum_sort_eq name c t1 t2 sg Hin Hsg)
+      pose proof (conclusion_i2_sound_assum_sort_eq c t1 t2 sg Hwfc Hwft1 Hwft2 Heqf Hsg)
         as (i2 & Hsnd_concl_i2 & Hai2 & Hsnd_i2_assum).
       cbn zeta in Hsnd_concl_i2, Hai2, Hsnd_i2_assum.
       fold sub e_assum in Hai2, Hsnd_i2_assum.
-      pose proof (concl_clauses_sound_sort_eq name c t1 t2 sg Hin Hsg i2 Hsnd_concl_i2)
+      pose proof (concl_clauses_sound_sort_eq name c t1 t2 i2 Hsnd_concl_i2)
         as Hclauses.
       assert (Hwf_i2 : forall k d, map.get i2 k = Some d ->
                          domain_eq V (lang_model l) d d).
@@ -3187,7 +3224,7 @@ Section WithVar.
                   (exists e' t', wf_term l c e' t' /\ atom_tree e_assum sub e' k)
                 \/ (exists ts, wf_sort l c ts /\ atom_tree_sort e_assum sub ts k)).
       { intros k da d HP Ha Hi2k.
-        exact (Hcover_concl_sort_eq name c t1 t2 a i2 sg Hin Hsg Hsnd_a Hconf Hsucc k da d HP Ha Hi2k). }
+        exact (Hcover_concl_sort_eq name c t1 t2 a i2 sg Hwfc Hwft1 Hsg Hsnd_a Hconf Hsucc k da d HP Ha Hi2k). }
       assert (Hagree : forall k d da, P k -> map.get i2 k = Some d ->
                   map.get a k = Some da -> domain_eq V (lang_model l) d da).
       { exact (assumption_ids_agree a i2 e_assum sub c P
@@ -3204,7 +3241,10 @@ Section WithVar.
 
     (* ----- Lemma 9: model_satisfies_rule_adapter_sort_eq ----- *)
     Lemma model_satisfies_rule_adapter_sort_eq name c t1 t2
-        (Hin : In (name, sort_eq_rule c t1 t2) l)
+        (Hwfc : wf_ctx l c)
+        (Hwft1 : wf_sort l c t1)
+        (Hwft2 : wf_sort l c t2)
+        (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_sort l [] t1[/sg0/] t2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   t1
@@ -3228,12 +3268,6 @@ Section WithVar.
       destruct (rebuild rf e_open1_c) as [r1_c e_assum_c] eqn:Hr1.
       cbn [fst snd] in *.
       clear Hkeys.
-      assert (Hwfc : wf_ctx l c).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_sort_eq_rule in Hr. destruct Hr as (Hc & _ & _). exact Hc. }
-      assert (Hwft1 : wf_sort l c t1).
-      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
-        rewrite invert_wf_sort_eq_rule in Hr. destruct Hr as (_ & Ht1 & _). exact Ht1. }
       pose proof (assumption_atoms_sound (lang_model l) a _ Hassum) as Hsnd_atoms.
       assert (Hsnd_atoms_uf : forall al : atom,
           @Semantics.atom_in_egraph V V V_map V_map V_trie X al
@@ -3275,13 +3309,16 @@ Section WithVar.
         rewrite Hac in Hx. cbn [fst] in Hx.
         rewrite Hac. cbn [fst].
         exact (Hfaith' x Hx). }
-      exact (sort_eq_rule_concl_obligation name c t1 t2 a sg Hsg Hmapfst_sg Hfaith_orig Hin
-               Hsucc_uf Hsnd_atoms_uf Hconf).
+      exact (sort_eq_rule_concl_obligation name c t1 t2 a sg Hsg Hmapfst_sg Hfaith_orig
+               Hwfc Hwft1 Hwft2 Heqf Hsucc_uf Hsnd_atoms_uf Hconf).
     Qed.
 
-    (* ----- Lemma 10: central_obligation_sort_eq ----- *)
-    Lemma central_obligation_sort_eq name c t1 t2
-        (Hin : In (name, sort_eq_rule c t1 t2) l)
+    (* ----- Lemma 10: central_obligation_sort_eq_core ----- *)
+    Lemma central_obligation_sort_eq_core name c t1 t2
+        (Hwfc : wf_ctx l c)
+        (Hwft1 : wf_sort l c t1)
+        (Hwft2 : wf_sort l c t2)
+        (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_sort l [] t1[/sg0/] t2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   t1
@@ -3313,7 +3350,57 @@ Section WithVar.
         cbn [fst snd].
         reflexivity.
       - apply (@db_to_atoms_NoDup_fn_args V V_Eqb V_Eqb_ok V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok).
-      - exact (model_satisfies_rule_adapter_sort_eq name c t1 t2 Hin Hsucc).
+      - exact (model_satisfies_rule_adapter_sort_eq name c t1 t2 Hwfc Hwft1 Hwft2 Heqf Hsucc).
+    Qed.
+
+    (* ===== central obligation: sort_eq rule (public wrapper, keeps original signature) ===== *)
+    Lemma central_obligation_sort_eq name c t1 t2
+        (Hin : In (name, sort_eq_rule c t1 t2) l)
+        (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
+                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  t1
+                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+               = Result.Success tt)
+      : model_satisfies_rule V V V_map (lang_model l)
+          (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
+             (rule_to_log_seq name (sort_eq_rule c t1 t2)) rf).
+    Proof.
+      assert (Hwfc : wf_ctx l c)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_sort_eq_rule in Hr; destruct Hr as (h&_&_); exact h).
+      assert (Hwft1 : wf_sort l c t1)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_sort_eq_rule in Hr; destruct Hr as (_&h&_); exact h).
+      assert (Hwft2 : wf_sort l c t2)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_sort_eq_rule in Hr; destruct Hr as (_&_&h); exact h).
+      exact (central_obligation_sort_eq_core name c t1 t2 Hwfc Hwft1 Hwft2
+               (@ConclSemantic.sort_eq_concl V V_Eqb l Hwf name c t1 t2 Hin) Hsucc).
+    Qed.
+
+    (* ===== central obligation: reversed sort_eq rule ===== *)
+    Lemma central_obligation_sort_eq_rev name c t1 t2
+        (Hin : In (name, sort_eq_rule c t1 t2) l)
+        (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
+                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  t2
+                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+               = Result.Success tt)
+      : model_satisfies_rule V V V_map (lang_model l)
+          (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
+             (rule_to_log_seq name (sort_eq_rule c t2 t1)) rf).
+    Proof.
+      assert (Hwfc : wf_ctx l c)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_sort_eq_rule in Hr; destruct Hr as (h&_&_); exact h).
+      assert (Hwft1 : wf_sort l c t1)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_sort_eq_rule in Hr; destruct Hr as (_&h&_); exact h).
+      assert (Hwft2 : wf_sort l c t2)
+        by (pose proof (rule_in_wf _ _ Hwf Hin) as Hr; rewrite app_nil_r in Hr;
+            rewrite invert_wf_sort_eq_rule in Hr; destruct Hr as (_&_&h); exact h).
+      exact (central_obligation_sort_eq_core name c t2 t1 Hwfc Hwft2 Hwft1
+               (@ConclSemantic.sort_eq_concl_rev V V_Eqb l Hwf name c t1 t2 Hin) Hsucc).
     Qed.
 
     (* ============================================================== *)
