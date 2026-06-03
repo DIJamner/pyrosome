@@ -247,6 +247,17 @@ Section WithVar.
       + rewrite rename_rule_rev_commute; reflexivity.
   Qed.
 
+  Lemma ctx_to_rules_rev_id (c : ctx) :
+    forall n0 r0, In (n0, r0) (Defs.ctx_to_rules c) ->
+      PositiveInstantiation.rev_rule r0 = r0.
+  Proof.
+    intros n0 r0 H.
+    unfold Defs.ctx_to_rules in H.
+    apply in_named_map_inv in H as (t & Hr0 & _).
+    subst r0.
+    reflexivity.
+  Qed.
+
   Section Adapter.
     Context (l : lang) (Hwf : wf_lang l) (Hsof : fresh sort_of l) (rf : nat).
 
@@ -3617,6 +3628,27 @@ Section WithVar.
       exists seqs. split.
       - symmetry; exact Hbrs.
       - exact (central_msr_seqs posX seqs Hincl Hlm).
+    Qed.
+
+    Lemma msr_of_build_rule_set_rev (posX : lang) (rsX : rule_set V V V_map V_map)
+        (Hrev : forall n r', In (n, r') posX ->
+                  exists r, In (n, r) l /\ r' = PositiveInstantiation.rev_rule r)
+        (Hbrs : rule_set_from_lang V_map_plus V_trie succ sort_of rf posX l = Result.Success rsX)
+      : exists seqs,
+          rsX = QueryOpt.build_rule_set succ V_default rf seqs
+          /\ (forall rule, In rule seqs ->
+                model_satisfies_rule V V V_map (lang_model l)
+                  (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie rule rf)).
+    Proof.
+      intros.
+      unfold rule_set_from_lang in Hbrs.
+      destruct (list_Mmap (fun '(n,r) => rule_to_log_rule V_map V_trie succ sort_of l rf n r) posX)
+        as [seqs|e] eqn:Hlm; cbn [Mbind] in Hbrs; [| discriminate Hbrs ].
+      simpl in Hbrs.
+      injection Hbrs as Hbrs.
+      exists seqs. split.
+      - symmetry; exact Hbrs.
+      - exact (central_msr_seqs_rev posX seqs Hrev Hlm).
     Qed.
 
   End Adapter.
