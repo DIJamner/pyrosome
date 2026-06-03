@@ -140,18 +140,6 @@ End WithModel.
     
 End Extension.
 
-Lemma elab_preserving_compiler_embed cmp_pre tgt cmp ecmp src tgt'
-    : elab_preserving_compiler cmp_pre tgt cmp ecmp src ->
-      incl tgt tgt' ->
-      elab_preserving_compiler cmp_pre tgt' cmp ecmp src.
-Proof.
-  induction 1; basic_goal_prep; constructor.
-  6:eapply eq_sort_lang_monotonicity; now eauto.
-  7:eapply eq_term_lang_monotonicity; now eauto.
-  all:basic_core_firstorder_crush.
-Qed.
-Hint Resolve elab_preserving_compiler_embed : auto_elab.
-
 End WithVar.
 
 (*TODO: review how much of the following code is necessary/ put in better places*)

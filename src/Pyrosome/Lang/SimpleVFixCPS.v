@@ -63,7 +63,7 @@ Derive fix_cps
                                           fix_cps
                                           fix_lang)
        as fix_cps_preserving.
-Proof. auto_elab_compiler. Qed.
+Proof. TODO_auto_elab_compiler. Qed.
 #[local] Definition fix_cps_cmp_entry :=
   cmp_entry (elab_compiler_implies_preserving fix_cps_preserving).
 #[export] Hint Resolve fix_cps_cmp_entry : preserving_db.

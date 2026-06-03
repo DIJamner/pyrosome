@@ -5729,7 +5729,14 @@ Section __.
       }
     Qed.
 
-    
+
+    (*
+      Rank-orientation of union: when the second argument's root (cy_r)
+      has rank ≤ the first argument's root (cx_r) and they are in
+      different classes, the union returns cx_r and demotes cy_r to point
+      to cx_r (i.e., cy_r's parent in uf' is cx_r).
+    *)
+
   Lemma find_preserves_domain (uf uf': union_find) l i j
     : union_find_ok uf l ->
       Sep.has_key i uf.(parent) ->

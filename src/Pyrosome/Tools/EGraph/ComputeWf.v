@@ -564,14 +564,12 @@ Section __.
     repeat case_match; cbn; try tauto.
     intros.
     eapply compute_preserving_compiler_sound; eauto.
-    1,2:apply lang_wf_in_db_correct with (db:=proj1_sig db);
-    [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush].
-    1:apply cmp_wf_in_db_correct with (db:=proj1_sig db_cmp);
-      [typeclasses eauto|apply (proj2_sig db_cmp) | basic_utils_crush].
-    (*apply lang_wf_in_db_correct with (db:=proj1_sig db);
-    [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush].
-  Qed.*)
-  Admitted.
+    all: try (apply cmp_wf_in_db_correct with (db:=proj1_sig db_cmp);
+              [typeclasses eauto|apply (proj2_sig db_cmp) | basic_utils_crush]).
+    all: try (apply lang_wf_in_db_correct with (db:=proj1_sig db);
+              [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush]).
+    all: rewrite case_match_eqn2; exact I.
+  Qed.
 
   Definition compute_wf_lang_with_side_conditions db l_pre l fuel
     : result unit :=

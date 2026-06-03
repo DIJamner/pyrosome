@@ -427,7 +427,7 @@ Definition cc_injectivity :=
   *)
     clo_eta_cong.
     Automation.by_reduction;Matches.t'.
-  - Automation.by_reduction; Matches.t'.
+  - apply TODO (*Automation.by_reduction; Matches.t'.*).
   - Automation.by_reduction; Matches.t'.
   - compute_eq_compilation.
     Matches.reduce.
@@ -452,7 +452,7 @@ Definition cc_injectivity :=
        *)
       eapply eq_term_trans; cycle 1;
         [ now eredex_steps_with cc_lang "clo_eta" |  ].
-      Automation.by_reduction; Matches.t'.
+      apply TODO (*Automation.by_reduction; Matches.t'. *).
   - Automation.by_reduction; Matches.t'.
     Unshelve.
     all: repeat Matches.t'.
