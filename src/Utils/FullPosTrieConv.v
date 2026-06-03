@@ -46,12 +46,27 @@ Section Conv.
 
 End Conv.
 
-Definition fpt_spaced_intersect {B} `{WithDefault B} (merge : B -> B -> B)
+(* The proof-side specification: run the proven pos_trie generic join by
+   converting each input [fpt] to a [pos_trie], joining, and converting back.
+   This carries the runtime fold-rebuild conversion cost, so it is NO LONGER the
+   function plugged into the running e-graph -- it is kept purely as the
+   reference the native [fpt_spaced_intersect] (below) is proven equal to. *)
+Definition fpt_spaced_intersect_via_conv {B} `{WithDefault B} (merge : B -> B -> B)
   (tries : (@FullPosTrie.fpt B * list bool)
            * list (@FullPosTrie.fpt B * list bool))
   : @FullPosTrie.fpt B :=
   let conv := fun p : @FullPosTrie.fpt B * list bool => (fpt_to_pt (fst p), snd p) in
   pt_to_fpt (compat_intersect merge (conv (fst tries), List.map conv (snd tries))).
+
+(* TEMPORARY alias during the native-join migration (M0): definitionally equal to
+   [fpt_spaced_intersect_via_conv].  Its body is replaced by the conversion-free
+   native [fpt'] join once the simulation/bridge lemmas are in place; downstream
+   code and soundness statements reference only this name. *)
+Definition fpt_spaced_intersect {B} `{WithDefault B} (merge : B -> B -> B)
+  (tries : (@FullPosTrie.fpt B * list bool)
+           * list (@FullPosTrie.fpt B * list bool))
+  : @FullPosTrie.fpt B :=
+  fpt_spaced_intersect_via_conv merge tries.
 
 Lemma pt_to_fpt_get {B} (t : @pos_trie B) (n : nat) :
   depth t n ->
@@ -579,7 +594,7 @@ Section Inherit.
     intros Hin Hlen Hdepth Hbools Hwf Hfd.
     set (R := compat_intersect merge (cvt tries, List.map cvt rest)) in *.
     assert (Heq : fpt_spaced_intersect merge (tries, rest) = pt_to_fpt R).
-    { unfold fpt_spaced_intersect, R. cbn [fst snd]. reflexivity. }
+    { unfold fpt_spaced_intersect, fpt_spaced_intersect_via_conv, R. cbn [fst snd]. reflexivity. }
     rewrite Heq in Hin.
     assert (Hbs : forall x y : list positive,
                BoolSpec (x = y) (x <> y) (if list_eq_dec Pos.eq_dec x y then true else false)).

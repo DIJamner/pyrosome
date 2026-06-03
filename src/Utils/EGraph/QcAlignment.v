@@ -759,7 +759,8 @@ Proof.
   (* fpt_spaced_intersect merge_fn tries_ne = pt_to_fpt R *)
   assert (Hsimp : FullPosTrieConv.fpt_spaced_intersect merge_fn tries_ne =
                   FullPosTrieConv.pt_to_fpt R).
-  { unfold FullPosTrieConv.fpt_spaced_intersect, R, tries_ne. cbn [fst snd]. reflexivity. }
+  { unfold FullPosTrieConv.fpt_spaced_intersect, FullPosTrieConv.fpt_spaced_intersect_via_conv,
+      R, tries_ne. cbn [fst snd]. reflexivity. }
   rewrite Hsimp in Hin_sig.
   (* map.in_keys_inv: In sigma (map.keys (pt_to_fpt R)) -> fpt_get (pt_to_fpt R) sigma <> None *)
   assert (Hbs : forall x y : list positive,
@@ -853,7 +854,8 @@ Proof.
              (FullPosTrieConv.fpt_spaced_intersect merge_fn tries_ne))) in Hin_sig.
   assert (Hsimp : FullPosTrieConv.fpt_spaced_intersect merge_fn tries_ne =
                   FullPosTrieConv.pt_to_fpt R).
-  { unfold FullPosTrieConv.fpt_spaced_intersect, R, tries_ne. cbn [fst snd]. reflexivity. }
+  { unfold FullPosTrieConv.fpt_spaced_intersect, FullPosTrieConv.fpt_spaced_intersect_via_conv,
+      R, tries_ne. cbn [fst snd]. reflexivity. }
   rewrite Hsimp in Hin_sig.
   (* p = toc_fn frontier_n (Build_erule_query_ptr fsym nptr cvars) in tries::rest *)
   set (p := toc_fn frontier_n (Defs.Build_erule_query_ptr positive positive fsym nptr cvars)).
