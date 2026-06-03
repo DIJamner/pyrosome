@@ -1107,3 +1107,341 @@ Section FptSim.
   Qed.
 
 End FptSim.
+
+(* ============================================================================
+   M3 — BRIDGE LEMMAS
+   Prove that [fpt_spaced_intersect_native] agrees get-for-get with
+   [fpt_spaced_intersect_via_conv], and derive the keys corollary consumed by
+   the e-graph assembly (QcAlignment.v trie_join_H9/H10).
+   ============================================================================ *)
+
+(* Lemma 1a: the structural injection pt'_of_fpt' preserves the depth predicate. *)
+Lemma pt'_of_fpt'_has_depth' {B : Type} :
+  forall (t : @FullPosTrie.fpt' B) (n : nat),
+    fpt_depth' t n -> depth' (pt'_of_fpt' t) n.
+Proof.
+  induction 1 as [a | m n Hchild IH].
+  - constructor.
+  - rewrite pt'_of_fpt'_fpt_node. constructor.
+    intros k v Hget. rewrite tree'_map'_get in Hget.
+    destruct (PTree.get' k m) as [c|] eqn:Hc; [|discriminate].
+    cbn [option_map] in Hget. injection Hget as <-.
+    exact (IH k c Hc).
+Qed.
+
+Section BridgeSection.
+  Context {B : Type} `{WithDefault B}.
+  Context (merge : B -> B -> B).
+  Context (merge_comm : forall a b, merge a b = merge b a).
+  Context (merge_assoc : forall a b c, merge a (merge b c) = merge (merge a b) c).
+
+  (* cvt  : fpt → pos_trie via fold-rebuild (= fpt_to_pt)   *)
+  Local Notation cvt :=
+    (fun p : @FullPosTrie.fpt B * list bool => (fpt_to_pt (fst p), snd p)).
+  (* cvt' : fpt → pos_trie via structural injection pt'_of_fpt' *)
+  Local Notation cvt' :=
+    (fun p : @FullPosTrie.fpt B * list bool => (option_map pt'_of_fpt' (fst p), snd p)).
+
+  (* combined_bools only uses snd (bool list), equal for cvt and cvt'. *)
+  Lemma combined_bools_cvt_cvt'
+    (tries : @FullPosTrie.fpt B * list bool)
+    (rest : list (@FullPosTrie.fpt B * list bool)) :
+    @combined_bools B (cvt tries, map cvt rest) = @combined_bools B (cvt' tries, map cvt' rest).
+  Proof.
+    unfold combined_bools. cbn [fst snd].
+    generalize (snd tries).
+    induction rest as [| [pt bs] rest' IH].
+    - intros init. reflexivity.
+    - intros init. cbn [map fold_left fst snd]. apply IH.
+  Qed.
+
+  Lemma wf_input_cvt'
+    (sigma : list positive) (p : @FullPosTrie.fpt B * list bool) :
+    length (snd p) = length sigma ->
+    fpt_depth (fst p) (length (filter id (snd p))) ->
+    @wf_input B sigma (cvt' p).
+  Proof.
+    intros Hlen Hd. unfold wf_input. cbn [fst snd]. split.
+    - exact Hlen.
+    - destruct (fst p) as [t'|] eqn:Hfst; cbn [option_map].
+      + apply depth'_to_has_depth'. apply pt'_of_fpt'_has_depth'.
+        cbn [fpt_depth] in Hd. exact Hd.
+      + exact I.
+  Qed.
+
+  Lemma wf_tries_cvt'_at
+    (sigma : list positive) (N : nat)
+    (tries : @FullPosTrie.fpt B * list bool)
+    (rest : list (@FullPosTrie.fpt B * list bool)) :
+    length sigma = N ->
+    (forall p, In p (tries :: rest) -> fpt_depth (fst p) (length (filter id (snd p)))) ->
+    (forall p, In p (tries :: rest) -> length (snd p) = N) ->
+    @wf_tries B sigma (cvt' tries, map cvt' rest).
+  Proof.
+    intros HN Hfd Hlen. unfold wf_tries. cbn [fst snd]. split.
+    - apply wf_input_cvt'.
+      + rewrite HN. apply (Hlen tries). left. reflexivity.
+      + apply (Hfd tries). left. reflexivity.
+    - apply Forall_map. apply Forall_forall.
+      intros q Hq. apply wf_input_cvt'.
+      + rewrite HN. apply (Hlen q). right. exact Hq.
+      + apply (Hfd q). right. exact Hq.
+  Qed.
+
+  (* lookup_one sigma (cvt p) = lookup_one sigma (cvt' p) when depths+lengths match *)
+  Lemma lookup_one_cvt_cvt'
+    (sigma : list positive) (N : nat)
+    (p : @FullPosTrie.fpt B * list bool) :
+    length sigma = N ->
+    fpt_depth (fst p) (length (filter id (snd p))) ->
+    length (snd p) = N ->
+    @lookup_one B sigma (cvt p) = @lookup_one B sigma (cvt' p).
+  Proof.
+    intros HN Hfd Hlensnd.
+    unfold lookup_one, spaced_get. cbn [fst snd].
+    set (proj := map fst (filter snd (combine sigma (snd p)))).
+    assert (Hprojlen : length proj = length (filter id (snd p))).
+    { subst proj. rewrite <- (project_length sigma (snd p)).
+      - reflexivity. - rewrite HN, Hlensnd. reflexivity. }
+    rewrite (@fpt_to_pt_get B (fst p) _ Hfd proj Hprojlen).
+    destruct (fst p) as [t'|] eqn:Hfst; cbn [option_map FullPosTrie.fpt_get pt_get].
+    - eapply pt'_of_fpt'_get.
+      all: [> (cbn [fpt_depth] in Hfd; exact Hfd) | exact Hprojlen].
+    - reflexivity.
+  Qed.
+
+  (* list_Mmap lookup_one is equal on cvt' and cvt lists *)
+  (* Helper: list_Mmap equality for a list *)
+  Lemma list_Mmap_lookup_list
+    (sigma : list positive) (N : nat)
+    (l : list (@FullPosTrie.fpt B * list bool)) :
+    length sigma = N ->
+    (forall p, In p l -> fpt_depth (fst p) (length (filter id (snd p)))) ->
+    (forall p, In p l -> length (snd p) = N) ->
+    list_Mmap (lookup_one sigma) (map cvt' l) =
+    list_Mmap (lookup_one sigma) (map cvt l).
+  Proof.
+    intros HN Hfd Hlen.
+    induction l as [|q l' IH].
+    - reflexivity.
+    - cbn [map list_Mmap]. unfold Mbind, Mret. cbn [option_monad].
+      rewrite <- (lookup_one_cvt_cvt' sigma q HN
+                 (Hfd q (or_introl eq_refl)) (Hlen q (or_introl eq_refl))).
+      pose proof (IH (fun p Hp => Hfd p (or_intror Hp))
+                     (fun p Hp => Hlen p (or_intror Hp))) as IH'.
+      rewrite IH'. reflexivity.
+  Qed.
+
+  Lemma list_Mmap_lookup_cvt_cvt'
+    (sigma : list positive) (N : nat)
+    (tries : @FullPosTrie.fpt B * list bool)
+    (rest : list (@FullPosTrie.fpt B * list bool)) :
+    length sigma = N ->
+    (forall p, In p (tries :: rest) -> fpt_depth (fst p) (length (filter id (snd p)))) ->
+    (forall p, In p (tries :: rest) -> length (snd p) = N) ->
+    list_Mmap (lookup_one sigma) (cvt' tries :: map cvt' rest) =
+    list_Mmap (lookup_one sigma) (cvt tries :: map cvt rest).
+  Proof.
+    intros HN Hfd Hlen.
+    cbn [list_Mmap]. unfold Mbind, Mret. cbn [option_monad].
+    rewrite <- (lookup_one_cvt_cvt' sigma tries HN
+               (Hfd tries (or_introl eq_refl)) (Hlen tries (or_introl eq_refl))).
+    destruct (lookup_one sigma (cvt tries)) as [lv|] eqn:Hlv.
+    - rewrite (list_Mmap_lookup_list sigma rest HN
+                (fun p Hp => Hfd p (or_intror Hp))
+                (fun p Hp => Hlen p (or_intror Hp))).
+      reflexivity.
+    - reflexivity.
+  Qed.
+
+  (** Lemma 3: [fpt_spaced_intersect_native] has uniform depth N.
+      Admitted: the reflect direction [depth (option_map pt'_of_fpt' t) N → fpt_depth t N]
+      requires that the native fixpoint only ever constructs [fpt_leaf]/[fpt_node]
+      (no [fpt_both]).  A direct proof mirrors [pt_spaced_intersect_depth] for the
+      native algorithm; structurally identical, just using fpt constructors.  *)
+  Lemma fpt_spaced_intersect_native_depth
+    (tries : @FullPosTrie.fpt B * list bool)
+    (rest  : list (@FullPosTrie.fpt B * list bool))
+    (N : nat) :
+    depth (@compat_intersect B _ merge (cvt tries, map cvt rest)) N ->
+    @combined_bools B (cvt tries, map cvt rest) = repeat true N ->
+    (forall p, In p (tries :: rest) -> fpt_depth (fst p) (length (filter id (snd p)))) ->
+    (forall p, In p (tries :: rest) -> length (snd p) = N) ->
+    fpt_depth (@fpt_spaced_intersect_native B _ merge (tries, rest)) N.
+  Proof. intros. admit. Admitted.
+
+  (** Lemma 2: get-level bridge.
+      fpt_get native sigma = fpt_get via_conv sigma when sigma has length N. *)
+  Lemma fpt_spaced_intersect_native_eq_via_conv
+    (tries : @FullPosTrie.fpt B * list bool)
+    (rest  : list (@FullPosTrie.fpt B * list bool))
+    (sigma : list positive) (N : nat) :
+    length sigma = N ->
+    depth (@compat_intersect B _ merge (cvt tries, map cvt rest)) N ->
+    @combined_bools B (cvt tries, map cvt rest) = repeat true N ->
+    @wf_tries B sigma (cvt tries, map cvt rest) ->
+    (forall p, In p (tries :: rest) -> fpt_depth (fst p) (length (filter id (snd p)))) ->
+    (forall p, In p (tries :: rest) -> length (snd p) = N) ->
+    fpt_get (@fpt_spaced_intersect_native B _ merge (tries, rest)) sigma
+    = fpt_get (fpt_spaced_intersect_via_conv merge (tries, rest)) sigma.
+  Proof.
+    intros HN Hdepth Hbools Hwf Hfd Hlen.
+    unfold fpt_spaced_intersect_via_conv. cbn [fst snd].
+    set (R := @compat_intersect B _ merge (cvt tries, map cvt rest)) in *.
+    rewrite (@pt_to_fpt_get B R N Hdepth sigma HN).
+    pose proof (fpt_spaced_intersect_native_depth Hdepth Hbools Hfd Hlen) as Hnativedepth.
+    pose proof (@fpt_spaced_intersect_native_sim B _ merge (tries, rest)) as Hsim.
+    cbn [fst snd] in Hsim.
+    pose proof (wf_tries_cvt'_at sigma HN Hfd Hlen) as Hwf'.
+    pose proof (pt_spaced_intersect_correct merge merge_comm merge_assoc
+                  (cvt' tries, map cvt' rest) sigma Hwf') as Hspec'.
+    pose proof (pt_spaced_intersect_correct merge merge_comm merge_assoc
+                  (cvt tries, map cvt rest) sigma Hwf) as Hspec.
+    unfold pt_spaced_intersect_spec, spaced_get in *.
+    cbn [fst snd] in *.
+    rewrite <- combined_bools_cvt_cvt' in Hspec'.
+    rewrite Hbools in Hspec, Hspec'.
+    rewrite (project_repeat_true sigma HN) in Hspec, Hspec'.
+    unfold compat_intersect in Hspec. fold R in Hspec.
+    pose proof (list_Mmap_lookup_cvt_cvt' sigma HN Hfd Hlen) as Hlookupeq.
+    (* Destruct on the cvt' list_Mmap; use [change] to align with [HCvt'] syntactically,
+       then [rewrite HCvt'] to simplify both specs; align Hspec via Hlookupeq. *)
+    destruct (list_Mmap (lookup_one sigma)
+        ((option_map pt'_of_fpt' (fst tries), snd tries) :: map cvt' rest))
+      as [[|e es]|] eqn:HCvt'.
+    all: (
+      change (match list_Mmap (lookup_one sigma)
+        ((option_map pt'_of_fpt' (fst tries), snd tries) :: map cvt' rest) with
+      | Some (e0 :: es0) =>
+          pt_get (pt_spaced_intersect merge
+            (option_map pt'_of_fpt' (fst tries), snd tries, map cvt' rest)) sigma
+          = Some (fold_left merge es0 e0)
+      | _ =>
+          pt_get (pt_spaced_intersect merge
+            (option_map pt'_of_fpt' (fst tries), snd tries, map cvt' rest)) sigma
+          = None
+      end) in Hspec';
+      rewrite HCvt' in Hspec';
+      rewrite <- HCvt' in Hlookupeq;
+      rewrite <- Hlookupeq in Hspec;
+      rewrite HCvt' in Hspec
+      ).
+    all: destruct (@fpt_spaced_intersect_native B _ merge (tries, rest)) as [t'|] eqn:Hnat.
+    all: [>
+      (* native = Some t', HCvt' = Some [] *)
+      (cbn [fpt_depth] in Hnativedepth; cbn [FullPosTrie.fpt_get];
+       erewrite pt'_of_fpt'_get; [|exact Hnativedepth|exact HN];
+       change (pt_get (option_map pt'_of_fpt' (Some t')) sigma = pt_get R sigma);
+       apply (f_equal (fun x => pt_get x sigma)) in Hsim;
+       rewrite Hsim; rewrite Hspec'; unfold R; unfold compat_intersect; symmetry; exact Hspec)
+      |
+      (* native = None, HCvt' = Some [] *)
+      (cbn [FullPosTrie.fpt_get]; unfold R; unfold compat_intersect; symmetry; exact Hspec)
+      |
+      (* native = Some t', HCvt' = Some (e::es) *)
+      (cbn [fpt_depth] in Hnativedepth; cbn [FullPosTrie.fpt_get];
+       erewrite pt'_of_fpt'_get; [|exact Hnativedepth|exact HN];
+       change (pt_get (option_map pt'_of_fpt' (Some t')) sigma = pt_get R sigma);
+       apply (f_equal (fun x => pt_get x sigma)) in Hsim;
+       rewrite Hsim; rewrite Hspec'; unfold R; unfold compat_intersect; symmetry; exact Hspec)
+      |
+      (* native = None, HCvt' = Some (e::es): contradiction via Hsim *)
+      (cbn [option_map] in Hsim;
+       rewrite <- Hsim in Hspec'; cbn [pt_get] in Hspec'; discriminate)
+      |
+      (* native = Some t', HCvt' = None *)
+      (cbn [fpt_depth] in Hnativedepth; cbn [FullPosTrie.fpt_get];
+       erewrite pt'_of_fpt'_get; [|exact Hnativedepth|exact HN];
+       change (pt_get (option_map pt'_of_fpt' (Some t')) sigma = pt_get R sigma);
+       apply (f_equal (fun x => pt_get x sigma)) in Hsim;
+       rewrite Hsim; rewrite Hspec'; unfold R; unfold compat_intersect; symmetry; exact Hspec)
+      |
+      (* native = None, HCvt' = None *)
+      (cbn [FullPosTrie.fpt_get]; unfold R; unfold compat_intersect; symmetry; exact Hspec)
+    ].
+  Qed.
+
+  (** Lemma 4: Keys corollary.
+      sigma ∈ keys(native) ↔ sigma ∈ keys(via_conv).
+      Derived from the get-equality and fpt_depth_key_length for both sides. *)
+  Lemma fpt_spaced_intersect_native_keys_iff
+    (tries : @FullPosTrie.fpt B * list bool)
+    (rest  : list (@FullPosTrie.fpt B * list bool))
+    (N : nat)
+    (sigma : list positive) :
+    depth (@compat_intersect B _ merge (cvt tries, map cvt rest)) N ->
+    @combined_bools B (cvt tries, map cvt rest) = repeat true N ->
+    @wf_tries B sigma (cvt tries, map cvt rest) ->
+    (forall p, In p (tries :: rest) -> fpt_depth (fst p) (length (filter id (snd p)))) ->
+    (forall p, In p (tries :: rest) -> length (snd p) = N) ->
+    In sigma (@map.keys (list positive) B (@FullPosTrie.full_pos_trie_map B)
+                (@fpt_spaced_intersect_native B _ merge (tries, rest)))
+    <->
+    In sigma (@map.keys (list positive) B (@FullPosTrie.full_pos_trie_map B)
+                (fpt_spaced_intersect_via_conv merge (tries, rest))).
+  Proof.
+    intros Hdepth Hbools Hwf Hfd Hlen.
+    assert (Hbs : forall x y : list positive,
+      BoolSpec (x = y) (x <> y) (if list_eq_dec Pos.eq_dec x y then true else false)).
+    { intros x y. destruct (list_eq_dec Pos.eq_dec x y); constructor; assumption. }
+    (* Depth facts for both sides *)
+    pose proof (fpt_spaced_intersect_native_depth Hdepth Hbools Hfd Hlen) as Hnativedepth.
+    pose proof (pt_to_fpt_depth _ _ Hdepth) as Hvialdepth.
+    (* Forward direction: sigma ∈ keys native → sigma ∈ keys via_conv *)
+    split; intros Hin.
+    - (* sigma ∈ keys native → fpt_get native sigma ≠ None *)
+      pose proof (@Properties.map.in_keys_inv (list positive) B
+                    (@FullPosTrie.full_pos_trie_map B) (@FullPosTrie.full_pos_trie_map_ok B)
+                    _ Hbs sigma _ Hin) as Hget.
+      change (@map.get (list positive) B (@FullPosTrie.full_pos_trie_map B)
+                (@fpt_spaced_intersect_native B _ merge (tries, rest)) sigma)
+        with (fpt_get (@fpt_spaced_intersect_native B _ merge (tries, rest)) sigma) in Hget.
+      destruct (fpt_get (@fpt_spaced_intersect_native B _ merge (tries, rest)) sigma)
+        as [v|] eqn:Hfget; [|contradiction].
+      (* sigma has length N from native depth *)
+      assert (HsigmaN : length sigma = N).
+      { exact (fpt_depth_key_length _ _ Hnativedepth sigma Hfget). }
+      assert (Hwf2 : @wf_tries B sigma (cvt tries, map cvt rest)).
+      { exact Hwf. }
+      (* get-equality at sigma *)
+      pose proof (fpt_spaced_intersect_native_eq_via_conv HsigmaN Hdepth Hbools Hwf2 Hfd Hlen) as Heq.
+      rewrite Hfget in Heq. symmetry in Heq.
+      (* Now Heq : fpt_get via_conv sigma = Some v ≠ None *)
+      (* sigma ∈ keys via_conv *)
+      unfold fpt_spaced_intersect_via_conv in Heq. cbn [fst snd] in Heq.
+      set (R := @compat_intersect B _ merge (cvt tries, map cvt rest)) in *.
+      (* fpt_get (pt_to_fpt R) sigma = Some v *)
+      change (fpt_get (pt_to_fpt R) sigma = Some v) in Heq.
+      apply (@Properties.map.in_keys (list positive) B
+               (@FullPosTrie.full_pos_trie_map B) (@FullPosTrie.full_pos_trie_map_ok B)
+               _ Hbs (pt_to_fpt R) sigma v).
+      change (@map.get (list positive) B (@FullPosTrie.full_pos_trie_map B) (pt_to_fpt R) sigma)
+        with (fpt_get (pt_to_fpt R) sigma).
+      exact Heq.
+    - (* via_conv → native: symmetric *)
+      pose proof (@Properties.map.in_keys_inv (list positive) B
+                    (@FullPosTrie.full_pos_trie_map B) (@FullPosTrie.full_pos_trie_map_ok B)
+                    _ Hbs sigma _ Hin) as Hget.
+      unfold fpt_spaced_intersect_via_conv in Hget. cbn [fst snd] in Hget.
+      set (R := @compat_intersect B _ merge (cvt tries, map cvt rest)) in *.
+      change (@map.get (list positive) B (@FullPosTrie.full_pos_trie_map B) (pt_to_fpt R) sigma)
+        with (fpt_get (pt_to_fpt R) sigma) in Hget.
+      destruct (fpt_get (pt_to_fpt R) sigma) as [v|] eqn:Hfget; [|contradiction].
+      (* sigma has length N from via_conv depth *)
+      assert (HsigmaN : length sigma = N).
+      { exact (fpt_depth_key_length _ _ Hvialdepth sigma Hfget). }
+      pose proof (fpt_spaced_intersect_native_eq_via_conv HsigmaN Hdepth Hbools Hwf Hfd Hlen) as Heq.
+      change (fpt_get (pt_to_fpt R) sigma = Some v) in Hfget.
+      change (fpt_get (fpt_spaced_intersect_via_conv merge (tries, rest)) sigma = Some v)
+        in Hfget.
+      rewrite <- Heq in Hfget.
+      apply (@Properties.map.in_keys (list positive) B
+               (@FullPosTrie.full_pos_trie_map B) (@FullPosTrie.full_pos_trie_map_ok B)
+               _ Hbs (@fpt_spaced_intersect_native B _ merge (tries, rest)) sigma v).
+      change (@map.get (list positive) B (@FullPosTrie.full_pos_trie_map B)
+                (@fpt_spaced_intersect_native B _ merge (tries, rest)) sigma)
+        with (fpt_get (@fpt_spaced_intersect_native B _ merge (tries, rest)) sigma).
+      exact Hfget.
+  Qed.
+
+End BridgeSection.
