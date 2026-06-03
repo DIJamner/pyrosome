@@ -3504,6 +3504,29 @@ Section WithVar.
       - exact (central_obligation_term_eq n c e1 e2 t Hin_l (status_Hsucc_term_eq n c e1 e2 t _ Hfr)).
     Qed.
 
+    Lemma central_msr_seqs_rev (posX : lang) (seqs : list (sequent V V))
+        (Hrev : forall n r', In (n, r') posX ->
+                  exists r, In (n, r) l /\ r' = PositiveInstantiation.rev_rule r)
+        (Hmap : list_Mmap (fun '(n,r) =>
+                  @rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf n r) posX
+                = Result.Success seqs)
+      : forall rule, In rule seqs ->
+          model_satisfies_rule V V V_map (lang_model l)
+            (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie rule rf).
+    Proof.
+      intros rule Hrule.
+      destruct (list_Mmap_Success_In _ posX seqs Hmap rule Hrule)
+        as ([n r'] & Hin_posX & Hfr).
+      destruct (Hrev n r' Hin_posX) as (r & Hin_l & Hrr).
+      pose proof (rule_to_log_rule_Success_seq n r' rule Hfr) as Heq.
+      subst rule.
+      destruct r as [c args | c args t | c t1 t2 | c e1 e2 t]; cbn [PositiveInstantiation.rev_rule] in Hrr; subst r'.
+      - exact (central_obligation_sort        n c args     Hin_l (status_Hsucc_sort    n c args   _ Hfr)).
+      - exact (central_obligation_term        n c args t   Hin_l (status_Hsucc_term    n c args t _ Hfr)).
+      - exact (central_obligation_sort_eq_rev n c t1 t2   Hin_l (status_Hsucc_sort_eq n c t2 t1 _ Hfr)).
+      - exact (central_obligation_term_eq_rev n c e1 e2 t Hin_l (status_Hsucc_term_eq n c e2 e1 t _ Hfr)).
+    Qed.
+
     Lemma msr_of_build_rule_set (posX : lang) (rsX : rule_set V V V_map V_map)
         (Hincl : incl posX l)
         (Hbrs : rule_set_from_lang V_map_plus V_trie succ sort_of rf posX l = Result.Success rsX)
