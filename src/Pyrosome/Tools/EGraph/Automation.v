@@ -16,6 +16,7 @@ From Stdlib Require derive.Derive.
 
 From Utils Require Import EGraph.Defs.
 From Utils Require Import FullPosTrie FullPosTrieConv TrieMapFold.
+From Utils Require Import EGraph.QcAlignment.
 From Pyrosome.Tools.EGraph Require Import Defs Theorems ReducingCong.
 Import PositiveInstantiation.
 From coqutil Require Import Map.Interface.
@@ -465,8 +466,8 @@ Section ReducingSkeleton.
                      (option positive) (@Defs.depth positive)
                      (Theorems.lang_model positive PosListMap.sort_of Lp)
                      Hmok rebuild_fuel seqsR er e HmsrR Hin_er).
-            + admit. (* H9: length (query_vars er) = length sigma for all sigma in intersection_keys *)
-            + admit. (* H10: map.get (trie_of_clause ...) ... = Some tt *)
+            + exact (QcAlignment.trie_join_H9 rebuild_fuel seqsR er Hin_er e).
+            + exact (QcAlignment.trie_join_H10 rebuild_fuel seqsR er Hin_er e).
         }
         destruct HIn' as [E | HEmpty].
         { (* n=1, rs=rsRR *)
@@ -501,8 +502,8 @@ Section ReducingSkeleton.
                      (option positive) (@Defs.depth positive)
                      (Theorems.lang_model positive PosListMap.sort_of Lp)
                      Hmok rebuild_fuel seqsRR er e HmsrRR Hin_er).
-            + admit. (* H9: length (query_vars er) = length sigma for all sigma in intersection_keys *)
-            + admit. (* H10: map.get (trie_of_clause ...) ... = Some tt *)
+            + exact (QcAlignment.trie_join_H9 rebuild_fuel seqsRR er Hin_er e).
+            + exact (QcAlignment.trie_join_H10 rebuild_fuel seqsRR er Hin_er e).
         }
         destruct HEmpty.
     }
@@ -513,7 +514,7 @@ Section ReducingSkeleton.
         [(10%nat, rsR); (1%nat, rsRR)] injp
         rebuild_fuel sat_fuel efuel red_fuel E1p E2p);
       intros res Hsucc; destruct res as [u|]; [destruct u; reflexivity | destruct Hsucc].
-  Admitted.
+  Qed.
 
 End ReducingSkeleton.
 
