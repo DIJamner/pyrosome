@@ -15,6 +15,7 @@ From Pyrosome.Theory Require Import Core ModelImpls.
 Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.
 From Pyrosome.Tools.EGraph Require Import Theorems AddCtxInversion ConclSemantic.
+From Pyrosome.Tools Require Import PosRenamingProperties.
 
 Section WithVar.
   Context (V : Type)
@@ -173,6 +174,77 @@ Section WithVar.
       + exists x. split; [left; reflexivity | exact Hfx].
       + destruct (IH bl eq_refl y Hy) as (x' & Hin & Hf).
         exists x'. split; [right; exact Hin | exact Hf].
+  Qed.
+
+  (* ===== posRR reversal recovery lemmas ===== *)
+
+  (* Helper 1: rev_rule commutes with Renaming.rename_rule. *)
+  Lemma rename_rule_rev_commute (g : V -> positive) (r : rule) :
+    Renaming.rename_rule g (PositiveInstantiation.rev_rule r) =
+    PositiveInstantiation.rev_rule (Renaming.rename_rule g r).
+  Proof. destruct r; reflexivity. Qed.
+
+  (* Helper 2: inverse membership in named_map. *)
+  Lemma in_named_map_inv {A B} (g : A -> B) (X : named_list A) n y :
+    In (n, y) (named_map g X) -> exists x, y = g x /\ In (n, x) X.
+  Proof.
+    induction X as [|[n0 a0] X IH]; cbn; [contradiction|].
+    intros [H | H].
+    - inversion H; subst; eauto.
+    - destruct (IH H) as (x & ? & ?); eauto.
+  Qed.
+
+  (* Main lemma: forall (n,r') in posRR, there exists r0 in Lp such that
+     r' = rev_rule r0. *)
+  Lemma rename_lang_rev_filter_recovers
+      (cc l : lang) (pf : V * rule -> bool)
+      (Hcc : forall n0 r0, In (n0, r0) cc -> PositiveInstantiation.rev_rule r0 = r0)
+      (r ra rb rc : PosRenaming.renaming V)
+      (Lp posRR : list (positive * Rule.rule positive)) :
+    PosRenamingProperties.renaming_ok r ->
+    PosRenaming.rename_lang (cc ++ l) r = (Lp, ra) ->
+    PosRenamingProperties.rename_grows ra rb ->
+    PosRenamingProperties.renaming_ok rb ->
+    PosRenaming.rename_lang (cc ++ named_map PositiveInstantiation.rev_rule
+                               (filter pf l)) rb = (posRR, rc) ->
+    forall n r', In (n, r') posRR ->
+      exists r0, In (n, r0) Lp /\ r' = PositiveInstantiation.rev_rule r0.
+  Proof.
+    intros Hr HrL Hgrow Hrb HrPRR.
+    pose proof (PosRenamingProperties.rename_lang_correct _ Hr HrL)
+      as (Hraok & _ & _ & _).
+    pose proof (PosRenamingProperties.rename_lang_correct _ Hrb HrPRR)
+      as (Hrcok & Hg_bc & _ & _).
+    set (f := PosRenamingProperties.pos_of_v rc).
+    assert (Hfm_c : PosRenamingProperties.f_matches f rc)
+      by exact (PosRenamingProperties.pos_of_v_matches Hrcok).
+    assert (Hg_ac : PosRenamingProperties.rename_grows ra rc)
+      by exact (PosRenamingProperties.rename_grows_trans Hgrow Hg_bc).
+    assert (Hfm_a : PosRenamingProperties.f_matches f ra)
+      by exact (PosRenamingProperties.f_matches_grows Hraok Hrcok Hg_ac Hfm_c).
+    rewrite (PosRenamingProperties.rename_lang_via_f (f := f) _ Hr HrL Hfm_a).
+    rewrite (PosRenamingProperties.rename_lang_via_f (f := f) _ Hrb HrPRR Hfm_c).
+    unfold Renaming.rename_lang.
+    intros n r' Hin.
+    rewrite map_app, in_app_iff in Hin.
+    destruct Hin as [Hin_cc | Hin_rev].
+    - (* cc part *)
+      apply in_map_iff in Hin_cc as ([n0 r0] & Heq & Hmem0).
+      cbn [fst snd] in Heq. inversion Heq; subst n r'. clear Heq.
+      exists (Renaming.rename_rule f r0). split.
+      + rewrite map_app, in_app_iff; left.
+        apply in_map_iff; exists (n0, r0); split; [cbn; reflexivity | exact Hmem0].
+      + rewrite <- rename_rule_rev_commute, (Hcc n0 r0 Hmem0); reflexivity.
+    - (* rev-filter part *)
+      apply in_map_iff in Hin_rev as ([n0 r0rev] & Heq & Hmem_rev).
+      cbn [fst snd] in Heq. inversion Heq; subst n r'. clear Heq.
+      apply in_named_map_inv in Hmem_rev as (r1 & Hr0rev & Hmem1).
+      subst r0rev.
+      apply filter_In in Hmem1 as (Hmem1l & _).
+      exists (Renaming.rename_rule f r1). split.
+      + rewrite map_app, in_app_iff; right.
+        apply in_map_iff; exists (n0, r1); split; [cbn; reflexivity | exact Hmem1l].
+      + rewrite rename_rule_rev_commute; reflexivity.
   Qed.
 
   Section Adapter.
