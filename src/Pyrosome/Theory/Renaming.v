@@ -30,14 +30,6 @@ Definition Injective {A B : Type} (f : A -> B) := forall a a', f a = f a' -> a =
 Definition Injective_on {A B : Type} (S : A -> Prop) (f : A -> B) :=
   forall a a', S a -> S a' -> f a = f a' -> a = a'.
 
-Lemma Injective_to_Injective_on {A B} (S : A -> Prop) (f : A -> B)
-  : Injective f -> Injective_on S f.
-Proof. unfold Injective, Injective_on; eauto. Qed.
-
-Lemma Injective_on_weaken {A B} (S S' : A -> Prop) (f : A -> B)
-  : (forall a, S a -> S' a) -> Injective_on S' f -> Injective_on S f.
-Proof. unfold Injective_on; eauto. Qed.
-
 Section Injective.
   Context (A B : Type)
     {Eqb_A : Eqb A}
@@ -337,10 +329,6 @@ Section InjectiveOn.
     ctx_in_S c -> In (n, t) c -> S n /\ sort_in_S t.
   Proof. induction c; basic_goal_prep; basic_utils_crush. Qed.
 
-  Lemma lang_in_S_app l1 l2 :
-    lang_in_S l1 -> lang_in_S l2 -> lang_in_S (l1 ++ l2).
-  Proof. unfold lang_in_S. intros. apply all_app. split; auto. Qed.
-
   Lemma injective_in_S a l_
     : S a -> all S l_ ->
       In (f a) (map f l_) -> In a l_.
@@ -486,30 +474,6 @@ Section InjectiveOn.
     In (name, term_eq_rule (rename_ctx f c') (rename f e1) (rename f e2)
                             (rename_sort f t)) lr ->
     wf_ctx lr (rename_ctx f c').
-  Proof.
-    intros Hwf Hin.
-    pose proof (rule_in_wf _ _ Hwf Hin) as Hr.
-    rewrite app_nil_r in Hr.
-    inversion Hr; auto.
-  Qed.
-
-  Lemma rename_ctx_wf_from_sort_rule (lr : @lang B) (name : B) (c' : @ctx A)
-        (args : list A) :
-    wf_lang lr ->
-    In (name, sort_rule (rename_ctx f c') (map f args)) lr ->
-    wf_ctx lr (rename_ctx f c').
-  Proof.
-    intros Hwf Hin.
-    pose proof (rule_in_wf _ _ Hwf Hin) as Hr.
-    rewrite app_nil_r in Hr.
-    inversion Hr; auto.
-  Qed.
-
-  Lemma rename_ctx_wf_from_term_rule (lr : @lang B) (name : B) (c' : @ctx A)
-        (args : list A) (t : @sort A) :
-    wf_lang lr ->
-    In (name, term_rule (rename_ctx f c') (map f args) (rename_sort f t)) lr ->
-    wf_ctx lr (rename_ctx f c') /\ wf_sort lr (rename_ctx f c') (rename_sort f t).
   Proof.
     intros Hwf Hin.
     pose proof (rule_in_wf _ _ Hwf Hin) as Hr.

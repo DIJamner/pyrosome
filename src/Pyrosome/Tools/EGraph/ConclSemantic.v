@@ -36,44 +36,6 @@ Section WithV.
 
   Context (l : lang) (wfl : wf_lang l).
 
-  Lemma term_concl_wf n c args t
-    : In (n, term_rule c args t) l ->
-      forall sg, wf_subst l [] sg c ->
-                 wf_term l [] (con n (id_args c))[/sg/] t[/sg/].
-  Proof.
-    intros Hin sg Hsg.
-    pose proof (rule_in_wf _ _ wfl Hin) as Hr.
-    rewrite app_nil_r in Hr.
-    rewrite invert_wf_term_rule in Hr.
-    destruct Hr as [Hc [Hsub Ht]].
-    assert (wf_term l c (con n (id_args c)) t) as Hconcl.
-    {
-      replace t with (t[/id_subst c/]);
-        [| basic_core_crush].
-      eapply wf_term_by; eauto.
-      eapply id_args_wf; eauto with utils.
-    }
-    eapply wf_term_subst_monotonicity; eauto.
-  Qed.
-
-  Lemma sort_concl_wf n c args
-    : In (n, sort_rule c args) l ->
-      forall sg, wf_subst l [] sg c ->
-                 wf_sort l [] (scon n (id_args c))[/sg/].
-  Proof.
-    intros Hin sg Hsg.
-    pose proof (rule_in_wf _ _ wfl Hin) as Hr.
-    rewrite app_nil_r in Hr.
-    rewrite invert_wf_sort_rule in Hr.
-    destruct Hr as [Hc Hsub].
-    assert (wf_sort l c (scon n (id_args c))) as Hconcl.
-    {
-      eapply wf_sort_by; eauto.
-      eapply id_args_wf; eauto with utils.
-    }
-    eapply wf_sort_subst_monotonicity; eauto.
-  Qed.
-
   Lemma term_eq_concl n c e1 e2 t
     : In (n, term_eq_rule c e1 e2 t) l ->
       forall sg, wf_subst l [] sg c ->

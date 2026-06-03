@@ -38,31 +38,6 @@ Section Slice.
   (* [rebuild] returns [Success tt] exactly when it drained the worklist:
      a successful run terminated on the empty-worklist branch, so the
      resulting instance has an empty worklist. *)
-  Lemma rebuild_success_iff_drained n (e : instance)
-    : fst (rebuild n e) = Result.Success tt ->
-      worklist (snd (rebuild n e)) = [].
-  Proof.
-    revert e.
-    induction n as [|fuel IH]; intros e Hsucc.
-    - cbn [rebuild] in Hsucc. cbn [Mret StateMonad.state_monad fst] in Hsucc. discriminate.
-    - cbn [rebuild] in Hsucc |- *.
-      unfold pull_worklist in Hsucc |- *.
-      cbn [Mbind StateMonad.state_monad fst snd] in Hsucc |- *.
-      destruct (worklist e) as [|w wl'] eqn:Hwle.
-      + cbn [Mret StateMonad.state_monad fst snd worklist] in Hsucc |- *. reflexivity.
-      + cbn [Mseq Mbind StateMonad.state_monad fst snd] in Hsucc |- *.
-        match goal with
-        | [ |- context [ list_Mmap ?f (w :: wl') ?st ] ] =>
-          destruct (list_Mmap f (w :: wl') st) as [ wl_canon st1 ] eqn:Hmap
-        end.
-        cbn [Mseq Mbind StateMonad.state_monad fst snd] in Hsucc |- *.
-        match goal with
-        | [ |- context [ let (_, _) := ?p in _ ] ] => destruct p as [ u st2 ]
-        end.
-        cbn [Mseq Mbind StateMonad.state_monad fst snd] in Hsucc |- *.
-        apply (IH st2 Hsucc).
-  Qed.
-
   (* A fully-canonical atom (all-root args + root ret) that is present
      [up_to_equiv] in a [db_inv]-well-rooted egraph is present verbatim:
      the canonically-equivalent db witness [a'] has, by [db_inv], all-root

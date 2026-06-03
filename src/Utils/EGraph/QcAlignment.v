@@ -150,14 +150,6 @@ Proof.
 Qed.
 
 (* Helper: length (map2 orb (combine a b)) = length a when |a|=|b| *)
-Lemma length_map2_orb_combine (a b : list bool) :
-  length a = length b ->
-  length (map2 orb (combine a b)) = length a.
-Proof.
-  intro Hlen. unfold map2.
-  rewrite length_map, length_combine. rewrite Hlen. Lia.lia.
-Qed.
-
 (* Helper: list with all elements true = repeat true L *)
 Lemma all_true_repeat_true (l : list bool) (L : nat) :
   length l = L ->

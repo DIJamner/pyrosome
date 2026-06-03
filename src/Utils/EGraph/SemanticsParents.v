@@ -83,19 +83,6 @@ Proof.
     + exact (in_all _ _ _ Hargs_in Hin).
 Qed.
 
-Lemma empty_egraph_parents_keys_in_equiv {idx : Type} {idx_zero : WithDefault idx}
-  {symbol : Type} {symbol_map : forall A, map.map symbol A}
-  {idx_map : forall A, map.map idx A} {idx_map_ok : forall A, map.ok (idx_map A)} {idx_trie : forall A, map.map (list idx) A}
-  {analysis_result : Type}
-  : parents_keys_in_equiv idx symbol symbol_map idx_map idx_trie analysis_result
-      (empty_egraph idx_zero analysis_result).
-Proof.
-  unfold parents_keys_in_equiv, empty_egraph.
-  cbn [parents equiv parent].
-  intros y (s & Hg).
-  rewrite map.get_empty in Hg. discriminate.
-Qed.
-
 Lemma alloc_opaque_parents_keys_in_equiv {idx : Type} {Eqb_idx : Eqb idx} {Eqb_idx_ok : Eqb_ok Eqb_idx}
   {lt : idx -> idx -> Prop} {idx_succ : idx -> idx}
   {symbol : Type} {symbol_map : forall A, map.map symbol A}
