@@ -180,3 +180,48 @@ EGraph/Test goal before/after.
 ## Build note
 Makefile.coq targets are ABSOLUTE paths. Build e.g.
 `make -f Makefile.coq /root/pyrosome-ai/src/Utils/FullPosTrieConv.vo`.
+
+## M2 breakdown (simulation) — sub-lemmas (added after M1 verified, commit b582381)
+
+Top statement (hypothesis-free; arg order matches both fixpoints
+`fuel cil ptl ci0 cil' pt0 ptl'`):
+```
+Lemma fpt_spaced_intersect''_sim : forall fuel cil ptl ci0 cil' pt0 ptl',
+  option_map pt'_of_fpt' (fpt_spaced_intersect'' merge fuel cil ptl ci0 cil' pt0 ptl')
+  = pt_spaced_intersect' merge fuel cil (map pt'_of_fpt' ptl) ci0 cil'
+                          (pt'_of_fpt' pt0) (map pt'_of_fpt' ptl').
+```
+By `induction fuel; intros cil ptl ci0 cil' pt0 ptl'` (IH universally quantified over
+all non-fuel args). Easy sub-lemmas (all Qed-able, hypothesis-free):
+- `fpt_leaf_intersect_sim : fpt_leaf_intersect merge a ptl = leaf_intersect merge a (map pt'_of_fpt' ptl)` (induction ptl; leaf→leaf merges, node/both→skip both sides).
+- `pr_map : fpt_partition_result -> partition_result` (apply pt'_of_fpt'/map to carriers) and
+  `fpt_partition_tries_sim : pr_map (fpt_partition_tries cil ptl acc) = partition_tries cil (map pt'_of_fpt' ptl) (pr_map acc)` (induction cil; destruct ptl, acc).
+- `fpt_proj_sim : tree'_map' pt'_of_fpt' (fpt_proj_node_unchecked t) = proj_node_map_unchecked (pt'_of_fpt' t)` (3 ctor cases; uses pt'_of_fpt'_fpt_node).
+- leaf base aligns via fpt_leaf_intersect_sim; the dead fpt_node/fpt_both empty arms are None on
+  both sides (pt'_of_fpt' image is pos_trie_node → pt None arm).
+- recursive case: rewrite initial_part + double fpt_partition_tries through pr_map (uses
+  fpt_partition_tries_sim twice), destruct the native `part`, the pt `part` follows by pr_map;
+  just_false branch → IH; have_true branch → list_intersect naturality below.
+
+HARD (Admitted placeholders to discharge in M2b):
+- `list_intersect_natural {Bf Bp} (g:Bf->Bp) (ef eg) (Helts: forall b x xs,
+   option_map g (ef b x xs) = eg b (g x) (map g xs)) hd args :
+   option_map (tree'_map' g) (TrieMap.list_intersect ef hd args)
+   = TrieMap.list_intersect eg (tree'_map' g hd) (map (tree'_map' g) args).`
+   Route: `apply otree_injective; apply PTree.extensionality; intro i; erewrite
+   !list_intersect_correct` (TrieMap.v:1520) on both sides with `elts_wf := fun _ _ _=>True`;
+   discharge `elts_intersect_rev` from a rev-symmetry lemma of ef/eg (for our use:
+   `fpt_spaced_intersect''_rev` + the pt-side rev lemma already in PosListMapIntersectSpec /
+   `list_intersect_rev` TrieMap:1220), then Helts aligns the get-level RHS. Template:
+   `list_intersect_Perm_combined` (PosListMap.v:2354) does exactly this erewrite-both-sides
+   pattern across element types. May also need `fpt_spaced_intersect''_rev :
+   fpt..'' fuel oc ot tci (rev l) x (rev ys) = fpt..'' fuel oc ot tci l x ys`-style (mirror pt).
+- native-depth: `fpt_depth (fpt_spaced_intersect_native (tries,rest)) N` where
+  N = length (filter id (combined_bools (cvt-equivalent))). Either (i) direct induction on
+  fuel mirroring `pt_spaced_intersect_depth` (PosListMapIntersectSpec.v:3802), or (ii) via sim
+  + pt_spaced_intersect_depth + a both-free + depth-correspondence argument. Prefer (ii) if the
+  sim is available; native results are both-free (only build fpt_leaf/fpt_node).
+
+In the have_true branch the final wrap is `option_map fpt_node (list_intersect …)`; combine with
+`pt'_of_fpt'_fpt_node` so `option_map pt'_of_fpt' (option_map fpt_node X)
+= option_map pos_trie_node (option_map (tree'_map' pt'_of_fpt') X)`, then apply naturality.

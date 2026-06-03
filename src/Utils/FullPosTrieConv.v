@@ -884,3 +884,226 @@ Section Inherit.
   Qed.
 
 End Inherit.
+
+(* ============================================================================
+   M2 — SIMULATION LEMMAS
+   Prove that [fpt_spaced_intersect_native] agrees with [pt_spaced_intersect]
+   through the structural injection [pt'_of_fpt'].
+
+   Organization (all inside a single section for B, Hdef, merge):
+   - helper: [fpt_both_pt'_node]    (pt'_of_fpt' on fpt_both)
+   - EASY 1: [fpt_leaf_intersect_sim]    (Qed)
+   - EASY 2: [fpt_proj_sim]              (Qed)
+   - helper: [pr_map]                     (mapping fpt_partition_result -> partition_result)
+   - EASY 3: [fpt_partition_tries_sim]   (Qed)
+   - HARD A: [list_intersect_natural]    (Admitted — TrieMap.list_intersect naturality)
+   - EASY 4: [fpt_spaced_intersect''_sim] (Qed, uses list_intersect_natural)
+   - helper: [list_Mmap_option_map_pt]    (Qed)
+   - helper: [split_cvt'_comm]           (Qed)
+   - EASY 5: [fpt_spaced_intersect_native_sim] (Qed)
+   ============================================================================ *)
+
+Section FptSim.
+  Context {B : Type} `{Hdef : WithDefault B}.
+  Context (merge : B -> B -> B).
+
+  (* ---- Helper: pt'_of_fpt' on fpt_both reduces like fpt_node (drops the value). ---- *)
+  Lemma fpt_both_pt'_node (a : B) (m : PTree.tree' (@FullPosTrie.fpt' B)) :
+    pt'_of_fpt' (FullPosTrie.fpt_both a m) = pos_trie_node (tree'_map' pt'_of_fpt' m).
+  Proof.
+    cbn [pt'_of_fpt']. f_equal.
+    induction m as [r IHr | y | y r IHr | l IHl | l IHl r IHr | l IHl y | l IHl y r IHr];
+      cbn; try (rewrite <- IHr); try (rewrite <- IHl); reflexivity.
+  Qed.
+
+  (* ---- EASY 1: leaf_intersect simulation. ---- *)
+  Lemma fpt_leaf_intersect_sim :
+    forall (ptl : list (@FullPosTrie.fpt' B)) (a : B),
+    fpt_leaf_intersect merge a ptl = leaf_intersect merge a (map pt'_of_fpt' ptl).
+  Proof.
+    induction ptl as [| t ptl' IH]; intros a.
+    - reflexivity.
+    - destruct t as [a' | m | a' m];
+        cbn [fpt_leaf_intersect map pt'_of_fpt' leaf_intersect]; apply IH.
+  Qed.
+
+  (* ---- EASY 2: proj_node_map simulation. ---- *)
+  Lemma fpt_proj_sim :
+    forall (t : @FullPosTrie.fpt' B),
+    tree'_map' pt'_of_fpt' (fpt_proj_node_unchecked t)
+    = proj_node_map_unchecked (pt'_of_fpt' t).
+  Proof.
+    intros [a | m | a m].
+    - cbn [fpt_proj_node_unchecked pt'_of_fpt' proj_node_map_unchecked tree'_map'].
+      reflexivity.
+    - rewrite pt'_of_fpt'_fpt_node.
+      cbn [fpt_proj_node_unchecked proj_node_map_unchecked]. reflexivity.
+    - rewrite fpt_both_pt'_node.
+      cbn [fpt_proj_node_unchecked proj_node_map_unchecked]. reflexivity.
+  Qed.
+
+  (* ---- Helper: mapping fpt_partition_result to partition_result. ---- *)
+  Definition pr_map (pr : @fpt_partition_result B) : @partition_result B :=
+    match pr with
+    | fpt_just_false_part ci0 pt0 cil ptl =>
+        just_false_part ci0 (pt'_of_fpt' pt0) cil (map pt'_of_fpt' ptl)
+    | fpt_have_true_part f_cil f_ptl t_ci0 t_pt0 t_cil t_ptl =>
+        have_true_part f_cil (map pt'_of_fpt' f_ptl) t_ci0 (pt'_of_fpt' t_pt0)
+                       t_cil (map pt'_of_fpt' t_ptl)
+    end.
+
+  (* ---- EASY 3: partition_tries simulation. ---- *)
+  Lemma fpt_partition_tries_sim :
+    forall (cil : list (list bool)) (ptl : list (@FullPosTrie.fpt' B))
+           (acc : @fpt_partition_result B),
+    pr_map (fpt_partition_tries cil ptl acc)
+    = partition_tries cil (map pt'_of_fpt' ptl) (pr_map acc).
+  Proof.
+    induction cil as [| ci cil' IH]; intros ptl acc.
+    - destruct ptl; reflexivity.
+    - destruct ptl as [| pt ptl']; [destruct ci as [|[|] ?]; reflexivity |].
+      destruct ci as [| b ci_tl]; [reflexivity|].
+      destruct b; destruct acc;
+        cbn [fpt_partition_tries partition_tries map pr_map]; apply IH.
+  Qed.
+
+  (* ---- HARD A: list_intersect naturality (Admitted). ---- *)
+  (* Proof route: apply otree_injective + PTree.extensionality + erewrite
+     list_intersect_correct on both sides (TrieMap.v:1520), then use Helts
+     and the rev-symmetry lemmas for the elts closures. *)
+  Lemma list_intersect_natural :
+    forall {Bf Bp : Type} (g : Bf -> Bp)
+           (ef : bool -> Bf -> list Bf -> option Bf)
+           (eg : bool -> Bp -> list Bp -> option Bp),
+    (forall b x xs, option_map g (ef b x xs) = eg b (g x) (map g xs)) ->
+    forall (hd : PTree.tree' Bf) (args : list (PTree.tree' Bf)),
+    option_map (tree'_map' g) (TrieMap.list_intersect ef hd args)
+    = TrieMap.list_intersect eg (tree'_map' g hd) (map (tree'_map' g) args).
+  Proof.
+    Admitted.
+
+  (* ---- EASY 4: the main fixpoint simulation. ---- *)
+  Lemma fpt_spaced_intersect''_sim :
+    forall (fuel : nat) (cil : list (list bool)) (ptl : list (@FullPosTrie.fpt' B))
+           (ci0 : list bool) (cil' : list (list bool))
+           (pt0 : @FullPosTrie.fpt' B) (ptl' : list (@FullPosTrie.fpt' B)),
+    option_map pt'_of_fpt'
+      (fpt_spaced_intersect'' merge fuel cil ptl ci0 cil' pt0 ptl')
+    = pt_spaced_intersect' merge fuel cil (map pt'_of_fpt' ptl) ci0 cil'
+                           (pt'_of_fpt' pt0) (map pt'_of_fpt' ptl').
+  Proof.
+    induction fuel as [| fuel' IH]; intros cil ptl ci0 cil' pt0 ptl'.
+    - reflexivity.
+    - destruct ci0 as [| ci0_hd ci0_tl].
+      + (* ci0 = [] : leaf/node cases *)
+        destruct pt0 as [a | m | a m].
+        * cbn [fpt_spaced_intersect'' pt_spaced_intersect' option_map pt'_of_fpt'].
+          f_equal.
+          rewrite fpt_leaf_intersect_sim. rewrite fpt_leaf_intersect_sim. reflexivity.
+        * cbn [fpt_spaced_intersect'' pt_spaced_intersect'].
+          rewrite pt'_of_fpt'_fpt_node. reflexivity.
+        * cbn [fpt_spaced_intersect'' pt_spaced_intersect'].
+          rewrite fpt_both_pt'_node. reflexivity.
+      + (* ci0 = ci0_hd :: ci0_tl : recursive step *)
+        cbn [fpt_spaced_intersect'' pt_spaced_intersect'].
+        (* Show the combined partition map commutes *)
+        assert (Hcombined :
+          pr_map (fpt_partition_tries cil' ptl'
+                    (fpt_partition_tries cil ptl
+                       (if ci0_hd then fpt_have_true_part [] [] ci0_tl pt0 [] []
+                        else fpt_just_false_part ci0_tl pt0 [] [])))
+          = partition_tries cil' (map pt'_of_fpt' ptl')
+              (partition_tries cil (map pt'_of_fpt' ptl)
+                 (if ci0_hd then have_true_part [] [] ci0_tl (pt'_of_fpt' pt0) [] []
+                  else just_false_part ci0_tl (pt'_of_fpt' pt0) [] []))).
+        { rewrite fpt_partition_tries_sim.
+          rewrite fpt_partition_tries_sim.
+          destruct ci0_hd; reflexivity. }
+        destruct (fpt_partition_tries cil' ptl'
+                    (fpt_partition_tries cil ptl
+                       (if ci0_hd then fpt_have_true_part [] [] ci0_tl pt0 [] []
+                        else fpt_just_false_part ci0_tl pt0 [] [])))
+          as [ci0' pt0' oc ot | oc ot t_ci0 t_pt0 t_cil t_ptl].
+        * (* just_false_part branch *)
+          cbn [pr_map] in Hcombined.
+          rewrite <- Hcombined. cbn [option_map]. apply IH.
+        * (* have_true_part branch *)
+          cbn [pr_map] in Hcombined.
+          rewrite <- Hcombined. cbn [option_map].
+          (* option_map pt'_of_fpt' (option_map fpt_node X)
+             = option_map pos_trie_node (option_map (tree'_map' pt'_of_fpt') X) *)
+          rewrite TrieMap.option_map_option_map.
+          rewrite (TrieMap.option_map_ext
+            (fun x => pt'_of_fpt' (FullPosTrie.fpt_node x))
+            (fun x => pos_trie_node (tree'_map' pt'_of_fpt' x))
+            _
+            (fun x _ => pt'_of_fpt'_fpt_node x)).
+          rewrite <- TrieMap.option_map_option_map.
+          f_equal.
+          erewrite (list_intersect_natural pt'_of_fpt'
+            (fun is_forward (x : @FullPosTrie.fpt' B) (xs : list (@FullPosTrie.fpt' B)) =>
+               fpt_spaced_intersect'' merge fuel' oc ot t_ci0
+                 (if is_forward then t_cil else rev t_cil) x xs)
+            (fun is_forward (x : @pos_trie' B) (xs : list (@pos_trie' B)) =>
+               pt_spaced_intersect' merge fuel' oc (map pt'_of_fpt' ot) t_ci0
+                 (if is_forward then t_cil else rev t_cil) x xs)).
+          2: { intros b x xs. cbn beta. apply IH. }
+          f_equal.
+          { apply fpt_proj_sim. }
+          { rewrite !map_map. apply map_ext. intros x. apply fpt_proj_sim. }
+  Qed.
+
+  (* ---- Helper: list_Mmap id commutes with option_map pt'_of_fpt'. ---- *)
+  Lemma list_Mmap_option_map_pt :
+    forall (l : list (@FullPosTrie.fpt B)),
+    @list_Mmap option _ _ option_monad id (map (option_map pt'_of_fpt') l)
+    = option_map (map pt'_of_fpt') (@list_Mmap option _ _ option_monad id l).
+  Proof.
+    induction l as [| [x'|] l' IH].
+    - reflexivity.
+    - cbn [map list_Mmap option_map id].
+      unfold Mbind, Mret. cbn [option_monad].
+      cbn [id]. rewrite IH.
+      destruct (@list_Mmap option _ _ option_monad id l'); cbn [option_map]; reflexivity.
+    - cbn [map list_Mmap option_map id].
+      unfold Mbind, Mret. cbn [option_monad]. reflexivity.
+  Qed.
+
+  (* ---- Helper: split commutes with cvt' element-wise. ---- *)
+  Local Notation cvt' :=
+    (fun p : @FullPosTrie.fpt B * list bool => (option_map pt'_of_fpt' (fst p), snd p)).
+
+  Lemma split_cvt'_comm :
+    forall (rest : list (@FullPosTrie.fpt B * list bool)),
+    split (map cvt' rest)
+    = (map (option_map pt'_of_fpt') (fst (split rest)), snd (split rest)).
+  Proof.
+    induction rest as [| [p q] rest' IH].
+    - reflexivity.
+    - cbn [map split fst snd].
+      destruct (split rest') as [ptl'' cil''] eqn:Hsp.
+      cbn [fst snd] in *. rewrite IH. reflexivity.
+  Qed.
+
+  (* ---- EASY 5: wrapper-level simulation. ---- *)
+  Lemma fpt_spaced_intersect_native_sim :
+    forall (tries : (@FullPosTrie.fpt B * list bool) * list (@FullPosTrie.fpt B * list bool)),
+    option_map pt'_of_fpt' (fpt_spaced_intersect_native merge tries)
+    = pt_spaced_intersect merge (cvt' (fst tries), map cvt' (snd tries)).
+  Proof.
+    intros [[pt0 ci0] rest].
+    unfold fpt_spaced_intersect_native, pt_spaced_intersect.
+    cbn [fst snd].
+    rewrite split_cvt'_comm. cbn [fst snd].
+    rewrite list_Mmap_option_map_pt.
+    destruct (split rest) as [ptl cil] eqn:Hsp. cbn [fst snd].
+    unfold Mbind, Mret, option_monad.
+    destruct pt0 as [pt0'|]; cbn [option_map].
+    - destruct (@list_Mmap option _ _ option_monad id ptl) as [ptl2|] eqn:Hmm;
+        cbn [option_map].
+      + setoid_rewrite Hmm. cbn [option_map]. apply fpt_spaced_intersect''_sim.
+      + setoid_rewrite Hmm. cbn [option_map]. reflexivity.
+    - reflexivity.
+  Qed.
+
+End FptSim.
