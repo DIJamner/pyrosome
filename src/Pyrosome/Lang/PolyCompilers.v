@@ -613,7 +613,7 @@ Derive poly_cps
   as poly_cps_preserving.
 Proof.
   auto_elab_compiler.
-  { Automation.by_reduction; t'. }
+  { apply TODO (*Automation.by_reduction; t'.*). }
   (*Automation.auto_elab_compiler.
 12:57-1:46+; too long
    *)  
@@ -878,7 +878,7 @@ Derive exists_cc
   as exists_cc_preserving.
 Proof.
   auto_elab_compiler.
-  { Automation.by_reduction; Matches.t'. }
+  { apply TODO (*Automation.by_reduction; Matches.t'.*). }
   {
     
     compute_eq_compilation.

@@ -369,25 +369,6 @@ Section __.
       map.remove m k := PTree.remove k m;
       map.fold := @trie_fold value;
     |}.
-
-  (* TODO: prove map.ok *)
-  #[export] Instance trie_map_ok : map.ok trie_map.
-  Proof.
-    constructor; basic_goal_prep.
-    { eapply extensionality; eauto. }
-    { reflexivity. }
-    { eapply gss. }
-    { eapply gso; eauto. }
-    { eapply grs; eauto. }
-    { eapply gro; eauto. }
-    {
-      revert m.
-      eapply tree_ind;
-        basic_goal_prep;
-        basic_utils_crush.
-      destruct l, o, r;
-        basic_goal_prep; try tauto.
-  Abort.
   
 End __.
 

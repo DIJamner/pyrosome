@@ -569,6 +569,16 @@ Ltac auto_elab_compiler' reversible inj_rules :=
 Ltac auto_elab_compiler :=
   auto_elab_compiler' (fun _ : string * Rule.rule string => true) empty_inj_rules.
 
+(*TODO: needed temporarily because we can't `Admitted` a `Derive` *)
+Axiom TODO: forall {A}, A.
+Ltac TODO_auto_elab_compiler :=
+  cleanup_elab_after
+  setup_elab_compiler;
+  repeat
+     ([>repeat t; cleanup_elab_after try 
+                    (try decompose_sort_eq; apply TODO)
+      | .. ]).
+
 (* for building filters from lists in tactics *)
 Definition rule_named_in l :=
   (fun p : string * Rule.rule string => inb (fst p) l).

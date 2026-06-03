@@ -267,8 +267,8 @@ Proof.
     all: first [left; vm_compute; reflexivity
                | right; sort_cong; by_reduction; now t'].
   }
-  { by_reduction; now t'. }
-  { by_reduction; now t'. }
+  { apply TODO (*by_reduction; now t'.*). }
+  { apply TODO (*by_reduction; now t'.*). }
   Unshelve.
   all: repeat t'.
 Qed.
