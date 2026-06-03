@@ -27,7 +27,7 @@ Import ListNotations.
 From coqutil Require Import Map.Interface Map.Properties.
 From Tries Require Import Canonical.
 From Utils Require Import Utils Monad Default FullPosTrie PosListMap PosListMapLaws
-  PosListMapIntersectSpec.
+  PosListMapIntersectSpec TrieMap.
 
 Set Implicit Arguments.
 
@@ -804,7 +804,7 @@ End Inherit.
    - EASY 2: [fpt_proj_sim]              (Qed)
    - helper: [pr_map]                     (mapping fpt_partition_result -> partition_result)
    - EASY 3: [fpt_partition_tries_sim]   (Qed)
-   - HARD A: [list_intersect_natural]    (Admitted — TrieMap.list_intersect naturality)
+   - HARD A: [list_intersect_natural]    (Qed — TrieMap.list_intersect naturality)
    - EASY 4: [fpt_spaced_intersect''_sim] (Qed, uses list_intersect_natural)
    - helper: [list_Mmap_option_map_pt]    (Qed)
    - helper: [split_cvt'_comm]           (Qed)
@@ -875,10 +875,247 @@ Section FptSim.
         cbn [fpt_partition_tries partition_tries map pr_map]; apply IH.
   Qed.
 
-  (* ---- HARD A: list_intersect naturality (Admitted). ---- *)
-  (* Proof route: apply otree_injective + PTree.extensionality + erewrite
-     list_intersect_correct on both sides (TrieMap.v:1520), then use Helts
-     and the rev-symmetry lemmas for the elts closures. *)
+  (* ---- HARD A: list_intersect naturality. ---- *)
+  (* Helper: option_all over Datatypes.option_map'd list *)
+  Local Lemma lin_option_all_Dmap {A1 A2 : Type} (f : A1 -> A2) (l : list (Datatypes.option A1)) :
+    option_all (map (Datatypes.option_map f) l) = Datatypes.option_map (map f) (option_all l).
+  Proof.
+    induction l as [| [x|] rest IH]; cbn [map option_all Datatypes.option_map]; try reflexivity.
+    rewrite IH. destruct (option_all rest); reflexivity.
+  Qed.
+
+  (* Helper: split3 of tree'_tuples commutes with tree'_map' *)
+  Local Lemma lin_split3_map_tree'_tuple {Bf Bp : Type} (g : Bf -> Bp) (tl : list (PTree.tree' Bf)) :
+    split3 (map tree'_tuple (map (tree'_map' g) tl)) =
+    (map (Datatypes.option_map (tree'_map' g)) (fst (fst (split3 (map tree'_tuple tl)))),
+     map (Datatypes.option_map g) (snd (fst (split3 (map tree'_tuple tl)))),
+     map (Datatypes.option_map (tree'_map' g)) (snd (split3 (map tree'_tuple tl)))).
+  Proof.
+    rewrite !map_map. unfold split3, pair_map, id. rewrite !split_map; cbn [fst snd].
+    f_equal; [f_equal|]; rewrite !map_map; apply map_ext; intro t;
+    destruct t; cbn [tree'_tuple tree'_map' fst snd]; reflexivity.
+  Qed.
+
+  (* Helper: gather_tries_simple commutes with tree'_map' *)
+  Local Lemma lin_gather_tries_simple_natural {Bf Bp : Type} (g : Bf -> Bp) (tl : list (PTree.tree' Bf))
+      (al : Datatypes.option (list (PTree.tree' Bf))) (ac : Datatypes.option (list Bf)) (ar : Datatypes.option (list (PTree.tree' Bf))) :
+    gather_tries_simple (map (tree'_map' g) tl)
+      (hfin3_of_tuple (Datatypes.option_map (map (tree'_map' g)) al, Datatypes.option_map (map g) ac, Datatypes.option_map (map (tree'_map' g)) ar))
+    = (Datatypes.option_map (map (tree'_map' g)) (fst (fst (gather_tries_simple tl (hfin3_of_tuple (al, ac, ar))))),
+       Datatypes.option_map (map g) (snd (fst (gather_tries_simple tl (hfin3_of_tuple (al, ac, ar))))),
+       Datatypes.option_map (map (tree'_map' g)) (snd (gather_tries_simple tl (hfin3_of_tuple (al, ac, ar))))).
+  Proof.
+    unfold gather_tries_simple. rewrite !hfin3_tuple_inverse'.
+    rewrite (lin_split3_map_tree'_tuple g tl). unfold pair_map, pair_map2, id. cbn [fst snd].
+    rewrite <- !map_rev, !lin_option_all_Dmap.
+    unfold option_map2, Mbind, Mret, option_monad.
+    destruct (option_all (rev (fst (fst (split3 (map tree'_tuple tl)))))) as [ls1|];
+    destruct (option_all (rev (snd (fst (split3 (map tree'_tuple tl)))))) as [ls2|];
+    destruct (option_all (rev (snd (split3 (map tree'_tuple tl))))) as [ls3|];
+    destruct al as [al_v|]; destruct ac as [ac_v|]; destruct ar as [ar_v|];
+    cbn [Datatypes.option_map]; try (rewrite <- !map_app; reflexivity); reflexivity.
+  Qed.
+
+  (* Helper: gather_tries naturality — general form *)
+  Local Lemma lin_gather_tries_natural_general {Bf Bp : Type} (g : Bf -> Bp)
+      (tl : list (PTree.tree' Bf))
+      (acc_Bf : hfin3 (list (PTree.tree' Bf)) (list Bf) (list (PTree.tree' Bf)))
+      (acc_Bp : hfin3 (list (PTree.tree' Bp)) (list Bp) (list (PTree.tree' Bp)))
+      (Hacc : hfin3_to_tuple acc_Bp =
+              (Datatypes.option_map (map (tree'_map' g)) (fst (fst (hfin3_to_tuple acc_Bf))),
+               Datatypes.option_map (map g) (snd (fst (hfin3_to_tuple acc_Bf))),
+               Datatypes.option_map (map (tree'_map' g)) (snd (hfin3_to_tuple acc_Bf)))) :
+    hfin3_to_tuple (gather_tries (map (tree'_map' g) tl) acc_Bp) =
+    (Datatypes.option_map (map (tree'_map' g)) (fst (fst (hfin3_to_tuple (gather_tries tl acc_Bf)))),
+     Datatypes.option_map (map g) (snd (fst (hfin3_to_tuple (gather_tries tl acc_Bf)))),
+     Datatypes.option_map (map (tree'_map' g)) (snd (hfin3_to_tuple (gather_tries tl acc_Bf)))).
+  Proof.
+    rewrite !gather_no_short.
+    revert acc_Bf acc_Bp Hacc.
+    induction tl as [| t tl' IH]; intros acc_Bf acc_Bp Hacc.
+    - cbn [map gather_tries_no_short gather_tries'F]. exact Hacc.
+    - cbn [map gather_tries_no_short gather_tries'F].
+      destruct t as [r1 | y1 | y1 r1 | l1 | l1 r1 | l1 y1 | l1 y1 r1].
+      all: rewrite !tree'_tuple_un_k, !hfin3_to_tuple_un_k.
+      all: cbn [tree'_tuple tree'_map' fst snd].
+      all: rewrite Hacc.
+      all: destruct (hfin3_to_tuple acc_Bf) as [[al ac] ar].
+      all: cbn [fst snd pair_map2 Datatypes.option_map].
+      all: apply IH.
+      all: cbn [hfin3_to_tuple fst snd Datatypes.option_map map hfin3_of_tuple].
+      all: rewrite hfin3_tuple_inverse'.
+      all: destruct al as [al_v|], ac as [ac_v|], ar as [ar_v|];
+           cbn [Datatypes.option_map map mcons hfin3_to_tuple hfin3_of_tuple];
+           try reflexivity.
+  Qed.
+
+  (* Helper: gather_tries naturality for initial_acc values *)
+  Local Lemma lin_gather_tries_natural_init {Bf Bp : Type} (g : Bf -> Bp)
+      (tl : list (PTree.tree' Bf))
+      (pl_f : Datatypes.option (PTree.tree' Bf)) (pc_f : Datatypes.option Bf) (pr_f : Datatypes.option (PTree.tree' Bf))
+      (pl_g : Datatypes.option (PTree.tree' Bp)) (pc_g : Datatypes.option Bp) (pr_g : Datatypes.option (PTree.tree' Bp))
+      (Hpl : pl_g = Datatypes.option_map (tree'_map' g) pl_f)
+      (Hpc : pc_g = Datatypes.option_map g pc_f)
+      (Hpr : pr_g = Datatypes.option_map (tree'_map' g) pr_f) :
+    hfin3_to_tuple (gather_tries (map (tree'_map' g) tl)
+                      (@initial_acc (PTree.tree' Bp) Bp (PTree.tree' Bp) (pl_g, pc_g, pr_g)))
+    = (Datatypes.option_map (map (tree'_map' g))
+           (fst (fst (hfin3_to_tuple (gather_tries tl (@initial_acc (PTree.tree' Bf) Bf (PTree.tree' Bf) (pl_f, pc_f, pr_f)))))),
+       Datatypes.option_map (map g)
+           (snd (fst (hfin3_to_tuple (gather_tries tl (@initial_acc (PTree.tree' Bf) Bf (PTree.tree' Bf) (pl_f, pc_f, pr_f)))))),
+       Datatypes.option_map (map (tree'_map' g))
+           (snd (hfin3_to_tuple (gather_tries tl (@initial_acc (PTree.tree' Bf) Bf (PTree.tree' Bf) (pl_f, pc_f, pr_f)))))).
+  Proof.
+    apply lin_gather_tries_natural_general.
+    subst.
+    unfold initial_acc, pair_map, Mbind, Mret, option_monad.
+    destruct pl_f, pc_f, pr_f;
+      cbn [hfin3_to_tuple hfin3_of_tuple fst snd Datatypes.option_map];
+      reflexivity.
+  Qed.
+
+  (* Helper: generalized list_intersect' naturality (with is_rev parameter) *)
+  Local Lemma lin_list_intersect'_natural {Bf Bp : Type} (g : Bf -> Bp)
+      (ef : bool -> Bf -> list Bf -> Datatypes.option Bf)
+      (eg : bool -> Bp -> list Bp -> Datatypes.option Bp)
+      (Helts : forall b x xs, Datatypes.option_map g (ef b x xs) = eg b (g x) (map g xs)) :
+    forall (is_rev : bool) (hd : PTree.tree' Bf) (args : list (PTree.tree' Bf)),
+    Datatypes.option_map (tree'_map' g) (TrieMap.list_intersect'_pre_cbv ef hd is_rev args)
+    = TrieMap.list_intersect'_pre_cbv eg (tree'_map' g hd) is_rev (map (tree'_map' g) args).
+  Proof.
+    intros is_rev hd. revert is_rev.
+    induction hd as [r IHr | y | y r IHr | l IHl | l IHl r IHr | l IHl y | l IHl y r IHr];
+      intros is_rev args.
+    all: cbn [tree'_map' TrieMap.list_intersect'_pre_cbv TrieMap.list_intersect'F
+              TrieMap.tree'_tuple_k TrieMap.tree'_tuple fst snd].
+    all: rewrite !TrieMap.hfin3_to_tuple_un_k.
+    (* Node001 r *)
+    - pose proof (@lin_gather_tries_natural_init Bf Bp g args None None (Some r)
+          None None (Some (tree'_map' g r)) eq_refl eq_refl eq_refl) as Hgt.
+      rewrite Hgt; clear Hgt.
+      destruct (hfin3_to_tuple (gather_tries args (@initial_acc (PTree.tree' Bf) Bf (PTree.tree' Bf) (None, None, Some r)))) as [[acc_l acc_c] acc_r].
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2 Mbind Mret option_monad Datatypes.option_map].
+      destruct acc_r as [rs|]; cbn [Datatypes.option_map]; try reflexivity.
+      specialize (IHr (negb is_rev) rs).
+      destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [v|];
+        cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- IHr); reflexivity.
+    (* Node010 y *)
+    - pose proof (@lin_gather_tries_natural_init Bf Bp g args None (Some y) None
+          None (Some (g y)) None eq_refl eq_refl eq_refl) as Hgt.
+      rewrite Hgt; clear Hgt.
+      destruct (hfin3_to_tuple (gather_tries args (@initial_acc (PTree.tree' Bf) Bf (PTree.tree' Bf) (None, Some y, None)))) as [[acc_l acc_c] acc_r].
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2 Mbind Mret option_monad Datatypes.option_map].
+      destruct acc_c as [cs|]; cbn [Datatypes.option_map]; try reflexivity.
+      specialize (Helts is_rev y cs).
+      destruct (ef is_rev y cs) as [v|];
+        cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- Helts); reflexivity.
+    (* Node011 y r *)
+    - pose proof (@lin_gather_tries_natural_init Bf Bp g args None (Some y) (Some r)
+          None (Some (g y)) (Some (tree'_map' g r)) eq_refl eq_refl eq_refl) as Hgt.
+      rewrite Hgt; clear Hgt.
+      destruct (hfin3_to_tuple (gather_tries args (@initial_acc (PTree.tree' Bf) Bf (PTree.tree' Bf) (None, Some y, Some r)))) as [[acc_l acc_c] acc_r].
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2 Mbind Mret option_monad Datatypes.option_map].
+      destruct acc_c as [cs|]; destruct acc_r as [rs|]; cbn [Datatypes.option_map].
+      + specialize (IHr (negb is_rev) rs). specialize (Helts is_rev y cs).
+        destruct (ef is_rev y cs) as [vc|];
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *;
+          try (rewrite <- IHr); try (rewrite <- Helts); reflexivity.
+      + specialize (Helts is_rev y cs).
+        destruct (ef is_rev y cs) as [vc|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- Helts); reflexivity.
+      + specialize (IHr (negb is_rev) rs).
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- IHr); reflexivity.
+      + reflexivity.
+    (* Node100 l *)
+    - pose proof (@lin_gather_tries_natural_init Bf Bp g args (Some l) None None
+          (Some (tree'_map' g l)) None None eq_refl eq_refl eq_refl) as Hgt.
+      rewrite Hgt; clear Hgt.
+      destruct (hfin3_to_tuple (gather_tries args (@initial_acc (PTree.tree' Bf) Bf (PTree.tree' Bf) (Some l, None, None)))) as [[acc_l acc_c] acc_r].
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2 Mbind Mret option_monad Datatypes.option_map].
+      destruct acc_l as [ls|]; cbn [Datatypes.option_map]; try reflexivity.
+      specialize (IHl (negb is_rev) ls).
+      destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [v|];
+        cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- IHl); reflexivity.
+    (* Node101 l r *)
+    - pose proof (@lin_gather_tries_natural_init Bf Bp g args (Some l) None (Some r)
+          (Some (tree'_map' g l)) None (Some (tree'_map' g r)) eq_refl eq_refl eq_refl) as Hgt.
+      rewrite Hgt; clear Hgt.
+      destruct (hfin3_to_tuple (gather_tries args (@initial_acc (PTree.tree' Bf) Bf (PTree.tree' Bf) (Some l, None, Some r)))) as [[acc_l acc_c] acc_r].
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2 Mbind Mret option_monad Datatypes.option_map].
+      destruct acc_l as [ls|]; destruct acc_r as [rs|]; cbn [Datatypes.option_map].
+      + specialize (IHl (negb is_rev) ls). specialize (IHr (negb is_rev) rs).
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|];
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *;
+          try (rewrite <- IHl); try (rewrite <- IHr); reflexivity.
+      + specialize (IHl (negb is_rev) ls).
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- IHl); reflexivity.
+      + specialize (IHr (negb is_rev) rs).
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- IHr); reflexivity.
+      + reflexivity.
+    (* Node110 l y *)
+    - pose proof (@lin_gather_tries_natural_init Bf Bp g args (Some l) (Some y) None
+          (Some (tree'_map' g l)) (Some (g y)) None eq_refl eq_refl eq_refl) as Hgt.
+      rewrite Hgt; clear Hgt.
+      destruct (hfin3_to_tuple (gather_tries args (@initial_acc (PTree.tree' Bf) Bf (PTree.tree' Bf) (Some l, Some y, None)))) as [[acc_l acc_c] acc_r].
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2 Mbind Mret option_monad Datatypes.option_map].
+      destruct acc_l as [ls|]; destruct acc_c as [cs|]; cbn [Datatypes.option_map].
+      + specialize (IHl (negb is_rev) ls). specialize (Helts is_rev y cs).
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|];
+        destruct (ef is_rev y cs) as [vc|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *;
+          try (rewrite <- IHl); try (rewrite <- Helts); reflexivity.
+      + specialize (IHl (negb is_rev) ls).
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- IHl); reflexivity.
+      + specialize (Helts is_rev y cs).
+        destruct (ef is_rev y cs) as [vc|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- Helts); reflexivity.
+      + reflexivity.
+    (* Node111 l y r *)
+    - pose proof (@lin_gather_tries_natural_init Bf Bp g args (Some l) (Some y) (Some r)
+          (Some (tree'_map' g l)) (Some (g y)) (Some (tree'_map' g r)) eq_refl eq_refl eq_refl) as Hgt.
+      rewrite Hgt; clear Hgt.
+      destruct (hfin3_to_tuple (gather_tries args (@initial_acc (PTree.tree' Bf) Bf (PTree.tree' Bf) (Some l, Some y, Some r)))) as [[acc_l acc_c] acc_r].
+      cbn [fst snd TrieMap.tree'_of_tuple_k TrieMap.pair_map2 Mbind Mret option_monad Datatypes.option_map].
+      destruct acc_l as [ls|]; destruct acc_c as [cs|]; destruct acc_r as [rs|]; cbn [Datatypes.option_map].
+      + specialize (IHl (negb is_rev) ls). specialize (IHr (negb is_rev) rs). specialize (Helts is_rev y cs).
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|];
+        destruct (ef is_rev y cs) as [vc|];
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *;
+          try (rewrite <- IHl); try (rewrite <- Helts); try (rewrite <- IHr); reflexivity.
+      + specialize (IHl (negb is_rev) ls). specialize (Helts is_rev y cs).
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|];
+        destruct (ef is_rev y cs) as [vc|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *;
+          try (rewrite <- IHl); try (rewrite <- Helts); reflexivity.
+      + specialize (IHl (negb is_rev) ls). specialize (IHr (negb is_rev) rs).
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|];
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *;
+          try (rewrite <- IHl); try (rewrite <- IHr); reflexivity.
+      + specialize (IHl (negb is_rev) ls).
+        destruct (TrieMap.list_intersect'_pre_cbv ef l (negb is_rev) ls) as [vl|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- IHl); reflexivity.
+      + specialize (Helts is_rev y cs). specialize (IHr (negb is_rev) rs).
+        destruct (ef is_rev y cs) as [vc|];
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *;
+          try (rewrite <- Helts); try (rewrite <- IHr); reflexivity.
+      + specialize (Helts is_rev y cs).
+        destruct (ef is_rev y cs) as [vc|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- Helts); reflexivity.
+      + specialize (IHr (negb is_rev) rs).
+        destruct (TrieMap.list_intersect'_pre_cbv ef r (negb is_rev) rs) as [vr|];
+          cbn [Datatypes.option_map tree'_map'] in * |- *; try (rewrite <- IHr); reflexivity.
+      + reflexivity.
+  Qed.
+
   Lemma list_intersect_natural :
     forall {Bf Bp : Type} (g : Bf -> Bp)
            (ef : bool -> Bf -> list Bf -> option Bf)
@@ -888,7 +1125,11 @@ Section FptSim.
     option_map (tree'_map' g) (TrieMap.list_intersect ef hd args)
     = TrieMap.list_intersect eg (tree'_map' g hd) (map (tree'_map' g) args).
   Proof.
-    Admitted.
+    intros Bf Bp g ef eg Helts hd args.
+    unfold TrieMap.list_intersect, TrieMap.list_intersect'.
+    fold (TrieMap.list_intersect'_pre_cbv ef) (TrieMap.list_intersect'_pre_cbv eg).
+    apply (lin_list_intersect'_natural g ef eg Helts false).
+  Qed.
 
   (* ---- EASY 4: the main fixpoint simulation. ---- *)
   Lemma fpt_spaced_intersect''_sim :
