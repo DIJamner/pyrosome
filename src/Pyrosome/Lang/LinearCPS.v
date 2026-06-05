@@ -558,7 +558,7 @@ Optimize Heap.
 
     Unshelve.
     all: try solve_wf_term.
-    shelve.
+    all: try shelve_if_not_eqterm.
   }
 
   compute_eq_compilation.
@@ -665,7 +665,7 @@ Optimize Heap.
   all: try solve_wf_term.
   Unshelve.
   all: try solve_wf_term.
-  shelve.
+  all: try shelve_if_not_eqterm.
   }
 
   reduce_lhs.
