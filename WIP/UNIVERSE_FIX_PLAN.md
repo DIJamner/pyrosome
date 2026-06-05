@@ -64,11 +64,17 @@ arise. Two changes, both required:
    (it still takes a `PolyRedPack` arg) — that's fine, `k` is not the relation
    universe.
 
-2. **Make the lower-level `rec` return relations at a STRICTLY SMALLER
-   universe.** `rec` at level `l` returns `RedRel@{i' j'}` with `i' < i` and
-   `j' <= i` (so the witness `{P : Type@{i'} & rec..P : Type@{j'}}` lands at
-   `<= i`, fitting the current relation slot). This is what the monomorphic
-   single-`RedRel` `rec` cannot do.
+2. **Make each lower level's relations live at a STRICTLY SMALLER universe.**
+   The level-`l` universe case quantifies a witness `{P : Type@{i'} & rec..P :
+   Type@{j'}}` over a lower relation with `i' < i` and `j' <= i`, so the witness
+   lands `<= i` and fits the current relation slot. The monomorphic single-
+   `RedRel` `rec` cannot do this (one universe for all levels). **NB:** with more
+   than two levels this CANNOT be delivered by a single dispatching `rec : forall
+   l', _ -> RedRel` function — a value-level `match` on `l'` collapses the lower
+   relation universes (Section 3, empirically confirmed). For >2 levels the lower
+   relations must be UNFOLDED into separate inductive parameters with `LRU` split
+   per level (Step 1B). For exactly two levels a constant `rec1 := LR0` suffices
+   (Step 1A).
 
 Target ladder per level `l`:  `i_l < k_l`,  and  `k_{l-1} <= i_l`  (lower
 inductive's output fits the current relation slot), giving the strictly
@@ -116,15 +122,22 @@ The 2-level tower escapes only because `rec1 := LR0` is a CONSTANT (no dispatch)
 logrel-coq escapes for the same reason (exactly two levels, `zero << one`).
 
 **3 levels IS still achievable** — just not by "one more match branch". You must
-avoid the dispatching `match`: UNROLL the tower into per-level inductives
-`LR0/LR1/LR2`, where `LR2` has TWO SEPARATE universe constructors (`U0` ->
-references `LR0`, `U1` -> references `LR1`), each naming a concrete lower
-relation at its own universe. No match -> no collapse -> the ladder
-`i_0 < j_0 <= i_1 < j_1 <= i_2 < j_2` is satisfiable. Cost: you lose the uniform
-`LR rec` and the single `LR_mut`, so relation defs / induction principle /
-escape / irrelevance get ~3x duplicated (or need a bespoke shared recursor).
-This is why Step 0 (does the fragment need TWO reducible object universes?) sizes
-the whole job: 2 levels keeps the uniform machinery; 3 levels pays the unrolling.
+avoid the dispatching `match` entirely: **UNFOLD** the `rec` dispatch into the
+inductive. The clean way (Step 1B) keeps ONE uniform `LR`: replace the single
+`rec : forall l', _ -> RedRel` parameter with the fixed, finite list of lower
+relations as SEPARATE parameters at distinct universes
+(`LR (lvl) (rec0 : RedRel@{i0 j0}) (rec1 : RedRel@{i1 j1}) : RedRel@{i2 j2}`),
+and SPLIT `LRU` into per-source-level constructors (`LRU0` needs `tl0 < lvl`,
+uses `rec0`; `LRU1` needs `tl1 < lvl`, uses `rec1`). Each U-constructor names a
+CONCRETE parameter at its own universe — no value-level `match`, so no collapse,
+and the ladder `i_0 < j_0 <= i_1 < j_1 <= i_2 < j_2` becomes ordinary universe
+constraints on `LR`'s parameters. Because it is still ONE inductive, you keep
+ONE `LR_mut`, ONE set of relation defs, ONE escape/irrelevance — NO ~3x
+duplication (that cost applies only to the cruder "N separate inductives"
+variant). This is why Step 0 (does the fragment need TWO reducible object
+universes?) still sizes the job, but the 3-level path is now concrete and
+moderate, not prohibitive: 2 levels is least churn; 3 levels pays for splitting
+`LRU` + threading the extra `recK` params.
 
 logrel-coq avoids this by having only **two** `TypeLevel`s (`zero`, `one`) and a
 `rec` for `one` that returns the `zero` relation as a *single* thing (no
@@ -166,29 +179,88 @@ Check by grepping the OTT Pi language defs / `Typing.v` / `Model.v` for whether
   typecheck. Better still, reformulate it to USE `RedTmEq_irr` (already proven)
   for the `bwd` direction instead of the bidirectional-`SymCar` admit.
 
-### Step 1B — keep three levels (only if Step 0 says you must)
-The multi-branch `rec2` cannot be poly'd directly. Options, increasing effort:
-- Replace the finite tower with **`Acc`/well-founded recursion** over `TLlt`
-  (logrel-coq's actual technique): define `LR` by recursion on a `TLlt`-accessibility
-  proof so each level genuinely gets its own universe and the witness references
-  exactly the next level down. This dissolves the `match` collapse.
-- Or split `LR` into per-level **named inductives** `LR0_ind`, `LR1_ind`,
-  `LR2_ind` at explicitly ordered universes, with each `LRU` case referencing the
-  concrete lower inductive (no universe-shared `match`). Verbose but mechanical.
+### Step 1B — keep three levels by UNFOLDING the `rec` dispatch (if Step 0 says you must)
+
+The blocker is solely the value-level `match` in `rec2` (it equates the branch
+relation universes). Eliminate it by moving the lower-level relations from a
+dispatching function into the inductive's PARAMETERS, and splitting `LRU` so each
+universe constructor names a concrete parameter. The finite tower has a fixed
+depth (3), so the parameter count is fixed.
+
+**B1. Re-shape the inductive (one `LR`, no `rec` function).** Under
+`Set Universe Polymorphism`, with the pack field universe unified to the
+relation-arg universe (`LRPack@{i}` field at `i`, `RedRel@{i j}` relation at `i`):
+
+```coq
+(* lower relations passed as SEPARATE params at DISTINCT universes -- no match,
+   no collapse.  recK = reducibility at source level tlK. *)
+Inductive LR@{i0 j0 i1 j1 i j}
+    (lvl  : TypeLevel)
+    (rec0 : RedRel@{i0 j0})
+    (rec1 : RedRel@{i1 j1}) : RedRel@{i j} :=
+  | LRnat  : ...
+  | LRempty: ...
+  | LRne   : ...
+  | LRpiI  : ...
+  | LRpi   : forall Ge FA BA FB BB (PA : PolyRedPack@{i} Ge FA BA FB BB), ...
+             PolyRedPackAdequate (LR lvl rec0 rec1) PA -> LR ... (PiRedTmEq PA)
+  | LRU0   : forall Ge r l, TLlt tl0 lvl -> lvl_of l = tl0 ->     (* U at source lvl 0 *)
+             LR lvl rec0 rec1 Ge (dU r l) (dU r l)
+               (fun c d => has*has* { P : Type@{i0} & rec0 Ge (dEl c)(dEl d) P })
+  | LRU1   : forall Ge r l, TLlt tl1 lvl -> lvl_of l = tl1 ->     (* U at source lvl 1 *)
+             LR lvl rec0 rec1 Ge (dU r l) (dU r l)
+               (fun c d => has*has* { P : Type@{i1} & rec1 Ge (dEl c)(dEl d) P }).
+```
+
+Universe constraints recorded by the kernel: `i0 < j0`, `i1 < j1` (LRpi/inductive
+sizing per the lower relations once instantiated), `j0 <= i`, `j1 <= i` (the
+`LRU0/LRU1` witnesses, at `j0`/`j1`, fit the current relation slot `i`), `i < j`.
+No constraint forces `i0 = i1`, because nothing dispatches on the level value.
+
+**B2. Build the tower with concrete instantiations (no `match`).**
+```coq
+Definition LRbot : RedRel := fun _ _ _ _ => False.   (* dummy for unused recK slots *)
+Definition LR0@{...} : RedRel@{...} := LR tl0 LRbot  LRbot.   (* LRU0/LRU1 gated off *)
+Definition LR1@{...} : RedRel@{...} := LR tl1 LR0    LRbot.   (* LRU0 -> LR0; LRU1 off *)
+Definition LR2@{...} : RedRel@{...} := LR tl2 LR0    LR1.     (* LRU0 -> LR0; LRU1 -> LR1 *)
+Definition RedTyEq Ge A B := { P & LR2 Ge A B P }.
+```
+Pin `LR0/LR1/LR2` with explicit `@{...}` so the ladder
+`i_0 < j_0 <= i_1 < j_1 <= i_2 < j_2` is satisfied (each instantiation chooses the
+`recK` slots' universes). `LRbot`'s universe is free (its constructorless witness
+is never built — the `TLlt tlK lvl` guard is false at the bottom).
+
+**B3. Cost / ripple (moderate, NOT 3x).** Still ONE inductive ⇒ ONE `LR_mut`
+(now with two U motive cases `LRU0`/`LRU1` instead of one), ONE set of relation
+defs, ONE escape, ONE irrelevance. The diffs vs today: (a) `LRU` splits into
+`LRU0`/`LRU1` (extra case in every `match`/induction over `LR` — `LogRel2Ind`,
+`LogRel2Lemmas`, `LogRel2Red`, `LogRel2Irr`); (b) `rec` becomes `rec0 rec1`
+params; (c) the tower defs get explicit universe annotations. The PROOFS are
+otherwise unchanged.
+
+**Alternative (only if levels become unbounded / variadic):** `Acc`/well-founded
+recursion over `TLlt` à la logrel-coq, giving each level its own universe via the
+accessibility proof. Not worth it for a fixed 3-level tower — B1/B2 is simpler.
 
 ### Step 2 — PROTOTYPE FIRST (do not touch the green chain yet)
 Before editing `LogRel2.v`, build a **minimal standalone scratch file**
 (`WIP/UnivProto.v`) replicating only: `RedRel`, `LRPack`, a toy `PolyRedPack`
-(domain pack + one codomain pack), `LR` with just `LRnat`, `LRpi`, `LRU`, and the
-tower. Then verify, in this order:
-1. it compiles with the poly scheme of Step 1A/1B;
+(domain pack + one codomain pack), and `LR` with just `LRnat`, `LRpi`, and the
+universe case(s) — for Step 1B use the UNFOLDED encoding (params `rec0 rec1` +
+split `LRU0`/`LRU1`, B1) and the `LR0/LR1/LR2` tower (B2); for Step 1A use the
+2-level `LR0/LR1` tower with `rec1 := LR0`. Then verify, in this order:
+1. it compiles with the chosen poly scheme;
 2. **positivity still holds** (kernel accepts `LR`) — universes don't affect
-   positivity, but confirm;
-3. a TOY symmetry obligation typechecks: build a swapped pack whose domain is a
-   universe (`LRU` witness stored into a domain `LRPack` field) — this is the
-   exact thing that fails today; if it goes through, the scheme is correct;
-4. `Print Universes Subgraph` shows `i_top` is now `>=` the witness universe.
-Only after (3) passes, port the annotations to the real `LogRel2.v`.
+   positivity, but confirm, especially after splitting `LRU`;
+3. the decisive test — a TOY symmetry obligation typechecks: build a swapped pack
+   whose DOMAIN is a universe, i.e. store an `LRU` witness into a domain
+   `LRPack` field (the exact thing that fails today). For Step 1B also confirm
+   the kernel did NOT force `i0 = i1` (`Print Universes Subgraph`);
+4. `Print Universes Subgraph` shows the pack-field universe is now `>=` the
+   witness universe at the top level (gap closed).
+Only after (3) passes, port the annotations to the real `LogRel2.v`. The toy
+`fun n => match n with O => A0@{a b} | _ => A1@{c d} end` snippet (Section 3) is
+the fast canary for whether any residual `match`-on-level still collapses.
 
 ### Step 3 — port + re-green + re-attempt symmetry
 Apply the validated annotations to `LogRel2.v`; rebuild `LogRel2Ind/Lemmas/Red/Irr`
