@@ -83,10 +83,10 @@ Section Irrelevance.
       split; intros f g Hfg; destruct Hfg as [[Hf Hg] app]; cbn in Hf, Hg.
       + (* PiRedTmEq PA -> PiRedTmEq PA0 *)
         refine ((Hf, Hg), _).
-        intros Delta sg a0 b0 FA' FB' fsg gsg ws rn afA afB afsf afsg rab0.
+        intros Delta sg a0 b0 FA' FB' BA' BB' fsg gsg ws rn afA afB afBA afBB afsf afsg rab0.
         pose (rab := snd (X Delta sg FA' FB' ws afA afB _ (shpAd X1 ws afA afB))
                        a0 b0 rab0).
-        destruct (app Delta sg a0 b0 FA' FB' fsg gsg ws rn afA afB afsf afsg rab)
+        destruct (app Delta sg a0 b0 FA' FB' BA' BB' fsg gsg ws rn afA afB afBA afBB afsf afsg rab)
           as [v [w [[Vf Vg] rvw]]].
         assert (EA : posTyA PA rab = posTyA PA0 rab0)
           by (eapply Apply_val_det; [exact (posAppA PA rab) | exact (posAppA PA0 rab0)]).
@@ -99,10 +99,10 @@ Section Irrelevance.
         exact (fst (X0 Delta sg a0 b0 FA' FB' ws afA afB rab _ Had0') v w rvw).
       + (* PiRedTmEq PA0 -> PiRedTmEq PA *)
         refine ((Hf, Hg), _).
-        intros Delta sg a0 b0 FA' FB' fsg gsg ws rn afA afB afsf afsg rab.
+        intros Delta sg a0 b0 FA' FB' BA' BB' fsg gsg ws rn afA afB afBA afBB afsf afsg rab.
         pose (rab0 := fst (X Delta sg FA' FB' ws afA afB _ (shpAd X1 ws afA afB))
                         a0 b0 rab).
-        destruct (app Delta sg a0 b0 FA' FB' fsg gsg ws rn afA afB afsf afsg rab0)
+        destruct (app Delta sg a0 b0 FA' FB' BA' BB' fsg gsg ws rn afA afB afBA afBB afsf afsg rab0)
           as [v [w [[Vf Vg] rvw]]].
         assert (EA : posTyA PA rab = posTyA PA0 rab0)
           by (eapply Apply_val_det; [exact (posAppA PA rab) | exact (posAppA PA0 rab0)]).

@@ -40,7 +40,8 @@ Inductive Reflect : nat -> svalty -> neutral -> sval -> Type :=
 | refl_Pi    : forall m F B n ARG B' body,
     Reflect (S m) (dEl (shift_val 0 1 F)) (nVar 0) ARG ->
     Apply_val (S m) (ARG :: wkn_list m) B B' ->
-    Reflect (S m) (dEl B') (nApp (shift_ne 0 1 n) ARG) body ->
+    Reflect (S m) (dEl B')
+            (nApp (shift_ne 0 1 n) (shift_val 0 1 F) (shift_val 1 1 B) ARG) body ->
     Reflect m (dEl (vPi F B)) n (vLam body).
 
 (* ===================================================================== *)

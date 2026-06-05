@@ -169,16 +169,18 @@ Definition PiRedTmEq (Ge : senv) (FA BA FB BB : sval) (PA : PolyRedPack Ge FA BA
   : sval -> sval -> Type :=
   fun f g =>
     (has_svalty Ge f (dEl (vPi FA BA)) * has_svalty Ge g (dEl (vPi FB BB)) *
-     (forall Delta sg a b FA' FB' fsg gsg
+     (forall Delta sg a b FA' FB' BA' BB' fsg gsg
         (ws : wf_ssub Delta sg Ge) (rn : is_ren sg)
         (afA : Apply_val (length Delta) sg FA FA')
         (afB : Apply_val (length Delta) sg FB FB')
+        (afBA : Apply_val (S (length Delta)) (up sg) BA BA')
+        (afBB : Apply_val (S (length Delta)) (up sg) BB BB')
         (afsf : Apply_val (length Delta) sg f fsg)
         (afsg : Apply_val (length Delta) sg g gsg)
         (rab : redTmEq (shpRed PA ws afA afB) a b),
         { v & { w &
-          ( Vapp (length Delta) fsg a v
-          * Vapp (length Delta) gsg b w
+          ( Vapp (length Delta) FA' BA' fsg a v
+          * Vapp (length Delta) FB' BB' gsg b w
           * redTmEq (posPack PA rab) v w )%type } }))%type.
 
 (* Adequacy: the packs stored in [PA] are themselves in the graph [R]. *)

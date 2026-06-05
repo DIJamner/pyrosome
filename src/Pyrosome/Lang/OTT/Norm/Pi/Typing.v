@@ -41,8 +41,10 @@ Section Typing.
     match n with
     | nVar k => k < m
     | nEmptyrec _ _ A scrut => ne_below_val m A /\ ne_below_ne m scrut
-    | nApp f a => ne_below_ne m f /\ ne_below_val m a
-    | nAppI f a => ne_below_ne m f /\ ne_below_val m a
+    | nApp f F B a =>
+        ne_below_ne m f /\ ne_below_val m F /\ ne_below_val (S m) B /\ ne_below_val m a
+    | nAppI f F B a =>
+        ne_below_ne m f /\ ne_below_val m F /\ ne_below_val (S m) B /\ ne_below_val m a
     end.
 
   Definition ne_below_ty (m : nat) (T : svalty) : Prop :=
@@ -102,12 +104,12 @@ Section Typing.
         wf_neutral Ge f (dEl (vPi F B)) ->
         has_svalty Ge a (dEl F) ->
         Apply_val (length Ge) (a :: id_list (length Ge)) B B' ->
-        wf_neutral Ge (nApp f a) (dEl B')
+        wf_neutral Ge (nApp f F B a) (dEl B')
   | n_appI  : forall Ge f F B a B',
         wf_neutral Ge f (dEl (vPiI F B)) ->
         has_svalty Ge a (dEl F) ->
         Apply_val (length Ge) (a :: id_list (length Ge)) B B' ->
-        wf_neutral Ge (nAppI f a) (dEl B').
+        wf_neutral Ge (nAppI f F B a) (dEl B').
   Set Elimination Schemes.
 
 End Typing.
