@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
-From Pyrosome.Lang.OTT.Norm.Pi Require Import Domain Apply ApplyLemmas LogRel.
+From Pyrosome.Lang.OTT.Norm.Pi Require Import Domain Apply ApplyLemmas Preservation LogRel.
 Import Core.Notations.
 
 Notation term := (@term string).
@@ -125,3 +125,159 @@ Qed.
 Definition ren_Apply_ty_total  := fst ren_Apply_total.
 Definition ren_Apply_val_total := fst (snd ren_Apply_total).
 Definition ren_Apply_ne_total  := snd (snd ren_Apply_total).
+
+(* ===================================================================== *)
+(* Renaming substitution COMPOSITION.                                      *)
+(*                                                                         *)
+(* For RENAMINGS, [Apply_*] composes: applying [s1] then [s2] equals        *)
+(* applying the pointwise composite [s3].  The general [Apply] composition  *)
+(* is NOT separable (composing through a [Vapp]-at-lambda needs that beta's  *)
+(* totality, which is the normalization content); but a renaming never       *)
+(* creates a beta ([ren_Apply_total]), so for renamings composition is a     *)
+(* clean structural induction on the first derivation.  This is what         *)
+(* [Reflect] naturality under renamings and the validity-layer reflect/      *)
+(* reify bridge use to transport the eta-body under a renaming.              *)
+(* ===================================================================== *)
+
+(* The composite substitution relation: [sg3] is the pointwise [sg2]-image of
+   [sg1] (entry k of sg3 = sg2 applied to entry k of sg1).  Default-correct
+   thanks to the [vNe (nVar k)] read default matching [ap_var]. *)
+Definition RenSub (m2 : nat) (sg2 sg1 sg3 : ssub) : Type :=
+  forall k, Apply_val m2 sg2 (nth_default (vNe (nVar k)) sg1 k)
+                             (nth_default (vNe (nVar k)) sg3 k).
+
+(* Reading [up sg] at a successor index = shift of the underlying read. *)
+Lemma up_nth_S : forall sg k,
+    nth_default (vNe (nVar (S k))) (up sg) (S k)
+    = shift_val 0 1 (nth_default (vNe (nVar k)) sg k).
+Proof.
+  intros sg k. unfold up. rewrite nth_default_cons_S. unfold nth_default.
+  rewrite nth_error_map. destruct (nth_error sg k) as [e|] eqn:E; cbn [option_map].
+  - reflexivity.
+  - cbn [shift_val shift_ne Nat.ltb Nat.leb]. do 2 f_equal. Lia.lia.
+Qed.
+
+(* [up] preserves the composite relation. *)
+Lemma RenSub_up : forall m2 sg2 sg1 sg3,
+    RenSub m2 sg2 sg1 sg3 -> RenSub (S m2) (up sg2) (up sg1) (up sg3).
+Proof.
+  intros m2 sg2 sg1 sg3 H k. destruct k as [|k'].
+  - (* head: both read [vNe (nVar 0)]; up sg2 maps it to itself *)
+    unfold up, nth_default. cbn [nth_error].
+    apply ap_ne. change (vNe (nVar 0)) with (nth_default (vNe (nVar 0)) (up sg2) 0) at 2.
+    apply ap_var.
+  - (* tail: shift both sides and use Apply_val_shift0 *)
+    rewrite !up_nth_S. apply Apply_val_shift0. apply H.
+Qed.
+
+(* Under a renaming the output of [Apply_ne] is a neutral (no beta). *)
+Lemma ren_Apply_ne_isNe : forall m s n v,
+    is_ren s -> Apply_ne m s n v -> { n' & v = vNe n' }.
+Proof.
+  intros m s n v Hr H. destruct (ren_Apply_ne_total n m Hr) as [n' Hn'].
+  pose proof (Apply_ne_det H Hn') as ->. exists n'; reflexivity.
+Qed.
+
+(* Renaming substitution composition: [Apply_*] through [s1] then [s2] equals
+   [Apply_*] through the composite [s3] (when [s1] is a renaming, so step 1
+   never creates a beta).  By induction on the FIRST derivation, inverting the
+   second. *)
+Lemma Apply_ren_comp :
+  (forall m1 s1 T T', Apply_ty m1 s1 T T' ->
+     is_ren s1 -> forall m2 s2 s3 T'', is_ren s2 -> RenSub m2 s2 s1 s3 ->
+       Apply_ty m2 s2 T' T'' -> Apply_ty m2 s3 T T'')
+  * (forall m1 s1 v v', Apply_val m1 s1 v v' ->
+       is_ren s1 -> forall m2 s2 s3 v'', is_ren s2 -> RenSub m2 s2 s1 s3 ->
+         Apply_val m2 s2 v' v'' -> Apply_val m2 s3 v v'')
+  * (forall m1 s1 n v, Apply_ne m1 s1 n v ->
+       is_ren s1 -> forall m2 s2 s3 v'', is_ren s2 -> RenSub m2 s2 s1 s3 ->
+         Apply_val m2 s2 v v'' -> Apply_ne m2 s3 n v'')
+  * (forall m vf a v, Vapp m vf a v -> unit)
+  * (forall m vf a v, VappI m vf a v -> unit).
+Proof.
+  refine (Apply_mutind
+    (fun m1 s1 T T' _ => is_ren s1 -> forall m2 s2 s3 T'',
+       is_ren s2 -> RenSub m2 s2 s1 s3 -> Apply_ty m2 s2 T' T'' -> Apply_ty m2 s3 T T'')
+    (fun m1 s1 v v' _ => is_ren s1 -> forall m2 s2 s3 v'',
+       is_ren s2 -> RenSub m2 s2 s1 s3 -> Apply_val m2 s2 v' v'' -> Apply_val m2 s3 v v'')
+    (fun m1 s1 n v _ => is_ren s1 -> forall m2 s2 s3 v'',
+       is_ren s2 -> RenSub m2 s2 s1 s3 -> Apply_val m2 s2 v v'' -> Apply_ne m2 s3 n v'')
+    (fun _ _ _ _ _ => unit)
+    (fun _ _ _ _ _ => unit)
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+  - (* ap_dU *) intros m1 s1 r l Hr1 m2 s2 s3 T'' Hr2 Hrs H2.
+    inversion H2; subst. apply ap_dU.
+  - (* ap_dEl *) intros m1 s1 e e' He IHe Hr1 m2 s2 s3 T'' Hr2 Hrs H2.
+    inversion H2; subst. apply ap_dEl. eapply IHe; eauto.
+  - (* ap_ne *) intros m1 s1 n v Hn IHn Hr1 m2 s2 s3 v'' Hr2 Hrs H2.
+    apply ap_ne. eapply IHn; eauto.
+  - (* ap_zero *) intros m1 s1 Hr1 m2 s2 s3 v'' Hr2 Hrs H2.
+    inversion H2; subst. apply ap_zero.
+  - (* ap_suc *) intros m1 s1 v v' Hv IHv Hr1 m2 s2 s3 v'' Hr2 Hrs H2.
+    inversion H2; subst. apply ap_suc. eapply IHv; eauto.
+  - (* ap_nat *) intros m1 s1 Hr1 m2 s2 s3 v'' Hr2 Hrs H2.
+    inversion H2; subst. apply ap_nat.
+  - (* ap_empty *) intros m1 s1 Hr1 m2 s2 s3 v'' Hr2 Hrs H2.
+    inversion H2; subst. apply ap_empty.
+  - (* ap_pi *) intros m1 s1 F F' B B' HF IHF HB IHB Hr1 m2 s2 s3 v'' Hr2 Hrs H2.
+    inversion H2; subst. apply ap_pi.
+    + eapply IHF; eauto.
+    + eapply IHB;
+        [ exact (is_ren_up Hr1) | exact (is_ren_up Hr2)
+        | exact (RenSub_up Hrs) | eassumption ].
+  - (* ap_piI *) intros m1 s1 F F' B B' HF IHF HB IHB Hr1 m2 s2 s3 v'' Hr2 Hrs H2.
+    inversion H2; subst. apply ap_piI.
+    + eapply IHF; eauto.
+    + eapply IHB;
+        [ exact (is_ren_up Hr1) | exact (is_ren_up Hr2)
+        | exact (RenSub_up Hrs) | eassumption ].
+  - (* ap_lam *) intros m1 s1 b b' Hb IHb Hr1 m2 s2 s3 v'' Hr2 Hrs H2.
+    inversion H2; subst. apply ap_lam.
+    eapply IHb;
+      [ exact (is_ren_up Hr1) | exact (is_ren_up Hr2)
+      | exact (RenSub_up Hrs) | eassumption ].
+  - (* ap_lamI *) intros m1 s1 b b' Hb IHb Hr1 m2 s2 s3 v'' Hr2 Hrs H2.
+    inversion H2; subst. apply ap_lamI.
+    eapply IHb;
+      [ exact (is_ren_up Hr1) | exact (is_ren_up Hr2)
+      | exact (RenSub_up Hrs) | eassumption ].
+  - (* ap_var *) intros m1 s1 k Hr1 m2 s2 s3 v'' Hr2 Hrs H2.
+    pose proof (Hrs k) as Hk.
+    pose proof (Apply_val_det H2 Hk) as ->. apply ap_var.
+  - (* ap_emptyrec *) intros m1 s1 rA lA A A' scrut scrut' HA IHA Hsc IHsc Hr1
+      m2 s2 s3 v'' Hr2 Hrs H2.
+    inversion H2; subst.
+    match goal with Hne : Apply_ne m2 s2 (nEmptyrec _ _ _ _) _ |- _ => inversion Hne; subst end.
+    apply ap_emptyrec.
+    + eapply IHA; eauto.
+    + eapply IHsc; eauto. apply ap_ne; eassumption.
+  - (* ap_app *) intros m1 s1 f vf a a' v Hf IHf Ha IHa Hvapp IHvapp Hr1
+      m2 s2 s3 v'' Hr2 Hrs H2.
+    destruct (ren_Apply_ne_isNe Hr1 Hf) as [nf' ->].
+    inversion Hvapp; subst.
+    inversion H2; subst.
+    match goal with Hne : Apply_ne m2 s2 (nApp _ _) _ |- _ => inversion Hne; subst end.
+    eapply ap_app.
+    + eapply IHf; eauto. apply ap_ne; eassumption.
+    + eapply IHa; eauto.
+    + eassumption.
+  - (* ap_appI *) intros m1 s1 f vf a a' v Hf IHf Ha IHa Hvapp IHvapp Hr1
+      m2 s2 s3 v'' Hr2 Hrs H2.
+    destruct (ren_Apply_ne_isNe Hr1 Hf) as [nf' ->].
+    inversion Hvapp; subst.
+    inversion H2; subst.
+    match goal with Hne : Apply_ne m2 s2 (nAppI _ _) _ |- _ => inversion Hne; subst end.
+    eapply ap_appI.
+    + eapply IHf; eauto. apply ap_ne; eassumption.
+    + eapply IHa; eauto.
+    + eassumption.
+  - (* vapp_lam *) intros; exact tt.
+  - (* vapp_ne *) intros; exact tt.
+  - (* vappI_lam *) intros; exact tt.
+  - (* vappI_ne *) intros; exact tt.
+Qed.
+
+Definition Apply_ty_ren_comp  := fst (fst (fst (fst Apply_ren_comp))).
+Definition Apply_val_ren_comp := snd (fst (fst (fst Apply_ren_comp))).
+Definition Apply_ne_ren_comp  := snd (fst (fst Apply_ren_comp)).
+
