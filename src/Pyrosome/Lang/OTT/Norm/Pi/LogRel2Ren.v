@@ -368,4 +368,53 @@ Section RenPackSec.
       exact (posAd ad (rp_ws3 ws2) (rp_afA3 ws2 afA2) (rp_afB3 ws2 afB2) rab).
   Defined.
 
+  (* FORWARD MAP: original Pi-conversion of [f],[g] renames to Pi-conversion of
+     [ren f],[ren g] at the renamed pack.  Typing is [ren_typing]; the app-clause
+     REUSES the original [app] at the composite [sg3] (the [rp_*] witnesses), so
+     the domain conv [rab] and the codomain relation match DEFINITIONALLY -- NO
+     irrelevance/[Apply_val_det] (cleaner than symmetry's bwd). *)
+  Lemma ren_pack_fwd : forall f g,
+      PiRedTmEq PA0 f g -> PiRedTmEq ren_pack (ren_val rho f) (ren_val rho g).
+  Proof.
+    intros f g [[Hf Hg] app]. refine ((_, _), _).
+    - exact (fst ren_typing Ge f (dEl (vPi FA BA)) Hf
+               (wf_svalty_scoped wpiA) Hctx Ge' rho Hren Hok).
+    - exact (fst ren_typing Ge g (dEl (vPi FB BB)) Hg
+               (wf_svalty_scoped wpiB) Hctx Ge' rho Hren Hok).
+    - intros Delta sg2 a b FA1 FB1 BA1 BB1 fsg gsg ws2 rn2 afA2 afB2 afBA2 afBB2 afsf2 afsg2 rab2.
+      assert (afBA3 : Apply_val (S (length Delta)) (up (comp_sub sg2 rho (length Ge))) BA BA1).
+      { eapply Apply_val_ren_comp_sc;
+          [ exact (ren_is_Apply_val BA (S (length Ge)) (up_renl rho)) | apply is_ren_ren_sub
+          | exact rp_HBA
+          | rewrite <- up_ren_sub; apply RenSubSc_up;
+            exact (@comp_sub_RenSubSc sg2 rho (length Ge) (length Delta) (rp_bound ws2))
+          | exact afBA2 ]. }
+      assert (afBB3 : Apply_val (S (length Delta)) (up (comp_sub sg2 rho (length Ge))) BB BB1).
+      { eapply Apply_val_ren_comp_sc;
+          [ exact (ren_is_Apply_val BB (S (length Ge)) (up_renl rho)) | apply is_ren_ren_sub
+          | exact rp_HBB
+          | rewrite <- up_ren_sub; apply RenSubSc_up;
+            exact (@comp_sub_RenSubSc sg2 rho (length Ge) (length Delta) (rp_bound ws2))
+          | exact afBB2 ]. }
+      assert (afsf3 : Apply_val (length Delta) (comp_sub sg2 rho (length Ge)) f fsg).
+      { eapply Apply_val_ren_comp_sc;
+          [ exact (ren_is_Apply_val f (length Ge) rho) | apply is_ren_ren_sub
+          | exact (has_svalty_ne_below Hf Hctx)
+          | exact (@comp_sub_RenSubSc sg2 rho (length Ge) (length Delta) (rp_bound ws2))
+          | exact afsf2 ]. }
+      assert (afsg3 : Apply_val (length Delta) (comp_sub sg2 rho (length Ge)) g gsg).
+      { eapply Apply_val_ren_comp_sc;
+          [ exact (ren_is_Apply_val g (length Ge) rho) | apply is_ren_ren_sub
+          | exact (has_svalty_ne_below Hg Hctx)
+          | exact (@comp_sub_RenSubSc sg2 rho (length Ge) (length Delta) (rp_bound ws2))
+          | exact afsg2 ]. }
+      change (redTmEq (shpRed ren_pack ws2 afA2 afB2) a b)
+        with (redTmEq (shpRed PA0 (rp_ws3 ws2) (rp_afA3 ws2 afA2) (rp_afB3 ws2 afB2)) a b) in rab2.
+      destruct (app Delta (comp_sub sg2 rho (length Ge)) a b FA1 FB1 BA1 BB1 fsg gsg
+                  (rp_ws3 ws2) (@is_ren_comp_sub sg2 rho (length Ge) rn2)
+                  (rp_afA3 ws2 afA2) (rp_afB3 ws2 afB2) afBA3 afBB3 afsf3 afsg3 rab2)
+        as [v [w [[Vf Vg] rvw]]].
+      exists v, w. refine ((Vf, Vg), _). exact rvw.
+  Qed.
+
 End RenPackSec.
