@@ -167,21 +167,30 @@ Reflect/Typing/EvalRel. Mechanical.
   preservation under a renaming for the UNIVERSE-typed fragment (`T = dU r l`),
   covering `LRpi`/`LRpiI`/`LRU`/`LRne`'s type-side side-conditions (Phase 2d).
   All axiom-free.
-- **TYPING-RULE GAP FOUND (blocks the term-side of the presheaf).** Renaming a
-  TERM at a `dEl (vPi ..)` type (`PiRedTmEq`'s `has_svalty f`; also
-  `RedNatEq`/`RedNeutralEq`'s neutral-at-`dEl`) needs "well-typed ⇒
-  well-scoped", which `t_lam`/`t_lam_eta` BLOCK by not recording the domain's
-  typing (so `F`/`B` annotation scopedness is unrecoverable; `Reflect_ren`
-  needs `F` scoped, `n_app`'s codomain `Apply` rename needs `B` scoped).  FIX:
-  add `has_svalty Ge F (dU rF lF)` to `t_lam`+`t_lam_eta` (mirror `t_Pi`), then
-  prove `well_typed ⇒ ne_below` (mutual, `Reflect_scoped` for the `t_lam_eta`
-  `ARG`); small Ph0-style ripple.  Do this FIRST next session — see
-  `WIP/NEXT_SESSION.md`.
-- **REMAINING Ph2/Ph4:** the `LR_ren_gen` presheaf itself (the Pi pack REUSES
-  the original pack at the composite `sg2∘sg` — no domain/codomain IHs needed,
-  cleaner than symmetry) + base-PER renaming (`RedNatEq_ren` etc., gated on the
-  typing fix) + transport (Lemma 12, deferred) + transitivity (deferred).  Then
-  Ph3 genuine ∼ne.
+- **TYPING-RULE GAP — FIXED & GREEN (2026-06-05, commits `9fc1bdd`, `26299f5`).**
+  Added `has_svalty Ge F (dU rF lF)` to `t_lam`, `t_lam_eta`, AND `t_lamI`
+  (`t_lamI` too: `LRpiI` carries `has_svalty` at `dEl (vPiI ..)`, so the presheaf
+  renames `vLamI` terms).  Full `well_typed ⇒ ne_below` = `RenTyping.typing_ne_below`
+  (axiom-free).  Motive asymmetry: VALUES get only `ne_below_val` (their type-side
+  is never consumed by an IH; dropping it makes `t_lam_eta` trivial — NO
+  `Reflect_scoped`/B/ARG needed, cleaner than planned); NEUTRALS get both sides
+  (`n_app`/`n_appI` recover the (F,B) annotation scopedness from the function type
+  `dEl (vPi F B)`, result `dEl B'` via `Apply_val_ne_below`).  New `ne_below_ctx`
+  precondition + extender `ne_below_ctx_up_dEl` (uses the F premise).  Projections
+  `has_svalty_ne_below`/`wf_neutral_ne_below`.  Whole `LogRel2*` chain re-greened
+  (insulated; no `t_lam` construction outside Preservation).
+- **FULL `ren_typing` DONE & GREEN (2026-06-05, commit `08f3028`, axiom-free).**
+  `RenTyping.ren_typing` generalizes `ren_typing_dU` to ALL types.  Mutual
+  `has_svalty`/`wf_neutral` preservation under `ren_ctx` + `ren_ok rho
+  (S (length Ge)) (length Ge')`, with `ne_below_ty T` + `ne_below_ctx Ge`
+  preconditions; `t_lam_eta` via `Reflect_ren`+`Apply_val_ren_commute`
+  (`ren_shift_comm1_val`), `n_app`/`n_appI` via `Apply_val_ren_commute`+
+  `RenShSc_beta`.  (Gotcha: pin `ren_ok_le`'s source bound with `with (N:=..)`.)
+- **REMAINING Ph2/Ph4:** base-PER renaming (`NeConv_ren` ⇒ `RedNatEq_ren`/
+  `RedNeutralEq_ren`, now trivially built on `ren_typing`) + the `LR_ren_gen`
+  presheaf itself (the Pi pack REUSES the original pack at the composite
+  `sg2∘sg` — no domain/codomain IHs needed, cleaner than symmetry) + transport
+  (Lemma 12, deferred) + transitivity (deferred).  Then Ph3 genuine ∼ne.
 
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
