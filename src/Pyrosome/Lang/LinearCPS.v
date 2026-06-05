@@ -500,8 +500,9 @@ all: try solve_wf_term.
 Optimize Proof.
 Optimize Heap.
 
-- term_refl.
-- lazymatch goal with
+{ term_refl. }
+{
+  lazymatch goal with
   | [|- eq_term _ _ _ {{e #"cmp"
       {?G1} {?G3} {?G4}
       (#"cmp" {?G1} {?G2} {?G3} {?p} {?cs} )
@@ -735,8 +736,9 @@ Optimize Heap.
 
   reduce_lhs.
   term_refl.
-
-- reassoc_cmp3.
+}
+{
+  reassoc_cmp3.
 
 
   eapply eq_term_trans.
@@ -796,8 +798,9 @@ Optimize Heap.
   all: try solve_wf_term.
   Unshelve.
   all: try solve_wf_term.
-
-- reassoc_cmp3.
+}
+{
+  reassoc_cmp3.
 
   eapply eq_term_trans.
   {
@@ -887,10 +890,12 @@ Optimize Heap.
   }
 
   by_reduction.
-
-- trans ltac:(unapply linear_value_subst "cmp_assoc").
+}
+{
+  trans ltac:(unapply linear_value_subst "cmp_assoc").
   reduce_lhs.
   term_refl.
+}
 }
 
 by_reduction.
