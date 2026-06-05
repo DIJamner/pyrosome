@@ -38,7 +38,7 @@ memory first.
 - **TRANSITIVITY BLOCKED (finding)** — needs general Apply totality (≈
   normalization); see `ConvRelPlan.md` STATUS. Defer to post-fundamental (Ph5).
 
-## Next move: RENAMING STABILITY (the tractable remaining PER item)
+## Next move: RENAMING STABILITY presheaf (the tractable remaining PER item)
 
 Transitivity + transport are deferred (blocked on general Apply totality ≈
 normalization — see `ConvRelPlan.md` STATUS). The tractable remaining Ph2/Ph4
@@ -46,22 +46,30 @@ work is **stability under renaming** (the LR2 presheaf over renamings), which
 lives over RENAMINGS, where `ren_Apply_total` supplies the very Apply witness
 transitivity lacked.
 
-Prerequisite (salvage from `WIP/OTT_LogRel_single_sided/LogRelRen.v`, porting
-the `(F,B)` updates into a NEUTRAL home — extend `ApplySubst.v` or add a new
-`Norm/Pi/RenSubst.v`, NOT a `LogRel*` file):
-- scopedness: `ne_below_shift`, `ne_below_mono`, `sub_below`/`_up`/`_beta`,
-  `Apply_ne_below` (Apply-preserves-scope). The `(F,B)` porting recipe is in
-  that folder's README and was exercised in `ApplySubst.v` (`Apply_shift_eq`,
-  `Apply_cancel`) and `Determinism.v`.
-- renaming-as-Apply bridge: `ren_Apply_total`, `Apply_ren_comp`/`_comp_sc`/
-  `_decomp`, `ren_is_Apply`, `Apply_ren_eq`. These have OLD 2-field `nApp`/
-  `Vapp` cases — re-thread `F` (shift at cutoff) and `B` (shift under one
-  binder) exactly as in `ApplySubst.v`.
+**Algebra foundation: DONE & green** — `src/Pyrosome/Lang/OTT/Norm/Pi/RenSubst.v`
+(commits `64959f1`, `899a57b`, `8b8bd94`), ported from the retired single-sided
+`LogRelRen.v` with the `(F,B)` neutral annotations threaded through every
+`nApp`/`nAppI`/`Vapp` case (recipe in `WIP/OTT_LogRel_single_sided/README.md`):
+- `is_ren` helpers (`_nil/_tl/_cons/_id/_wkn/_up`, `ren_nth_var`);
+- `ren_Apply_total` — Apply_* is TOTAL + neutrality-preserving under a renaming
+  (the totality witness general subs lack);
+- `ne_below_shift` / `ne_below_mono` / `sub_below`(`_up`/`_beta`) /
+  `Apply_ne_below` (Apply-preserves-scope, with the F,B-scoped Vapp motive);
+- `Apply_ren_comp` + `Apply_ren_comp_sc` (scoped) — renaming-then-arbitrary
+  composition (apply `s1` then `s2` = apply composite `s3`).
 
-Then prove the presheaf: a renaming `rho : Ge -> Ge'` sends `RedTyEq Ge A B`
-to `RedTyEq Ge' A[rho] B[rho]` (and likewise `RedTmEq`). Generic `LR_ren_gen`
-by `LR_mut` (mirror `LR_sym_gen`'s shape) + `RecRen1` tower; Pi case builds the
-renamed pack using `ren_Apply_total` for the renamed domain/codomain witnesses.
+**Remaining = the presheaf proof itself.** Write `LR_ren_gen` (new file, e.g.
+`Norm/Pi/LogRel2Ren.v`, `Set Universe Polymorphism`) mirroring `LR_sym_gen`'s
+shape: a `RenCar` carrier + `RecRen1` tower hypothesis, by `LR_mut`. A renaming
+`sg` (`is_ren`, `wf_ssub Ge' sg Ge`) sends `LR Ge A B P` to
+`LR Ge' A[sg] B[sg] Q` with `P` transported pointwise (use `ren_Apply_total`
+for the renamed `A[sg]`/`B[sg]` witnesses). The Pi case is the boss: build the
+renamed `PolyRedPack Ge' FA' BA' FB' BB'`; its `shpRed`/`posRed` at `(Delta,
+sg2)` reduce to the original pack at `(Delta, sg2∘sg)` via `Apply_ren_comp(_sc)`
++ `Apply_val_det`. ON-DEMAND ports still in WIP if the proof needs them:
+`Apply_ren_decomp` (converse of comp), `ren_is_Apply`, `Apply_ren_eq`
+(renamed-image uniqueness vs the syntactic `ren_*`) — port with the same `(F,B)`
+recipe. Then top-level `RedTyEq_ren` / `RedTmEq_ren`.
 
 Keep the whole `LogRel2*` chain `Set Universe Polymorphism` so the poly tower
 instances align (as `LogRel2Sym.v` needs).
