@@ -76,7 +76,8 @@ Section Typing.
       has_svalty Ge F (dU rF lF) ->
       has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge) b (dEl B) ->
       has_svalty Ge (vLam b) (dEl (vPi F B))
-  | t_lamI  : forall Ge F B b,
+  | t_lamI  : forall Ge F B b rF lF,
+      has_svalty Ge F (dU rF lF) ->
       has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge) b (dEl B) ->
       has_svalty Ge (vLamI b) (dEl (vPiI F B))
   (* ETA-typing of a relevant lambda (the rule that lets the eta-expanded

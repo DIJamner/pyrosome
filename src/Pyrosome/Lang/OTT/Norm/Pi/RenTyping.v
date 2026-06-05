@@ -100,7 +100,7 @@ Proof.
     + exact (IHF rF lF eq_refl Ge' rho Hctx).
     + exact (IHB rB lB eq_refl _ (up_renl rho) (ren_ctx_up_dEl F Hctx)).
   - (* t_lam *) intros Ge F B b rF lF hF IHF hb IHb r l Heq Ge' rho Hctx. discriminate Heq.
-  - (* t_lamI *) intros Ge F B b hb IHb r l Heq Ge' rho Hctx. discriminate Heq.
+  - (* t_lamI *) intros Ge F B b rF lF hF IHF hb IHb r l Heq Ge' rho Hctx. discriminate Heq.
   - (* t_lam_eta *) intros Ge F B b ARG B' rF lF hF IHF HR Hap hb IHb r l Heq Ge' rho Hctx.
     discriminate Heq.
   - (* n_var *) intros Ge k T He r l Heq Ge' rho Hctx. subst T.
@@ -127,3 +127,107 @@ Proof.
   - cbn [ren_ty]. eapply wf_dEl.
     eapply (fst ren_typing_dU); [ exact He | reflexivity | exact Hctx ].
 Qed.
+
+(* ===================================================================== *)
+(* WELL-TYPED => WELL-SCOPED (all types).                                   *)
+(*                                                                         *)
+(* The [t_lam]/[t_lamI]/[t_lam_eta] rules now record the domain typing      *)
+(* [has_svalty Ge F (dU rF lF)], so a function value's domain annotation is *)
+(* recoverably scoped.  This unblocks the full scopedness lemma (the        *)
+(* [dU]-restricted [typing_scoped] in ApplySubst.v was the previous best).  *)
+(*                                                                         *)
+(* Asymmetry of the motives: VALUES ([has_svalty]) get only the VALUE-side  *)
+(* [ne_below_val] -- their type-side is never consumed by another case's    *)
+(* IH, and dropping it lets [t_lam_eta] go through with no [B]/[ARG]         *)
+(* reasoning.  NEUTRALS ([wf_neutral]) carry BOTH sides, because [n_app]/    *)
+(* [n_appI] recover the [(F,B)] annotation scopedness from the FUNCTION'S    *)
+(* type [dEl (vPi F B)] (its type-side), and [n_emptyrec]/the codomain need  *)
+(* the result type [dEl B'] scoped (via [Apply_val_ne_below]).              *)
+(* The context precondition [ne_below_ctx] feeds [n_var]'s type-side.        *)
+(* ===================================================================== *)
+
+(* Every entry of [Ge] is scoped below the FULL length (entries are shifted
+   uniformly in this absolute/environment-free representation). *)
+Definition ne_below_ctx (Ge : senv) : Prop :=
+  forall k T, nth_error Ge k = Some T -> ne_below_ty (length Ge) T.
+
+(* Extending a well-scoped context under a (scoped) [dEl F] binder head. *)
+Lemma ne_below_ctx_up_dEl : forall Ge F,
+    ne_below_ctx Ge -> ne_below_val (length Ge) F ->
+    ne_below_ctx (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge).
+Proof.
+  intros Ge F Hctx HF k T Hnth. cbn [length]. rewrite length_map.
+  destruct k as [|k'].
+  - cbn [nth_error] in Hnth. injection Hnth as <-.
+    cbn [ne_below_ty]. apply ne_below_shift_val. exact HF.
+  - cbn [nth_error] in Hnth. rewrite nth_error_map in Hnth.
+    destruct (nth_error Ge k') as [T0|] eqn:E; cbn [option_map] in Hnth; [|discriminate].
+    injection Hnth as <-. apply (fst ne_below_shift). exact (Hctx k' T0 E).
+Qed.
+
+Lemma typing_ne_below :
+  (forall Ge v T, has_svalty Ge v T ->
+     ne_below_ctx Ge -> ne_below_val (length Ge) v)
+  * (forall Ge n T, wf_neutral Ge n T ->
+     ne_below_ctx Ge -> ne_below_ne (length Ge) n /\ ne_below_ty (length Ge) T).
+Proof.
+  refine (has_neutral_mutind
+    (fun Ge v T _ => ne_below_ctx Ge -> ne_below_val (length Ge) v)
+    (fun Ge n T _ => ne_below_ctx Ge ->
+       ne_below_ne (length Ge) n /\ ne_below_ty (length Ge) T)
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+  - (* t_ne *) intros Ge n T hn IHn Hctx. cbn [ne_below_val]. exact (proj1 (IHn Hctx)).
+  - (* t_zero *) intros Ge Hctx. exact I.
+  - (* t_suc *) intros Ge v hv IHv Hctx. cbn [ne_below_val]. exact (IHv Hctx).
+  - (* t_Nat *) intros Ge r l Hctx. exact I.
+  - (* t_Empty *) intros Ge r l Hctx. exact I.
+  - (* t_Pi *) intros Ge F B rF lF rB lB r l hF IHF hB IHB Hctx.
+    cbn [ne_below_val]. split.
+    + exact (IHF Hctx).
+    + pose proof (IHB (ne_below_ctx_up_dEl F Hctx (IHF Hctx))) as IH.
+      cbn [length] in IH. rewrite length_map in IH. exact IH.
+  - (* t_PiI *) intros Ge F B rF lF rB lB r l hF IHF hB IHB Hctx.
+    cbn [ne_below_val]. split.
+    + exact (IHF Hctx).
+    + pose proof (IHB (ne_below_ctx_up_dEl F Hctx (IHF Hctx))) as IH.
+      cbn [length] in IH. rewrite length_map in IH. exact IH.
+  - (* t_lam *) intros Ge F B b rF lF hF IHF hb IHb Hctx.
+    cbn [ne_below_val].
+    pose proof (IHb (ne_below_ctx_up_dEl F Hctx (IHF Hctx))) as IH.
+    cbn [length] in IH. rewrite length_map in IH. exact IH.
+  - (* t_lamI *) intros Ge F B b rF lF hF IHF hb IHb Hctx.
+    cbn [ne_below_val].
+    pose proof (IHb (ne_below_ctx_up_dEl F Hctx (IHF Hctx))) as IH.
+    cbn [length] in IH. rewrite length_map in IH. exact IH.
+  - (* t_lam_eta *) intros Ge F B b ARG B' rF lF hF IHF HR Hap hb IHb Hctx.
+    cbn [ne_below_val].
+    pose proof (IHb (ne_below_ctx_up_dEl F Hctx (IHF Hctx))) as IH.
+    cbn [length] in IH. rewrite length_map in IH. exact IH.
+  - (* n_var *) intros Ge k T He Hctx. split.
+    + cbn [ne_below_ne]. apply (proj1 (nth_error_Some Ge k)). rewrite He. discriminate.
+    + exact (Hctx k T He).
+  - (* n_emptyrec *) intros Ge rA lA A scrut r l hA IHA hscr IHscr Hctx. split.
+    + cbn [ne_below_ne]. split; [ exact (IHA Hctx) | exact (proj1 (IHscr Hctx)) ].
+    + cbn [ne_below_ty]. exact (IHA Hctx).
+  - (* n_app *) intros Ge f F B a B' hf IHf ha IHa Hap Hctx.
+    destruct (IHf Hctx) as [Hnef HtyF]. cbn [ne_below_ty ne_below_val] in HtyF.
+    destruct HtyF as [HneF HneB]. split.
+    + cbn [ne_below_ne]. repeat split;
+        [ exact Hnef | exact HneF | exact HneB | exact (IHa Hctx) ].
+    + cbn [ne_below_ty]. eapply Apply_val_ne_below;
+        [ exact Hap | exact HneB | apply sub_below_beta; [ Lia.lia | exact (IHa Hctx) ] ].
+  - (* n_appI *) intros Ge f F B a B' hf IHf ha IHa Hap Hctx.
+    destruct (IHf Hctx) as [Hnef HtyF]. cbn [ne_below_ty ne_below_val] in HtyF.
+    destruct HtyF as [HneF HneB]. split.
+    + cbn [ne_below_ne]. repeat split;
+        [ exact Hnef | exact HneF | exact HneB | exact (IHa Hctx) ].
+    + cbn [ne_below_ty]. eapply Apply_val_ne_below;
+        [ exact Hap | exact HneB | apply sub_below_beta; [ Lia.lia | exact (IHa Hctx) ] ].
+Qed.
+
+(* Convenience projections (the [dU]-restricted [has_svalty_scoped]/
+   [wf_neutral_scoped] in ApplySubst.v are the universe-only specializations). *)
+Definition has_svalty_ne_below {Ge v T} (H : has_svalty Ge v T) :=
+  fst typing_ne_below Ge v T H.
+Definition wf_neutral_ne_below {Ge n T} (H : wf_neutral Ge n T) :=
+  snd typing_ne_below Ge n T H.
