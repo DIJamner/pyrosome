@@ -337,14 +337,6 @@ Ltac csub_normalize cs :=
   | _ => cs
   end.
 
-Ltac csub_assoc cs :=
-  match cs with
-  | {{e #"csub" {?G} {?G'} {?H} {?H'}
-      (#"csub" {?G1} {?G1'} {?G2} {?G2'} {?g1} {?g2}) {?h} }} =>
-    constr:({{e #"csub" {G1} {G1'} (#"conc" {G2} {H}) (#"conc" {G2'} {H'})
-      {g1} (#"csub" {G2} {G2'} {H} {H'} {g2} {h}) }})
-  end.
-
 Ltac exch_invert :=
   compute_eq_compilation;
   eapply eq_term_conv;
@@ -362,6 +354,14 @@ Ltac unapply l r :=
 Ltac trans t :=
   eapply eq_term_trans;
   [> t | .. ].
+
+Ltac eredex_general l r :=
+  eapply eq_term_conv;
+      [>
+        eapply eq_term_trans;
+        [> term_cong | .. ];
+        [> .. | eredex_steps_with l r ] |
+        .. ].
 
 (* left-assoc cmp of three subs -> split into two cmps *)
 Ltac reassoc_cmp4 :=
@@ -550,14 +550,6 @@ Optimize Heap.
     all: try solve_wf_term.
     shelve.
   }
-
-  Ltac eredex_general l r :=
-    eapply eq_term_conv;
-        [>
-          eapply eq_term_trans;
-          [> term_cong | .. ];
-          [> .. | eredex_steps_with l r ] |
-          .. ].
 
   compute_eq_compilation.
 
