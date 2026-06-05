@@ -353,3 +353,149 @@ Definition reflect_red_beta (Hbeta : reflect_pi_beta_step)
            (wn : wf_neutral Ge n T),
     { v & (Reflect (length Ge) T n v * RedTm Ge T v)%type } :=
   reflect_red_app (reflect_pi_app_step_from_beta Hbeta).
+
+(* ===================================================================== *)
+(* SIMPLIFICATION (2026-06-05, session 3): the residual obligation does NOT  *)
+(* require a separate VR validity layer carrying general reducible           *)
+(* substitutions.                                                            *)
+(*                                                                         *)
+(* The earlier sharpenings ([reflect_pi_app_step], [reflect_pi_beta_step])   *)
+(* abstracted the open obligation as an IH-FREE premise.  Doing so DISCARDED  *)
+(* the two reflection IHs that [LR_mut] hands the relevant-Pi case            *)
+(* ([reflect_pi_step]'s [IHsh]/[IHpos]).  The earlier note -- that            *)
+(* [reflect_pi_beta_step] is not dischargeable standalone because it needs    *)
+(* the codomain reflection IH at the substituted instance (the VR layer) --   *)
+(* is then literally true of the IH-FREE premise; but that IH is NOT          *)
+(* external: it is exactly                                                    *)
+(* [IHpos], the [reflect_motive (posAd ad ws af ra)] family already in scope  *)
+(* inside [reflect_pi_step].                                                  *)
+(*                                                                         *)
+(* So we RE-INTRODUCE [IHpos] into the residual premise                       *)
+(* ([reflect_pi_reify_step]) and discharge [reflect_pi_step] from it          *)
+(* directly.  The genuine remaining content is then localized to a SINGLE     *)
+(* reducible argument [a] (no context-wide reducible substitution): relate    *)
+(* the beta-reduct [body[a::sg]] (= [bodysg[a::id_list]]) to the [IHpos]-      *)
+(* reflection of the applied neutral [nApp (n[sg]) (reify a)] at              *)
+(* [posTy PA ra].  This is reflect/reify adequacy for ONE argument under a    *)
+(* renaming -- substantially less than a full reducible-environment VR layer  *)
+(* (which is still needed later for [fund], whose [eval] motive substitutes   *)
+(* reducible ENVIRONMENTS, not a single argument).                            *)
+(* ===================================================================== *)
+
+(* The residual obligation, now carrying the codomain reflection IH [IHpos]
+   (the [reflect_motive (posAd ..)] family that [LR_mut] supplies -- exactly
+   the [IHpos] hypothesis of [reflect_pi_step], stated here verbatim so the
+   two are definitionally interchangeable). *)
+Definition reflect_pi_reify_step : Type :=
+  forall Ge F B (PA : PolyRedPack Ge F B)
+    (ad : PolyRedPackAdequate (@LR tl2 rec2) PA)
+    (IHpos : forall Delta sg a F'
+        (ws : wf_ssub Delta sg Ge) (af : Apply_val (length Delta) sg F F')
+        (ra : redTm (shpRed PA ws af) a),
+        reflect_motive (posAd ad ws af ra))
+    (Hwf : wf_senv Ge)
+    (n : neutral) (wn : wf_neutral Ge n (dEl (vPi F B)))
+    (ARG body : sval)
+    (ws0 : wf_ssub (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge)
+                   (wkn_list (length Ge)) Ge)
+    (af0 : Apply_val (length (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge))
+                     (wkn_list (length Ge)) F (shift_val 0 1 F))
+    (ra0 : redTm (shpRed PA ws0 af0) ARG)
+    (Harg : Reflect (S (length Ge)) (dEl (shift_val 0 1 F)) (nVar 0) ARG)
+    (Hbody : Reflect (S (length Ge)) (dEl (posTy PA ra0))
+                     (nApp (shift_ne 0 1 n) ARG) body)
+    (rb : redTm (posPack PA ra0) body),
+    forall Delta sg a F' bodysg
+      (ws : wf_ssub Delta sg Ge) (rn : is_ren sg)
+      (af : Apply_val (length Delta) sg F F')
+      (bs : Apply_val (S (length Delta)) (up sg) body bodysg)
+      (ra : redTm (shpRed PA ws af) a),
+      { v & (Apply_val (length Delta) (a :: id_list (length Delta)) bodysg v
+             * redTm (posPack PA ra) v)%type }.
+
+(* Discharging [reflect_pi_step] from the IH-carrying residual: the [Vapp]/
+   [ap_lam]/[refl_Pi]/[t_lam_eta] plumbing is identical to
+   [reflect_pi_step_from_app], but the application clause now feeds [IHpos]
+   (kept un-specialized) into the residual premise. *)
+Lemma reflect_pi_step_from_reify : reflect_pi_reify_step -> reflect_pi_step.
+Proof.
+  intros Hreify Ge F B PA wpi ad IHsh IHpos Hwf n wn.
+  (* scoping of the Pi type *)
+  pose proof (wf_svalty_scoped wpi) as Hsc.
+  cbn [ne_below_ty ne_below_val] in Hsc. destruct Hsc as [HscF HscB].
+  (* length of the extended context *)
+  assert (HL : length (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge)
+               = S (length Ge))
+    by (cbn [length]; f_equal; apply length_map).
+  (* wf_senv of the extended context *)
+  assert (HwfD : wf_senv (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge)).
+  { pose proof (wf_senv_ext Hwf (wf_svalty_pi_dom wpi)) as H.
+    cbn [shift_ty] in H. exact H. }
+  (* the weakening substitution and its domain apply *)
+  pose (ws0 := @wf_ssub_wkn Ge (dEl (shift_val 0 1 F)) Hwf).
+  pose proof (@Apply_val_wkn F (length Ge) HscF) as af0.
+  rewrite <- HL in af0.
+  (* (1) reflect the bound variable at the (shifted) domain *)
+  assert (Hvar0 : wf_neutral (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge)
+                    (nVar 0) (dEl (shift_val 0 1 F)))
+    by (apply n_var; reflexivity).
+  specialize (IHsh _ (wkn_list (length Ge)) (shift_val 0 1 F) ws0 af0).
+  unfold reflect_motive in IHsh.
+  destruct (IHsh HwfD (nVar 0) Hvar0) as [ARG [Harg0 ra0]].
+  pose proof Harg0 as Harg. rewrite HL in Harg.
+  (* (2) the substituted codomain, intrinsic to the pack *)
+  pose proof (posApp PA ra0) as Hpos. rewrite HL in Hpos.
+  (* codomain coherence (the [t_lam_eta] / [n_app] result type) *)
+  assert (HcodS : Apply_val (S (length Ge)) (ARG :: id_list (S (length Ge)))
+                    (shift_val 1 1 B) (posTy PA ra0))
+    by exact (@Apply_reflect_cod (length Ge) ARG B (posTy PA ra0) HscB Hpos).
+  pose proof HcodS as HcodD. rewrite <- HL in HcodD.
+  (* ARG is well-typed at the (shifted) domain *)
+  assert (HtyARG : has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge)
+                     ARG (dEl (shift_val 0 1 F))).
+  { apply RedTm_wf.
+    exact (existT _ (redTm (shpRed PA ws0 af0)) (shpAd ad ws0 af0, ra0)). }
+  (* the eta-body neutral is well-formed at the substituted codomain *)
+  assert (Hnf : wf_neutral (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge)
+                  (shift_ne 0 1 n) (dEl (vPi (shift_val 0 1 F) (shift_val 1 1 B)))).
+  { pose proof (snd shift_typing Ge n (dEl (vPi F B)) wn (dEl (shift_val 0 1 F))) as H.
+    cbn [shift_ty shift_val] in H. exact H. }
+  assert (Happn : wf_neutral (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge)
+                    (nApp (shift_ne 0 1 n) ARG) (dEl (posTy PA ra0))).
+  { eapply n_app; [ exact Hnf | exact HtyARG | exact HcodD ]. }
+  (* (3) reflect the eta-body at the substituted codomain -- [IHpos] applied
+     via a COPY ([IHpos] itself is kept intact for the application clause). *)
+  pose proof (IHpos _ (wkn_list (length Ge)) ARG (shift_val 0 1 F) ws0 af0 ra0)
+    as IHpos_eta.
+  unfold reflect_motive in IHpos_eta.
+  destruct (IHpos_eta HwfD (nApp (shift_ne 0 1 n) ARG) Happn) as [body [Hbody0 rb]].
+  pose proof Hbody0 as Hbody. rewrite HL in Hbody.
+  (* (4) assemble the eta-expansion [vLam body] *)
+  exists (vLam body). split.
+  - eapply refl_Pi; [ exact Harg | exact Hpos | exact Hbody ].
+  - split.
+    + (* (4a) typing of the eta-expansion via [t_lam_eta] *)
+      eapply t_lam_eta; [ exact Harg | exact HcodS | ].
+      apply RedTm_wf.
+      exact (existT _ (redTm (posPack PA ra0)) (posAd ad ws0 af0 ra0, rb)).
+    + (* (4b) the application clause: strip [Vapp]/[ap_lam] to the beta-reduct,
+         then feed the un-specialized [IHpos] into the residual premise. *)
+      intros Delta sg a F' fsg ws rn af afs ra.
+      inversion afs; subst.
+      match goal with
+      | bs : Apply_val (S (length Delta)) (up sg) body ?bodysg |- _ =>
+          destruct (Hreify Ge F B PA ad IHpos Hwf n wn ARG body ws0 af0 ra0
+                           Harg Hbody rb Delta sg a F' bodysg ws rn af bs ra)
+            as [v [Hbv Hrv]];
+          exists v; split; [ apply vapp_lam; exact Hbv | exact Hrv ]
+      end.
+Qed.
+
+(* User-facing form from the IH-carrying residual: reflection of a neutral
+   into a reducible term, modulo only the single-argument reify-adequacy core
+   (NO general reducible-substitution VR layer). *)
+Definition reflect_red_reify (Hreify : reflect_pi_reify_step)
+  : forall Ge T (wfG : wf_senv Ge) (rt : RedTy Ge T) (n : neutral)
+           (wn : wf_neutral Ge n T),
+    { v & (Reflect (length Ge) T n v * RedTm Ge T v)%type } :=
+  reflect_red (reflect_pi_step_from_reify Hreify).
