@@ -236,7 +236,11 @@ Inductive LR
 (* ===================================================================== *)
 
 (* Unused [recK] slots get the constructorless dummy [LRbot]; its [TLlt tlK
-   lvl] guard is false at that level so the [LRU]-witness is never built. *)
+   lvl] guard is false at that level so the [LRU]-witness is never built.  The
+   tower instances stay UNIVERSE-POLYMORPHIC (each occurrence picks its own
+   instance of the non-collapsing inductive [LR]); the downstream symmetry
+   proof keeps the whole [LogRel2*] chain polymorphic so the instances align
+   (see [LogRel2Sym.v]). *)
 Definition LRbot : RedRel := fun _ _ _ _ => False.
 
 Definition LR0 : RedRel := @LR tl0 LRbot LRbot.   (* LRU0/LRU1 gated off *)

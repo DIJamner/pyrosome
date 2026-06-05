@@ -7,6 +7,8 @@
    These hold on the PROVISIONAL [NeConv] of Phase 1 (which is already a PER)
    and do NOT touch [Domain.v], so the build stays green ahead of Phase 0. *)
 Set Implicit Arguments.
+Set Universe Polymorphism.
+Unset Strict Universe Declaration.
 
 From coqutil Require Import Datatypes.String.
 From Stdlib Require Import Lists.List.
