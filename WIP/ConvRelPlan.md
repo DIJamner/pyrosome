@@ -157,11 +157,31 @@ Reflect/Typing/EvalRel. Mechanical.
   fundamental/normalization results (Ph5), or rederive it from them.  Symmetry
   avoids this because `sym_pack`'s `shpRed` receives BOTH apply witnesses from
   its caller (it only swaps them).
-- **REMAINING Ph2/Ph4:** renaming stability (TRACTABLE — lives over renamings,
-  where `ren_Apply_total` supplies the missing witness; needs the WIP renaming
-  algebra ported with the `(F,B)` updates first) + transport (Lemma 12, Pi-
-  entangled with transitivity, likely also deferred) + transitivity (deferred,
-  see above).  Then Ph3 genuine ∼ne (Ph0 prerequisite now satisfied).
+- **RENAMING STABILITY — algebra + typing prereqs DONE & green (2026-06-05).**
+  `RenSubst.v` now also carries the functional renaming layer
+  (`renm`/`up_renl`/`ren_sub`/`ren_val`/`ren_ne`/`ren_ty`, `ren_is_Apply`,
+  `Apply_ren_eq`), `RenShSc` + `Apply_ren_commute` (Apply commutes with a
+  renaming), the shift/rename commutes (`ren_shift_comm0_val/ne` + NEW
+  `ren_shift_comm1_val`), and **`Reflect_scoped`/`Reflect_ren`** (Phase 2c).
+  `RenTyping.v` adds `ren_ctx` + **`ren_typing_dU`/`wf_svalty_ren`** — typing
+  preservation under a renaming for the UNIVERSE-typed fragment (`T = dU r l`),
+  covering `LRpi`/`LRpiI`/`LRU`/`LRne`'s type-side side-conditions (Phase 2d).
+  All axiom-free.
+- **TYPING-RULE GAP FOUND (blocks the term-side of the presheaf).** Renaming a
+  TERM at a `dEl (vPi ..)` type (`PiRedTmEq`'s `has_svalty f`; also
+  `RedNatEq`/`RedNeutralEq`'s neutral-at-`dEl`) needs "well-typed ⇒
+  well-scoped", which `t_lam`/`t_lam_eta` BLOCK by not recording the domain's
+  typing (so `F`/`B` annotation scopedness is unrecoverable; `Reflect_ren`
+  needs `F` scoped, `n_app`'s codomain `Apply` rename needs `B` scoped).  FIX:
+  add `has_svalty Ge F (dU rF lF)` to `t_lam`+`t_lam_eta` (mirror `t_Pi`), then
+  prove `well_typed ⇒ ne_below` (mutual, `Reflect_scoped` for the `t_lam_eta`
+  `ARG`); small Ph0-style ripple.  Do this FIRST next session — see
+  `WIP/NEXT_SESSION.md`.
+- **REMAINING Ph2/Ph4:** the `LR_ren_gen` presheaf itself (the Pi pack REUSES
+  the original pack at the composite `sg2∘sg` — no domain/codomain IHs needed,
+  cleaner than symmetry) + base-PER renaming (`RedNatEq_ren` etc., gated on the
+  typing fix) + transport (Lemma 12, deferred) + transitivity (deferred).  Then
+  Ph3 genuine ∼ne.
 
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
