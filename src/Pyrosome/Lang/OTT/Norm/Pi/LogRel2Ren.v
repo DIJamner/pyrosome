@@ -10,7 +10,8 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
-  Domain Apply Typing Preservation ApplySubst RenSubst RenTyping LogRel2.
+  Domain Apply Typing Preservation ApplySubst RenSubst RenTyping
+  LogRel2 LogRel2Ind LogRel2Lemmas LogRel2Irr.
 Import Core.Notations.
 
 Notation term := (@term string).
@@ -203,6 +204,43 @@ Proof.
   rewrite E. apply ap_var.
 Qed.
 
+(* The composite of two renamings is a renaming (the Pi app-clause's [is_ren]
+   gate must be re-established at [comp_sub]). *)
+Lemma is_ren_comp_sub : forall sg2 rho n, is_ren sg2 -> is_ren (comp_sub sg2 rho n).
+Proof.
+  intros sg2 rho n [r2 ->].
+  exists (map (fun k => nth_default 0 r2 (renm rho k)) (seq 0 n)).
+  unfold comp_sub. rewrite map_map. apply map_ext_in. intros k _.
+  unfold nth_default. rewrite nth_error_map.
+  destruct (nth_error r2 (renm rho k)) eqn:E; reflexivity.
+Qed.
+
+(* [RenSubSc] extended under a binder by a fixed head [a]: the composite
+   [a :: comp_sub sg2 rho n] is the [(a::sg2)]-image of the lifted renaming
+   [ren_sub (up_renl rho)].  This is the codomain analogue of
+   [comp_sub_RenSubSc] (used by [posRed']/the app-clause's [up] level). *)
+Lemma comp_sub_cons_RenSubSc : forall sg2 rho n m2 a,
+    (forall k, k < n -> renm rho k < length sg2) ->
+    RenSubSc (S n) m2 (a :: sg2) (ren_sub (up_renl rho)) (a :: comp_sub sg2 rho n).
+Proof.
+  intros sg2 rho n m2 a Hb k Hk. rewrite ren_sub_nth. destruct k as [|j].
+  - rewrite renm_up_0. unfold nth_default; cbn [nth_error].
+    apply ap_ne. change (vNe (nVar 0)) with (nth_default (vNe (nVar 0)) (a :: sg2) 0).
+    apply ap_var.
+  - assert (Hj : j < n) by Lia.lia. rewrite renm_up_S.
+    replace (nth_default (vNe (nVar (S j))) (a :: comp_sub sg2 rho n) (S j))
+       with (nth_default (vNe (nVar (S j))) (comp_sub sg2 rho n) j)
+       by (unfold nth_default; reflexivity).
+    rewrite (@comp_sub_nth sg2 rho n j (vNe (nVar (S j))) Hj).
+    apply ap_ne.
+    assert (E : nth_default (vNe (nVar 0)) sg2 (renm rho j)
+              = nth_default (vNe (nVar (S (renm rho j)))) (a :: sg2) (S (renm rho j))).
+    { specialize (Hb j Hj). unfold nth_default; cbn [nth_error].
+      destruct (nth_error sg2 (renm rho j)) eqn:Eo; [ reflexivity | ].
+      apply nth_error_None in Eo. Lia.lia. }
+    rewrite E. apply ap_var.
+Qed.
+
 (* A general [wf_ssub] into [Ge'] precomposes with a renaming [Ge -> Ge'] to a
    [wf_ssub] into [Ge].  The type-side [Apply_ty] is recovered via the FORWARD
    composition lemma (renamed-then-[sg2] => composite); the term-side reads off
@@ -230,3 +268,104 @@ Proof.
       exact Hap.
     + rewrite comp_sub_nth by exact Hk. exact Hhas.
 Qed.
+
+(* ===================================================================== *)
+(* The RENAMED Pi pack [ren_pack] and its adequacy [ren_adeq].  The Pi case  *)
+(* of the presheaf REUSES the original pack [PA0] at the COMPOSITE             *)
+(* substitution [comp_sub sg2 rho (length Ge)] (no domain/codomain IHs --      *)
+(* "cleaner than symmetry"):                                                  *)
+(*   - [shpRed'] RETURNS [shpRed PA0] at the composite, so its [redTmEq] IS    *)
+(*     the original's -- [posRed'] then feeds [rab] to [posRed PA0] with NO    *)
+(*     irrelevance (definitional, via the SHARED [rp_*] helpers below);        *)
+(*   - [posRed']'s codomain [Apply] witnesses are recovered in RENAMED form    *)
+(*     by the REVERSE composition [Apply_val_ren_uncomp_sc];                   *)
+(*   - adequacy is the original [shpAd]/[posAd] verbatim.                      *)
+(* ===================================================================== *)
+Section RenPackSec.
+  Context (lvl : TypeLevel) (rec0 rec1 : RedRel).
+  Context (Ge : senv) (FA BA FB BB : sval) (PA0 : PolyRedPack Ge FA BA FB BB).
+  Context (ad : PolyRedPackAdequate (@LR lvl rec0 rec1) PA0).
+  Context (wpiA : wf_svalty Ge (dEl (vPi FA BA))) (wpiB : wf_svalty Ge (dEl (vPi FB BB))).
+  Context (Hctx : ne_below_ctx Ge).
+  Context (Ge' : senv) (rho : list nat) (Hren : ren_ctx rho Ge Ge')
+          (Hok : ren_ok rho (S (length Ge)) (length Ge')).
+
+  Local Definition rp_HFA : ne_below_val (length Ge) FA := proj1 (wf_svalty_scoped wpiA).
+  Local Definition rp_HBA : ne_below_val (S (length Ge)) BA := proj2 (wf_svalty_scoped wpiA).
+  Local Definition rp_HFB : ne_below_val (length Ge) FB := proj1 (wf_svalty_scoped wpiB).
+  Local Definition rp_HBB : ne_below_val (S (length Ge)) BB := proj2 (wf_svalty_scoped wpiB).
+
+  (* the in-range bound for [comp_sub_RenSubSc], from [ws2]'s length + [ren_ok]. *)
+  Local Definition rp_bound Delta sg2 (ws2 : wf_ssub Delta sg2 Ge')
+    : forall k, k < length Ge -> renm rho k < length sg2.
+  Proof. intros k Hk. rewrite (fst ws2). apply Hok. Lia.lia. Defined.
+
+  Local Definition rp_ws3 Delta sg2 (ws2 : wf_ssub Delta sg2 Ge')
+    : wf_ssub Delta (comp_sub sg2 rho (length Ge)) Ge
+    := wf_ssub_comp ws2 Hren Hctx.
+
+  Local Definition rp_afA3 Delta sg2 (ws2 : wf_ssub Delta sg2 Ge') FA1
+    (afA2 : Apply_val (length Delta) sg2 (ren_val rho FA) FA1)
+    : Apply_val (length Delta) (comp_sub sg2 rho (length Ge)) FA FA1
+    := Apply_val_ren_comp_sc (ren_is_Apply_val FA (length Ge) rho) (is_ren_ren_sub rho)
+         rp_HFA (@comp_sub_RenSubSc sg2 rho (length Ge) (length Delta) (rp_bound ws2)) afA2.
+
+  Local Definition rp_afB3 Delta sg2 (ws2 : wf_ssub Delta sg2 Ge') FB1
+    (afB2 : Apply_val (length Delta) sg2 (ren_val rho FB) FB1)
+    : Apply_val (length Delta) (comp_sub sg2 rho (length Ge)) FB FB1
+    := Apply_val_ren_comp_sc (ren_is_Apply_val FB (length Ge) rho) (is_ren_ren_sub rho)
+         rp_HFB (@comp_sub_RenSubSc sg2 rho (length Ge) (length Delta) (rp_bound ws2)) afB2.
+
+  (* [shpRed']/[posRed'] as STANDALONE named constants (not the record's self-
+     projection -- that becomes an unsolved evar [shpRed ?PA] under [refine],
+     blocking the [redTmEq] reduction [rab] needs).  [ren_shpRed] RETURNS the
+     original [shpRed PA0] at the composite, so [posRed']'s [rab] feeds [posRed
+     PA0] with NO irrelevance (definitional via [unfold ren_shpRed]). *)
+  Definition ren_shpRed Delta sg2 FA1 FB1 (ws2 : wf_ssub Delta sg2 Ge')
+    (afA2 : Apply_val (length Delta) sg2 (ren_val rho FA) FA1)
+    (afB2 : Apply_val (length Delta) sg2 (ren_val rho FB) FB1)
+    : LRPack Delta (dEl FA1) (dEl FB1)
+    := shpRed PA0 (rp_ws3 ws2) (rp_afA3 ws2 afA2) (rp_afB3 ws2 afB2).
+
+  Definition ren_posRed Delta sg2 a b FA1 FB1 (ws2 : wf_ssub Delta sg2 Ge')
+    (afA2 : Apply_val (length Delta) sg2 (ren_val rho FA) FA1)
+    (afB2 : Apply_val (length Delta) sg2 (ren_val rho FB) FB1)
+    (rab : redTmEq (ren_shpRed ws2 afA2 afB2) a b)
+    : { BresA & { BresB &
+        ( Apply_val (length Delta) (a :: sg2) (ren_val (up_renl rho) BA) BresA
+        * Apply_val (length Delta) (b :: sg2) (ren_val (up_renl rho) BB) BresB
+        * LRPack Delta (dEl BresA) (dEl BresB) )%type } }.
+  Proof.
+    unfold ren_shpRed in rab.
+    refine (existT _ (posTyA PA0 rab) (existT _ (posTyB PA0 rab)
+              ((_, _), posPack PA0 rab))).
+    - eapply Apply_val_ren_uncomp_sc;
+        [ exact (posAppA PA0 rab) | exact rp_HBA
+        | apply comp_sub_cons_RenSubSc; exact (rp_bound ws2) ].
+    - eapply Apply_val_ren_uncomp_sc;
+        [ exact (posAppB PA0 rab) | exact rp_HBB
+        | apply comp_sub_cons_RenSubSc; exact (rp_bound ws2) ].
+  Defined.
+
+  Definition ren_pack
+    : PolyRedPack Ge' (ren_val rho FA) (ren_val (up_renl rho) BA)
+                      (ren_val rho FB) (ren_val (up_renl rho) BB)
+    := Build_PolyRedPack ren_shpRed ren_posRed.
+
+  Definition ren_adeq : PolyRedPackAdequate (@LR lvl rec0 rec1) ren_pack.
+  Proof.
+    refine (@Build_PolyRedPackAdequate (@LR lvl rec0 rec1) Ge'
+              (ren_val rho FA) (ren_val (up_renl rho) BA)
+              (ren_val rho FB) (ren_val (up_renl rho) BB) ren_pack _ _).
+    - intros Delta sg2 FA1 FB1 ws2 afA2 afB2.
+      change (shpRed ren_pack ws2 afA2 afB2) with (ren_shpRed ws2 afA2 afB2).
+      unfold ren_shpRed.
+      exact (shpAd ad (rp_ws3 ws2) (rp_afA3 ws2 afA2) (rp_afB3 ws2 afB2)).
+    - intros Delta sg2 a b FA1 FB1 ws2 afA2 afB2 rab.
+      change (redTmEq (shpRed ren_pack ws2 afA2 afB2) a b)
+        with (redTmEq (ren_shpRed ws2 afA2 afB2) a b) in rab.
+      unfold ren_shpRed in rab.
+      exact (posAd ad (rp_ws3 ws2) (rp_afA3 ws2 afA2) (rp_afB3 ws2 afB2) rab).
+  Defined.
+
+End RenPackSec.
