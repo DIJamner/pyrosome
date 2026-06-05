@@ -242,40 +242,6 @@ Ltac normalize_env :=
   [> repeat normalize_env_step; term_refl | .. ].
 
 
-Ltac simplify_wf_term :=
-  try unfold Model.wf_term;
-  match goal with
-  | |- wf_term ?l ?c ?e ?t =>
-      let c' := eval vm_compute in c in
-      let e' := eval vm_compute in e in
-      let t' := eval vm_compute in t in
-          change_no_check (wf_term l c' e' t')
-  end.
-
-      (* Ltac eredex_steps_with' lang name :=
-  let mr := eval vm_compute in (named_list_lookup_err lang name) in
-      lazymatch mr with
-      | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
-        lazymatch goal with
-        | [|- @eq_term ?V _ ?l ?c' ?t ?e1 ?e2] =>
-          let s := open_constr:(_:subst) in
-          first [unify_var_names V s c | fail 2 "could not unify var names"];
-          idtac t tp e1 e1p e2 e2p;
-          first [ replace (eq_term l c' t e1 e2)
-                    with (@eq_term V _ l c' tp[/s/] e1p[/s/] e2p[/s/])
-                  (* [| f_equal; vm_compute; reflexivity ]
-                | fail 2 "could not replace with subst"];
-          eapply (@eq_term_subst V _ l c' s s c);
-          [eapply (@eq_term_by V _ l c name tp e1p e2p);
-           try solve [cleanup_auto_elab]
-          | eapply eq_subst_refl; try solve [cleanup_auto_elab]
-          | try solve [cleanup_auto_elab] *)
-          ]
-        end
-      | None =>
-        fail 100 "rule not found in lang"
-      end. *)
-
 Ltac solve_wf_term := first [eapply wf_term_by';
   [> solve_in | solve_wf_args | first [left; reflexivity | right; solve_sort] ]
   | eapply wf_term_var; solve_in]
@@ -294,58 +260,6 @@ Ltac solve_wf_subst :=
   repeat (eapply wf_subst_cons; [> .. | solve_wf_term ]);
   eapply wf_subst_nil.
 
-Ltac conv_steps_with l r :=
-  eapply eq_term_conv;
-  [> eredex_steps_with l r | solve_sort].
-
-Ltac thru_steps_with l r :=
-  first [ conv_steps_with l r |
-    term_cong; try compute_eq_compilation;
-    first [
-      left; solve_sort |
-      thru_steps_with l r |
-      term_refl l r |
-      env_eq ] ].
-
-Ltac lhs_thru_steps_with l r :=
-  eapply eq_term_trans;
-  [> thru_steps_with l r | .. ].
-
-
-Ltac make_pf :=
-  lazymatch goal with
-    | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-        (*TODO: 100 is a magic number; make it an input*)
-        let x := eval compute in (step_term_V l c' 100 e1 t) in
-          eapply pf_checker_sound with(p:=x);
-          [typeclasses eauto | assumption |]
-  end.
-
-Ltac reduce_exch :=
-  eapply eq_term_trans;
-  [> term_cong; try compute_eq_compilation;
-  lazymatch goal with
-  | [|- _ \/ _ ] => right; reflexivity
-  | [|- eq_term _ _ {{s #"env"}} _ _ ] => env_eq
-  | [|- eq_term _ _ {{s #"sub" {_} {_} }}
-      {{e #"cmp" {_} {_} {_}
-        (#"csub" {?G1} {?G2} {?H1} {?H2} {?g} {?h} )
-        (#"exch" {?G2} {?H2}) }} _ ] =>
-        eapply eq_term_conv;
-        [> eapply eq_term_trans;
-          [> term_cong; [> .. | term_refl ] |
-            compute_eq_compilation;
-            eredex_steps_with linear_value_subst "exch_cmp";
-            instantiate (8 := {{e #"id" #"emp" }});
-            instantiate (7 := h);
-            instantiate (6 := g);
-            instantiate (5 := {{e #"id" #"emp" }});
-            solve_wf_subst ] |
-          solve_sort ]
-  | [|- eq_term _ _ _ _ _ ] => term_refl
-  end;
-  by_reduction | reduce ].
-
 Ltac blk_cmp :=
   eapply eq_term_trans;
   [> lazymatch goal with
@@ -363,21 +277,6 @@ Ltac blk_cmp :=
     end
   | .. ].
 
-Ltac shelve_env :=
-  eapply eq_term_trans;
-  [> term_cong; try compute_eq_compilation;
-  lazymatch goal with
-  | [|- _ \/ _ ] => shelve
-  | [|- eq_term _ _ {{s #"env"}} _ _ ] => shelve
-  | [|- eq_term _ _ _ _ _ ] => term_refl
-  end
-  | .. ].
-
-Ltac apply_rule l r :=
-  eapply eq_term_trans;
-  [> shelve_env; eapply eq_term_conv;
-    [> eredex_steps_with l r | solve_sort ]
-  | ..].
  Ltac s :=
    match goal with
   | [|- fresh _ _ ]=> compute_fresh
@@ -394,8 +293,6 @@ Ltac apply_rule l r :=
   (* | [|- ?eq \/ ?seq ] => tryif (has_evar ?Goal) then shelve else (left; reflexivity) || shelve *)
   | [|- _ = _] => compute; reflexivity
  end.
-
-Ltac lefl := left; reflexivity.
 
 Ltac reduce_to e :=
   eapply eq_term_trans;
@@ -466,11 +363,33 @@ Ltac trans t :=
   eapply eq_term_trans;
   [> t | .. ].
 
-Ltac cmp_apply t1 t2 :=
-  break_cmp;
-  [> t1 | t2 ].
+(* left-assoc cmp of three subs -> split into two cmps *)
+Ltac reassoc_cmp4 :=
+  lazymatch goal with
+  | [|- eq_term _ _ _ {{e #"cmp" {?G1} {?G4} {?G5}
+        (#"cmp" {?G1} {?G3} {?G4} (#"cmp" {?G1} {?G2} {?G3} {?c1} {?c2}) {?c3})
+        {?c4} }} _ ] =>
+      reduce_to {{e #"cmp" {G1} {G3} {G5}
+        (#"cmp" {G1} {G2} {G3} {c1} {c2}) (#"cmp" {G3} {G4} {G5} {c3} {c4}) }}
+  end.
 
-Ltac hide_tmp := instantiate (1:= {{e ""}}); hide_implicits.
+(* cmp (cmp p cs) e -> cmp p (cmp cs e) *)
+Ltac reassoc_cmp3 :=
+  lazymatch goal with
+  | [|- eq_term _ _ _ {{e #"cmp" {?G1} {?G3} {?G4}
+        (#"cmp" {?G1} {?G2} {?G3} {?p} {?cs}) {?e} }} _ ] =>
+      reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs} {e}) }}
+  end.
+
+(* shared prefix of the two "csub_id dances" *)
+Ltac csub_id_dance :=
+  trans ltac:(unapply linear_value_subst "csub_id");
+  compute_eq_compilation;
+  trans ltac:(term_cong; cycle 1;
+    [> term_refl .. |
+       unapply linear_value_subst "id_left" |
+       unapply linear_value_subst "exch_inv" |
+       right; reflexivity ]).
 
 Derive linear_cps
        in (elab_preserving_compiler linear_cps_subst
@@ -612,16 +531,7 @@ Optimize Heap.
     trans break_cmp.
     1: term_refl.
     {
-    trans ltac:(unapply linear_value_subst "csub_id").
-    compute_eq_compilation.
-    trans ltac:(
-      term_cong;
-      cycle 1;
-      [> term_refl .. |
-         unapply linear_value_subst "id_left" |
-         unapply linear_value_subst "exch_inv" |
-         right; reflexivity ]
-    ).
+    csub_id_dance.
     trans ltac:(unapply linear_value_subst "cmp_csub").
     compute_eq_compilation.
     term_refl.
@@ -651,19 +561,7 @@ Optimize Heap.
 
   compute_eq_compilation.
 
-  lazymatch goal with
-    | [|- eq_term _ _ _ {{e
-      #"cmp" {?G1} {?G4} {?G5}
-        (#"cmp" {?G1} {?G3} {?G4}
-          (#"cmp" {?G1} {?G2} {?G3} {?c1} {?c2})
-          {?c3})
-        {?c4}
-    }} _ ] => reduce_to {{e
-      #"cmp" {G1} {G3} {G5}
-        (#"cmp" {G1} {G2} {G3} {c1} {c2})
-        (#"cmp" {G3} {G4} {G5} {c3} {c4})
-    }}
-  end.
+  reassoc_cmp4.
 
   trans break_cmp.
 
@@ -706,14 +604,7 @@ Optimize Heap.
   4-8: shelve.
   2: term_refl.
   {
-  trans ltac:(unapply linear_value_subst "csub_id").
-  compute_eq_compilation.
-  trans ltac:(term_cong; cycle 1;
-  [> term_refl .. |
-    unapply linear_value_subst "id_left" |
-    unapply linear_value_subst "exch_inv" |
-    right; reflexivity ]
-  ).
+  csub_id_dance.
   compute_eq_compilation.
   trans ltac:(unapply linear_value_subst "cmp_csub").
   compute_eq_compilation.
@@ -731,19 +622,7 @@ Optimize Heap.
   compute_eq_compilation.
 
   reduce_lhs.
-  lazymatch goal with
-    | [|- eq_term _ _ _ {{e
-      #"cmp" {?G1} {?G4} {?G5}
-        (#"cmp" {?G1} {?G3} {?G4}
-          (#"cmp" {?G1} {?G2} {?G3} {?c1} {?c2})
-          {?c3})
-        {?c4}
-    }} _ ] => reduce_to {{e
-      #"cmp" {G1} {G3} {G5}
-        (#"cmp" {G1} {G2} {G3} {c1} {c2})
-        (#"cmp" {G3} {G4} {G5} {c3} {c4})
-    }}
-  end.
+  reassoc_cmp4.
 
   trans break_cmp.
   1: term_refl.
@@ -855,14 +734,7 @@ Optimize Heap.
   reduce_lhs.
   term_refl.
 
-- lazymatch goal with
-    | [|- eq_term _ _ _ {{e #"cmp"
-      {?G1} {?G3} {?G4}
-      (#"cmp" {?G1} {?G2} {?G3} {?p} {?cs} )
-      {?e}
-    }} _ ] =>
-      reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs} {e}) }}
-  end.
+- reassoc_cmp3.
 
 
   eapply eq_term_trans.
@@ -923,14 +795,7 @@ Optimize Heap.
   Unshelve.
   all: try solve_wf_term.
 
-- lazymatch goal with
-    | [|- eq_term _ _ _ {{e #"cmp"
-      {?G1} {?G3} {?G4}
-      (#"cmp" {?G1} {?G2} {?G3} {?p} {?cs} )
-      {?e}
-    }} _ ] =>
-      reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs} {e}) }}
-  end.
+- reassoc_cmp3.
 
   eapply eq_term_trans.
   {
