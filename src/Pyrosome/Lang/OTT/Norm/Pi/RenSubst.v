@@ -466,3 +466,134 @@ Qed.
 Definition Apply_ty_ren_comp  := fst (fst (fst (fst Apply_ren_comp))).
 Definition Apply_val_ren_comp := snd (fst (fst (fst Apply_ren_comp))).
 Definition Apply_ne_ren_comp  := snd (fst (fst Apply_ren_comp)).
+
+(* ===================================================================== *)
+(* SCOPED renaming composition.                                            *)
+(*                                                                         *)
+(* Identical to [Apply_ren_comp] but the composite [RenSub] need only hold  *)
+(* below the scope bound [N] of the value being substituted.  This is the   *)
+(* variant the presheaf uses, since every real value is scoped (the         *)
+(* unscoped composite is unsound past the scope bound -- [up sg] pads with   *)
+(* the shifted identity forever while [a :: id_list] un-shifts it back).     *)
+(* ===================================================================== *)
+
+(* In-range composite: [sg3] is the [sg2]-image of [sg1], for indices [< N]. *)
+Definition RenSubSc (N m2 : nat) (sg2 sg1 sg3 : ssub) : Type :=
+  forall k, k < N ->
+    Apply_val m2 sg2 (nth_default (vNe (nVar k)) sg1 k)
+                     (nth_default (vNe (nVar k)) sg3 k).
+
+Lemma RenSubSc_up : forall N m2 sg2 sg1 sg3,
+    RenSubSc N m2 sg2 sg1 sg3 -> RenSubSc (S N) (S m2) (up sg2) (up sg1) (up sg3).
+Proof.
+  intros N m2 sg2 sg1 sg3 H k Hk. destruct k as [|k'].
+  - unfold up, nth_default. cbn [nth_error].
+    apply ap_ne. change (vNe (nVar 0)) with (nth_default (vNe (nVar 0)) (up sg2) 0) at 2.
+    apply ap_var.
+  - rewrite !nth_default_up. apply Apply_val_shift0. apply H. Lia.lia.
+Qed.
+
+Lemma Apply_ren_comp_sc :
+  (forall m1 s1 T T', Apply_ty m1 s1 T T' ->
+     is_ren s1 -> forall N, ne_below_ty N T -> forall m2 s2 s3 T'',
+       RenSubSc N m2 s2 s1 s3 -> Apply_ty m2 s2 T' T'' -> Apply_ty m2 s3 T T'')
+  * (forall m1 s1 v v', Apply_val m1 s1 v v' ->
+       is_ren s1 -> forall N, ne_below_val N v -> forall m2 s2 s3 v'',
+         RenSubSc N m2 s2 s1 s3 -> Apply_val m2 s2 v' v'' -> Apply_val m2 s3 v v'')
+  * (forall m1 s1 n v, Apply_ne m1 s1 n v ->
+       is_ren s1 -> forall N, ne_below_ne N n -> forall m2 s2 s3 v'',
+         RenSubSc N m2 s2 s1 s3 -> Apply_val m2 s2 v v'' -> Apply_ne m2 s3 n v'')
+  * (forall m F B vf a v, Vapp m F B vf a v -> unit)
+  * (forall m F B vf a v, VappI m F B vf a v -> unit).
+Proof.
+  refine (Apply_mutind
+    (fun m1 s1 T T' _ => is_ren s1 -> forall N, ne_below_ty N T -> forall m2 s2 s3 T'',
+       RenSubSc N m2 s2 s1 s3 -> Apply_ty m2 s2 T' T'' -> Apply_ty m2 s3 T T'')
+    (fun m1 s1 v v' _ => is_ren s1 -> forall N, ne_below_val N v -> forall m2 s2 s3 v'',
+       RenSubSc N m2 s2 s1 s3 -> Apply_val m2 s2 v' v'' -> Apply_val m2 s3 v v'')
+    (fun m1 s1 n v _ => is_ren s1 -> forall N, ne_below_ne N n -> forall m2 s2 s3 v'',
+       RenSubSc N m2 s2 s1 s3 -> Apply_val m2 s2 v v'' -> Apply_ne m2 s3 n v'')
+    (fun _ _ _ _ _ _ _ => unit)
+    (fun _ _ _ _ _ _ _ => unit)
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+  - (* ap_dU *) intros m1 s1 r l Hr1 N Hne m2 s2 s3 T'' Hrs H2.
+    inversion H2; subst. apply ap_dU.
+  - (* ap_dEl *) intros m1 s1 e e' He IHe Hr1 N Hne m2 s2 s3 T'' Hrs H2.
+    cbn [ne_below_ty] in Hne. inversion H2; subst. apply ap_dEl. eapply IHe; eauto.
+  - (* ap_ne *) intros m1 s1 n v Hn IHn Hr1 N Hne m2 s2 s3 v'' Hrs H2.
+    cbn [ne_below_val] in Hne. apply ap_ne. eapply IHn; eauto.
+  - (* ap_zero *) intros m1 s1 Hr1 N Hne m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_zero.
+  - (* ap_suc *) intros m1 s1 v v' Hv IHv Hr1 N Hne m2 s2 s3 v'' Hrs H2.
+    cbn [ne_below_val] in Hne. inversion H2; subst. apply ap_suc. eapply IHv; eauto.
+  - (* ap_nat *) intros m1 s1 Hr1 N Hne m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_nat.
+  - (* ap_empty *) intros m1 s1 Hr1 N Hne m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_empty.
+  - (* ap_pi *) intros m1 s1 F F' B B' HF IHF HB IHB Hr1 N Hne m2 s2 s3 v'' Hrs H2.
+    cbn [ne_below_val] in Hne. destruct Hne as [HneF HneB].
+    inversion H2; subst. apply ap_pi.
+    + eapply IHF; eauto.
+    + eapply IHB;
+        [ exact (is_ren_up Hr1) | exact HneB | exact (RenSubSc_up Hrs) | eassumption ].
+  - (* ap_piI *) intros m1 s1 F F' B B' HF IHF HB IHB Hr1 N Hne m2 s2 s3 v'' Hrs H2.
+    cbn [ne_below_val] in Hne. destruct Hne as [HneF HneB].
+    inversion H2; subst. apply ap_piI.
+    + eapply IHF; eauto.
+    + eapply IHB;
+        [ exact (is_ren_up Hr1) | exact HneB | exact (RenSubSc_up Hrs) | eassumption ].
+  - (* ap_lam *) intros m1 s1 b b' Hb IHb Hr1 N Hne m2 s2 s3 v'' Hrs H2.
+    cbn [ne_below_val] in Hne. inversion H2; subst. apply ap_lam.
+    eapply IHb;
+      [ exact (is_ren_up Hr1) | exact Hne | exact (RenSubSc_up Hrs) | eassumption ].
+  - (* ap_lamI *) intros m1 s1 b b' Hb IHb Hr1 N Hne m2 s2 s3 v'' Hrs H2.
+    cbn [ne_below_val] in Hne. inversion H2; subst. apply ap_lamI.
+    eapply IHb;
+      [ exact (is_ren_up Hr1) | exact Hne | exact (RenSubSc_up Hrs) | eassumption ].
+  - (* ap_var *) intros m1 s1 k Hr1 N Hne m2 s2 s3 v'' Hrs H2.
+    cbn [ne_below_ne] in Hne.
+    pose proof (Hrs k Hne) as Hk.
+    pose proof (Apply_val_det H2 Hk) as ->. apply ap_var.
+  - (* ap_emptyrec *) intros m1 s1 rA lA A A' scrut scrut' HA IHA Hsc IHsc Hr1
+      N Hne m2 s2 s3 v'' Hrs H2.
+    cbn [ne_below_ne] in Hne. destruct Hne as [HneA Hnesc].
+    inversion H2; subst.
+    match goal with Hn2 : Apply_ne m2 s2 (nEmptyrec _ _ _ _) _ |- _ => inversion Hn2; subst end.
+    apply ap_emptyrec.
+    + eapply IHA; eauto.
+    + eapply IHsc; eauto. apply ap_ne; eassumption.
+  - (* ap_app *) intros m1 s1 f vf F F' B B' a a' v Hf IHf HF IHF HB IHB Ha IHa Hvapp IHvapp Hr1
+      N Hne m2 s2 s3 v'' Hrs H2.
+    cbn [ne_below_ne] in Hne. destruct Hne as (Hnef & HneF & HneB & Hnea).
+    destruct (ren_Apply_ne_isNe Hr1 Hf) as [nf' ->].
+    inversion Hvapp; subst.
+    inversion H2; subst.
+    match goal with Hn2 : Apply_ne m2 s2 (nApp _ _ _ _) _ |- _ => inversion Hn2; subst end.
+    eapply ap_app.
+    + eapply IHf; eauto. apply ap_ne; eassumption.
+    + eapply IHF; eauto.
+    + eapply IHB; [ exact (is_ren_up Hr1) | exact HneB | exact (RenSubSc_up Hrs) | eassumption ].
+    + eapply IHa; eauto.
+    + eassumption.
+  - (* ap_appI *) intros m1 s1 f vf F F' B B' a a' v Hf IHf HF IHF HB IHB Ha IHa Hvapp IHvapp Hr1
+      N Hne m2 s2 s3 v'' Hrs H2.
+    cbn [ne_below_ne] in Hne. destruct Hne as (Hnef & HneF & HneB & Hnea).
+    destruct (ren_Apply_ne_isNe Hr1 Hf) as [nf' ->].
+    inversion Hvapp; subst.
+    inversion H2; subst.
+    match goal with Hn2 : Apply_ne m2 s2 (nAppI _ _ _ _) _ |- _ => inversion Hn2; subst end.
+    eapply ap_appI.
+    + eapply IHf; eauto. apply ap_ne; eassumption.
+    + eapply IHF; eauto.
+    + eapply IHB; [ exact (is_ren_up Hr1) | exact HneB | exact (RenSubSc_up Hrs) | eassumption ].
+    + eapply IHa; eauto.
+    + eassumption.
+  - (* vapp_lam *) intros; exact tt.
+  - (* vapp_ne *) intros; exact tt.
+  - (* vappI_lam *) intros; exact tt.
+  - (* vappI_ne *) intros; exact tt.
+Qed.
+
+Definition Apply_ty_ren_comp_sc  := fst (fst (fst (fst Apply_ren_comp_sc))).
+Definition Apply_val_ren_comp_sc := snd (fst (fst (fst Apply_ren_comp_sc))).
+Definition Apply_ne_ren_comp_sc  := snd (fst (fst Apply_ren_comp_sc)).
