@@ -93,12 +93,38 @@ Definition LR2 : RedRel := @LR tl2 rec2.
 Definition RedTyEq Ge A B := { P & LR2 Ge A B P }.                        (* uses LR2 *)
 ```
 
-`rec2`'s `match` returns a single `RedRel@{i j}`, so **`LR0` and `LR1` are forced
-to the SAME universe**. But the ladder needs `LR1` to reference `LR0` at a
-strictly lower universe (`k_0 <= i_1`, `i_0 < k_0`). Same-universe `LR0=LR1`
-plus `LR1` referencing `LR0` gives `k_0 <= i_1 = i_0 < k_0` — contradiction.
-So **you cannot universe-polymorphize the tower as-is**; the multi-branch `match`
-in `rec2` is incompatible with the strict ladder.
+`rec2`'s `match` returns a single `RedRel@{i j}`. **EMPIRICALLY CONFIRMED** (with
+the faithful function-typed relation arg) that such a match forces the two
+branches' **relation-arg (contravariant) universes EQUAL**, not bracketed:
+
+```coq
+Definition RR@{i j} := (nat -> nat -> Type@{i}) -> Type@{j}.
+Definition pick@{i j a b c d} (n:nat) : RR@{i j} :=
+  match n with O => A0@{a b} | _ => A1@{c d} end.
+(* recorded constraints:  b <= j   d <= j   a = i   c = i  *)
+```
+
+`a = i = c`: the branch relation universes collapse to `i`; only the output
+universes bracket (`b,d <= j`). Writing `i_l` = level-l relation/pack universe,
+`j_l` = its inductive/output universe, the ladder needs `i_0 < j_0` (`LRpi`'s
+`PolyRedPack` arg at `i_0+1` inside `LR0 : Type@{j_0}`) and `j_0 <= i_1` (`LR1`'s
+universe case stores the `LR0`-witness, at `j_0`, into `LR1`'s relation slot
+`i_1`). The match collapse `i_0 = i_1` then gives `i_0 < j_0 <= i_1 = i_0` —
+contradiction. So **the poly TOWER ITSELF would not typecheck** (not just
+symmetry); the multi-branch `match` in `rec2` is incompatible with the ladder.
+The 2-level tower escapes only because `rec1 := LR0` is a CONSTANT (no dispatch);
+logrel-coq escapes for the same reason (exactly two levels, `zero << one`).
+
+**3 levels IS still achievable** — just not by "one more match branch". You must
+avoid the dispatching `match`: UNROLL the tower into per-level inductives
+`LR0/LR1/LR2`, where `LR2` has TWO SEPARATE universe constructors (`U0` ->
+references `LR0`, `U1` -> references `LR1`), each naming a concrete lower
+relation at its own universe. No match -> no collapse -> the ladder
+`i_0 < j_0 <= i_1 < j_1 <= i_2 < j_2` is satisfiable. Cost: you lose the uniform
+`LR rec` and the single `LR_mut`, so relation defs / induction principle /
+escape / irrelevance get ~3x duplicated (or need a bespoke shared recursor).
+This is why Step 0 (does the fragment need TWO reducible object universes?) sizes
+the whole job: 2 levels keeps the uniform machinery; 3 levels pays the unrolling.
 
 logrel-coq avoids this by having only **two** `TypeLevel`s (`zero`, `one`) and a
 `rec` for `one` that returns the `zero` relation as a *single* thing (no
