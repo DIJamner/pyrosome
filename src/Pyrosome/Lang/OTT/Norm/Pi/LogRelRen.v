@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
-From Pyrosome.Lang.OTT.Norm.Pi Require Import Domain Apply ApplyLemmas Typing ApplySubst Preservation LogRel.
+From Pyrosome.Lang.OTT.Norm.Pi Require Import Domain Apply ApplyLemmas Typing ApplySubst Preservation Reflect LogRel.
 Import Core.Notations.
 
 Notation term := (@term string).
@@ -834,6 +834,7 @@ Proof.
 Qed.
 
 Definition ne_below_shift_val := fst (snd ne_below_shift).
+Definition ne_below_shift_ne  := snd (snd ne_below_shift).
 
 (* Scope monotonicity. *)
 Lemma ne_below_mono :
@@ -1153,4 +1154,116 @@ Proof.
   pose proof (Apply_ne_shift0 (ren_is_Apply_ne n 0 rho)) as H2.
   cbn [shift_val] in H2.
   pose proof (Apply_ne_det H1 H2) as Heq. injection Heq as Heq'. exact Heq'.
+Qed.
+
+(* The [wkn_list] codomain conjugate (the [refl_Pi] analogue of
+   [RenShSc_beta]): pushing [rho] through [ARG :: wkn_list m] gives
+   [ARG2 :: wkn_list m2] (head = renamed [ARG]; each [wkn_list] entry
+   [vNe (nVar (S k'))] relocates to [vNe (nVar (S (rho k')))]). *)
+Lemma RenShSc_wkn : forall N m m2 rho ARG ARG2,
+    N <= m -> ren_ok rho N m2 ->
+    Apply_val (S m2) (ren_sub (up_renl rho)) ARG ARG2 ->
+    RenShSc (S N) (S m2) (up_renl rho) (up_renl rho)
+            (ARG :: wkn_list m) (ARG2 :: wkn_list m2).
+Proof.
+  intros N m m2 rho ARG ARG2 HNm Hok HARG k Hk. destruct k as [|k'].
+  - rewrite renm_up_0. unfold nth_default; cbn [nth_error]. exact HARG.
+  - rewrite renm_up_S, !nth_default_cons_S.
+    assert (Hk'm : k' < m) by Lia.lia.
+    rewrite (wkn_list_nth_lt (vNe (nVar (S k'))) Hk'm).
+    assert (Hrk : renm rho k' < m2) by (apply Hok; Lia.lia).
+    rewrite (wkn_list_nth_lt (vNe (nVar (S (renm rho k')))) Hrk).
+    apply ap_ne.
+    replace (vNe (nVar (S (renm rho k'))))
+      with (nth_default (vNe (nVar (S k'))) (ren_sub (up_renl rho)) (S k'))
+      by (rewrite ren_sub_nth, renm_up_S; reflexivity).
+    apply ap_var.
+Qed.
+
+(* [ARG :: wkn_list m] is [S m]-scoped when [ARG] is. *)
+Lemma sub_below_wkn : forall N m ARG, N <= m -> ne_below_val (S m) ARG ->
+    sub_below (S N) (S m) (ARG :: wkn_list m).
+Proof.
+  intros N m ARG HNm HARG k Hk. destruct k as [|k'].
+  - unfold nth_default; cbn [nth_error]. exact HARG.
+  - rewrite nth_default_cons_S.
+    assert (Hk'm : k' < m) by Lia.lia.
+    rewrite (wkn_list_nth_lt (vNe (nVar (S k'))) Hk'm).
+    cbn [ne_below_val ne_below_ne]. Lia.lia.
+Qed.
+
+(* ===================================================================== *)
+(* Type-directed reflection produces SCOPED values, and commutes with      *)
+(* renamings ([Reflect_ren]) -- the R1 brick for [reflect_pi_reify_step].   *)
+(* ===================================================================== *)
+
+Lemma Reflect_scoped : forall m T n v, Reflect m T n v ->
+    ne_below_ty m T -> ne_below_ne m n -> ne_below_val m v.
+Proof.
+  induction 1 as [ m r l n | m n | m n | m c0 n | m F B n
+    | m F B n ARG B' body Harg IHarg Hb Hbody IHbody ]; intros HT Hn.
+  - exact Hn.
+  - exact Hn.
+  - exact Hn.
+  - exact Hn.
+  - exact Hn.
+  - cbn [ne_below_ty ne_below_val] in HT. destruct HT as [HF HB]. cbn [ne_below_val].
+    assert (HARG : ne_below_val (S m) ARG).
+    { apply IHarg;
+        [ cbn [ne_below_ty]; apply ne_below_shift_val; exact HF
+        | cbn [ne_below_ne]; Lia.lia ]. }
+    assert (HB' : ne_below_val (S m) B').
+    { eapply Apply_val_ne_below;
+        [ exact Hb | exact HB | apply sub_below_wkn; [ Lia.lia | exact HARG ] ]. }
+    apply IHbody;
+      [ cbn [ne_below_ty]; exact HB'
+      | cbn [ne_below_ne]; split; [ apply ne_below_shift_ne; exact Hn | exact HARG ] ].
+Qed.
+
+Lemma Reflect_ren : forall m T n v, Reflect m T n v ->
+    ne_below_ty m T -> ne_below_ne m n ->
+    forall m2 rho, ren_ok rho (S m) m2 ->
+      Reflect m2 (ren_ty rho T) (ren_ne rho n) (ren_val rho v).
+Proof.
+  induction 1 as [ m r l n | m n | m n | m c0 n | m F B n
+    | m F B n ARG B' body Harg IHarg Hb Hbody IHbody ];
+    intros HT Hn m2 rho Hok.
+  - cbn [ren_ty ren_val]. apply refl_U.
+  - cbn [ren_ty ren_val]. apply refl_Nat.
+  - cbn [ren_ty ren_val]. apply refl_Empty.
+  - cbn [ren_ty ren_val ren_ne]. apply refl_neEl.
+  - cbn [ren_ty ren_val]. apply refl_PiI.
+  - (* refl_Pi *)
+    cbn [ne_below_ty ne_below_val] in HT. destruct HT as [HF HB].
+    cbn [ne_below_ne] in Hn.
+    cbn [ren_ty ren_val].
+    assert (HARG : ne_below_val (S m) ARG)
+      by (eapply Reflect_scoped;
+          [ exact Harg | cbn [ne_below_ty]; apply ne_below_shift_val; exact HF
+          | cbn [ne_below_ne]; Lia.lia ]).
+    eapply refl_Pi.
+    + (* (1) domain reflection *)
+      pose proof (IHarg ltac:(cbn [ne_below_ty]; apply ne_below_shift_val; exact HF)
+                        ltac:(cbn [ne_below_ne]; Lia.lia)
+                        (S m2) (up_renl rho) (ren_ok_up Hok)) as IH1.
+      cbn [ren_ty ren_ne] in IH1. rewrite renm_up_0 in IH1.
+      rewrite ren_shift_comm0_val in IH1. exact IH1.
+    + (* (2) codomain apply via Apply_ren_commute *)
+      eapply Apply_val_ren_commute.
+      * exact Hb.
+      * exact HB.
+      * apply sub_below_wkn; [ Lia.lia | exact HARG ].
+      * apply ren_ok_up; exact Hok.
+      * apply RenShSc_wkn;
+          [ Lia.lia | eapply ren_ok_le; [ exact Hok | Lia.lia ] | apply ren_is_Apply_val ].
+    + (* (3) spine reflection *)
+      assert (HB' : ne_below_val (S m) B')
+        by (eapply Apply_val_ne_below;
+            [ exact Hb | exact HB | apply sub_below_wkn; [ Lia.lia | exact HARG ] ]).
+      pose proof (IHbody
+                    ltac:(cbn [ne_below_ty]; exact HB')
+                    ltac:(cbn [ne_below_ne]; split;
+                            [ apply ne_below_shift_ne; exact Hn | exact HARG ])
+                    (S m2) (up_renl rho) (ren_ok_up Hok)) as IH2.
+      cbn [ren_ty ren_ne] in IH2. rewrite ren_shift_comm0_ne in IH2. exact IH2.
 Qed.
