@@ -5,7 +5,7 @@
 From Stdlib Require Import Lists.List Classes.RelationClasses BinNums.
 Import ListNotations.
 From coqutil Require Import Map.Interface.
-From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations.
+From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations Maps.
 From Utils.EGraph Require Import Defs Semantics SemanticsUtil SemanticsExecConst.
 Import Monad.StateMonad.
 
@@ -218,6 +218,166 @@ Section Slice.
     rewrite Ha_q in Hd.
     destruct (map.get env0 x) as [v|] eqn:Henv; [|discriminate].
     exact (idx_interpretation_wf m i inst Hsnd v d Hd).
+  Qed.
+
+  (* --- deduped-keys book-keeping for the new [process_erule] --- *)
+
+  (* A key surviving the inner per-frontier [map.put] fold came either from the
+     frontier's key list [ks] or was already present in [acc]. *)
+  Lemma fold_put_keys_inner (ks : list (list idx)) (acc : idx_trie unit) (sigma : list idx) :
+    In sigma (map.keys (List.fold_left (fun acc' k => map.put acc' k tt) ks acc))
+    -> In sigma ks \/ In sigma (map.keys acc).
+  Proof.
+    revert acc; induction ks as [|k ks' IH]; intros acc Hin; cbn [List.fold_left] in Hin.
+    - right. exact Hin.
+    - destruct (IH (map.put acc k tt) Hin) as [Hks' | Hput].
+      + left. right. exact Hks'.
+      + rewrite map_keys_in' in Hput.
+        pose proof (@eqb_spec (list idx) _ _ sigma k) as Hbs.
+        destruct (eqb sigma k) eqn:Hsk.
+        * left. left. exact (eq_sym Hbs).
+        * rewrite (map.get_put_diff acc sigma tt k Hbs) in Hput.
+          right. rewrite map_keys_in'. exact Hput.
+  Qed.
+
+  (* A key in the fully-deduped [seen] trie traces back to some frontier index
+     [n] in [ns] whose key list [f n] contains it (or it was already in [acc0]). *)
+  Lemma fold_put_keys_src {N : Type} (f : N -> list (list idx)) (ns : list N)
+    (acc0 : idx_trie unit) (sigma : list idx) :
+    In sigma (map.keys (List.fold_left
+                (fun acc n => List.fold_left (fun acc' k => map.put acc' k tt) (f n) acc)
+                ns acc0))
+    -> In sigma (map.keys acc0) \/ exists n, In n ns /\ In sigma (f n).
+  Proof.
+    revert acc0; induction ns as [|n ns' IH]; intros acc0 Hin; cbn [List.fold_left] in Hin.
+    - left. exact Hin.
+    - destruct (IH _ Hin) as [Hacc1 | (n' & Hn'_in & Hsig)].
+      + destruct (fold_put_keys_inner (f n) acc0 sigma Hacc1) as [Hfn | Hacc0].
+        * right. exists n. split; [left; reflexivity | exact Hfn].
+        * left. exact Hacc0.
+      + right. exists n'. split; [right; exact Hn'_in | exact Hsig].
+  Qed.
+
+  (* Generalised exec-write loop: run [exec_write r] over a list of intersection
+     keys where each key is justified by SOME frontier (its per-clause projections
+     all hit their clause tries under that frontier).  This is the soundness core
+     shared by the per-frontier [process_erule'] and the deduped [process_erule];
+     the latter aggregates keys from different frontiers, so the per-key
+     justification is existential in the frontier. *)
+  Lemma exec_write_loop_sound
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (i_snap : idx_map (domain symbol m)) (inst : instance)
+    (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol) :
+    let db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                           idx_map idx_map_plus idx_trie analysis_result q inst) in
+    egraph_sound_for_interpretation i_snap inst ->
+    List.NoDup (query_vars idx symbol r) ->
+    List.NoDup (write_vars idx symbol r) ->
+    erule_sound idx idx_zero symbol symbol_map idx_map m (query_clauses idx symbol symbol_map idx_map q) r ->
+    (forall fsym nptr cvars,
+       In (Build_erule_query_ptr idx symbol fsym nptr cvars)
+          (uncurry cons (query_clause_ptrs idx symbol r)) ->
+       exists q_f cargs cv (Pf : idx -> bool),
+         map.get (query_clauses idx symbol symbol_map idx_map q) fsym = Some q_f
+         /\ map.get q_f nptr = Some (cargs, cv)
+         /\ cvars = filter Pf (query_vars idx symbol r)
+         /\ (forall t, In t cargs -> t < List.length cvars)
+         /\ cv < List.length cvars) ->
+    (forall x, In x (query_vars idx symbol r) ->
+       exists a, In a (query_atoms idx idx_zero symbol symbol_map idx_map (query_clauses idx symbol symbol_map idx_map q) r)
+                 /\ In x (atom_ret a :: atom_args a)) ->
+    (forall x, In x (write_vars idx symbol r) -> ~ In x (query_vars idx symbol r)) ->
+    (forall c, In c (write_clauses idx symbol r) ->
+        forall x, In x (c.(atom_ret) :: c.(atom_args)) ->
+        In x (query_vars idx symbol r) \/ In x (write_vars idx symbol r)) ->
+    (forall p, In p (write_unifications idx symbol r) ->
+        (In (fst p) (query_vars idx symbol r) \/ In (fst p) (write_vars idx symbol r))
+        /\ (In (snd p) (query_vars idx symbol r) \/ In (snd p) (write_vars idx symbol r))) ->
+    forall sigmas,
+    (forall sigma, In sigma sigmas ->
+       exists frontier_n,
+         List.length (query_vars idx symbol r) = List.length sigma
+         /\ (forall fsym nptr cvars,
+              In (Build_erule_query_ptr idx symbol fsym nptr cvars)
+                 (uncurry cons (query_clause_ptrs idx symbol r)) ->
+              map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                              (query_vars idx symbol r) db_tries frontier_n
+                              (Build_erule_query_ptr idx symbol fsym nptr cvars)))
+                      (map fst (filter snd (combine sigma
+                         (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))
+              = Some tt)) ->
+    forall e_cur icur,
+      egraph_ok e_cur -> egraph_sound_for_interpretation icur e_cur -> map.extends icur i_snap ->
+    match list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) sigmas e_cur with
+    | (_, e') =>
+        egraph_ok e'
+        /\ exists i', map.extends i' i_snap /\ egraph_sound_for_interpretation i' e'
+    end.
+  Proof.
+    intros db_tries Hsnd_inst Hnd_qv Hnd_wv Hrule Hwf Hcov Hdisj HcovC HcovU.
+    intro sigmas. induction sigmas as [|sigma sigmas' IH];
+      intros Hprem e_cur icur Hok_cur Hsnd_cur Hext_cur.
+    - cbn [list_Miter]. split; [exact Hok_cur|].
+      exists icur. split; [exact Hext_cur | exact Hsnd_cur].
+    - cbn [list_Miter].
+      destruct (Hprem sigma (or_introl eq_refl)) as (frontier_n & Hlen1 & Hsli_sigma).
+      set (env0 := map.of_list (combine (query_vars idx symbol r) sigma)).
+      set (a_q := compose_assignment i_snap env0).
+      assert (Ha_q : forall x, map.get a_q x = match map.get env0 x with Some v => map.get i_snap v | None => None end)
+        by (intros; apply get_compose_assignment).
+      pose proof (query_atoms_sound i_snap q inst r frontier_n sigma a_q Hsnd_inst Hnd_qv
+                    Hlen1 Ha_q Hwf Hsli_sigma) as Hqsnd.
+      pose proof (a_q_wf_query_vars i_snap inst q r a_q env0 Hsnd_inst Ha_q Hqsnd Hcov) as Hawf.
+      destruct (Hrule a_q Hawf Hqsnd) as (a_src & Hsrc_qv & Hsrc_wv & Hsrc_c & Hsrc_u).
+      assert (Hfresh : forall x, In x (write_vars idx symbol r) -> map.get env0 x = None)
+        by (intros x Hxw; unfold env0; apply get_of_list_none;
+            rewrite (map_combine_fst (query_vars idx symbol r) sigma Hlen1); exact (Hdisj x Hxw)).
+      assert (Hcons : forall x v, map.get env0 x = Some v ->
+         map.get icur v = map.get a_src x /\ Sep.has_key v (parent (equiv e_cur)))
+        by (intros x v Hev;
+            assert (Hxq : In x (query_vars idx symbol r))
+              by (pose proof (get_of_list_in_keys idx (combine (query_vars idx symbol r) sigma) x v Hev) as Hk;
+                  rewrite (map_combine_fst (query_vars idx symbol r) sigma Hlen1) in Hk; exact Hk);
+            destruct (Hawf x Hxq) as (d & Haqx & Hwfd);
+            assert (Hiv : map.get i_snap v = Some d) by (rewrite Ha_q, Hev in Haqx; exact Haqx);
+            assert (Hicurv : map.get icur v = Some d) by (apply Hext_cur; exact Hiv);
+            split;
+            [ rewrite Hicurv; rewrite (Hsrc_qv x Hxq); exact (eq_sym Haqx)
+            | apply (interpretation_exact m icur e_cur Hsnd_cur v); rewrite Hicurv; exact I ]).
+      assert (Hcons_c : forall c, In c (write_clauses idx symbol r) ->
+         forall x, In x (atom_ret c :: atom_args c) ->
+         (exists v, map.get env0 x = Some v) \/ In x (write_vars idx symbol r))
+        by (intros c Hc x Hx; destruct (HcovC c Hc x Hx) as [Hq|Hw];
+            [ left; exists (named_list_lookup idx_zero (combine (query_vars idx symbol r) sigma) x);
+              unfold env0; exact (get_of_list_combine idx idx_zero (query_vars idx symbol r) sigma x Hnd_qv Hlen1 Hq)
+            | right; exact Hw ]).
+      assert (Hcons_u : forall p, In p (write_unifications idx symbol r) ->
+         ((exists v, map.get env0 (fst p) = Some v) \/ In (fst p) (write_vars idx symbol r))
+         /\ ((exists v, map.get env0 (snd p) = Some v) \/ In (snd p) (write_vars idx symbol r)))
+        by (intros p Hp; destruct (HcovU p Hp) as [Hf Hs]; split;
+            [ destruct Hf as [Hq|Hw];
+              [ left; exists (named_list_lookup idx_zero (combine (query_vars idx symbol r) sigma) (fst p));
+                unfold env0; exact (get_of_list_combine idx idx_zero (query_vars idx symbol r) sigma (fst p) Hnd_qv Hlen1 Hq)
+              | right; exact Hw ]
+            | destruct Hs as [Hq|Hw];
+              [ left; exists (named_list_lookup idx_zero (combine (query_vars idx symbol r) sigma) (snd p));
+                unfold env0; exact (get_of_list_combine idx idx_zero (query_vars idx symbol r) sigma (snd p) Hnd_qv Hlen1 Hq)
+              | right; exact Hw ] ]).
+      pose proof (@exec_write_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm Hlti Hlts Hltt Hm icur r sigma e_cur a_src
+                    Hnd_wv Hfresh Hsrc_wv Hcons Hcons_c Hcons_u Hsrc_c Hsrc_u Hok_cur Hsnd_cur) as Hew.
+      cbn [Mseq Mbind Mret StateMonad.state_monad].
+      destruct (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r sigma e_cur)
+        as [u e_mid] eqn:Hew_eq.
+      destruct Hew as (Hok_mid & _Hmono & i_mid & Hext_mid & Hsnd_mid).
+      assert (Hext_mid_i : map.extends i_mid i_snap)
+        by (intros k vv hh; apply Hext_mid; apply Hext_cur; exact hh).
+      pose proof (IH (fun s Hs => Hprem s (or_intror Hs))
+                    e_mid i_mid Hok_mid Hsnd_mid Hext_mid_i) as HIH.
+      destruct (list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) sigmas' e_mid)
+        as [u2 e'] eqn:Hlm.
+      destruct HIH as (Hok' & i' & Hext'_snap & Hsnd').
+      split; [exact Hok'|].
+      exists i'. split; [exact Hext'_snap | exact Hsnd'].
   Qed.
 
   (* Soundness of one frontier iteration of a single erule: running
@@ -447,29 +607,41 @@ Lemma process_erule_sound
 Proof.
   intros db_tries Hsnd_inst Hok_start Hsnd_start Hext_start Hnd_qv Hnd_wv Hrule
          Hwf Hcov Hdisj HcovC HcovU Hlen_sig Hsli.
-  unfold process_erule.
-  assert (Hloop : forall ns,
-    forall e_cur icur, egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e_cur -> egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m icur e_cur -> map.extends icur i_snap ->
-    match list_Miter (fun n => process_erule' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result spaced_list_intersect db_tries r (idx_of_nat idx idx_succ idx_zero n)) ns e_cur with
-    | (_, e') => egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e' /\ exists i', map.extends i' i_snap /\ egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i' e'
-    end).
-  { induction ns as [|n ns' IH]; intros e_cur icur Hok_cur Hsnd_cur Hext_cur.
-    - cbn [list_Miter]. split; [exact Hok_cur|].
-      exists icur. split; [exact Hext_cur | exact Hsnd_cur].
-    - cbn [list_Miter].
-      pose proof (process_erule'_sound (lt:=lt) (m:=m) (spaced_list_intersect:=spaced_list_intersect) Hlti Hlts Hltt i_snap icur inst q r (idx_of_nat idx idx_succ idx_zero n) e_cur
-                    Hsnd_inst Hok_cur Hsnd_cur Hext_cur Hnd_qv Hnd_wv Hrule Hwf Hcov Hdisj HcovC HcovU
-                    (Hlen_sig (idx_of_nat idx idx_succ idx_zero n)) (Hsli (idx_of_nat idx idx_succ idx_zero n))) as Hpe.
-      cbn [Mseq Mbind Mret StateMonad.state_monad].
-      fold db_tries in Hpe.
-      destruct (process_erule' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result spaced_list_intersect db_tries r (idx_of_nat idx idx_succ idx_zero n) e_cur)
-        as [u e_mid] eqn:Hpe_eq.
-      destruct Hpe as (Hok_mid & i_mid & Hext_mid & Hsnd_mid).
-      pose proof (IH e_mid i_mid Hok_mid Hsnd_mid Hext_mid) as HIH.
-      destruct (list_Miter (fun n0 => process_erule' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result spaced_list_intersect db_tries r (idx_of_nat idx idx_succ idx_zero n0)) ns' e_mid)
-        as [u2 e'] eqn:Hlm.
-      destruct HIH as (Hok' & i' & Hext'_snap & Hsnd').
-      split; [exact Hok'|]. exists i'. split; [exact Hext'_snap | exact Hsnd']. }
-  apply (Hloop (seq 0 (length (uncurry cons (query_clause_ptrs idx symbol r))))
-               e_start i_start Hok_start Hsnd_start Hext_start).
+  (* The new [process_erule] aggregates every frontier's intersection keys into a
+     single deduping [idx_trie] and [exec_write]s each unique key once.  Each such
+     key traces back to some frontier (whose per-clause projections all hit), so
+     the deduped loop is sound by [exec_write_loop_sound] with a per-key,
+     existential-in-frontier justification. *)
+  unfold process_erule. cbv zeta.
+  match goal with
+  | |- context [map.keys ?s] => set (seen := s)
+  end.
+  assert (Hprem : forall sigma, In sigma (map.keys seen) ->
+            exists frontier_n,
+              length (query_vars idx symbol r) = length sigma
+              /\ (forall fsym nptr cvars,
+                    In (Build_erule_query_ptr idx symbol fsym nptr cvars)
+                       (uncurry cons (query_clause_ptrs idx symbol r)) ->
+                    map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                                    (query_vars idx symbol r) db_tries frontier_n
+                                    (Build_erule_query_ptr idx symbol fsym nptr cvars)))
+                            (map fst (filter snd (combine sigma
+                               (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))
+                    = Some tt)).
+  { intros sigma Hin.
+    unfold seen in Hin.
+    apply fold_put_keys_src in Hin.
+    destruct Hin as [Hempty | (n & _Hn_in & Hsig)].
+    - apply map_keys_in in Hempty. destruct Hempty as [v Hv].
+      rewrite map.get_empty in Hv. discriminate.
+    - unfold erule_frontier_keys in Hsig.
+      exists (idx_of_nat idx idx_succ idx_zero n).
+      split.
+      + exact (Hlen_sig (idx_of_nat idx idx_succ idx_zero n) sigma Hsig).
+      + exact (Hsli (idx_of_nat idx idx_succ idx_zero n) sigma Hsig). }
+  apply (exec_write_loop_sound (lt:=lt) (m:=m)
+           Hlti Hlts Hltt i_snap inst q r
+           Hsnd_inst Hnd_qv Hnd_wv Hrule Hwf Hcov Hdisj HcovC HcovU
+           (map.keys seen) Hprem
+           e_start i_start Hok_start Hsnd_start Hext_start).
 Qed.
