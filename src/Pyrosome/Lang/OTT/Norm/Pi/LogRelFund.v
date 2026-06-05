@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
   Domain Apply ApplyLemmas Reflect Typing Preservation ApplySubst
-  LogRel LogRelInd LogRelRed LogRelLemmas.
+  LogRel LogRelInd LogRelRed LogRelLemmas LogRelRen.
 Import Core.Notations.
 
 Notation term := (@term string).
@@ -200,7 +200,8 @@ Definition reflect_pi_app_step : Type :=
                      (nApp (shift_ne 0 1 n) ARG) body)
     (rb : redTm (posPack PA ra0) body),
     forall Delta sg a F' fsg
-      (ws : wf_ssub Delta sg Ge) (af : Apply_val (length Delta) sg F F')
+      (ws : wf_ssub Delta sg Ge) (rn : is_ren sg)
+      (af : Apply_val (length Delta) sg F F')
       (afs : Apply_val (length Delta) sg (vLam body) fsg)
       (ra : redTm (shpRed PA ws af) a),
       { v & (Vapp (length Delta) fsg a v * redTm (posPack PA ra) v)%type }.
@@ -308,7 +309,8 @@ Definition reflect_pi_beta_step : Type :=
                      (nApp (shift_ne 0 1 n) ARG) body)
     (rb : redTm (posPack PA ra0) body),
     forall Delta sg a F' bodysg
-      (ws : wf_ssub Delta sg Ge) (af : Apply_val (length Delta) sg F F')
+      (ws : wf_ssub Delta sg Ge) (rn : is_ren sg)
+      (af : Apply_val (length Delta) sg F F')
       (bs : Apply_val (S (length Delta)) (up sg) body bodysg)
       (ra : redTm (shpRed PA ws af) a),
       { v & (Apply_val (length Delta) (a :: id_list (length Delta)) bodysg v
@@ -317,14 +319,14 @@ Definition reflect_pi_beta_step : Type :=
 Lemma reflect_pi_app_step_from_beta : reflect_pi_beta_step -> reflect_pi_app_step.
 Proof.
   intros Hbeta Ge F B PA ad Hwf n wn ARG body ws0 af0 ra0 Harg Hbody rb.
-  intros Delta sg a F' fsg ws af afs ra.
+  intros Delta sg a F' fsg ws rn af afs ra.
   (* [afs] : applying [sg] to [vLam body] -- only [ap_lam] applies, exposing
      the substituted body [bodysg] with [Apply_val (S len) (up sg) body bodysg]. *)
   inversion afs; subst.
   match goal with
   | bs : Apply_val (S (length Delta)) (up sg) body ?bodysg |- _ =>
       destruct (Hbeta Ge F B PA ad Hwf n wn ARG body ws0 af0 ra0 Harg Hbody rb
-                      Delta sg a F' bodysg ws af bs ra) as [v [Hbv Hrv]];
+                      Delta sg a F' bodysg ws rn af bs ra) as [v [Hbv Hrv]];
       exists v; split; [ apply vapp_lam; exact Hbv | exact Hrv ]
   end.
 Qed.
