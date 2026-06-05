@@ -17,11 +17,18 @@ memory first.
   two-sided `LR` graph + finite tower + `RedTyEq`/`RedTmEq`/`RedSubEq`). Kernel
   accepts `LR` (positivity holds). `NeConv` neutral base is PROVISIONAL (strict
   diagonal) — becomes the genuine `∼ne` in Ph3.
-- **Ph2 PARTIAL** — `LogRel2Ind.v` (`LR_mut` nested induction principle) +
-  `LogRel2Lemmas.v` (escape `RedTyEq_wf`/`RedTmEq_wf`; base-PER typing +
-  sym/trans). Built on provisional `NeConv`, no `Domain.v` change → green.
-- **Ph0 DE-RISKED** — see prototype `WIP/Phase0Proto.v` + the `ApplySubst.v`
-  finding below. It is now a purely MECHANICAL refactor.
+- **Ph2 PARTIAL** — `LogRel2Ind.v` (`LR_mut`) + `LogRel2Lemmas.v` (escape +
+  base-PER typing/sym/trans) + **`LogRel2Irr.v` IRRELEVANCE DONE** (axiom-free):
+  `LR_irrelevant_gen` (same-type-pair derivations carry equivalent relations,
+  all 6 cases incl. Pi), top-level `LR2_irrelevant` + `RedTmEq_irr` (Def 7),
+  `TLlt_pirr`. REMAINING Ph2: transport + renaming stability.
+- **Ph0 DE-RISKED** — prototype `WIP/Phase0Proto.v`. Mechanical refactor.
+- **Ph4 PER SYMMETRY: UNIVERSE-BLOCKED** (do NOT retry the unified carrier).
+  `WIP/LogRel2Sym.v` GAP 2': the symmetry carrier `{ Q & LR B A Q * maps }`
+  needs `Q <= LRPack.u0` (Pi-domain pack storage) AND `Q >= RedRel.u2` (LRU
+  witness), but `LRPack.u0 < RedRel.u2` is intrinsic to the `LR` inductive's
+  sizing. Fix = level-indexed universes, OR reformulate symmetry to USE
+  `RedTmEq_irr` instead of carrying a swapped `LR` derivation.
 
 ## Pick one of two next moves
 
