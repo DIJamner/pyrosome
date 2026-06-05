@@ -131,8 +131,37 @@ Reflect/Typing/EvalRel. Mechanical.
   (`RecSym1`); top-level `RedTyEq_sym` + `RedTmEq_sym`.  (Supersedes the earlier
   "fundamentally universe-blocked" finding; full swapped-derivation symmetry now
   goes through, so the deferred reformulation-via-`RedTmEq_irr` plan is moot.)
-- **REMAINING Ph2/Ph4:** transport + renaming stability + transitivity.  Then
-  Ph0 neutral annotations → Ph3 genuine ∼ne.
+- **Ph0 NEUTRAL ANNOTATIONS: DONE & green (2026-06-05).** `nApp`/`nAppI` carry
+  `(F B : sval)`; the whole domain layer + `LogRel2*` chain is re-greened against
+  it (commits `a24ad6d`, `3c68002`).  Domain-layer leaves repaired (`Smoke`,
+  `Determinism`, `ApplySubst`, `Glue`).  `ApplySubst.typing_scoped` was re-scoped
+  to UNIVERSE types `dU r l` only — see its header comment (general `dEl`
+  scopedness now needs context validity, which `t_lam` doesn't record; every
+  consumer only scopes type-codes, which inhabit `dU`).  The superseded
+  single-sided `LogRel*` chain was retired to `WIP/OTT_LogRel_single_sided/`
+  (out of the build; kept as a reference for the renaming/subst algebra).
+- **TRANSITIVITY: BLOCKED on general Apply totality (finding 2026-06-05).**
+  Attempted `LR_trans_gen` mirroring `LR_sym_gen`.  Base cases are ready
+  (`RedNatEq_trans`/`RedNeutralEq_trans`/`NeConv_trans` already in
+  `LogRel2Lemmas.v`; `LRU0`/`LRU1` via a `RecTrans1` hyp like `RecSym1`).  The
+  Pi case is the blocker: composing `PA : PolyRedPack Ge FA BA FB BB` with
+  `PA' : PolyRedPack Ge FB BB FC BC` into `PolyRedPack Ge FA BA FC BC`, the
+  composed `shpRed''` is invoked with `Apply_val sg FA FA'` and
+  `Apply_val sg FC FC'` over a GENERAL `wf_ssub sg`, but to call `shpRed PA`/
+  `shpRed PA'` it must synthesize the MIDDLE `Apply_val sg FB FB'`.  Applying a
+  general well-typed substitution to the middle Pi domain is normalization-
+  strength (a `vNe (nApp ...)` head can beta-reduce under `sg`), and NO general
+  Apply-totality lemma exists (only `ren_Apply_total`, renamings, in WIP).  So
+  type-level transitivity via pointwise pack composition is circular with
+  normalization and should NOT be an early Ph4 law — defer it to AFTER the
+  fundamental/normalization results (Ph5), or rederive it from them.  Symmetry
+  avoids this because `sym_pack`'s `shpRed` receives BOTH apply witnesses from
+  its caller (it only swaps them).
+- **REMAINING Ph2/Ph4:** renaming stability (TRACTABLE — lives over renamings,
+  where `ren_Apply_total` supplies the missing witness; needs the WIP renaming
+  algebra ported with the `(F,B)` updates first) + transport (Lemma 12, Pi-
+  entangled with transitivity, likely also deferred) + transitivity (deferred,
+  see above).  Then Ph3 genuine ∼ne (Ph0 prerequisite now satisfied).
 
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
