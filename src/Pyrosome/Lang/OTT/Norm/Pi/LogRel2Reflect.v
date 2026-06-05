@@ -103,6 +103,19 @@ Proof.
   - simpl. destruct (eqb n "L1"); [ right | left ]; reflexivity.
 Qed.
 
+(* The El of two [conv_ne]-related neutral CODES is a reducible TYPE-conversion
+   (the type-formation companion of [reflect_U] -- its inner witness, repackaged
+   at the top level [LR2] via [LRne]).  This is what lets the fundamental lemma
+   FORM the reducible type [El n] from a neutral code [n]. *)
+Lemma reflect_neEl_ty : forall Ge r l n m,
+    NeConv Ge (dU r l) (dU r l) n m ->
+    RedTyEq Ge (dEl (vNe n)) (dEl (vNe m)).
+Proof.
+  intros Ge r l n m c.
+  exists (RedNeutralEq Ge (dEl (vNe n)) (dEl (vNe m))).
+  apply LRne with (r:=r) (l:=l); exact c.
+Qed.
+
 Lemma reflect_U : forall Ge r l n m,
     NeConv Ge (dU r l) (dU r l) n m ->
     RedTmEq Ge (dU r l) (dU r l) (vNe n) (vNe m).
