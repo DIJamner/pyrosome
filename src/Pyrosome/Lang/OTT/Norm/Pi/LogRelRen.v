@@ -607,3 +607,132 @@ Qed.
 
 Definition Apply_val_ren_decomp := snd (fst (fst (fst Apply_ren_decomp))).
 
+(* ===================================================================== *)
+(* SYNTACTIC renaming by an index list [rho : list nat].                    *)
+(*                                                                         *)
+(* The relational [Apply_*] form cannot NAME a renamed value inside a       *)
+(* motive, which is exactly what "Apply commutes with renaming"            *)
+(* ([Apply_ren_commute], the renaming analogue of [Apply_shift_commute])    *)
+(* needs.  We therefore reify the renaming as a total function on values    *)
+(* ([ren_val]/[ren_ne]/[ren_ty]), mirroring [shift_val] with the index map  *)
+(* [renm rho] (identity past the end of [rho]) and [up_renl] under binders, *)
+(* and prove it AGREES with applying the substitution [ren_sub rho]         *)
+(* ([map (vNe o nVar) rho], i.e. the [is_ren] witness).  Everything below   *)
+(* then ports the proven [Apply_shift_commute]/[Reflect_weaken] proofs with *)
+(* [shift_X c 1 -> ren_X rho], [sh c -> renm rho].                          *)
+(* ===================================================================== *)
+
+Definition renm (rho : list nat) (k : nat) : nat := nth_default k rho k.
+Definition up_renl (rho : list nat) : list nat := 0 :: map S rho.
+Definition ren_sub (rho : list nat) : ssub := map (fun k => vNe (nVar k)) rho.
+
+Fixpoint ren_val (rho : list nat) (v : sval) : sval :=
+  match v with
+  | vNe n => vNe (ren_ne rho n)
+  | vZero => vZero
+  | vSuc v' => vSuc (ren_val rho v')
+  | vNat => vNat
+  | vEmpty => vEmpty
+  | vPi F B => vPi (ren_val rho F) (ren_val (up_renl rho) B)
+  | vPiI F B => vPiI (ren_val rho F) (ren_val (up_renl rho) B)
+  | vLam b => vLam (ren_val (up_renl rho) b)
+  | vLamI b => vLamI (ren_val (up_renl rho) b)
+  end
+with ren_ne (rho : list nat) (n : neutral) : neutral :=
+  match n with
+  | nVar k => nVar (renm rho k)
+  | nEmptyrec rA lA A s => nEmptyrec rA lA (ren_val rho A) (ren_ne rho s)
+  | nApp f a => nApp (ren_ne rho f) (ren_val rho a)
+  | nAppI f a => nAppI (ren_ne rho f) (ren_val rho a)
+  end.
+
+Definition ren_ty (rho : list nat) (T : svalty) : svalty :=
+  match T with
+  | dU r l => dU r l
+  | dEl e => dEl (ren_val rho e)
+  end.
+
+(* [ren_sub] is an [is_ren] witness. *)
+Lemma is_ren_ren_sub : forall rho, is_ren (ren_sub rho).
+Proof. intro rho. exists rho. reflexivity. Qed.
+
+(* Reading the renaming substitution at [k] yields the [renm]-relocated var. *)
+Lemma ren_sub_nth : forall rho k,
+    nth_default (vNe (nVar k)) (ren_sub rho) k = vNe (nVar (renm rho k)).
+Proof.
+  intros rho k. unfold ren_sub, renm, nth_default. rewrite nth_error_map.
+  destruct (nth_error rho k) as [j|]; reflexivity.
+Qed.
+
+Lemma renm_up_0 : forall rho, renm (up_renl rho) 0 = 0.
+Proof. intro rho. reflexivity. Qed.
+
+Lemma renm_up_S : forall rho k, renm (up_renl rho) (S k) = S (renm rho k).
+Proof.
+  intros rho k. unfold renm, up_renl, nth_default. cbn [nth_error].
+  rewrite nth_error_map. destruct (nth_error rho k); reflexivity.
+Qed.
+
+(* [up] of the renaming substitution is the substitution of the lifted list. *)
+Lemma up_ren_sub : forall rho, up (ren_sub rho) = ren_sub (up_renl rho).
+Proof.
+  intro rho. unfold up, ren_sub, up_renl. cbn [map]. f_equal.
+  rewrite !map_map. apply map_ext. intro k.
+  cbn [shift_val shift_ne Nat.ltb Nat.leb]. do 2 f_equal. Lia.lia.
+Qed.
+
+(* [ren_val] AGREES with applying the renaming substitution [ren_sub rho]. *)
+Lemma ren_is_Apply :
+  (forall T m rho, Apply_ty m (ren_sub rho) T (ren_ty rho T))
+  * ((forall v m rho, Apply_val m (ren_sub rho) v (ren_val rho v))
+  *  (forall n m rho, Apply_ne m (ren_sub rho) n (vNe (ren_ne rho n)))).
+Proof.
+  apply (sval_mutind
+    (fun T  => forall m rho, Apply_ty  m (ren_sub rho) T (ren_ty rho T))
+    (fun v  => forall m rho, Apply_val m (ren_sub rho) v (ren_val rho v))
+    (fun nn => forall m rho, Apply_ne  m (ren_sub rho) nn (vNe (ren_ne rho nn)))).
+  - (* dU *) intros r l m rho. apply ap_dU.
+  - (* dEl *) intros e IHe m rho. apply ap_dEl. apply IHe.
+  - (* vNe *) intros nn IHnn m rho. apply ap_ne. apply IHnn.
+  - (* vZero *) intros m rho. apply ap_zero.
+  - (* vSuc *) intros v IHv m rho. apply ap_suc. apply IHv.
+  - (* vNat *) intros m rho. apply ap_nat.
+  - (* vEmpty *) intros m rho. apply ap_empty.
+  - (* vPi *) intros F IHF B IHB m rho. cbn [ren_val]. apply ap_pi.
+    + apply IHF.
+    + rewrite up_ren_sub. apply IHB.
+  - (* vPiI *) intros F IHF B IHB m rho. cbn [ren_val]. apply ap_piI.
+    + apply IHF.
+    + rewrite up_ren_sub. apply IHB.
+  - (* vLam *) intros b IHb m rho. cbn [ren_val]. apply ap_lam.
+    rewrite up_ren_sub. apply IHb.
+  - (* vLamI *) intros b IHb m rho. cbn [ren_val]. apply ap_lamI.
+    rewrite up_ren_sub. apply IHb.
+  - (* nVar *) intros k m rho. cbn [ren_ne].
+    rewrite <- (ren_sub_nth rho k). apply ap_var.
+  - (* nEmptyrec *) intros rA lA A IHA scrut IHscr m rho. cbn [ren_ne].
+    apply ap_emptyrec; [ apply IHA | apply IHscr ].
+  - (* nApp *) intros f IHf a IHa m rho. cbn [ren_ne].
+    eapply ap_app; [ apply IHf | apply IHa | apply vapp_ne ].
+  - (* nAppI *) intros f IHf a IHa m rho. cbn [ren_ne].
+    eapply ap_appI; [ apply IHf | apply IHa | apply vappI_ne ].
+Qed.
+
+Definition ren_is_Apply_ty  := fst ren_is_Apply.
+Definition ren_is_Apply_val := fst (snd ren_is_Apply).
+Definition ren_is_Apply_ne  := snd (snd ren_is_Apply).
+
+(* The renamed image is UNIQUE: any [Apply] by a renaming substitution lands
+   on the syntactic [ren_*] (by determinism).  This is the bridge from the
+   relational [is_ren]/[Apply_val] world to the functional [ren_val] one. *)
+Lemma Apply_ren_eq :
+  (forall m rho T T', Apply_ty m (ren_sub rho) T T' -> T' = ren_ty rho T)
+  * ((forall m rho v v', Apply_val m (ren_sub rho) v v' -> v' = ren_val rho v)
+  *  (forall m rho n v', Apply_ne m (ren_sub rho) n v' -> v' = vNe (ren_ne rho n))).
+Proof.
+  repeat split.
+  - intros m rho T T' H. exact (Apply_ty_det H (ren_is_Apply_ty T m rho)).
+  - intros m rho v v' H. exact (Apply_val_det H (ren_is_Apply_val v m rho)).
+  - intros m rho n v' H. exact (Apply_ne_det H (ren_is_Apply_ne n m rho)).
+Qed.
+
