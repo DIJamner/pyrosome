@@ -101,11 +101,31 @@ Reflect/Typing/EvalRel. Mechanical.
 - **Ph2 PARTIAL & green.** `Norm/Pi/LogRel2Ind.v` — `LR_mut`, the custom nested
   induction principle (IHs for shpAd/posAd). `Norm/Pi/LogRel2Lemmas.v` — base-PER
   typing (`RedNatEq_wf`/`RedNeutralEq_wf`), ESCAPE (`RedTyEq_wf`, `RedTmEq_wf`),
-  base-case PER laws (`NeConv`/`RedNatEq`/`RedNeutralEq` sym+trans). All axiom-free,
-  no `Domain.v` change → build stays green. REMAINING Ph2: full irrelevance +
-  transport + top-level PER sym/trans over the **Pi** case (each requires
-  building a SWAPPED/related `PolyRedPack` inside an `LR_mut` induction — the
-  standard logrel symmetry plumbing, ~150 lines, not yet done).
+  base-case PER laws (`NeConv`/`RedNatEq`/`RedNeutralEq` sym+trans).
+  **IRRELEVANCE DONE** — `Norm/Pi/LogRel2Irr.v` (axiom-free, green):
+  `LR_irrelevant_gen` (two `LR` derivations of the SAME type pair carry
+  EQUIVALENT relations; bidirectional `IrrCar` motive over `LR_mut`, all 6
+  cases incl. Pi); top-level corollaries `LR2_irrelevant` and `RedTmEq_irr`
+  (paper Def 7: membership independent of the `RedTyEq` witness — the form
+  symmetry's `bwd`/transport consume).  Also `TLlt_pirr` (axiom-free proof
+  irrelevance for the level order, convoy pattern, for the `LRU` case).  Pi
+  case: bidirectional domain/codomain IHs + `Apply_val_det` to align codomain
+  types; the type transport is done in the GOAL of the aligned derivation
+  (rewriting a hypothesis is blocked by `posPack`'s dependency on `posTyA`).
+  REMAINING Ph2: transport + renaming stability.
+- **Ph4 PER SYMMETRY is UNIVERSE-BLOCKED (key finding).** The unified-`LR_mut`
+  symmetry carrier `SymCar P := { Q & LR Ge B A Q * maps }` CANNOT typecheck in
+  the monomorphic finite-tower encoding: the Pi-domain case stores the swapped
+  relation into an `LRPack` field (`Q <= LRPack.u0`), but the `LRU` case forces
+  `Q` = the universe witness `{P & rec h .. P}` at `RedRel.u2`, and
+  `LRPack.u0 < RedRel.u2` is INTRINSIC (the `LR` inductive in `Type@{RedRel.u2}`
+  takes a `PolyRedPack` arg built from `LRPack`).  No annotation reconciles
+  this; naive `Set Universe Polymorphism` doesn't either.  REAL FIX = level-
+  indexed universes (logrel-coq style) so lower-level `rec` returns relations
+  at a strictly smaller universe.  Parked attempt + full diagnosis:
+  `WIP/LogRel2Sym.v` (GAP 2').  Symmetry will likely be reformulated to USE
+  `RedTmEq_irr` rather than carry a swapped derivation, or deferred to the
+  universe-poly refactor.
 
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
