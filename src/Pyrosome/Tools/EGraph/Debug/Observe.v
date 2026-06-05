@@ -21,6 +21,7 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface Datatypes.Result.
 From Utils Require Import Utils Monad UnionFind TrieMap NamedList Result.
+From Utils Require Import FullPosTrie FullPosTrieConv.
 From Utils.EGraph Require Import Defs.
 From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
@@ -28,9 +29,16 @@ From Pyrosome.Tools Require Import PosRenaming.
 From Pyrosome.Tools.EGraph Require Defs.
 Import PosListMap.
 
-(* The concrete e-graph state type the engine runs on. *)
+(* The concrete e-graph state type the engine runs on.
+
+   The db's inner trie is now [full_pos_trie_map] (master swapped the positive
+   instantiation from [pos_trie_map]/[compat_intersect] to
+   [full_pos_trie_map]/[fpt_spaced_intersect]; see Pyrosome/Tools/EGraph/Defs.v,
+   Module PositiveInstantiation), so this notation pins the same idx_trie -- the
+   [map.tuples] readouts below resolve through [full_pos_trie_map]. *)
 Notation instance :=
-  (Defs.instance positive positive trie_map trie_map (@pos_trie_map) (option positive)).
+  (Defs.instance positive positive trie_map trie_map
+     (@FullPosTrie.full_pos_trie_map) (option positive)).
 
 Section Observe.
   (* renaming back to the source variable type V (e.g. string) *)

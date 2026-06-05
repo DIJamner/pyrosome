@@ -26,6 +26,7 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface Datatypes.Result.
 From Utils Require Import Utils Monad UnionFind TrieMap NamedList Result.
+From Utils Require Import FullPosTrie FullPosTrieConv.
 From Utils.EGraph Require Import Defs.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
@@ -42,7 +43,16 @@ Arguments Utils.EGraph.Defs.run_query {idx}%_type_scope {Eqb_idx} {symbol}%_type
   {symbol_map}%_function_scope {symbol_map_plus} {idx_map}%_function_scope {idx_map_plus}
   {idx_trie}%_function_scope {analysis_result}%_type_scope
   spaced_list_intersect%_function_scope rs n%_nat_scope _.
-Notation run_query := (Utils.EGraph.Defs.run_query (@PosListMap.compat_intersect)).
+(* master pins the positive instantiation's spaced intersect to
+   [fpt_spaced_intersect] over [full_pos_trie_map] (was [compat_intersect] over
+   [pos_trie_map]); match it so the probed [run_query] runs the same join the
+   real engine does.  [idx_trie] must be pinned (by name) before the intersect:
+   [spaced_list_intersect]'s type mentions [idx_trie B] under the [map.rep]
+   coercion, so unifying it against [fpt_spaced_intersect]'s [fpt B] only works
+   once [idx_trie] is the concrete [full_pos_trie_map]. *)
+Notation run_query :=
+  (Utils.EGraph.Defs.run_query (idx_trie := @FullPosTrie.full_pos_trie_map)
+     (@fpt_spaced_intersect)).
 
 (* The forward/reverse rule schedule the engine runs on. *)
 Notation schedule := (list (nat * rule_set positive positive trie_map trie_map)).
@@ -67,6 +77,20 @@ Section WithSrc.
       (inj_rules : list (V * list V)) (rn : nat) (c : ctx) (e1 e2 : term)
     : (Rule.lang positive * schedule * Term.term positive * Term.term positive
        * list (positive * list positive)) * renaming V :=
+    (* master's [build_rule_set] now returns [Result.result rule_set]: a rule
+       whose assumption-side rebuild runs out of fuel compiles to [Failure], and
+       [egraph_reducing_equal'] then fails the whole reduction.  Here we mirror
+       that by simply dropping any schedule entry whose rule_set failed to build
+       (a rule_set that did not compile cannot be scheduled), keeping the
+       schedule well-typed as [list (nat * rule_set ...)].  In the common case
+       both builds succeed and the schedule is the same [(10,fwd);(1,rev)] the
+       real engine runs. *)
+    let sched_of (w : nat) (r : Result.result (rule_set positive positive trie_map trie_map))
+      : schedule :=
+      match r with
+      | Result.Success rs => [(w, rs)]
+      | Result.Failure _ => []
+      end in
     let rename_and_run : state (renaming V) _ :=
       @! let l' <- rename_lang (ctx_to_rules c ++ l) in
          let e1' <- rename_term (var_to_con e1) in
@@ -80,8 +104,8 @@ Section WithSrc.
          let renamed_inj_rules <- list_Mmap rename_inj inj_rules in
          ret {state (renaming V)}
            (l',
-            [(10%nat, build_rule_set rn pos_rules l');
-             (1%nat,  build_rule_set rn pos_rev_rules l')],
+            sched_of 10%nat (build_rule_set rn pos_rules l')
+              ++ sched_of 1%nat (build_rule_set rn pos_rev_rules l'),
             e1', e2', renamed_inj_rules)
     in
     rename_and_run {| p_to_v := map.empty; v_to_p := []; next_id := 2 |}.
@@ -99,10 +123,13 @@ Section WithSrc.
     map (fun p => (Nat.min k (fst p), snd p)) s.
 
   (* ---- (b) bounded stepping keyed to x1/x2 ------------------------------- *)
+  (* idx_trie + spaced-intersect pinned to master's positive instantiation:
+     [full_pos_trie_map] / [fpt_spaced_intersect] (was [pos_trie_map] /
+     [compat_intersect]). *)
   Definition run_step (l' : Rule.lang positive) (s : schedule)
       (rfuel n : nat) (e1' e2' : Term.term positive) :=
-    egraph_reducing_equal_step ptree_map_plus (@pos_trie_map) Pos.succ sort_of
-      (@compat_intersect) l' s rfuel n e1' e2'.
+    egraph_reducing_equal_step ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ sort_of
+      (@fpt_spaced_intersect) l' s rfuel n e1' e2'.
 
   Definition nf_pos (g : instance) (efuel : nat) (x : positive) : Term.term positive :=
     match Defs.extract_weighted g efuel x with
@@ -263,8 +290,12 @@ Section WithSrc.
                            (cong_subgoals l' inj (p1, p2));
            it_stats := Observe.stats r g |}
       in
-      let fwd := match s0 with (_, rs) :: _ => rs | [] => build_rule_set rn [] [] end in
-      Success (rep, probe_rules g fwd)
+      (* Probe the forward rule_set (head of the schedule).  If the schedule is
+         empty -- which now means every rule's assumption rebuild ran out of
+         fuel and [build_rule_set] returned [Failure] for both passes (see
+         [egraph_reducing_setup]) -- there is nothing to probe, so report no
+         matches rather than fabricating an empty rule_set. *)
+      Success (rep, match s0 with (_, rs) :: _ => probe_rules g rs | [] => [] end)
     else error:("egraph_diagnose: a context variable clashes with a language symbol"
                 "(egraph_reducing_equal' would fail this guard before running)").
 
