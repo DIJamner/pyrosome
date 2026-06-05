@@ -363,6 +363,16 @@ Ltac eredex_general l r :=
         [> .. | eredex_steps_with l r ] |
         .. ].
 
+(* Defer every side-condition goal (the term metavariables left after
+   [solve_wf_term]); keep only the equational [eq_term] goals in focus.
+   Applied as [all: try shelve_if_not_eqterm], this is a position-independent
+   replacement for the old [N: shelve] selectors. *)
+Ltac shelve_if_not_eqterm :=
+  lazymatch goal with
+  | |- eq_term _ _ _ _ _ => fail
+  | |- _ => shelve
+  end.
+
 (* left-assoc cmp of three subs -> split into two cmps *)
 Ltac reassoc_cmp4 :=
   lazymatch goal with
@@ -580,7 +590,7 @@ Optimize Heap.
   (* Optimize Proof. *) (* this doesn't work *)
   Optimize Heap.
 
-  2-4: shelve.
+  all: try shelve_if_not_eqterm.
 
   reduce_lhs.
 
@@ -593,7 +603,7 @@ Optimize Heap.
 
   Unshelve.
   all: try solve_wf_term.
-  4-8: shelve.
+  all: try shelve_if_not_eqterm.
   2: term_refl.
   {
   csub_id_dance.
@@ -696,14 +706,14 @@ Optimize Heap.
 
   Unshelve.
   all: try solve_wf_term.
-  2: shelve.
+  all: try shelve_if_not_eqterm.
 
   compute_eq_compilation.
 
   trans break_cmp.
   Unshelve.
   all: try solve_wf_term.
-  4-6: shelve.
+  all: try shelve_if_not_eqterm.
   1: term_refl.
   {
   trans ltac:(
@@ -718,7 +728,7 @@ Optimize Heap.
   all: try solve_wf_term.
   Unshelve.
   all: try solve_wf_term.
-  2-3: shelve.
+  all: try shelve_if_not_eqterm.
   reduce_lhs.
   term_refl.
   }
@@ -811,7 +821,7 @@ Optimize Heap.
   Unshelve.
   all: try solve_wf_term.
 
-  2: shelve.
+  all: try shelve_if_not_eqterm.
 
   trans ltac:(eredex_general linear_value_subst "cmp_csub").
   4-5: term_refl.
@@ -822,7 +832,7 @@ Optimize Heap.
   Unshelve.
   all: try solve_wf_term.
 
-  2: shelve.
+  all: try shelve_if_not_eqterm.
 
   compute_eq_compilation.
 
@@ -846,7 +856,7 @@ Optimize Heap.
 
   Unshelve.
   all: try solve_wf_term.
-  2: shelve.
+  all: try shelve_if_not_eqterm.
 
   compute_eq_compilation.
   term_refl.
@@ -861,7 +871,7 @@ Optimize Heap.
   all: try solve_wf_term.
   Unshelve.
   all: try solve_wf_term.
-  2: shelve.
+  all: try shelve_if_not_eqterm.
 
   eapply eq_term_trans.
   2: {
