@@ -216,6 +216,58 @@ Reflect/Typing/EvalRel. Mechanical.
   (deferred — both need normalization).  Then **Ph3 genuine ∼ne** (the next
   live item, gated on Ph0 neutral annotations, which are DONE).
 
+- **Ph3 FOUNDATION DONE & green (2026-06-05).** `LogRel2Conv.v` — the genuine
+  structural neutral/normal-form conversion, replacing the provisional
+  strict-diagonal `NeConv` (`n=m`).  Mutual `conv_nf : sval->sval->Type` /
+  `conv_ne : neutral->neutral->Type` (paper Def 13 `∼annot`): UNTYPED, purely
+  STRUCTURAL, with type ANNOTATIONS (`F`,`B` on `nApp`/`nAppI`; motive `A` on
+  `nEmptyrec`) related RECURSIVELY rather than required equal.  Sound+complete
+  here because `Reflect` bakes eta into normal forms (relevant functions are
+  always `vLam`, neutrals only at base types), so structural comparison loses
+  nothing; INDEPENDENT of `LR` (positivity-safe to reference from the base
+  cases).  Proven: `conv_refl` (+ diagonal embeddings `conv_ne_of_eq` /
+  `conv_nf_of_eq`), `conv_sym`, `conv_trans` — all axiom-free.  Mutual scheme
+  `conv_mutind`.
+
+- **Ph3 SWAP — DESIGN RESOLVED, NOT YET EXECUTED (2026-06-05).**  Wiring the
+  genuine conversion into `LR` forces the base neutral relation to become
+  **TWO-TYPED**, because of a typing-conversion wall: `has_svalty` has NO
+  conversion rule, so once `n ∼ne m` with `n≠m`, a member typed at `dEl(vNe n)`
+  is NOT typed at `dEl(vNe m)`, and `RedTmEq_wf`'s `LRne` case (right member at
+  the right type) becomes UNPROVABLE from a single-left-typed `RedNeutralEq`.
+  Resolution — generalize the neutral base relation to carry both types:
+  ```coq
+  (* in LogRel2.v; import LogRel2Conv *)
+  Definition NeConv (Ge : senv) (T S : svalty) (n m : neutral) : Type :=
+    (wf_neutral Ge n T * wf_neutral Ge m S * conv_ne n m)%type.
+  Inductive RedNeutralEq (Ge : senv) (T S : svalty) : sval -> sval -> Type :=
+  | rneT : forall n m, NeConv Ge T S n m -> RedNeutralEq Ge T S (vNe n) (vNe m).
+  (* rne_ne : NeConv Ge (dEl vNat)(dEl vNat) n m ;  LRempty uses (dEl vEmpty)(dEl vEmpty);
+     LRne   : NeConv Ge (dU r l)(dU r l) n m -> ... RedNeutralEq Ge (dEl(vNe n))(dEl(vNe m)) *)
+  ```
+  This is a BOUNDED 7-file arity-change refactor (do it as ONE green unit, per
+  the always-green discipline — no partial swap):
+  1. `LogRel2.v` — import `LogRel2Conv`; two-typed `NeConv`/`RedNeutralEq`;
+     fix `rne_ne`, `LRempty`, `LRne` type args.  (LRne's codes are typed
+     diagonally at `dU r l`; only the RELATION's outer pair is `(vNe n,vNe m)`.)
+  2. `LogRel2Lemmas.v` — `RedTmEq_wf` LRne case now goes through with NO `subst`
+     (the wall is gone: `RedNeutralEq_wf` gives `a:dEl(vNe n) * b:dEl(vNe m)`
+     directly).  `NeConv_sym : NeConv Ge T S n m -> NeConv Ge S T m n`,
+     `NeConv_trans : ..T S.. -> ..S R.. -> ..T R..` via `conv_ne_sym`/`_trans`.
+     `RedNeutralEq_sym`/`_trans` swap/chain the type indices likewise.
+  3. `LogRel2Sym.v` LRne case (≈ line 121): drop `destruct..enm; subst`; build
+     the swapped `LRne`/`RedNeutralEq` via `NeConv_sym` + `conv_ne_sym`.
+  4. `LogRel2Ren.v` — add `conv_ren` (conv_ne/conv_nf stable under `ren_ne`/
+     `ren_val`, by `conv_mutind`; app/pi cases recurse the cod annotation under
+     `up_renl rho`); two-typed `NeConv_ren`/`RedNeutralEq_ren`; LRne site (≈465)
+     unchanged shape (diagonal `dU r l`).
+  5. `LogRel2Irr.v` — re-check the LRne `IrrCar` case under two-typed
+     `RedNeutralEq` (Irr does not destructure `NeConv` directly).
+  6. `LogRel2Red.v` (`redTyEq_neEl`/`redTmEq_empty`/`redTmEq_neEl`) +
+     `LogRel2Ind.v` (`mne` motive) — bump `NeConv`/`RedNeutralEq` type args.
+  AFTER the swap: Ph3 proper = mutual reify/reflect (Theorem 11) connecting
+  `conv_ne` to REDUCIBLE conversion `RedTmEq`.
+
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
   so `(F,B)` must be threaded as INDICES through `Vapp`/`VappI`/`Apply_ne` (e.g.

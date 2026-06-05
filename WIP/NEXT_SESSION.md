@@ -50,15 +50,31 @@ See `ConvRelPlan.md` STATUS for the full structure and the two key findings
 (forward-only carrier; reverse-comp needs no Apply-totality, distinguishing
 renaming from transitivity).
 
-## Next move
+## State update (2026-06-05): Ph3 FOUNDATION DONE
 
-With renaming stability done, the remaining PER laws are transport (Lemma 12)
-and transitivity — both BLOCKED on general Apply totality (≈ normalization),
-deferred to post-fundamental (Ph5).  The next tractable item is **Ph3: replace
-the PROVISIONAL `NeConv` (strict diagonal) with the genuine `∼ne` relation**
-(Theorem 11), now that the Ph0 neutral annotations `(F,B)` are in place.  After
-that, the **fundamental lemma (Ph5)** — whence transitivity/transport become
-provable.
+`LogRel2Conv.v` is built, axiom-free, green: the genuine structural
+neutral/normal-form conversion `conv_nf`/`conv_ne` (paper Def 13 `∼annot`)
+replacing the provisional strict-diagonal `NeConv`.  Annotations related
+recursively (not required equal); untyped+structural is complete here because
+`Reflect` bakes eta into normal forms; independent of `LR` (positivity-safe).
+Proven `conv_refl`/`conv_sym`/`conv_trans` + diagonal embeddings
+`conv_ne_of_eq`/`conv_nf_of_eq` + scheme `conv_mutind`.
+
+## Next move — EXECUTE the Ph3 SWAP (mechanical, design resolved)
+
+Wire `conv_ne` into `LR`.  Full executable spec is in `ConvRelPlan.md` STATUS
+("Ph3 SWAP — DESIGN RESOLVED").  Key finding: the base neutral relation must
+become **TWO-TYPED** (`NeConv Ge T S n m` / `RedNeutralEq Ge T S`) because
+`has_svalty` has no conversion rule, so `RedTmEq_wf`'s `LRne` case can't type
+the right member at `dEl(vNe m)` from a left-typed relation.  It's a BOUNDED
+7-file arity-change refactor — do it as ONE green unit (no partial swap).
+Files in order: `LogRel2.v` (defs + `LRne`/`LRempty`/`rne_ne`), `LogRel2Lemmas.v`
+(escape + PER laws via `conv_ne_sym`/`_trans`), `LogRel2Sym.v` (LRne case),
+`LogRel2Ren.v` (add `conv_ren`, two-typed `NeConv_ren`), `LogRel2Irr.v`
+(LRne `IrrCar`), `LogRel2Red.v` + `LogRel2Ind.v` (bump type args).
+AFTER the swap: Ph3 proper = mutual reify/reflect (Theorem 11), connecting
+`conv_ne` to REDUCIBLE conversion.  Transport (Lemma 12) + transitivity stay
+deferred to post-fundamental (Ph5).
 
 ## Build (per CLAUDE.md — never run full `make` during dev)
 ```
