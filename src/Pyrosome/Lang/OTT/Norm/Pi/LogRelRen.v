@@ -1116,3 +1116,41 @@ Qed.
 Definition Apply_ty_ren_commute  := fst (fst (fst (fst Apply_ren_commute))).
 Definition Apply_val_ren_commute := snd (fst (fst (fst Apply_ren_commute))).
 Definition Apply_ne_ren_commute  := snd (fst (fst Apply_ren_commute)).
+
+(* ===================================================================== *)
+(* Renaming commutes with the cutoff-0 weakening shift.  Earlier feared to  *)
+(* need an [ins_renl] conjugation (the general-cutoff version is FALSE for   *)
+(* [up_renl]); but at cutoff 0 it falls out of DETERMINISM: both sides are   *)
+(* the image of [shift_val 0 1 v] under [up (ren_sub rho)] (= the renamed    *)
+(* side via [ren_is_Apply] + [up_ren_sub]; = the shifted side via            *)
+(* [Apply_val_shift0]).  Needed by [Reflect_ren]'s [refl_Pi] domain/spine.   *)
+(* ===================================================================== *)
+
+Lemma Apply_ne_shift0 : forall m s n v, Apply_ne m s n v ->
+    Apply_ne (S m) (up s) (shift_ne 0 1 n) (shift_val 0 1 v).
+Proof.
+  intros m s n v H.
+  exact (snd (fst (fst Apply_shift_commute)) m s n v H 0 0 (up s)
+              (ShiftSub_0_up s) ltac:(Lia.lia)).
+Qed.
+
+Lemma ren_shift_comm0_val : forall rho v,
+    ren_val (up_renl rho) (shift_val 0 1 v) = shift_val 0 1 (ren_val rho v).
+Proof.
+  intros rho v.
+  pose proof (ren_is_Apply_val (shift_val 0 1 v) 1 (up_renl rho)) as H1.
+  rewrite <- up_ren_sub in H1.
+  pose proof (Apply_val_shift0 (ren_is_Apply_val v 0 rho)) as H2.
+  exact (Apply_val_det H1 H2).
+Qed.
+
+Lemma ren_shift_comm0_ne : forall rho n,
+    ren_ne (up_renl rho) (shift_ne 0 1 n) = shift_ne 0 1 (ren_ne rho n).
+Proof.
+  intros rho n.
+  pose proof (ren_is_Apply_ne (shift_ne 0 1 n) 1 (up_renl rho)) as H1.
+  rewrite <- up_ren_sub in H1.
+  pose proof (Apply_ne_shift0 (ren_is_Apply_ne n 0 rho)) as H2.
+  cbn [shift_val] in H2.
+  pose proof (Apply_ne_det H1 H2) as Heq. injection Heq as Heq'. exact Heq'.
+Qed.
