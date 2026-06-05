@@ -469,3 +469,141 @@ Proof.
     [ exact (RenSubSc_beta a Hr Hws) | exact Hsecond ].
 Qed.
 
+(* ===================================================================== *)
+(* CONVERSE renaming composition + the [a2 :: sg] beta-closure.            *)
+(*                                                                         *)
+(* These are the two missing bricks for [Apply_ren_commute] (push a         *)
+(* renaming through an ARBITRARY [Apply], the renaming analogue of           *)
+(* [Apply_shift_commute]).  Its [vapp_lam] case reduces the renamed beta     *)
+(* [b[up sg]] then [a2 :: id_list] to the original beta [b] then the         *)
+(* composite [a2 :: sg]; bridging the two needs (i) the [a2 :: sg] closure   *)
+(* [RenSub_beta_ren] and (ii) the CONVERSE of [Apply_ren_comp]               *)
+(* ([Apply_ren_decomp]): given [b -(up sg)-> b_sg] (renaming) and the        *)
+(* composite [b -(a2::sg)-> v''], recover [b_sg -(a2::id_list)-> v''].       *)
+(* ===================================================================== *)
+
+(* The [a2 :: sg] closure: pushing a renaming [sg] (length [m]) through the
+   beta substitution [a :: id_list m] yields [sg(a) :: sg] (the [id_list]
+   entries map, through [sg], to [sg]'s own entries).  No [is_ren] needed --
+   the [id_list]/default reads go through [ap_var] for any [sg]; only
+   [length sg = m] is required so the in-range/default regions line up. *)
+Lemma RenSub_beta_ren : forall m2 sg m a a2,
+    length sg = m -> Apply_val m2 sg a a2 ->
+    RenSub m2 sg (a :: id_list m) (a2 :: sg).
+Proof.
+  intros m2 sg m a a2 Hlen Ha k. destruct k as [|k'].
+  - (* head: read a / a2 *) unfold nth_default; cbn [nth_error]. exact Ha.
+  - (* tail: id_list m @ k' vs sg @ k' *)
+    rewrite !nth_default_cons_S. rewrite id_list_nth_any.
+    destruct (Nat.ltb k' m) eqn:E; [ apply ltb_true in E | apply ltb_false in E ].
+    + (* k' < m = length sg : both read sg @ k' *)
+      assert (Hk : k' < length sg) by Lia.lia.
+      rewrite (nth_default_irrel sg (vNe (nVar (S k'))) (vNe (nVar k')) Hk).
+      apply ap_ne. apply ap_var.
+    + (* k' >= m = length sg : both read the out-of-range default *)
+      assert (Hk : length sg <= k') by Lia.lia.
+      assert (Hout : nth_default (vNe (nVar (S k'))) sg k' = vNe (nVar (S k')))
+        by (unfold nth_default; rewrite (proj2 (nth_error_None sg k') Hk); reflexivity).
+      rewrite Hout. apply ap_ne.
+      assert (Heq : nth_default (vNe (nVar (S k'))) sg (S k') = vNe (nVar (S k')))
+        by (unfold nth_default;
+            rewrite (proj2 (nth_error_None sg (S k')) ltac:(Lia.lia)); reflexivity).
+      rewrite <- Heq. apply ap_var.
+Qed.
+
+(* The converse of [Apply_ren_comp]: induct on the FIRST (renaming) derivation
+   -- which never betas -- and INVERT the composite derivation, recovering the
+   second factor.  [Vapp]/[VappI] motives stay [unit] (the renaming first
+   derivation produces no [vapp_lam]). *)
+Lemma Apply_ren_decomp :
+  (forall m1 s1 T T', Apply_ty m1 s1 T T' ->
+     is_ren s1 -> forall m2 s2 s3 T'', RenSub m2 s2 s1 s3 ->
+       Apply_ty m2 s3 T T'' -> Apply_ty m2 s2 T' T'')
+  * (forall m1 s1 v v', Apply_val m1 s1 v v' ->
+       is_ren s1 -> forall m2 s2 s3 v'', RenSub m2 s2 s1 s3 ->
+         Apply_val m2 s3 v v'' -> Apply_val m2 s2 v' v'')
+  * (forall m1 s1 n v, Apply_ne m1 s1 n v ->
+       is_ren s1 -> forall m2 s2 s3 v'', RenSub m2 s2 s1 s3 ->
+         Apply_ne m2 s3 n v'' -> Apply_val m2 s2 v v'')
+  * (forall m vf a v, Vapp m vf a v -> unit)
+  * (forall m vf a v, VappI m vf a v -> unit).
+Proof.
+  refine (Apply_mutind
+    (fun m1 s1 T T' _ => is_ren s1 -> forall m2 s2 s3 T'',
+       RenSub m2 s2 s1 s3 -> Apply_ty m2 s3 T T'' -> Apply_ty m2 s2 T' T'')
+    (fun m1 s1 v v' _ => is_ren s1 -> forall m2 s2 s3 v'',
+       RenSub m2 s2 s1 s3 -> Apply_val m2 s3 v v'' -> Apply_val m2 s2 v' v'')
+    (fun m1 s1 n v _ => is_ren s1 -> forall m2 s2 s3 v'',
+       RenSub m2 s2 s1 s3 -> Apply_ne m2 s3 n v'' -> Apply_val m2 s2 v v'')
+    (fun _ _ _ _ _ => unit)
+    (fun _ _ _ _ _ => unit)
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+  - (* ap_dU *) intros m1 s1 r l Hr1 m2 s2 s3 T'' Hrs H2.
+    inversion H2; subst. apply ap_dU.
+  - (* ap_dEl *) intros m1 s1 e e' He IHe Hr1 m2 s2 s3 T'' Hrs H2.
+    inversion H2; subst. apply ap_dEl. eapply IHe; eauto.
+  - (* ap_ne *) intros m1 s1 n v Hn IHn Hr1 m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. eapply IHn; eauto.
+  - (* ap_zero *) intros m1 s1 Hr1 m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_zero.
+  - (* ap_suc *) intros m1 s1 v v' Hv IHv Hr1 m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_suc. eapply IHv; eauto.
+  - (* ap_nat *) intros m1 s1 Hr1 m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_nat.
+  - (* ap_empty *) intros m1 s1 Hr1 m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_empty.
+  - (* ap_pi *) intros m1 s1 F F' B B' HF IHF HB IHB Hr1 m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_pi.
+    + eapply IHF; eauto.
+    + eapply IHB;
+        [ exact (is_ren_up Hr1) | exact (RenSub_up Hrs) | eassumption ].
+  - (* ap_piI *) intros m1 s1 F F' B B' HF IHF HB IHB Hr1 m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_piI.
+    + eapply IHF; eauto.
+    + eapply IHB;
+        [ exact (is_ren_up Hr1) | exact (RenSub_up Hrs) | eassumption ].
+  - (* ap_lam *) intros m1 s1 b b' Hb IHb Hr1 m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_lam.
+    eapply IHb;
+      [ exact (is_ren_up Hr1) | exact (RenSub_up Hrs) | eassumption ].
+  - (* ap_lamI *) intros m1 s1 b b' Hb IHb Hr1 m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. apply ap_lamI.
+    eapply IHb;
+      [ exact (is_ren_up Hr1) | exact (RenSub_up Hrs) | eassumption ].
+  - (* ap_var *) intros m1 s1 k Hr1 m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst. exact (Hrs k).
+  - (* ap_emptyrec *) intros m1 s1 rA lA A A' scrut scrut' HA IHA Hsc IHsc Hr1
+      m2 s2 s3 v'' Hrs H2.
+    inversion H2; subst.
+    apply ap_ne. apply ap_emptyrec.
+    + eapply IHA; eauto.
+    + pose proof (IHsc Hr1 m2 s2 s3 _ Hrs ltac:(eassumption)) as Hv.
+      inversion Hv; subst. eassumption.
+  - (* ap_app *) intros m1 s1 f vf a a' v Hf IHf Ha IHa Hvapp IHvapp Hr1
+      m2 s2 s3 v'' Hrs H2.
+    destruct (ren_Apply_ne_isNe Hr1 Hf) as [nf' ->].
+    inversion Hvapp; subst.
+    inversion H2; subst.
+    apply ap_ne. eapply ap_app.
+    + pose proof (IHf Hr1 m2 s2 s3 _ Hrs ltac:(eassumption)) as Hvf.
+      inversion Hvf; subst. eassumption.
+    + eapply IHa; eauto.
+    + eassumption.
+  - (* ap_appI *) intros m1 s1 f vf a a' v Hf IHf Ha IHa Hvapp IHvapp Hr1
+      m2 s2 s3 v'' Hrs H2.
+    destruct (ren_Apply_ne_isNe Hr1 Hf) as [nf' ->].
+    inversion Hvapp; subst.
+    inversion H2; subst.
+    apply ap_ne. eapply ap_appI.
+    + pose proof (IHf Hr1 m2 s2 s3 _ Hrs ltac:(eassumption)) as Hvf.
+      inversion Hvf; subst. eassumption.
+    + eapply IHa; eauto.
+    + eassumption.
+  - (* vapp_lam *) intros; exact tt.
+  - (* vapp_ne *) intros; exact tt.
+  - (* vappI_lam *) intros; exact tt.
+  - (* vappI_ne *) intros; exact tt.
+Qed.
+
+Definition Apply_val_ren_decomp := snd (fst (fst (fst Apply_ren_decomp))).
+
