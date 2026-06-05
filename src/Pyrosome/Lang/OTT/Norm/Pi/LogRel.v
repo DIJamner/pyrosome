@@ -129,15 +129,36 @@ Definition posPack Ge F B (PA : PolyRedPack Ge F B) Delta sg a F'
   snd (projT2 (@posRed Ge F B PA Delta sg a F' ws af ra)).
 Arguments posPack {Ge F B} PA {Delta sg a F' ws af} ra.
 
+(* ===================================================================== *)
+(* RENAMINGS.  The application clause of [PiRedTmPred] quantifies over     *)
+(* substitutions that are RENAMINGS (each entry a variable-neutral),       *)
+(* NOT over arbitrary well-typed substitutions.  This is the              *)
+(* positivity-safe analogue of logrel-coq's weakening-indexed Pi clause:   *)
+(* a renaming of a neutral stays neutral, which is exactly what lets        *)
+(* [reflect_red] satisfy the clause for its eta-expansions (the function   *)
+(* body embeds a neutral, and under a renaming it stays a neutral, hence    *)
+(* the application reflects again at the codomain).  Reducibility of        *)
+(* GENERAL substitutions is recovered in a SEPARATE validity layer (VR)     *)
+(* on top of [LR], where the Fundamental Lemma lives -- never inside the     *)
+(* [LR] inductive, where it would break strict positivity.                  *)
+(*                                                                         *)
+(* [is_ren] is purely syntactic (no [LR] reference), so it may appear in    *)
+(* the (negative) hypothesis position of the clause.  [id_list]/[wkn_list]/ *)
+(* [up] of a renaming are renamings (see [LogRelRen.v]). *)
+Definition is_ren (sg : ssub) : Type :=
+  { rho : list nat & sg = map (fun k => vNe (nVar k)) rho }.
+
 (* The reducibility predicate computed FROM the pack data (a Definition, not the
    inductive): the extensional function clause.  The substituted codomain and
    its [Apply_val] witness are now produced by the pack ([posTy]/[posApp]), so
-   the clause no longer quantifies over [Bres]/[hB]. *)
+   the clause no longer quantifies over [Bres]/[hB].  The substitution [sg] is
+   restricted to a RENAMING ([rn]); see the [is_ren] note above. *)
 Definition PiRedTmPred (Ge : senv) (F B : sval) (PA : PolyRedPack Ge F B) : sval -> Type :=
   fun f =>
     (has_svalty Ge f (dEl (vPi F B)) *
      (forall Delta sg a F' fsg
-        (ws : wf_ssub Delta sg Ge) (af : Apply_val (length Delta) sg F F')
+        (ws : wf_ssub Delta sg Ge) (rn : is_ren sg)
+        (af : Apply_val (length Delta) sg F F')
         (afs : Apply_val (length Delta) sg f fsg)
         (ra : redTm (shpRed PA ws af) a),
         { v & (Vapp (length Delta) fsg a v *

@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
   Domain Apply ApplyLemmas Reflect Typing Preservation ApplySubst
-  LogRel LogRelInd LogRelLemmas LogRelRed.
+  LogRel LogRelInd LogRelLemmas LogRelRed LogRelRen.
 Import Core.Notations.
 
 Notation term := (@term string).
@@ -371,7 +371,7 @@ Proof.
       cbn [RedTmOf redTy_pi projT1 PiRedTmPred]. split.
       * (* well-typedness *) exact (fst shift_typing _ _ _ (fst Pv) T0).
       * (* application clause *)
-        intros Delta sg a F' fsg ws af afs ra.
+        intros Delta sg a F' fsg ws rn af afs ra.
         destruct sg as [|hh t].
         -- exfalso. pose proof (fst ws) as Hl. cbn [length] in Hl.
            rewrite length_map in Hl. discriminate.
@@ -382,7 +382,7 @@ Proof.
              (rewrite Hlent; exact (has_svalty_scoped (fst Pv))).
            pose (afsV := @Apply_val_uncancel v (length t) (length Delta) 0 t (hh::t)
                            fsg Hscv (InsAt_base t hh) afs).
-           destruct (snd Pv Delta t a F' fsg (wf_ssub_tail Hwf ws) _ afsV ra)
+           destruct (snd Pv Delta t a F' fsg (wf_ssub_tail Hwf ws) (is_ren_tl rn) _ afsV ra)
              as [v' [Hvapp Hrtm]].
            exists v'. split; [ exact Hvapp | exact Hrtm ].
   - (* LRU : impossible -- the type is an El-type [dEl t], not a universe. *)
