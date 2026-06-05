@@ -231,3 +231,155 @@ Definition has_svalty_ne_below {Ge v T} (H : has_svalty Ge v T) :=
   fst typing_ne_below Ge v T H.
 Definition wf_neutral_ne_below {Ge n T} (H : wf_neutral Ge n T) :=
   snd typing_ne_below Ge n T H.
+
+(* ===================================================================== *)
+(* TYPING PRESERVATION UNDER A RENAMING (all types).                        *)
+(*                                                                         *)
+(* Generalizes [ren_typing_dU] to every type.  Preconditions: the type [T]  *)
+(* is scoped ([ne_below_ty]) -- needed for the [t_lam_eta] codomain [B] and  *)
+(* domain [F] which the rules record only partially -- and the context is    *)
+(* scoped ([ne_below_ctx]) -- so neutral sub-derivations recover their own   *)
+(* type's scopedness via [typing_ne_below].  The renaming is given BOTH as a  *)
+(* context map ([ren_ctx]) and as a level bound ([ren_ok rho (S (length Ge)) *)
+(* (length Ge')]), matching [Reflect_ren]/[Apply_val_ren_commute], which want *)
+(* the bound one level above the source (the [t_lam_eta]/[n_app] codomains    *)
+(* live under a binder).                                                     *)
+(* ===================================================================== *)
+Lemma ren_typing :
+  (forall Ge v T, has_svalty Ge v T ->
+     ne_below_ty (length Ge) T -> ne_below_ctx Ge ->
+     forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
+       has_svalty Ge' (ren_val rho v) (ren_ty rho T))
+  * (forall Ge n T, wf_neutral Ge n T ->
+     ne_below_ty (length Ge) T -> ne_below_ctx Ge ->
+     forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
+       wf_neutral Ge' (ren_ne rho n) (ren_ty rho T)).
+Proof.
+  refine (has_neutral_mutind
+    (fun Ge v T _ => ne_below_ty (length Ge) T -> ne_below_ctx Ge ->
+       forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
+         has_svalty Ge' (ren_val rho v) (ren_ty rho T))
+    (fun Ge n T _ => ne_below_ty (length Ge) T -> ne_below_ctx Ge ->
+       forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
+         wf_neutral Ge' (ren_ne rho n) (ren_ty rho T))
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+  - (* t_ne *) intros Ge n T hn IHn Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_val]. apply t_ne. exact (IHn Hty Hctx Ge' rho Hren Hok).
+  - (* t_zero *) intros Ge Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_val ren_ty]. apply t_zero.
+  - (* t_suc *) intros Ge v hv IHv Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_val ren_ty]. apply t_suc. exact (IHv I Hctx Ge' rho Hren Hok).
+  - (* t_Nat *) intros Ge r l Hty Hctx Ge' rho Hren Hok. cbn [ren_val ren_ty]. apply t_Nat.
+  - (* t_Empty *) intros Ge r l Hty Hctx Ge' rho Hren Hok. cbn [ren_val ren_ty]. apply t_Empty.
+  - (* t_Pi *) intros Ge F B rF lF rB lB r l hF IHF hB IHB Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_val ren_ty]. eapply t_Pi.
+    + exact (IHF I Hctx Ge' rho Hren Hok).
+    + eapply IHB;
+        [ exact I | apply ne_below_ctx_up_dEl; [ exact Hctx | exact (has_svalty_scoped hF) ]
+        | apply ren_ctx_up_dEl; exact Hren
+        | cbn [length]; rewrite !length_map; apply ren_ok_up; exact Hok ].
+  - (* t_PiI *) intros Ge F B rF lF rB lB r l hF IHF hB IHB Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_val ren_ty]. eapply t_PiI.
+    + exact (IHF I Hctx Ge' rho Hren Hok).
+    + eapply IHB;
+        [ exact I | apply ne_below_ctx_up_dEl; [ exact Hctx | exact (has_svalty_scoped hF) ]
+        | apply ren_ctx_up_dEl; exact Hren
+        | cbn [length]; rewrite !length_map; apply ren_ok_up; exact Hok ].
+  - (* t_lam *) intros Ge F B b rF lF hF IHF hb IHb Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_val ren_ty]. cbn [ne_below_ty ne_below_val] in Hty. destruct Hty as [HF HB].
+    eapply t_lam.
+    + exact (IHF I Hctx Ge' rho Hren Hok).
+    + eapply IHb;
+        [ cbn [ne_below_ty length]; rewrite length_map; exact HB
+        | apply ne_below_ctx_up_dEl; [ exact Hctx | exact HF ]
+        | apply ren_ctx_up_dEl; exact Hren
+        | cbn [length]; rewrite !length_map; apply ren_ok_up; exact Hok ].
+  - (* t_lamI *) intros Ge F B b rF lF hF IHF hb IHb Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_val ren_ty]. cbn [ne_below_ty ne_below_val] in Hty. destruct Hty as [HF HB].
+    eapply t_lamI.
+    + exact (IHF I Hctx Ge' rho Hren Hok).
+    + eapply IHb;
+        [ cbn [ne_below_ty length]; rewrite length_map; exact HB
+        | apply ne_below_ctx_up_dEl; [ exact Hctx | exact HF ]
+        | apply ren_ctx_up_dEl; exact Hren
+        | cbn [length]; rewrite !length_map; apply ren_ok_up; exact Hok ].
+  - (* t_lam_eta *) intros Ge F B b ARG B' rF lF hF IHF HR Hap hb IHb Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_val ren_ty]. cbn [ne_below_ty ne_below_val] in Hty. destruct Hty as [HF HB].
+    assert (HARG : ne_below_val (S (length Ge)) ARG)
+      by (eapply Reflect_scoped;
+          [ exact HR | cbn [ne_below_ty]; apply ne_below_shift_val; exact HF
+          | cbn [ne_below_ne]; Lia.lia ]).
+    assert (HB' : ne_below_val (S (length Ge)) B')
+      by (eapply Apply_val_ne_below;
+          [ exact Hap | apply ne_below_shift_val; exact HB
+          | apply sub_below_beta; [ Lia.lia | exact HARG ] ]).
+    eapply t_lam_eta.
+    + exact (IHF I Hctx Ge' rho Hren Hok).
+    + (* Reflect premise via Reflect_ren *)
+      pose proof (Reflect_ren HR
+                    ltac:(cbn [ne_below_ty]; apply ne_below_shift_val; exact HF)
+                    ltac:(cbn [ne_below_ne]; Lia.lia)
+                    (ren_ok_up Hok)) as HRr.
+      cbn [ren_ty ren_ne ren_val] in HRr.
+      rewrite renm_up_0, ren_shift_comm0_val in HRr. exact HRr.
+    + (* codomain Apply via Apply_val_ren_commute *)
+      pose proof (@Apply_val_ren_commute
+                    (S (length Ge)) (ARG :: id_list (S (length Ge)))
+                    (shift_val 1 1 B) B' Hap
+                    (S (S (length Ge)))
+                    ltac:(apply ne_below_shift_val; exact HB)
+                    ltac:(apply sub_below_beta; [ Lia.lia | exact HARG ])
+                    (S (length Ge')) (up_renl (up_renl rho)) (up_renl rho)
+                    (ren_val (up_renl rho) ARG :: id_list (S (length Ge')))
+                    (ren_ok_up Hok)
+                    ltac:(eapply RenShSc_beta;
+                            [ Lia.lia | apply ren_ok_le with (N := S (S (length Ge))); [ exact (ren_ok_up Hok) | Lia.lia ]
+                            | apply ren_is_Apply_val ])) as Hapr.
+      rewrite ren_shift_comm1_val in Hapr. exact Hapr.
+    + (* body *)
+      eapply IHb;
+        [ cbn [ne_below_ty length]; rewrite length_map; exact HB'
+        | apply ne_below_ctx_up_dEl; [ exact Hctx | exact HF ]
+        | apply ren_ctx_up_dEl; exact Hren
+        | cbn [length]; rewrite !length_map; apply ren_ok_up; exact Hok ].
+  - (* n_var *) intros Ge k T He Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_ne]. apply n_var. exact (Hren k T He).
+  - (* n_emptyrec *) intros Ge rA lA A scrut r l hA IHA hscr IHscr Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_ne ren_val ren_ty]. eapply n_emptyrec.
+    + exact (IHA I Hctx Ge' rho Hren Hok).
+    + exact (IHscr I Hctx Ge' rho Hren Hok).
+  - (* n_app *) intros Ge f F B a B' hf IHf ha IHa Hap Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_ne ren_ty].
+    destruct (wf_neutral_ne_below hf Hctx) as [Hnef Htyf].
+    cbn [ne_below_ty ne_below_val] in Htyf. destruct Htyf as [HF HB].
+    pose proof (has_svalty_ne_below ha Hctx) as Ha. cbn [ne_below_ty] in Ha.
+    eapply n_app.
+    + exact (IHf (conj HF HB) Hctx Ge' rho Hren Hok).
+    + exact (IHa HF Hctx Ge' rho Hren Hok).
+    + exact (@Apply_val_ren_commute
+               (length Ge) (a :: id_list (length Ge)) B B' Hap
+               (S (length Ge)) HB
+               ltac:(apply sub_below_beta; [ Lia.lia | exact Ha ])
+               (length Ge') (up_renl rho) rho
+               (ren_val rho a :: id_list (length Ge')) Hok
+               ltac:(eapply RenShSc_beta;
+                       [ Lia.lia | apply ren_ok_le with (N := S (length Ge)); [ exact Hok | Lia.lia ]
+                       | apply ren_is_Apply_val ])).
+  - (* n_appI *) intros Ge f F B a B' hf IHf ha IHa Hap Hty Hctx Ge' rho Hren Hok.
+    cbn [ren_ne ren_ty].
+    destruct (wf_neutral_ne_below hf Hctx) as [Hnef Htyf].
+    cbn [ne_below_ty ne_below_val] in Htyf. destruct Htyf as [HF HB].
+    pose proof (has_svalty_ne_below ha Hctx) as Ha. cbn [ne_below_ty] in Ha.
+    eapply n_appI.
+    + exact (IHf (conj HF HB) Hctx Ge' rho Hren Hok).
+    + exact (IHa HF Hctx Ge' rho Hren Hok).
+    + exact (@Apply_val_ren_commute
+               (length Ge) (a :: id_list (length Ge)) B B' Hap
+               (S (length Ge)) HB
+               ltac:(apply sub_below_beta; [ Lia.lia | exact Ha ])
+               (length Ge') (up_renl rho) rho
+               (ren_val rho a :: id_list (length Ge')) Hok
+               ltac:(eapply RenShSc_beta;
+                       [ Lia.lia | apply ren_ok_le with (N := S (length Ge)); [ exact Hok | Lia.lia ]
+                       | apply ren_is_Apply_val ])).
+Qed.
