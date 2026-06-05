@@ -188,6 +188,100 @@ proof work hides. Scope it first.
 
 ---
 
+## 4b. STATUS UPDATE — runtime done + benchmarked (2026-06-05)
+
+**Runtime DONE** (src/Utils/EGraph/Defs.v, `Defs.vo` builds):
+- added `ne_map_idx` (position-indexed ne_list map);
+- `build_tries_for_symbol`/`build_tries` now produce the `(full,new,old)` triple
+  (`idx_map (idx_trie unit * idx_trie unit * idx_trie unit)`);
+- new `trie_of_clause_sn` selects old/new/full by `Nat.compare pos frontier_pos`;
+- new `process_erule'_sn` + rewritten `process_erule` = one `exec_write` pass per
+  frontier *position* over `seq 0 nclauses`, NO dedup trie;
+- `trie_of_clause`/`trie_of_clause'` kept (updated to destruct the triple).
+
+**To benchmark, the proof stack had to compile** (the positive engine
+`PositiveInstantiation` lives downstream of `Semantics`+`QueryOpt`, so `Defs.vo`
+alone is NOT runnable — the design's step-2 "build Defs.vo only" was a gap).
+`Semantics.v`'s ENTIRE breakage = the 5 build_tries lemmas (659–980); migrated
+their statements to the triple and **`Admitted` the bodies** (benchmark only —
+these are the real proofs to write in step 4). `QueryOpt.vo`/`Tools.EGraph.Defs.vo`
+then compile unchanged.
+
+**BENCHMARK (WIP/PerfBench.v, positive, monoid assoc+comm n=6; vm_compute):**
+Correctness preserved: `s_check = true`, `easy_check = Success tt`.
+
+| metric | raw (pre-Ph1) | Phase-1 dedup | **proper SN** |
+|---|---|---|---|
+| full solve s3..s6 | ~0.130s | ~0.030s | **~0.018s** |
+| expensive iter (oneiter_nr) | 0.244s | 0.118s | **0.091s** |
+| post-join worklist n=4/6/8 | 270/773/1369 | 52/108/168 | **34/74/116** |
+| build_tries (bt) | — | — | 0.008s |
+
+⇒ proper SN is ~1.6× faster than Phase-1 on the full solve and produces ~1.4×
+fewer redundant union entries (non-overlapping key sets). Real but **modest**
+marginal win over the already-committed Phase-1 (Phase 1 captured the big write
+win; SN adds smaller-join + exactly-once). jc=1089/jcd=299 unchanged (diagnostic,
+measured via the OLD `trie_of_clause`).
+
+## 4c. STATUS (2026-06-05, end of session) — Phase A DONE, downstream DEFERRED
+
+Decision (user): **commit the proven runtime + Phase A + benchmark; defer the
+join-layer migration to a later session.** Reason: the marginal ~1.6× win does
+not currently justify re-deriving the trie #4 join-correctness layer.
+
+**DONE & committed (this branch):**
+- Runtime: `src/Utils/EGraph/Defs.v` — triple tries, `ne_map_idx`,
+  `trie_of_clause_sn`, sn `process_erule`. `Defs.vo` builds.
+- Phase A: `src/Utils/EGraph/Semantics.v` — **8 lemmas now REAL `Qed`, 0 Admitted**:
+  the 5 migrated build_tries lemmas + `build_tries_for_symbol_old_subset`
+  + `build_tries_old_subset` + `clause_ptr_atom_in_db_sn` (3-way). `Semantics.vo`
+  builds clean.
+- `QueryOpt.vo` + `Pyrosome/Tools/EGraph/Defs.vo` rebuilt against the new
+  Defs+Semantics (their `Semantics` import is load-bearing via `sequent`).
+- Benchmark validated (PerfBench, §4b).
+
+**DEFERRED — downstream proof chain does NOT yet build against the new Defs.**
+The (full,new,old) triple type + sn `process_erule` break these files; each needs
+migration (mechanical — the hard generic join math `pt_spaced_intersect_correct`
+is already done and reused). Build order (bottom-up):
+
+1. `SemanticsProcessErule.v` — rewire. Add `query_clause_ptr_sound_sn`,
+   `query_atoms_sound_sn` (key by POSITION via `nth_error (uncurry cons
+   query_clause_ptrs) pos`, using `clause_ptr_atom_in_db_sn`), `process_erule'_sn_sound`
+   (mirror `process_erule'_sound` with `ne_map_idx (trie_of_clause_sn ... frontier_pos)`),
+   and rewrite `process_erule_sound` to induct over `seq 0 nclauses` calling
+   `process_erule'_sn_sound`. The old `trie_of_clause` chain (query_atoms_sound,
+   process_erule'_sound, exec_write_loop_sound) can stay (becomes dead, still
+   compiles). NEW `process_erule_sound` Hlen/Hsli premises (these set the
+   interface for everything downstream):
+   - `Hlen_sn`: `∀ frontier_pos sigma, In sigma (intersection_keys (ne_map_idx (fun pos ptr => trie_of_clause_sn ... (query_vars r) db_tries frontier_pos pos ptr) (query_clause_ptrs r))) → length (query_vars r) = length sigma`.
+   - `Hsli_sn`: same `In sigma …` antecedent, then `∀ pos fsym nptr cvars, nth_error (uncurry cons (query_clause_ptrs r)) pos = Some (Build_erule_query_ptr … fsym nptr cvars) → map.get (fst (trie_of_clause_sn … frontier_pos pos (Build_… fsym nptr cvars))) (proj sigma cvars) = Some tt`.
+2. `SemanticsSaturate.v` — `run1iter_rule_hyps` conjuncts 9,10 (currently lines
+   101–120, `trie_of_clause`/`frontier_n`) → the sn `Hlen_sn`/`Hsli_sn` shape above.
+   `run1iter_sound`'s destructure/call (lines 166–167) pass them positionally — should
+   still go through once the shapes match the new `process_erule_sound`.
+3. `BuildTriesDepth.v` — `bt_inv`/`build_tries_for_symbol_depth` (lines ~159–179)
+   destruct `ft as [full frontier]`; migrate to the triple `[[full new] old]` and
+   prove all THREE components have `fpt_depth … (clen cl)` (old is symmetric to
+   full/new — every `put` uses a `clen`-length key).
+4. `QueryOptSound.v` — `compiled_rules_run1iter_rule_hyps` (line 5110): its `H9`/`H10`
+   params (lines 5122–5153) → sn shape; they are still just threaded through
+   (`exact H9./exact H10.`), so only the param TYPES change to match conjuncts 9,10.
+5. `QcAlignment.v` (hardest, but mechanical) — migrate `trie_of_clause_depth`
+   (line 62; triple destruct + the `Nat.compare`-3-way for an sn variant
+   `trie_of_clause_sn_depth`), `intersection_inputs_combined_bools` (bools are
+   selection-INDEPENDENT = `variable_flags`, so identical), `trie_inputs_fpt_depth`
+   (now over old/new/full, all `clen`), `trie_intersect_depth`, and finally
+   `trie_join_H9`/`trie_join_H10` (lines 710/823) → sn variants
+   `trie_join_H9_sn`/`trie_join_H10_sn` over `ne_map_idx (trie_of_clause_sn …
+   frontier_pos)`, matching the `Hlen_sn`/`Hsli_sn` shape. Same generic
+   `compat_intersect`/`pt_spaced_intersect_correct` core.
+6. `Pyrosome/Tools/EGraph/Automation.v` — the two call sites (lines 430–431,
+   466–467) pass `QcAlignment.trie_join_H9/H10`; point them at the `_sn` variants.
+
+Then: full build to `Automation.vo`, `Print Assumptions egraph_sound` = "Closed
+under the global context", re-run PerfBench. See [[project_egraph_sound]].
+
 ## 5. Suggested next-session order
 
 1. **Resolve the position question** (Section 3.2): add `ne_combine`/indexed map

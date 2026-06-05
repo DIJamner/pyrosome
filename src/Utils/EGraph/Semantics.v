@@ -660,12 +660,13 @@ Section WithMap.
     (current_epoch : idx)
     (q_clauses : idx_map (list nat * nat))
     (tbl : idx_trie (db_entry idx analysis_result))
-    (n : idx) (clause : list nat * nat) (trie_pair : idx_trie unit * idx_trie unit)
+    (n : idx) (clause : list nat * nat)
+    (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit)
     (assignment : list idx) :
     map.get q_clauses n = Some clause ->
     map.get (build_tries_for_symbol idx Eqb_idx idx_map idx_map_plus idx_trie
                analysis_result current_epoch q_clauses tbl) n = Some trie_pair ->
-    map.get (fst trie_pair) assignment = Some tt ->
+    map.get (fst (fst trie_pair)) assignment = Some tt ->
     exists args entry,
       map.get tbl args = Some entry
       /\ match_clause clause args (entry.(entry_value idx analysis_result)) = Some assignment.
@@ -674,16 +675,16 @@ Section WithMap.
     intros Hqn Hget Hfull.
     revert trie_pair Hget Hfull.
     eapply (@map.fold_spec (list idx) (db_entry idx analysis_result) (idx_trie _) (idx_trie_ok _)
-      (idx_map (idx_trie unit * idx_trie unit))
+      (idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
       (fun tbl_processed tries =>
         forall trie_pair,
         map.get tries n = Some trie_pair ->
-        map.get (fst trie_pair) assignment = Some tt ->
+        map.get (fst (fst trie_pair)) assignment = Some tt ->
         exists args entry,
           map.get tbl_processed args = Some entry
           /\ match_clause clause args (entry_value idx analysis_result entry) = Some assignment));
       [ | ].
-    - (* Base case: accumulator = map_map (fun _ => (empty, empty)) q_clauses *)
+    - (* Base case: accumulator = map_map (fun _ => (empty, empty, empty)) q_clauses *)
       intros tp Htp Hfull.
       rewrite (@map_map_spec _ idx_map _ idx_map_plus_ok) in Htp.
       rewrite Hqn in Htp.
@@ -702,7 +703,7 @@ Section WithMap.
       2: { discriminate. }
       injection Hqn; intro; subst cl.
       injection Htp; intro; subst tp.
-      destruct tp_old as [ full_old frontier_old ].
+      destruct tp_old as [ [ full_old new_old ] old_old ].
       cbn [fst] in Hfull.
       destruct (match_clause clause k vv) as [ assignment0 | ] eqn:Hmatch.
       { (* Match succeeded: assignment0 was recorded in full *)
@@ -721,7 +722,7 @@ Section WithMap.
             rewrite Heqasg in Hbs.
             rewrite (get_put_diff_trie unit full_old assignment assignment0 tt
               (fun H => Hbs (eq_sym H))) in Hfull.
-            destruct (IH (full_old, frontier_old) eq_refl Hfull)
+            destruct (IH (full_old, new_old, old_old) eq_refl Hfull)
               as [ args [ entry [ Hargs Hentry ] ] ].
             exists args. exists entry.
             split.
@@ -743,7 +744,7 @@ Section WithMap.
             rewrite Heqasg in Hbs.
             rewrite (get_put_diff_trie unit full_old assignment assignment0 tt
               (fun H => Hbs (eq_sym H))) in Hfull.
-            destruct (IH (full_old, frontier_old) eq_refl Hfull)
+            destruct (IH (full_old, new_old, old_old) eq_refl Hfull)
               as [ args [ entry [ Hargs Hentry ] ] ].
             exists args. exists entry.
             split.
@@ -751,9 +752,9 @@ Section WithMap.
               ** exact Hargs.
               ** intro Heq'. subst args. rewrite Hnotk in Hargs. discriminate.
             * exact Hentry. }
-      { (* Match failed: (full, frontier) unchanged, use IH directly *)
+      { (* Match failed: triple unchanged, use IH directly *)
         cbn [fst] in Hfull.
-        destruct (IH (full_old, frontier_old) eq_refl Hfull)
+        destruct (IH (full_old, new_old, old_old) eq_refl Hfull)
           as [ args [ entry [ Hargs Hentry ] ] ].
         exists args. exists entry.
         split.
@@ -766,15 +767,15 @@ Section WithMap.
   Lemma build_tries_sound (q : rule_set idx symbol symbol_map idx_map)
     (inst : instance)
     (f : symbol) (n : idx) (clause : list nat * nat)
-    (clause_tries : idx_map (idx_trie unit * idx_trie unit))
-    (trie_pair : idx_trie unit * idx_trie unit) (assignment : list idx)
+    (clause_tries : idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
+    (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx)
     (q_f : idx_map (list nat * nat)) :
     map.get (q.(query_clauses idx symbol symbol_map idx_map)) f = Some q_f ->
     map.get q_f n = Some clause ->
     map.get (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
       idx_map idx_map_plus idx_trie analysis_result q inst)) f = Some clause_tries ->
     map.get clause_tries n = Some trie_pair ->
-    map.get (fst trie_pair) assignment = Some tt ->
+    map.get (fst (fst trie_pair)) assignment = Some tt ->
     exists args v,
       atom_in_db (Build_atom f args v) inst.(db)
       /\ match_clause clause args v = Some assignment.
@@ -807,22 +808,22 @@ Section WithMap.
   Lemma build_tries_for_symbol_frontier_subset
     (current_epoch : idx) (q_clauses : idx_map (list nat * nat))
     (tbl : idx_trie (db_entry idx analysis_result))
-    (n : idx) (trie_pair : idx_trie unit * idx_trie unit) (assignment : list idx) :
+    (n : idx) (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx) :
     map.get (build_tries_for_symbol idx Eqb_idx idx_map idx_map_plus idx_trie
                analysis_result current_epoch q_clauses tbl) n = Some trie_pair ->
-    map.get (snd trie_pair) assignment = Some tt ->
-    map.get (fst trie_pair) assignment = Some tt.
+    map.get (snd (fst trie_pair)) assignment = Some tt ->
+    map.get (fst (fst trie_pair)) assignment = Some tt.
   Proof.
     intros Hget Hfrontier.
     revert trie_pair Hget Hfrontier.
     unfold build_tries_for_symbol.
     eapply (@map.fold_spec (list idx) (db_entry idx analysis_result) (idx_trie _) (idx_trie_ok _)
-      (idx_map (idx_trie unit * idx_trie unit))
+      (idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
       (fun _tbl_processed tries =>
         forall tp,
         map.get tries n = Some tp ->
-        map.get (snd tp) assignment = Some tt ->
-        map.get (fst tp) assignment = Some tt));
+        map.get (snd (fst tp)) assignment = Some tt ->
+        map.get (fst (fst tp)) assignment = Some tt));
       [ | ].
     - (* Base case *)
       intros tp Htp Hfront.
@@ -830,7 +831,7 @@ Section WithMap.
       destruct (map.get q_clauses n) as [ cl | ] eqn:Hcl.
       + cbn [option_map] in Htp.
         injection Htp; intro; subst tp.
-        cbn [snd] in Hfront.
+        cbn [snd fst] in Hfront.
         rewrite (@map.get_empty _ _ _ (idx_trie_ok unit)) in Hfront.
         discriminate.
       + cbn [option_map] in Htp. discriminate.
@@ -843,10 +844,10 @@ Section WithMap.
       destruct (map.get q_clauses n) as [ cl | ] eqn:Hcl.
       2: { discriminate. }
       injection Htp; intro; subst tp.
-      destruct tp_old as [ full_old frontier_old ].
+      destruct tp_old as [ [ full_old new_old ] old_old ].
       destruct (match_clause cl k vv) as [ assignment0 | ] eqn:Hmatch.
       { destruct (eqb epoch current_epoch) eqn:Hepoch.
-        - (* epoch matches: frontier' = put frontier_old assignment0 tt *)
+        - (* epoch matches: new' = put new_old assignment0 tt *)
           cbn [fst snd] in *.
           destruct (eqb (assignment0 : list idx) assignment) eqn:Heqasg.
           + pose proof (@eqb_spec (list idx) (list_eqb (A:=idx))
@@ -856,17 +857,17 @@ Section WithMap.
           + pose proof (@eqb_spec (list idx) (list_eqb (A:=idx))
               (@list_eqb_ok idx Eqb_idx Eqb_idx_ok) assignment0 assignment) as Hbs.
             rewrite Heqasg in Hbs.
-            rewrite (get_put_diff_trie unit frontier_old assignment assignment0 tt
+            rewrite (get_put_diff_trie unit new_old assignment assignment0 tt
               (fun H => Hbs (eq_sym H))) in Hfront.
-            pose proof (IH (full_old, frontier_old) eq_refl) as HIH.
+            pose proof (IH (full_old, new_old, old_old) eq_refl) as HIH.
             cbn [fst snd] in HIH.
             pose proof (HIH Hfront) as Hfull_old.
             rewrite (get_put_diff_trie unit full_old assignment assignment0 tt
               (fun H => Hbs (eq_sym H))).
             exact Hfull_old.
-        - (* epoch doesn't match: frontier' = frontier_old unchanged *)
+        - (* epoch doesn't match: new' = new_old unchanged *)
           cbn [fst snd] in *.
-          pose proof (IH (full_old, frontier_old) eq_refl) as HIH.
+          pose proof (IH (full_old, new_old, old_old) eq_refl) as HIH.
           cbn [fst snd] in HIH.
           pose proof (HIH Hfront) as Hfull_old.
           destruct (eqb (assignment0 : list idx) assignment) eqn:Heqasg.
@@ -880,21 +881,21 @@ Section WithMap.
             rewrite (get_put_diff_trie unit full_old assignment assignment0 tt
               (fun H => Hbs (eq_sym H))).
             exact Hfull_old. }
-      { (* Match failed: pair unchanged *)
+      { (* Match failed: triple unchanged *)
         cbn [fst snd] in *.
-        exact (IH (full_old, frontier_old) eq_refl Hfront). }
+        exact (IH (full_old, new_old, old_old) eq_refl Hfront). }
   Qed.
 
   Lemma build_tries_frontier_subset (q : rule_set idx symbol symbol_map idx_map)
     (inst : instance)
     (f : symbol) (n : idx)
-    (clause_tries : idx_map (idx_trie unit * idx_trie unit))
-    (trie_pair : idx_trie unit * idx_trie unit) (assignment : list idx) :
+    (clause_tries : idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
+    (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx) :
     map.get (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
       idx_map idx_map_plus idx_trie analysis_result q inst)) f = Some clause_tries ->
     map.get clause_tries n = Some trie_pair ->
-    map.get (snd trie_pair) assignment = Some tt ->
-    map.get (fst trie_pair) assignment = Some tt.
+    map.get (snd (fst trie_pair)) assignment = Some tt ->
+    map.get (fst (fst trie_pair)) assignment = Some tt.
   Proof.
     intros Hbt_f Hct_n Hfront.
     unfold build_tries in Hbt_f. cbn [fst] in Hbt_f.
@@ -945,29 +946,232 @@ Section WithMap.
       fold db_tries in Hhit.
       rewrite Hf in Hhit.
       cbn [fst snd] in Hhit.
-      destruct (map.get trie_list n) as [ [ total frontier ] | ] eqn:Hn.
-      + (* map.get trie_list n = Some (total, frontier) *)
+      destruct (map.get trie_list n) as [ [ [ total new_ ] old_ ] | ] eqn:Hn.
+      + (* map.get trie_list n = Some (total, new_, old_) *)
         cbn [unwrap_with_default fst snd] in Hhit.
         destruct (eqb n frontier_n) eqn:Hn_eq.
-        * (* eqb n frontier_n = true, frontier case *)
+        * (* eqb n frontier_n = true, new_ case *)
           fold proj in Hhit.
-          assert (Hfull : map.get (fst (total, frontier)) proj = Some tt). {
-            apply (build_tries_frontier_subset q inst f n trie_list (total, frontier) proj Hf Hn).
+          assert (Hfull : map.get (fst (fst (total, new_, old_))) proj = Some tt). {
+            apply (build_tries_frontier_subset q inst f n trie_list (total, new_, old_) proj Hf Hn).
             exact Hhit.
           }
           cbn [fst] in Hfull.
-          pose proof (build_tries_sound q inst f n clause trie_list (total, frontier) proj q_f Hqf Hclause Hf Hn Hfull)
+          pose proof (build_tries_sound q inst f n clause trie_list (total, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
         * (* eqb n frontier_n = false, total case *)
           fold proj in Hhit.
-          pose proof (build_tries_sound q inst f n clause trie_list (total, frontier) proj q_f Hqf Hclause Hf Hn Hhit)
+          pose proof (build_tries_sound q inst f n clause trie_list (total, new_, old_) proj q_f Hqf Hclause Hf Hn Hhit)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
       + (* map.get trie_list n = None *)
         destruct (eqb n frontier_n) in Hhit;
+        cbn [fst] in Hhit;
+        rewrite (@map.get_empty _ _ _ (idx_trie_ok unit)) in Hhit;
+        discriminate.
+    - (* map.get db_tries f = None *)
+      fold db_tries in Hhit.
+      rewrite Hf in Hhit.
+      cbn [fst] in Hhit.
+      rewrite (@map.get_empty _ _ _ (idx_trie_ok unit)) in Hhit.
+      discriminate.
+  Qed.
+
+  (* OLD subset (mirror of *_frontier_subset for the [old] component): a hit in
+     [old] (= snd) implies a hit in [full] (= fst (fst)).  Needed for the proper
+     semi-naive 3-way selection where clauses before the frontier use [old]. *)
+  Lemma build_tries_for_symbol_old_subset
+    (current_epoch : idx) (q_clauses : idx_map (list nat * nat))
+    (tbl : idx_trie (db_entry idx analysis_result))
+    (n : idx) (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx) :
+    map.get (build_tries_for_symbol idx Eqb_idx idx_map idx_map_plus idx_trie
+               analysis_result current_epoch q_clauses tbl) n = Some trie_pair ->
+    map.get (snd trie_pair) assignment = Some tt ->
+    map.get (fst (fst trie_pair)) assignment = Some tt.
+  Proof.
+    intros Hget Hfront.
+    revert trie_pair Hget Hfront.
+    unfold build_tries_for_symbol.
+    eapply (@map.fold_spec (list idx) (db_entry idx analysis_result) (idx_trie _) (idx_trie_ok _)
+      (idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
+      (fun _tbl_processed tries =>
+        forall tp,
+        map.get tries n = Some tp ->
+        map.get (snd tp) assignment = Some tt ->
+        map.get (fst (fst tp)) assignment = Some tt));
+      [ | ].
+    - (* Base case *)
+      intros tp Htp Hfront.
+      rewrite (@map_map_spec _ idx_map _ idx_map_plus_ok) in Htp.
+      destruct (map.get q_clauses n) as [ cl | ] eqn:Hcl.
+      + cbn [option_map] in Htp.
+        injection Htp; intro; subst tp.
+        cbn [snd fst] in Hfront.
+        rewrite (@map.get_empty _ _ _ (idx_trie_ok unit)) in Hfront.
+        discriminate.
+      + cbn [option_map] in Htp. discriminate.
+    - (* Step case *)
+      intros k v m_partial r Hnotk IH tp Htp Hfront.
+      destruct v as [ epoch vv va ].
+      rewrite (@intersect_spec _ idx_map _ idx_map_plus_ok) in Htp.
+      destruct (map.get r n) as [ tp_old | ] eqn:Htp_old.
+      2: { destruct (map.get q_clauses n); discriminate. }
+      destruct (map.get q_clauses n) as [ cl | ] eqn:Hcl.
+      2: { discriminate. }
+      injection Htp; intro; subst tp.
+      destruct tp_old as [ [ full_old new_old ] old_old ].
+      destruct (match_clause cl k vv) as [ assignment0 | ] eqn:Hmatch.
+      { destruct (eqb epoch current_epoch) eqn:Hepoch.
+        - (* epoch matches: old' = old_old (unchanged), full' = put full_old asg0 *)
+          cbn [fst snd] in *.
+          (* Hfront : map.get old_old assignment = Some tt *)
+          pose proof (IH (full_old, new_old, old_old) eq_refl) as HIH.
+          cbn [fst snd] in HIH.
+          pose proof (HIH Hfront) as Hfull_old.
+          destruct (eqb (assignment0 : list idx) assignment) eqn:Heqasg.
+          + pose proof (@eqb_spec (list idx) (list_eqb (A:=idx))
+              (@list_eqb_ok idx Eqb_idx Eqb_idx_ok) assignment0 assignment) as Hbs.
+            rewrite Heqasg in Hbs. subst assignment0.
+            apply (@map.get_put_same _ _ _ (idx_trie_ok unit)).
+          + pose proof (@eqb_spec (list idx) (list_eqb (A:=idx))
+              (@list_eqb_ok idx Eqb_idx Eqb_idx_ok) assignment0 assignment) as Hbs.
+            rewrite Heqasg in Hbs.
+            rewrite (get_put_diff_trie unit full_old assignment assignment0 tt
+              (fun H => Hbs (eq_sym H))).
+            exact Hfull_old.
+        - (* epoch doesn't match: old' = put old_old asg0, full' = put full_old asg0 *)
+          cbn [fst snd] in *.
+          destruct (eqb (assignment0 : list idx) assignment) eqn:Heqasg.
+          + pose proof (@eqb_spec (list idx) (list_eqb (A:=idx))
+              (@list_eqb_ok idx Eqb_idx Eqb_idx_ok) assignment0 assignment) as Hbs.
+            rewrite Heqasg in Hbs. subst assignment0.
+            apply (@map.get_put_same _ _ _ (idx_trie_ok unit)).
+          + pose proof (@eqb_spec (list idx) (list_eqb (A:=idx))
+              (@list_eqb_ok idx Eqb_idx Eqb_idx_ok) assignment0 assignment) as Hbs.
+            rewrite Heqasg in Hbs.
+            rewrite (get_put_diff_trie unit old_old assignment assignment0 tt
+              (fun H => Hbs (eq_sym H))) in Hfront.
+            pose proof (IH (full_old, new_old, old_old) eq_refl) as HIH.
+            cbn [fst snd] in HIH.
+            pose proof (HIH Hfront) as Hfull_old.
+            rewrite (get_put_diff_trie unit full_old assignment assignment0 tt
+              (fun H => Hbs (eq_sym H))).
+            exact Hfull_old. }
+      { (* Match failed: triple unchanged *)
+        cbn [fst snd] in *.
+        exact (IH (full_old, new_old, old_old) eq_refl Hfront). }
+  Qed.
+
+  Lemma build_tries_old_subset (q : rule_set idx symbol symbol_map idx_map)
+    (inst : instance)
+    (f : symbol) (n : idx)
+    (clause_tries : idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
+    (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx) :
+    map.get (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+      idx_map idx_map_plus idx_trie analysis_result q inst)) f = Some clause_tries ->
+    map.get clause_tries n = Some trie_pair ->
+    map.get (snd trie_pair) assignment = Some tt ->
+    map.get (fst (fst trie_pair)) assignment = Some tt.
+  Proof.
+    intros Hbt_f Hct_n Hfront.
+    unfold build_tries in Hbt_f. cbn [fst] in Hbt_f.
+    rewrite (@intersect_spec _ symbol_map _ symbol_map_plus_ok) in Hbt_f.
+    destruct (map.get (query_clauses idx symbol symbol_map idx_map q) f) as [ q_f | ] eqn:Hqf.
+    - destruct (map.get inst.(db) f) as [ tbl | ] eqn:Htbl.
+      + unfold db_map in Htbl.
+        rewrite Htbl in Hbt_f.
+        injection Hbt_f; intro; subst clause_tries.
+        apply (build_tries_for_symbol_old_subset (inst.(epoch)) q_f tbl n trie_pair assignment
+          Hct_n Hfront).
+      + unfold db_map in Htbl.
+        rewrite Htbl in Hbt_f.
+        cbn in Hbt_f. discriminate.
+    - cbn in Hbt_f. discriminate.
+  Qed.
+
+  (* 3-way version of clause_ptr_atom_in_db for the proper semi-naive selection
+     [trie_of_clause_sn frontier_pos pos]: a hit in the selected trie
+     (old if pos<frontier_pos, new if =, full if >) reduces to a db atom via the
+     subset lemmas + build_tries_sound. *)
+  Lemma clause_ptr_atom_in_db_sn
+    (q : rule_set idx symbol symbol_map idx_map) (inst : instance)
+    (query_vars : list idx) (frontier_pos pos : nat)
+    (f : symbol) (n : idx) (clause_vars : list idx)
+    (q_f : idx_map (list nat * nat)) (clause : list nat * nat)
+    (sigma : list idx) :
+    map.get (query_clauses idx symbol symbol_map idx_map q) f = Some q_f ->
+    map.get q_f n = Some clause ->
+    map.get (fst (trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
+                    query_vars
+                    (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result q inst))
+                    frontier_pos pos (Build_erule_query_ptr idx symbol f n clause_vars)))
+            (map fst (filter snd (combine sigma
+               (variable_flags idx Eqb_idx query_vars clause_vars))))
+          = Some tt ->
+    exists args v,
+      atom_in_db (Build_atom f args v) inst.(db)
+      /\ match_clause clause args v
+         = Some (map fst (filter snd (combine sigma
+                   (variable_flags idx Eqb_idx query_vars clause_vars)))).
+  Proof.
+    intros Hqf Hclause Hhit.
+    unfold trie_of_clause_sn in Hhit.
+    cbn [fst snd] in Hhit.
+    set (proj := map fst (filter snd (combine sigma (variable_flags idx Eqb_idx query_vars clause_vars)))).
+    set (db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result q inst)).
+    destruct (map.get db_tries f) as [ trie_list | ] eqn:Hf.
+    - (* Some trie_list case *)
+      fold db_tries in Hhit.
+      rewrite Hf in Hhit.
+      cbn [fst snd] in Hhit.
+      destruct (map.get trie_list n) as [ [ [ full new_ ] old_ ] | ] eqn:Hn.
+      + (* map.get trie_list n = Some (full, new_, old_) *)
+        cbn [unwrap_with_default fst snd] in Hhit.
+        destruct (Nat.compare pos frontier_pos) eqn:Hcmp.
+        * (* Eq: Hhit is a hit in new_ (Nat.compare Eq is first constructor) *)
+          fold proj in Hhit.
+          assert (Hhit' : map.get (snd (fst (full, new_, old_))) proj = Some tt). {
+            cbn [fst snd]. exact Hhit.
+          }
+          assert (Hfull : map.get (fst (fst (full, new_, old_))) proj = Some tt). {
+            apply (build_tries_frontier_subset q inst f n trie_list (full, new_, old_) proj Hf Hn).
+            exact Hhit'.
+          }
+          cbn [fst] in Hfull.
+          pose proof (build_tries_sound q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
+            as [ args [ v [Hdb Hmatch] ] ].
+          exists args. exists v.
+          exact (conj Hdb Hmatch).
+        * (* Lt: Hhit is a hit in old_ *)
+          fold proj in Hhit.
+          assert (Hhit_old : map.get (snd (full, new_, old_)) proj = Some tt). {
+            cbn [fst snd]. exact Hhit.
+          }
+          assert (Hfull : map.get (fst (fst (full, new_, old_))) proj = Some tt). {
+            apply (build_tries_old_subset q inst f n trie_list (full, new_, old_) proj Hf Hn).
+            exact Hhit_old.
+          }
+          cbn [fst] in Hfull.
+          pose proof (build_tries_sound q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
+            as [ args [ v [Hdb Hmatch] ] ].
+          exists args. exists v.
+          exact (conj Hdb Hmatch).
+        * (* Gt: Hhit is a hit in full *)
+          fold proj in Hhit.
+          assert (Hhit_full : map.get (fst (fst (full, new_, old_))) proj = Some tt). {
+            cbn [fst snd]. exact Hhit.
+          }
+          pose proof (build_tries_sound q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hhit_full)
+            as [ args [ v [Hdb Hmatch] ] ].
+          exists args. exists v.
+          exact (conj Hdb Hmatch).
+      + (* map.get trie_list n = None *)
+        destruct (Nat.compare pos frontier_pos) in Hhit;
         cbn [fst] in Hhit;
         rewrite (@map.get_empty _ _ _ (idx_trie_ok unit)) in Hhit;
         discriminate.

@@ -16,6 +16,15 @@ Notation ne_list A := (A * list A)%type.
 Definition ne_map {A B} (f : A -> B) (l : ne_list A) : ne_list B :=
   (f (fst l), map f (snd l)).
 
+(* Indexed map over a non-empty list: the head gets position 0 and the
+   tail elements get positions 1,2,.... Used for the proper semi-naive
+   (OLD/NEW/TOTAL) frontier selection, where each clause's *position* in
+   query_clause_ptrs (not its per-symbol hash-cons id) drives the choice. *)
+Definition ne_map_idx {A B} (f : nat -> A -> B) (l : ne_list A) : ne_list B :=
+  (f 0 (fst l),
+    List.map (fun p => f (fst p) (snd p))
+      (List.combine (List.seq 1 (List.length (snd l))) (snd l))).
+
 (*TODO: move*)
 #[export] Instance dlist_default : WithDefault dlist := dnil.
 
@@ -508,13 +517,20 @@ Section WithMap.
   (* build all the tries for a given symbol at once
      TODO: likely bug returning leaf in some cases
    *)
+  (* Per clause id, a triple (full, new, old):
+       full = every matching assignment;
+       new  = matched via an entry with epoch = current_epoch (the delta);
+       old  = matched via an entry with epoch <> current_epoch.
+     Since each (symbol,args) has exactly one entry/epoch, full partitions
+     into new (epoch = current) and old (epoch <> current).  The proper
+     semi-naive frontier selection picks one of the three by clause position. *)
   Definition build_tries_for_symbol
     (current_epoch : idx)
     (q_clauses : idx_map (list nat * nat))
     (tbl : idx_trie db_entry)
-    : idx_map (idx_trie unit * idx_trie unit) (* full * frontier *)
-    :=    
-    let upd_trie_pair (args : list idx) '(Build_db_entry epoch v a) '(full, frontier) clause :=
+    : idx_map (idx_trie unit * idx_trie unit * idx_trie unit) (* full * new * old *)
+    :=
+    let upd_trie_pair (args : list idx) '(Build_db_entry epoch v a) '(full, new, old) clause :=
       match match_clause clause args v with
       | Some assignment =>
           (* TODO: possible issue w/ tuple ordering
@@ -522,15 +538,16 @@ Section WithMap.
            *)
           let full' : idx_trie unit := map.put full assignment tt in
           if eqb epoch current_epoch
-          then (full', map.put frontier assignment tt)
-          else (full', frontier)
-      | None => (full, frontier)
-      end          
-    in  
+          then (full', map.put new assignment tt, old)
+          else (full', new, map.put old assignment tt)
+      | None => (full, new, old)
+      end
+    in
     map.fold (fun tries args vp => map_intersect (upd_trie_pair args vp) tries q_clauses)
-      (map_map (fun _ => (map.empty, map.empty : idx_trie unit)) q_clauses) tbl.
+      (map_map (fun _ => (map.empty, map.empty, map.empty : idx_trie unit)) q_clauses) tbl.
 
-  Definition build_tries (q : rule_set) : ST (symbol_map (idx_map (idx_trie unit * idx_trie unit))) :=
+  Definition build_tries (q : rule_set)
+    : ST (symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit))) :=
     fun i => (map_intersect (build_tries_for_symbol i.(epoch)) q.(query_clauses) i.(db), i).
 
   Context (spaced_list_intersect
@@ -557,23 +574,51 @@ Section WithMap.
 
   Definition trie_of_clause
     (query_vars : list idx)
-    (* each trie pair is (total, frontier) *)
-    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (* each trie triple is (total, new, old) *)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
     (frontier_n : idx)
     '(Build_erule_query_ptr f n clause_vars) : idx_trie unit * list bool :=
     let flags := variable_flags query_vars clause_vars in
     (* If f is not in db_tries, it means the DB contains no matching nodes *)
     match map.get db_tries f with
     | Some trie_list =>
-        let (total,frontier) := unwrap_with_default (map.get trie_list n) in
-        let inner_trie := if eqb (n : idx) frontier_n then frontier else total in
+        let '(total, new, old) := unwrap_with_default (map.get trie_list n) in
+        let inner_trie := if eqb (n : idx) frontier_n then new else total in
+        (inner_trie, flags)
+    | None => (map.empty, flags)
+    end.
+
+  (* Proper semi-naive clause selection: each clause is tagged with its
+     POSITION in the query (not its per-symbol hash-cons id n).  Given the
+     frontier position [frontier_pos], a clause at position [pos] picks
+       old  (pos < frontier_pos),
+       new  (pos = frontier_pos),
+       full (pos > frontier_pos).
+     This realizes  OLD_0 .. OLD_{i-1} /\ NEW_i /\ TOTAL_{i+1} .. TOTAL_{k-1},
+     so every new match is generated exactly once (at i = min new-clause). *)
+  Definition trie_of_clause_sn
+    (query_vars : list idx)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
+    (frontier_pos : nat)
+    (pos : nat)
+    '(Build_erule_query_ptr f n clause_vars) : idx_trie unit * list bool :=
+    let flags := variable_flags query_vars clause_vars in
+    match map.get db_tries f with
+    | Some trie_list =>
+        let '(full, new, old) := unwrap_with_default (map.get trie_list n) in
+        let inner_trie :=
+          match Nat.compare pos frontier_pos with
+          | Lt => old
+          | Eq => new
+          | Gt => full
+          end in
         (inner_trie, flags)
     | None => (map.empty, flags)
     end.
   
   Definition process_erule'
-    (* each trie pair is (total, frontier) *)
-    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (* each trie triple is (total, new, old) *)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
     (r : erule) (frontier_n : idx) : ST unit :=
     let tries : ne_list _ :=
       ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
@@ -583,11 +628,25 @@ Section WithMap.
 
   (* The match keys for a single frontier choice (no writes). *)
   Definition erule_frontier_keys
-    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
     (r : erule) (frontier_n : idx) : list (list idx) :=
     intersection_keys
       (ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
          r.(query_clause_ptrs)).
+
+  (* One frontier position of the proper semi-naive scan: intersect the
+     position-indexed tries (OLD prefix / NEW pivot / TOTAL suffix) and
+     exec_write each resulting key.  No dedup trie: by min-index, each new
+     match appears in exactly one frontier position. *)
+  Definition process_erule'_sn
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
+    (r : erule) (frontier_pos : nat) : ST unit :=
+    let tries : ne_list _ :=
+      ne_map_idx (fun pos ptr =>
+                    trie_of_clause_sn r.(query_vars) db_tries frontier_pos pos ptr)
+        r.(query_clause_ptrs) in
+    let assignments : list _ := intersection_keys tries in
+    list_Miter (M:=ST) (exec_write r) assignments.
 
   (*TODO: avoid using this*)
   Fixpoint idx_of_nat n :=
@@ -596,22 +655,13 @@ Section WithMap.
     | S n => idx_succ (idx_of_nat n)
     end.
 
-  (* The semi-naive frontier loop double-counts: a match with k new clauses is
-     found once per frontier choice that lands on a new clause (it uses the
-     TOTAL trie for every non-frontier clause).  Since [exec_write] is
-     idempotent on a repeated assignment (it only re-allocates garbage idxs that
-     are immediately unioned away), we aggregate the keys from every frontier
-     choice into a single [idx_trie] (whose keys are unique [list idx]
-     assignments) and [exec_write] each exactly once. *)
+  (* Proper semi-naive evaluation: scan one frontier position per clause.
+     Position i intersects OLD_0..OLD_{i-1} /\ NEW_i /\ TOTAL_{i+1}.. .  By the
+     min-index argument every new match is produced in exactly one position, so
+     no post-hoc dedup trie is needed — just exec_write each key per position. *)
   Definition process_erule db_tries r : ST unit :=
     let nclauses := List.length (uncurry cons r.(query_clause_ptrs)) in
-    let seen : idx_trie unit :=
-      List.fold_left
-        (fun acc n =>
-           List.fold_left (fun acc' k => map.put acc' k tt)
-             (erule_frontier_keys db_tries r (idx_of_nat n)) acc)
-        (seq 0 nclauses) map.empty in
-    list_Miter (M:=ST) (exec_write r) (map.keys seen).
+    list_Miter (M:=ST) (process_erule'_sn db_tries r) (seq 0 nclauses).
 
   (* TODO: return the new epoch?  *)
   Definition increment_epoch : ST unit :=
@@ -791,14 +841,14 @@ Section WithMap.
   
   Definition trie_of_clause'
     (query_vars : list idx)
-    (* each trie pair is (total, frontier) *)
-    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (* each trie triple is (total, new, old) *)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
     '(Build_erule_query_ptr f n clause_vars) : idx_trie unit * list bool :=
     let flags := variable_flags query_vars clause_vars in
     match map.get db_tries f with
     | Some trie_list =>
         (* never use the frontier*)
-        let (total,_) := unwrap_with_default (map.get trie_list n) in
+        let '(total, _, _) := unwrap_with_default (map.get trie_list n) in
         let flags := variable_flags query_vars clause_vars in
         (total, flags)
     | None => (map.empty, flags)
