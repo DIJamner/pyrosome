@@ -68,7 +68,7 @@ Proof.
     + specialize (IHB rB lB eq_refl). cbn [length] in IHB.
       rewrite length_map in IHB. exact IHB.
   - (* t_lam *) intros Ge F B b rF lF hF IHF hb IHb r l Heq. discriminate Heq.
-  - (* t_lamI *) intros Ge F B b hb IHb r l Heq. discriminate Heq.
+  - (* t_lamI *) intros Ge F B b rF lF hF IHF hb IHb r l Heq. discriminate Heq.
   - (* t_lam_eta *) intros Ge F B b ARG B' rF lF hF IHF HR Hap hb IHb r l Heq. discriminate Heq.
   - (* n_var *) intros Ge k T He r l Heq. cbn [ne_below_ne].
     apply (proj1 (nth_error_Some Ge k)). rewrite He. discriminate.

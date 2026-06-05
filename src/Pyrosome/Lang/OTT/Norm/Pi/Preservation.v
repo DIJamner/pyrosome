@@ -611,10 +611,11 @@ Proof.
     + pose proof (IHb (S c) (shift_ty 0 1 T0)
                    ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
       rewrite wk_ctx_under_binder in IH. exact IH.
-  - (* t_lamI *) intros Ge F B b hb IHb c T0 Hc. cbn. apply t_lamI.
-    pose proof (IHb (S c) (shift_ty 0 1 T0)
-                 ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
-    rewrite wk_ctx_under_binder in IH. exact IH.
+  - (* t_lamI *) intros Ge F B b rF lF hF IHF hb IHb c T0 Hc. cbn. eapply t_lamI.
+    + exact (IHF c T0 Hc).
+    + pose proof (IHb (S c) (shift_ty 0 1 T0)
+                   ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
+      rewrite wk_ctx_under_binder in IH. exact IH.
   - (* t_lam_eta *) intros Ge F B b ARG B' rF lF hF IHF HR Hap Hb IHb c T0 Hc.
     cbn [shift_val shift_ty].
     assert (HL : length (wk_ctx c T0 Ge) = S (length Ge))
