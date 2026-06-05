@@ -57,7 +57,8 @@ Proof.
                   split; apply (wf_dEl (r:=r) (l:=l)); apply t_ne; assumption.
   - (* LRpiI *)   split; assumption.
   - (* LRpi *)    split; assumption.
-  - (* LRU *)     split; apply wf_dU.
+  - (* LRU0 *)    split; apply wf_dU.
+  - (* LRU1 *)    split; apply wf_dU.
 Qed.
 
 Lemma RedTmEq_wf : forall Ge A B a b,
@@ -70,7 +71,8 @@ Proof.
                   exact (RedNeutralEq_wf Pab).
   - (* LRpiI *)   destruct Pab as [Hf Hg]; split; assumption.
   - (* LRpi *)    destruct Pab as [[Hf Hg] _]; split; assumption.
-  - (* LRU *)     destruct Pab as [[Hc Hd] _]; split; assumption.
+  - (* LRU0 *)    destruct Pab as [[Hc Hd] _]; split; assumption.
+  - (* LRU1 *)    destruct Pab as [[Hc Hd] _]; split; assumption.
 Qed.
 
 (* ===================================================================== *)

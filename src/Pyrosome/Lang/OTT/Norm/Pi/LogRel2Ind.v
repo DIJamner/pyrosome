@@ -23,22 +23,22 @@ Notation term := (@term string).
 Unset Implicit Arguments.
 
 Section LRInduction.
-  Context (lvl : TypeLevel) (rec : forall l', TLlt l' lvl -> RedRel).
-  Context (M : forall Ge A B P, @LR lvl rec Ge A B P -> Type).
+  Context (lvl : TypeLevel) (rec0 rec1 : RedRel).
+  Context (M : forall Ge A B P, @LR lvl rec0 rec1 Ge A B P -> Type).
 
   Context
-    (mnat   : forall Ge, M _ _ _ _ (@LRnat lvl rec Ge))
-    (mempty : forall Ge, M _ _ _ _ (@LRempty lvl rec Ge))
+    (mnat   : forall Ge, M _ _ _ _ (@LRnat lvl rec0 rec1 Ge))
+    (mempty : forall Ge, M _ _ _ _ (@LRempty lvl rec0 rec1 Ge))
     (mne    : forall Ge n m r l (c : NeConv Ge (dU r l) n m),
-                M _ _ _ _ (@LRne lvl rec Ge n m r l c))
+                M _ _ _ _ (@LRne lvl rec0 rec1 Ge n m r l c))
     (mpiI   : forall Ge FA BA FB BB
                 (wA : wf_svalty Ge (dEl (vPiI FA BA)))
                 (wB : wf_svalty Ge (dEl (vPiI FB BB))),
-                M _ _ _ _ (@LRpiI lvl rec Ge FA BA FB BB wA wB))
+                M _ _ _ _ (@LRpiI lvl rec0 rec1 Ge FA BA FB BB wA wB))
     (mpi    : forall Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB)
                 (wpiA : wf_svalty Ge (dEl (vPi FA BA)))
                 (wpiB : wf_svalty Ge (dEl (vPi FB BB)))
-                (ad : PolyRedPackAdequate (@LR lvl rec) PA),
+                (ad : PolyRedPackAdequate (@LR lvl rec0 rec1) PA),
                 (forall Delta sg FA' FB' (ws : wf_ssub Delta sg Ge)
                         (afA : Apply_val (length Delta) sg FA FA')
                         (afB : Apply_val (length Delta) sg FB FB'),
@@ -48,22 +48,25 @@ Section LRInduction.
                         (afB : Apply_val (length Delta) sg FB FB')
                         (rab : redTmEq (shpRed PA ws afA afB) a b),
                     M _ _ _ _ (posAd ad ws afA afB rab)) ->
-                M _ _ _ _ (@LRpi lvl rec Ge FA BA FB BB PA wpiA wpiB ad))
-    (mU     : forall Ge r l (h : TLlt (lvl_of l) lvl),
-                M _ _ _ _ (@LRU lvl rec Ge r l h)).
+                M _ _ _ _ (@LRpi lvl rec0 rec1 Ge FA BA FB BB PA wpiA wpiB ad))
+    (mU0    : forall Ge r l (h : TLlt tl0 lvl) (e : lvl_of l = tl0),
+                M _ _ _ _ (@LRU0 lvl rec0 rec1 Ge r l h e))
+    (mU1    : forall Ge r l (h : TLlt tl1 lvl) (e : lvl_of l = tl1),
+                M _ _ _ _ (@LRU1 lvl rec0 rec1 Ge r l h e)).
 
-  Fixpoint LR_mut Ge A B P (H : @LR lvl rec Ge A B P) {struct H} : M _ _ _ _ H :=
+  Fixpoint LR_mut Ge A B P (H : @LR lvl rec0 rec1 Ge A B P) {struct H} : M _ _ _ _ H :=
     match H as H0 return M _ _ _ _ H0 with
-    | @LRnat _ _ Ge0              => mnat Ge0
-    | @LRempty _ _ Ge0            => mempty Ge0
-    | @LRne _ _ Ge0 n m r l c     => mne Ge0 n m r l c
-    | @LRpiI _ _ Ge0 FA BA FB BB wA wB => mpiI Ge0 FA BA FB BB wA wB
-    | @LRpi _ _ Ge0 FA BA FB BB PA wpiA wpiB ad =>
+    | @LRnat _ _ _ Ge0              => mnat Ge0
+    | @LRempty _ _ _ Ge0           => mempty Ge0
+    | @LRne _ _ _ Ge0 n m r l c    => mne Ge0 n m r l c
+    | @LRpiI _ _ _ Ge0 FA BA FB BB wA wB => mpiI Ge0 FA BA FB BB wA wB
+    | @LRpi _ _ _ Ge0 FA BA FB BB PA wpiA wpiB ad =>
         mpi Ge0 FA BA FB BB PA wpiA wpiB ad
           (fun Delta sg FA' FB' ws afA afB => LR_mut _ _ _ _ (shpAd ad ws afA afB))
           (fun Delta sg a b FA' FB' ws afA afB rab =>
              LR_mut _ _ _ _ (posAd ad ws afA afB rab))
-    | @LRU _ _ Ge0 r l h          => mU Ge0 r l h
+    | @LRU0 _ _ _ Ge0 r l h e      => mU0 Ge0 r l h e
+    | @LRU1 _ _ _ Ge0 r l h e      => mU1 Ge0 r l h e
     end.
 
 End LRInduction.

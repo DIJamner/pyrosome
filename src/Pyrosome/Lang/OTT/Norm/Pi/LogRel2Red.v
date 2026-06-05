@@ -48,30 +48,37 @@ Qed.
 (* ===================================================================== *)
 
 Definition redTyEq_nat Ge : RedTyEq Ge (dEl vNat) (dEl vNat) :=
-  existT _ (RedNatEq Ge) (@LRnat tl2 rec2 Ge).
+  existT _ (RedNatEq Ge) (@LRnat tl2 LR0 LR1 Ge).
 
 Definition redTyEq_empty Ge : RedTyEq Ge (dEl vEmpty) (dEl vEmpty) :=
-  existT _ (RedNeutralEq Ge (dEl vEmpty)) (@LRempty tl2 rec2 Ge).
+  existT _ (RedNeutralEq Ge (dEl vEmpty)) (@LRempty tl2 LR0 LR1 Ge).
 
 Definition redTyEq_neEl Ge n m r l (c : NeConv Ge (dU r l) n m)
   : RedTyEq Ge (dEl (vNe n)) (dEl (vNe m)) :=
-  existT _ (RedNeutralEq Ge (dEl (vNe n))) (@LRne tl2 rec2 Ge n m r l c).
+  existT _ (RedNeutralEq Ge (dEl (vNe n))) (@LRne tl2 LR0 LR1 Ge n m r l c).
 
 Definition redTyEq_piI Ge FA BA FB BB
            (wA : wf_svalty Ge (dEl (vPiI FA BA)))
            (wB : wf_svalty Ge (dEl (vPiI FB BB)))
   : RedTyEq Ge (dEl (vPiI FA BA)) (dEl (vPiI FB BB)) :=
-  existT _ _ (@LRpiI tl2 rec2 Ge FA BA FB BB wA wB).
+  existT _ _ (@LRpiI tl2 LR0 LR1 Ge FA BA FB BB wA wB).
 
 Definition redTyEq_pi Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB)
            (wpiA : wf_svalty Ge (dEl (vPi FA BA)))
            (wpiB : wf_svalty Ge (dEl (vPi FB BB)))
            (ad : PolyRedPackAdequate LR2 PA)
   : RedTyEq Ge (dEl (vPi FA BA)) (dEl (vPi FB BB)) :=
-  existT _ (PiRedTmEq PA) (@LRpi tl2 rec2 Ge FA BA FB BB PA wpiA wpiB ad).
+  existT _ (PiRedTmEq PA) (@LRpi tl2 LR0 LR1 Ge FA BA FB BB PA wpiA wpiB ad).
 
-Definition redTyEq_U Ge r l : RedTyEq Ge (dU r l) (dU r l) :=
-  existT _ _ (@LRU tl2 rec2 Ge r l (lvl_of_lt2 l)).
+(* [LRU] is now split per source level; pick the constructor matching
+   [lvl_of l] ([tl2] is impossible by [lvl_of_ne2]). *)
+Definition redTyEq_U Ge r l : RedTyEq Ge (dU r l) (dU r l).
+Proof.
+  destruct (lvl_of l) eqn:E.
+  - exact (existT _ _ (@LRU0 tl2 LR0 LR1 Ge r l lt02 E)).
+  - exact (existT _ _ (@LRU1 tl2 LR0 LR1 Ge r l lt12 E)).
+  - exfalso; exact (lvl_of_ne2 l E).
+Defined.
 
 (* ===================================================================== *)
 (* [RedTmEq] smart constructors.                                           *)
@@ -79,17 +86,17 @@ Definition redTyEq_U Ge r l : RedTyEq Ge (dU r l) (dU r l) :=
 
 Definition redTmEq_nat Ge a b (h : RedNatEq Ge a b)
   : RedTmEq Ge (dEl vNat) (dEl vNat) a b :=
-  existT _ (RedNatEq Ge) (@LRnat tl2 rec2 Ge, h).
+  existT _ (RedNatEq Ge) (@LRnat tl2 LR0 LR1 Ge, h).
 
 Definition redTmEq_empty Ge n m (c : NeConv Ge (dEl vEmpty) n m)
   : RedTmEq Ge (dEl vEmpty) (dEl vEmpty) (vNe n) (vNe m) :=
-  existT _ (RedNeutralEq Ge (dEl vEmpty)) (@LRempty tl2 rec2 Ge, rneT c).
+  existT _ (RedNeutralEq Ge (dEl vEmpty)) (@LRempty tl2 LR0 LR1 Ge, rneT c).
 
 Definition redTmEq_neEl Ge n m r l (c : NeConv Ge (dU r l) n m) p q
            (cpq : NeConv Ge (dEl (vNe n)) p q)
   : RedTmEq Ge (dEl (vNe n)) (dEl (vNe m)) (vNe p) (vNe q) :=
   existT _ (RedNeutralEq Ge (dEl (vNe n)))
-         (@LRne tl2 rec2 Ge n m r l c, rneT cpq).
+         (@LRne tl2 LR0 LR1 Ge n m r l c, rneT cpq).
 
 Definition redTmEq_piI Ge FA BA FB BB
            (wA : wf_svalty Ge (dEl (vPiI FA BA)))
@@ -97,7 +104,7 @@ Definition redTmEq_piI Ge FA BA FB BB
            (hf : has_svalty Ge f (dEl (vPiI FA BA)))
            (hg : has_svalty Ge g (dEl (vPiI FB BB)))
   : RedTmEq Ge (dEl (vPiI FA BA)) (dEl (vPiI FB BB)) f g :=
-  existT _ _ (@LRpiI tl2 rec2 Ge FA BA FB BB wA wB, (hf, hg)).
+  existT _ _ (@LRpiI tl2 LR0 LR1 Ge FA BA FB BB wA wB, (hf, hg)).
 
 Definition redTmEq_pi Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB)
            (wpiA : wf_svalty Ge (dEl (vPi FA BA)))
@@ -105,7 +112,7 @@ Definition redTmEq_pi Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB)
            (ad : PolyRedPackAdequate LR2 PA) f g
            (h : PiRedTmEq PA f g)
   : RedTmEq Ge (dEl (vPi FA BA)) (dEl (vPi FB BB)) f g :=
-  existT _ (PiRedTmEq PA) (@LRpi tl2 rec2 Ge FA BA FB BB PA wpiA wpiB ad, h).
+  existT _ (PiRedTmEq PA) (@LRpi tl2 LR0 LR1 Ge FA BA FB BB PA wpiA wpiB ad, h).
 
 (* ===================================================================== *)
 (* Conversions between the two reducible carriers.                         *)

@@ -48,18 +48,18 @@ Proof.
 Qed.
 
 Section Irrelevance.
-  Context (lvl : TypeLevel) (rec : forall l', TLlt l' lvl -> RedRel).
+  Context (lvl : TypeLevel) (rec0 rec1 : RedRel).
 
   (* Bidirectional irrelevance carrier: for a derivation [H : LR Ge A B P], any
      OTHER derivation [H' : LR Ge A B P'] at the SAME type pair has a relation
      [P'] equivalent to [P].  The bidirection is essential: the Pi case must
      convert a swapped-pack domain membership [PA' -> PA] (the [snd] map). *)
   Definition IrrCar Ge (A B : svalty) (P : sval -> sval -> Type) : Type :=
-    forall P' (H' : @LR lvl rec Ge A B P'),
+    forall P' (H' : @LR lvl rec0 rec1 Ge A B P'),
       ( (forall a b, P a b -> P' a b)
       * (forall a b, P' a b -> P a b) )%type.
 
-  Lemma LR_irrelevant_gen : forall Ge A B P (H : @LR lvl rec Ge A B P),
+  Lemma LR_irrelevant_gen : forall Ge A B P (H : @LR lvl rec0 rec1 Ge A B P),
       IrrCar Ge A B P.
   Proof.
     intros Ge A B P H.
@@ -90,7 +90,7 @@ Section Irrelevance.
           by (eapply Apply_val_det; [exact (posAppA PA rab) | exact (posAppA PA0 rab0)]).
         assert (EB : posTyB PA rab = posTyB PA0 rab0)
           by (eapply Apply_val_det; [exact (posAppB PA rab) | exact (posAppB PA0 rab0)]).
-        assert (Had0' : LR rec Delta (dEl (posTyA PA rab)) (dEl (posTyB PA rab))
+        assert (Had0' : @LR lvl rec0 rec1 Delta (dEl (posTyA PA rab)) (dEl (posTyB PA rab))
                           (redTmEq (posPack PA0 rab0)))
           by (rewrite EA, EB; exact (posAd X1 ws afA afB rab0)).
         exists v, w; refine ((Vf, Vg), _).
@@ -106,15 +106,21 @@ Section Irrelevance.
           by (eapply Apply_val_det; [exact (posAppA PA rab) | exact (posAppA PA0 rab0)]).
         assert (EB : posTyB PA rab = posTyB PA0 rab0)
           by (eapply Apply_val_det; [exact (posAppB PA rab) | exact (posAppB PA0 rab0)]).
-        assert (Had0' : LR rec Delta (dEl (posTyA PA rab)) (dEl (posTyB PA rab))
+        assert (Had0' : @LR lvl rec0 rec1 Delta (dEl (posTyA PA rab)) (dEl (posTyB PA rab))
                           (redTmEq (posPack PA0 rab0)))
           by (rewrite EA, EB; exact (posAd X1 ws afA afB rab0)).
         exists v, w; refine ((Vf, Vg), _).
         exact (snd (X0 Delta sg a0 b0 FA' FB' ws afA afB rab _ Had0') v w rvw).
-    - (* LRU *)
-      inversion H'; subst; split; intros a b Hab.
-      + pose proof (TLlt_pirr h h0) as E; subst h0; exact Hab.
-      + pose proof (TLlt_pirr h h0) as E; subst h0; exact Hab.
+    - (* LRU0.  The split relations no longer depend on the [TLlt] proof, so
+         the matching sub-case is reflexive; the off-diagonal [LRU1] sub-case is
+         impossible ([lvl_of l] cannot be both [tl0] and [tl1]). *)
+      inversion H'; subst.
+      + split; intros a b Hab; exact Hab.
+      + congruence.
+    - (* LRU1 (symmetric). *)
+      inversion H'; subst.
+      + congruence.
+      + split; intros a b Hab; exact Hab.
   Qed.
 
 End Irrelevance.
