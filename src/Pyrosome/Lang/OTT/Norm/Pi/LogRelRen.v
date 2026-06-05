@@ -835,6 +835,36 @@ Qed.
 
 Definition ne_below_shift_val := fst (snd ne_below_shift).
 
+(* Scope monotonicity. *)
+Lemma ne_below_mono :
+  (forall T m, ne_below_ty m T -> forall P, m <= P -> ne_below_ty P T)
+  * ((forall v m, ne_below_val m v -> forall P, m <= P -> ne_below_val P v)
+  *  (forall n m, ne_below_ne m n -> forall P, m <= P -> ne_below_ne P n)).
+Proof.
+  apply (sval_mutind
+    (fun T  => forall m, ne_below_ty  m T -> forall P, m <= P -> ne_below_ty  P T)
+    (fun v  => forall m, ne_below_val m v -> forall P, m <= P -> ne_below_val P v)
+    (fun nn => forall m, ne_below_ne  m nn -> forall P, m <= P -> ne_below_ne  P nn));
+    try (intros; exact I).
+  - intros e IHe m H P HP. apply (IHe m); assumption.
+  - intros nn IHnn m H P HP. apply (IHnn m); assumption.
+  - intros v IHv m H P HP. apply (IHv m); assumption.
+  - intros F IHF B IHB m [HF HB] P HP. split; [ apply (IHF m) | apply (IHB (S m)) ]; auto; Lia.lia.
+  - intros F IHF B IHB m [HF HB] P HP. split; [ apply (IHF m) | apply (IHB (S m)) ]; auto; Lia.lia.
+  - intros b IHb m H P HP. apply (IHb (S m)); [ exact H | Lia.lia ].
+  - intros b IHb m H P HP. apply (IHb (S m)); [ exact H | Lia.lia ].
+  - intros k m H P HP. cbn [ne_below_ne] in *. Lia.lia.
+  - intros rA lA A IHA scrut IHscr m [HA Hs] P HP.
+    split; [ apply (IHA m) | apply (IHscr m) ]; assumption.
+  - intros f IHf a IHa m [Hf Ha] P HP. split; [ apply (IHf m) | apply (IHa m) ]; assumption.
+  - intros f IHf a IHa m [Hf Ha] P HP. split; [ apply (IHf m) | apply (IHa m) ]; assumption.
+Qed.
+
+Definition ne_below_val_mono := fst (snd ne_below_mono).
+
+Lemma ren_ok_le : forall rho N N' m2, ren_ok rho N m2 -> N' <= N -> ren_ok rho N' m2.
+Proof. intros rho N N' m2 H Hle k Hk. apply H. Lia.lia. Qed.
+
 Definition sub_below (N m : nat) (s : ssub) : Prop :=
   forall k, k < N -> ne_below_val m (nth_default (vNe (nVar k)) s k).
 
@@ -848,11 +878,12 @@ Proof.
   - rewrite up_nth_S. apply ne_below_shift_val. apply H. Lia.lia.
 Qed.
 
-(* The beta substitution [a :: id_list m] is [m]-scoped when [a] is. *)
-Lemma sub_below_beta : forall m a, ne_below_val m a ->
-    sub_below (S m) m (a :: id_list m).
+(* The beta substitution [a :: id_list m] is [m]-scoped (for indices [< S N],
+   [N <= m]) when [a] is [m]-scoped. *)
+Lemma sub_below_beta : forall N m a, N <= m -> ne_below_val m a ->
+    sub_below (S N) m (a :: id_list m).
 Proof.
-  intros m a Ha k Hk. destruct k as [|k'].
+  intros N m a HNm Ha k Hk. destruct k as [|k'].
   - unfold nth_default; cbn [nth_error]. exact Ha.
   - rewrite nth_default_cons_S.
     assert (Hk'm : k' < m) by Lia.lia.
@@ -915,11 +946,11 @@ Proof.
     exact (IHvapp (IHf N Hnef Hsub) (IHa N Hnea Hsub)).
   - (* vapp_lam *) intros m b a v Hbeta IHbeta Hnevf Hnea.
     cbn [ne_below_val] in Hnevf.
-    apply (IHbeta (S m)); [ exact Hnevf | apply sub_below_beta; exact Hnea ].
+    apply (IHbeta (S m)); [ exact Hnevf | apply sub_below_beta; [ Lia.lia | exact Hnea ] ].
   - (* vapp_ne *) intros m n a Hnevf Hnea. cbn [ne_below_val ne_below_ne] in *. split; assumption.
   - (* vappI_lam *) intros m b a v Hbeta IHbeta Hnevf Hnea.
     cbn [ne_below_val] in Hnevf.
-    apply (IHbeta (S m)); [ exact Hnevf | apply sub_below_beta; exact Hnea ].
+    apply (IHbeta (S m)); [ exact Hnevf | apply sub_below_beta; [ Lia.lia | exact Hnea ] ].
   - (* vappI_ne *) intros m n a Hnevf Hnea. cbn [ne_below_val ne_below_ne] in *. split; assumption.
 Qed.
 
@@ -940,3 +971,148 @@ Proof.
   - intros m rho n v' H. exact (Apply_ne_det H (ren_is_Apply_ne n m rho)).
 Qed.
 
+
+(* ===================================================================== *)
+(* APPLY COMMUTES WITH RENAMING -- the renaming analogue of                 *)
+(* [Apply_shift_commute] (Preservation.v:261), and the engine of            *)
+(* [Reflect_ren]'s [refl_Pi] codomain step.                                 *)
+(*                                                                         *)
+(* Given [v -s-> v'] (an arbitrary Apply), [v] scoped [<N], the source sub  *)
+(* [s] scoped at the level [m] ([sub_below]), and a renaming [rho_b/rho_v]  *)
+(* mapping [<N] into [m2] ([ren_ok], [RenShSc]), the renamed value          *)
+(* [ren_val rho_b v] applies under the conjugate [s2] to [ren_val rho_v v']. *)
+(* Conclusion is SYNTACTIC ([ren_*]); proof stays relational (the binder/    *)
+(* beta plumbing is [RenShSc_up]/[RenShSc_beta], the [ap_var] core is        *)
+(* [Apply_val_det] against [ren_is_Apply_val], and [ap_app]'s [Vapp] inputs  *)
+(* are scoped via [Apply_ne_below]).                                        *)
+(* ===================================================================== *)
+Lemma Apply_ren_commute :
+  (forall m s T T', Apply_ty m s T T' ->
+     forall N, ne_below_ty N T -> sub_below N m s ->
+     forall m2 rho_b rho_v s2, ren_ok rho_v (S m) m2 -> RenShSc N m2 rho_b rho_v s s2 ->
+       Apply_ty m2 s2 (ren_ty rho_b T) (ren_ty rho_v T'))
+  * (forall m s v v', Apply_val m s v v' ->
+       forall N, ne_below_val N v -> sub_below N m s ->
+       forall m2 rho_b rho_v s2, ren_ok rho_v (S m) m2 -> RenShSc N m2 rho_b rho_v s s2 ->
+         Apply_val m2 s2 (ren_val rho_b v) (ren_val rho_v v'))
+  * (forall m s n v, Apply_ne m s n v ->
+       forall N, ne_below_ne N n -> sub_below N m s ->
+       forall m2 rho_b rho_v s2, ren_ok rho_v (S m) m2 -> RenShSc N m2 rho_b rho_v s s2 ->
+         Apply_ne m2 s2 (ren_ne rho_b n) (ren_val rho_v v))
+  * (forall m vf a v, Vapp m vf a v ->
+       forall N, ne_below_val N vf -> ne_below_val N a -> N <= m ->
+       forall m2 rho, ren_ok rho (S m) m2 ->
+         Vapp m2 (ren_val rho vf) (ren_val rho a) (ren_val rho v))
+  * (forall m vf a v, VappI m vf a v ->
+       forall N, ne_below_val N vf -> ne_below_val N a -> N <= m ->
+       forall m2 rho, ren_ok rho (S m) m2 ->
+         VappI m2 (ren_val rho vf) (ren_val rho a) (ren_val rho v)).
+Proof.
+  refine (Apply_mutind
+    (fun m s T T' _ => forall N, ne_below_ty N T -> sub_below N m s ->
+       forall m2 rho_b rho_v s2, ren_ok rho_v (S m) m2 -> RenShSc N m2 rho_b rho_v s s2 ->
+         Apply_ty m2 s2 (ren_ty rho_b T) (ren_ty rho_v T'))
+    (fun m s v v' _ => forall N, ne_below_val N v -> sub_below N m s ->
+       forall m2 rho_b rho_v s2, ren_ok rho_v (S m) m2 -> RenShSc N m2 rho_b rho_v s s2 ->
+         Apply_val m2 s2 (ren_val rho_b v) (ren_val rho_v v'))
+    (fun m s n v _ => forall N, ne_below_ne N n -> sub_below N m s ->
+       forall m2 rho_b rho_v s2, ren_ok rho_v (S m) m2 -> RenShSc N m2 rho_b rho_v s s2 ->
+         Apply_ne m2 s2 (ren_ne rho_b n) (ren_val rho_v v))
+    (fun m vf a v _ => forall N, ne_below_val N vf -> ne_below_val N a -> N <= m ->
+       forall m2 rho, ren_ok rho (S m) m2 ->
+         Vapp m2 (ren_val rho vf) (ren_val rho a) (ren_val rho v))
+    (fun m vf a v _ => forall N, ne_below_val N vf -> ne_below_val N a -> N <= m ->
+       forall m2 rho, ren_ok rho (S m) m2 ->
+         VappI m2 (ren_val rho vf) (ren_val rho a) (ren_val rho v))
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+  - (* ap_dU *) intros m s r l N Hne Hsub m2 rho_b rho_v s2 Hok Hrs. apply ap_dU.
+  - (* ap_dEl *) intros m s e e' He IHe N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_ty] in Hne. cbn [ren_ty]. apply ap_dEl.
+    eapply IHe; eassumption.
+  - (* ap_ne (val) *) intros m s n v Hn IHn N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_val] in Hne. cbn [ren_val]. apply ap_ne.
+    eapply IHn; eassumption.
+  - (* ap_zero *) intros m s N Hne Hsub m2 rho_b rho_v s2 Hok Hrs. apply ap_zero.
+  - (* ap_suc *) intros m s v v' Hv IHv N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_val] in Hne. cbn [ren_val]. apply ap_suc.
+    eapply IHv; eassumption.
+  - (* ap_nat *) intros m s N Hne Hsub m2 rho_b rho_v s2 Hok Hrs. apply ap_nat.
+  - (* ap_empty *) intros m s N Hne Hsub m2 rho_b rho_v s2 Hok Hrs. apply ap_empty.
+  - (* ap_pi *) intros m s F F' B B' HF IHF HB IHB N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_val] in Hne. destruct Hne as [HneF HneB]. cbn [ren_val]. apply ap_pi.
+    + eapply IHF; eassumption.
+    + eapply IHB;
+        [ exact HneB | apply sub_below_up; exact Hsub
+        | apply ren_ok_up; exact Hok | apply RenShSc_up; exact Hrs ].
+  - (* ap_piI *) intros m s F F' B B' HF IHF HB IHB N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_val] in Hne. destruct Hne as [HneF HneB]. cbn [ren_val]. apply ap_piI.
+    + eapply IHF; eassumption.
+    + eapply IHB;
+        [ exact HneB | apply sub_below_up; exact Hsub
+        | apply ren_ok_up; exact Hok | apply RenShSc_up; exact Hrs ].
+  - (* ap_lam *) intros m s b b' Hb IHb N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_val] in Hne. cbn [ren_val]. apply ap_lam.
+    eapply IHb;
+      [ exact Hne | apply sub_below_up; exact Hsub
+      | apply ren_ok_up; exact Hok | apply RenShSc_up; exact Hrs ].
+  - (* ap_lamI *) intros m s b b' Hb IHb N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_val] in Hne. cbn [ren_val]. apply ap_lamI.
+    eapply IHb;
+      [ exact Hne | apply sub_below_up; exact Hsub
+      | apply ren_ok_up; exact Hok | apply RenShSc_up; exact Hrs ].
+  - (* ap_var *) intros m s k N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_ne] in Hne. cbn [ren_ne].
+    pose proof (Apply_val_det (Hrs k Hne)
+                  (ren_is_Apply_val (nth_default (vNe (nVar k)) s k) m2 rho_v)) as Heq.
+    rewrite <- Heq. apply ap_var.
+  - (* ap_emptyrec *) intros m s rA lA A A' scrut scrut' HA IHA Hsc IHsc
+      N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_ne] in Hne. destruct Hne as [HneA Hnesc].
+    cbn [ren_ne ren_val]. apply ap_emptyrec.
+    + eapply IHA; eassumption.
+    + eapply IHsc; eassumption.
+  - (* ap_app *) intros m s f vf a a' v Hf IHf Ha IHa Hvapp IHvapp
+      N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_ne] in Hne. destruct Hne as [Hnef Hnea].
+    cbn [ren_ne]. eapply ap_app.
+    + eapply IHf; eassumption.
+    + eapply IHa; eassumption.
+    + eapply IHvapp;
+        [ eapply Apply_ne_ne_below; eassumption
+        | eapply Apply_val_ne_below; eassumption
+        | reflexivity | exact Hok ].
+  - (* ap_appI *) intros m s f vf a a' v Hf IHf Ha IHa Hvapp IHvapp
+      N Hne Hsub m2 rho_b rho_v s2 Hok Hrs.
+    cbn [ne_below_ne] in Hne. destruct Hne as [Hnef Hnea].
+    cbn [ren_ne]. eapply ap_appI.
+    + eapply IHf; eassumption.
+    + eapply IHa; eassumption.
+    + eapply IHvapp;
+        [ eapply Apply_ne_ne_below; eassumption
+        | eapply Apply_val_ne_below; eassumption
+        | reflexivity | exact Hok ].
+  - (* vapp_lam *) intros m b a v Hbeta IHbeta N Hnevf Hnea HNm m2 rho Hok.
+    cbn [ne_below_val] in Hnevf. cbn [ren_val]. apply vapp_lam.
+    eapply IHbeta.
+    + exact Hnevf.
+    + apply sub_below_beta; [ exact HNm | eapply ne_below_val_mono; eassumption ].
+    + exact Hok.
+    + apply RenShSc_beta;
+        [ exact HNm | eapply ren_ok_le; [ exact Hok | Lia.lia ] | apply ren_is_Apply_val ].
+  - (* vapp_ne *) intros m n a N Hnevf Hnea HNm m2 rho Hok.
+    cbn [ren_val ren_ne]. apply vapp_ne.
+  - (* vappI_lam *) intros m b a v Hbeta IHbeta N Hnevf Hnea HNm m2 rho Hok.
+    cbn [ne_below_val] in Hnevf. cbn [ren_val]. apply vappI_lam.
+    eapply IHbeta.
+    + exact Hnevf.
+    + apply sub_below_beta; [ exact HNm | eapply ne_below_val_mono; eassumption ].
+    + exact Hok.
+    + apply RenShSc_beta;
+        [ exact HNm | eapply ren_ok_le; [ exact Hok | Lia.lia ] | apply ren_is_Apply_val ].
+  - (* vappI_ne *) intros m n a N Hnevf Hnea HNm m2 rho Hok.
+    cbn [ren_val ren_ne]. apply vappI_ne.
+Qed.
+
+Definition Apply_ty_ren_commute  := fst (fst (fst (fst Apply_ren_commute))).
+Definition Apply_val_ren_commute := snd (fst (fst (fst Apply_ren_commute))).
+Definition Apply_ne_ren_commute  := snd (fst (fst Apply_ren_commute)).
