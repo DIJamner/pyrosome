@@ -13,6 +13,22 @@ Import Core.Notations.
 Notation term := (@term string).
 
 (* ===================================================================== *)
+(* UNIVERSE-POLYMORPHIC encoding (UNIVERSE_FIX_PLAN.md Step 1B), validated  *)
+(* in WIP/UnivProto.v.  The relation universe [i] and the inductive's       *)
+(* output universe [j] are made explicit; the lower-level relations are     *)
+(* passed as SEPARATE PARAMETERS [rec0]/[rec1] (NOT a dispatching [rec]     *)
+(* function — its value-level [match] collapsed the per-level universes),   *)
+(* and [LRU] is SPLIT into [LRU0]/[LRU1].  This closes the PER-symmetry     *)
+(* universe gap (storing a universe witness into a domain pack field).      *)
+(* ===================================================================== *)
+Set Universe Polymorphism.
+(* Helper bodies ([is_ren], [sigT], [prod], ...) are now polymorphic too and
+   introduce their own universes; relax strict declaration so the [@{i j}]
+   binders need only name the universes we actually constrain (the kernel
+   still checks full consistency). *)
+Unset Strict Universe Declaration.
+
+(* ===================================================================== *)
 (* TWO-SIDED PER-of-conversion logical relation (Divide and Check, Poiret  *)
 (* -Maillard-Tabareau 2026).  This is the additive Phase-1 rebuild of      *)
 (* [LogRel.v]: every single-sided membership predicate [redTm : sval ->     *)
@@ -38,12 +54,13 @@ Notation term := (@term string).
 
 (* A `pack` carries the term-CONVERSION relation as opaque DATA: [redTmEq a b]
    reads "a ≡ b at A ≡ B". *)
-Record LRPack (Ge : senv) (A B : svalty) : Type :=
-  { redTmEq : sval -> sval -> Type }.
+Record LRPack@{i} (Ge : senv) (A B : svalty) : Type :=
+  { redTmEq : sval -> sval -> Type@{i} }.
 
 (* The graph: `[P] is the correct reducible-conversion relation for the type
-   pair [A],[B] at [Ge]`. *)
-Definition RedRel : Type := senv -> svalty -> svalty -> (sval -> sval -> Type) -> Type.
+   pair [A],[B] at [Ge]`.  Relation arg at [i], output at [j]. *)
+Definition RedRel@{i j} :=
+  senv -> svalty -> svalty -> (sval -> sval -> Type@{i}) -> Type@{j}.
 
 (* The finite universe tower, unchanged from [LogRel.v]. *)
 Inductive TypeLevel : Set := tl0 | tl1 | tl2.
@@ -87,12 +104,12 @@ Definition is_ren (sg : ssub) : Type :=
 (* [b]) together with their [Apply_val] witnesses and the codomain          *)
 (* conversion pack.  All over full well-typed substitutions [sg] (the       *)
 (* renaming gate lives on the term clause [PiRedTmEq], as in [LogRel.v]).   *)
-Record PolyRedPack (Ge : senv) (FA BA FB BB : sval) : Type :=
+Record PolyRedPack@{i j} (Ge : senv) (FA BA FB BB : sval) : Type@{j} :=
   { shpRed : forall Delta sg FA' FB',
       wf_ssub Delta sg Ge ->
       Apply_val (length Delta) sg FA FA' ->
       Apply_val (length Delta) sg FB FB' ->
-      LRPack Delta (dEl FA') (dEl FB')
+      LRPack@{i} Delta (dEl FA') (dEl FB')
   ; posRed : forall Delta sg a b FA' FB'
       (ws : wf_ssub Delta sg Ge)
       (afA : Apply_val (length Delta) sg FA FA')
@@ -101,7 +118,7 @@ Record PolyRedPack (Ge : senv) (FA BA FB BB : sval) : Type :=
       { BresA & { BresB &
         ( Apply_val (length Delta) (a :: sg) BA BresA
         * Apply_val (length Delta) (b :: sg) BB BresB
-        * LRPack Delta (dEl BresA) (dEl BresB) )%type } } }.
+        * LRPack@{i} Delta (dEl BresA) (dEl BresB) )%type } } }.
 
 (* Named accessors for the five components of [posRed]. *)
 Definition posTyA Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB) Delta sg a b FA' FB'
@@ -165,8 +182,8 @@ Definition PiRedTmEq (Ge : senv) (FA BA FB BB : sval) (PA : PolyRedPack Ge FA BA
           * redTmEq (posPack PA rab) v w )%type } }))%type.
 
 (* Adequacy: the packs stored in [PA] are themselves in the graph [R]. *)
-Record PolyRedPackAdequate (R : RedRel) (Ge : senv) (FA BA FB BB : sval)
-       (PA : PolyRedPack Ge FA BA FB BB) : Type :=
+Record PolyRedPackAdequate@{i j} (R : RedRel@{i j}) (Ge : senv) (FA BA FB BB : sval)
+       (PA : PolyRedPack@{i j} Ge FA BA FB BB) : Type@{j} :=
   { shpAd : forall Delta sg FA' FB' (ws : wf_ssub Delta sg Ge)
               (afA : Apply_val (length Delta) sg FA FA')
               (afB : Apply_val (length Delta) sg FB FB'),
@@ -181,44 +198,50 @@ Record PolyRedPackAdequate (R : RedRel) (Ge : senv) (FA BA FB BB : sval)
 Arguments shpAd {R Ge FA BA FB BB PA} adq {Delta sg FA' FB'} ws afA afB : rename.
 Arguments posAd {R Ge FA BA FB BB PA} adq {Delta sg a b FA' FB'} ws afA afB rab : rename.
 
-(* The two-sided graph inductive.  [LR] occurs only positively. *)
-Inductive LR (lvl : TypeLevel) (rec : forall l', TLlt l' lvl -> RedRel) : RedRel :=
-| LRnat   : forall Ge, @LR lvl rec Ge (dEl vNat) (dEl vNat) (RedNatEq Ge)
+(* The two-sided graph inductive.  [LR] occurs only positively.  The two
+   lower-level relations are passed as SEPARATE PARAMETERS [rec0] (level 0)
+   and [rec1] (level 1) at DISTINCT universes; [LRU] is SPLIT into [LRU0]
+   (source level [tl0], uses [rec0]) and [LRU1] (source level [tl1], uses
+   [rec1]).  No value-level [match] -> the kernel records NO constraint
+   forcing the per-level relation universes equal (UNIVERSE_FIX_PLAN Step 1B). *)
+Inductive LR
+    (lvl : TypeLevel)
+    (rec0 : RedRel@{i0 j0})
+    (rec1 : RedRel@{i1 j1}) : RedRel@{i j} :=
+| LRnat   : forall Ge, @LR lvl rec0 rec1 Ge (dEl vNat) (dEl vNat) (RedNatEq Ge)
 | LRempty : forall Ge,
-    @LR lvl rec Ge (dEl vEmpty) (dEl vEmpty) (RedNeutralEq Ge (dEl vEmpty))
+    @LR lvl rec0 rec1 Ge (dEl vEmpty) (dEl vEmpty) (RedNeutralEq Ge (dEl vEmpty))
 | LRne    : forall Ge n m r l, NeConv Ge (dU r l) n m ->
-    @LR lvl rec Ge (dEl (vNe n)) (dEl (vNe m)) (RedNeutralEq Ge (dEl (vNe n)))
+    @LR lvl rec0 rec1 Ge (dEl (vNe n)) (dEl (vNe m)) (RedNeutralEq Ge (dEl (vNe n)))
 | LRpiI   : forall Ge FA BA FB BB,
     wf_svalty Ge (dEl (vPiI FA BA)) -> wf_svalty Ge (dEl (vPiI FB BB)) ->
-    @LR lvl rec Ge (dEl (vPiI FA BA)) (dEl (vPiI FB BB))
+    @LR lvl rec0 rec1 Ge (dEl (vPiI FA BA)) (dEl (vPiI FB BB))
        (fun f g => (has_svalty Ge f (dEl (vPiI FA BA))
                   * has_svalty Ge g (dEl (vPiI FB BB)))%type)
-| LRpi    : forall Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB),
+| LRpi    : forall Ge FA BA FB BB (PA : PolyRedPack@{i j} Ge FA BA FB BB),
     wf_svalty Ge (dEl (vPi FA BA)) -> wf_svalty Ge (dEl (vPi FB BB)) ->
-    PolyRedPackAdequate (@LR lvl rec) PA ->
-    @LR lvl rec Ge (dEl (vPi FA BA)) (dEl (vPi FB BB)) (PiRedTmEq PA)
-| LRU     : forall Ge r l (h : TLlt (lvl_of l) lvl),
-    @LR lvl rec Ge (dU r l) (dU r l)
+    PolyRedPackAdequate (@LR lvl rec0 rec1) PA ->
+    @LR lvl rec0 rec1 Ge (dEl (vPi FA BA)) (dEl (vPi FB BB)) (PiRedTmEq PA)
+| LRU0    : forall Ge r l (h : TLlt tl0 lvl) (e : lvl_of l = tl0),
+    @LR lvl rec0 rec1 Ge (dU r l) (dU r l)
        (fun c d => (has_svalty Ge c (dU r l) * has_svalty Ge d (dU r l) *
-                 { P : sval -> sval -> Type & rec (lvl_of l) h Ge (dEl c) (dEl d) P })%type).
+                 { P : sval -> sval -> Type@{i0} & rec0 Ge (dEl c) (dEl d) P })%type)
+| LRU1    : forall Ge r l (h : TLlt tl1 lvl) (e : lvl_of l = tl1),
+    @LR lvl rec0 rec1 Ge (dU r l) (dU r l)
+       (fun c d => (has_svalty Ge c (dU r l) * has_svalty Ge d (dU r l) *
+                 { P : sval -> sval -> Type@{i1} & rec1 Ge (dEl c) (dEl d) P })%type).
 
 (* ===================================================================== *)
 (* Finite-tower kit (unchanged shape from [LogRel.v]).                     *)
 (* ===================================================================== *)
 
-Lemma no_lt_tl0 : forall l', TLlt l' tl0 -> False.
-Proof. intros l' H; inversion H. Qed.
+(* Unused [recK] slots get the constructorless dummy [LRbot]; its [TLlt tlK
+   lvl] guard is false at that level so the [LRU]-witness is never built. *)
+Definition LRbot : RedRel := fun _ _ _ _ => False.
 
-Definition rec0 (l' : TypeLevel) (h : TLlt l' tl0) : RedRel :=
-  False_rect RedRel (no_lt_tl0 h).
-Definition LR0 : RedRel := @LR tl0 rec0.
-
-Definition rec1 (l' : TypeLevel) (h : TLlt l' tl1) : RedRel := LR0.
-Definition LR1 : RedRel := @LR tl1 rec1.
-
-Definition rec2 (l' : TypeLevel) (h : TLlt l' tl2) : RedRel :=
-  match l' with tl0 => LR0 | tl1 => LR1 | tl2 => LR0 end.
-Definition LR2 : RedRel := @LR tl2 rec2.
+Definition LR0 : RedRel := @LR tl0 LRbot LRbot.   (* LRU0/LRU1 gated off *)
+Definition LR1 : RedRel := @LR tl1 LR0   LRbot.   (* LRU0 -> LR0; LRU1 off *)
+Definition LR2 : RedRel := @LR tl2 LR0   LR1.     (* LRU0 -> LR0; LRU1 -> LR1 *)
 
 (* Top-level two-sided reducibility. *)
 Definition RedTyEq (Ge : senv) (A B : svalty) : Type :=

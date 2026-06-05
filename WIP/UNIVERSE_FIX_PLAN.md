@@ -149,7 +149,21 @@ multi-branch match), with the WORKING relation being the top object level
 
 ## 4. Recommended plan
 
-### Step 0 — answer the gating question (cheap, do first)
+### STATUS (2026-06-05): Step 0 + Step 2 DONE; chose 1B; ready for Step 3 port
+- **Step 0 answered:** the Pi fragment uses only `L0` as a reducible type (`Pi.v`:
+  all codomains/Pi types at `#"U" … "L0"`; `L1` / `u0 : U L1` appear only in
+  `Cast.v` = Ph6).  2 levels would suffice for Pi alone, but the **user chose
+  Step 1B (3 levels)** to future-proof Ph6/Cast (where `U1` is genuinely reduced).
+- **Step 2 prototype DONE & GREEN:** `WIP/UnivProto.v` (coqc exit 0) validates the
+  unfolded encoding + tower under `Set Universe Polymorphism`.  All three decisive
+  tests pass: (T1) tower typechecks, per-level ladder `i0<j0<=i2`, `i1<j1<=i2`,
+  `i2<j2`, **no `i0=i1` collapse**; (T2) kernel accepts `LR` (`LR_ind` constraints
+  `i0<i,i1<i,i<j,j0<=i,j1<=i`, no `i0=i1`); (T3) the symmetry-shaped storage (an
+  `LRU0` witness at `j0` into a *domain* `LRPack` field at `i2`) typechecks.
+- **NEXT: Step 1B + Step 3 port** to `src/.../LogRel2.v` (then re-green
+  `LogRel2Ind/Lemmas/Red/Irr` with the split `LRU0`/`LRU1` cases).
+
+### Step 0 — answer the gating question (cheap, do first)  [DONE → 1B]
 **Does the Π-fragment actually need TWO reducible object universes (`U0 : U1`),
 or is `tl1` only ever an ambient top?** `lvl_of` maps level term `"L1" -> tl1`,
 else `tl0`; `LR2`'s `LRU` makes `dU r l` reducible at `lvl_of l ∈ {tl0,tl1}`.
