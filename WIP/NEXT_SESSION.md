@@ -27,8 +27,11 @@ memory first.
   `WIP/LogRel2Sym.v` GAP 2': the symmetry carrier `{ Q & LR B A Q * maps }`
   needs `Q <= LRPack.u0` (Pi-domain pack storage) AND `Q >= RedRel.u2` (LRU
   witness), but `LRPack.u0 < RedRel.u2` is intrinsic to the `LR` inductive's
-  sizing. Fix = level-indexed universes, OR reformulate symmetry to USE
-  `RedTmEq_irr` instead of carrying a swapped `LR` derivation.
+  sizing. **Full fix plan: `WIP/UNIVERSE_FIX_PLAN.md`** (unify pack-field/relation
+  universe + lower-level `rec` at a strictly smaller universe; the `rec2` `match`
+  collapses the two lower levels, so the cleanest path is a 2-level well-founded
+  tower à la logrel-coq — prototype on `WIP/UnivProto.v` first). Interim: build
+  on `RedTmEq_irr` for results that don't construct swapped packs.
 
 ## Pick one of two next moves
 
