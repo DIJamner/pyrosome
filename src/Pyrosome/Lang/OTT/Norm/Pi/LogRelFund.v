@@ -382,6 +382,37 @@ Definition reflect_red_beta (Hbeta : reflect_pi_beta_step)
 (* reducible ENVIRONMENTS, not a single argument).                            *)
 (* ===================================================================== *)
 
+(* CORRECTION (2026-06-05, session 6): the "Reflect_det" assembly sketched
+   above and in [LogRelRen.v]'s [Reflect_ren] commentary is INCOMPLETE for
+   higher-order / universe-dependent codomains, so [reflect_pi_reify_step] is
+   NOT closable by R1 + R2 + [Reflect_det] alone.
+
+   By [Apply_beta_merge] the goal's witness [v] is FORCED (Apply is
+   deterministic) to be the beta-reduct [body[a::sg]]; the real content is
+   [redTm (posPack PA ra) (body[a::sg])].  The sketch equated [body[a::sg]]
+   with the [IHpos] reflection [v*] of [nApp (n[sg]) (reify a)] via
+   [Reflect_det].  That equality FAILS in the tower at e.g. [forall (X:U_tl1).
+   El X] (F a universe code, B = [El (var0)]): there ARG = reflect(var0 @
+   universe) = [vNe (nVar 0)] (refl_U), so [posTy PA ra0 = El (vNe (nVar 0))]
+   is a NEUTRAL-El and [body = vNe (nApp (shift n) (vNe (nVar 0)))] is a BARE
+   NEUTRAL; for [a] a Pi-code, [posTy PA ra = El (vPi ..)] is a RELEVANT Pi
+   whose reflection eta-EXPANDS to a [vLam = v*].  So [body[a::sg] = vNe(..)]
+   /= [vLam = v*], and a bare neutral does not even reflect at a relevant Pi
+   (refl_Pi forces vLam).  [body[a::sg]] is still reducible there (a neutral is
+   reducible at a Pi via its application clause), but that reducibility is
+   recursively [reflect_red]'s OWN content at the codomain -- the bridge is
+   UP-TO-LR (eta-irrelevance), for which this [LR] has no principle.
+
+   So the genuine remaining content is a RESTRICTED RedSub-closure
+   (reducibility transported under [a :: sg] = reducible-arg cons onto a
+   renaming) PLUS reducibility-eta-irrelevance, MUTUALLY ENTANGLED with
+   [reflect_red] for higher-order domains -- a VR-layer effort, not a
+   [Reflect_det] one-liner.  Two secondary gaps: [Reflect_ren]'s [ren_ok rho
+   (S m) m2] admits only growing renamings here (fix by PADDING rho -- body is
+   scoped, ren_val is insensitive to the pad), and [wf_senv Delta] (needed for
+   [IHpos]) is not derivable from the hypotheses below (likely a missing
+   hypothesis).  See [WIP/ReifyDev.v] for the worked analysis. *)
+
 (* The residual obligation, now carrying the codomain reflection IH [IHpos]
    (the [reflect_motive (posAd ..)] family that [LR_mut] supplies -- exactly
    the [IHpos] hypothesis of [reflect_pi_step], stated here verbatim so the
