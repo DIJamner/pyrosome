@@ -418,3 +418,120 @@ Section RenPackSec.
   Qed.
 
 End RenPackSec.
+
+(* ===================================================================== *)
+(* The RENAMING-STABILITY presheaf [LR_ren_gen]: a context renaming [Ge ->     *)
+(* Ge'] sends [LR Ge A B P] to [LR Ge' A[rho] B[rho] Q] with a forward map      *)
+(* [P a b -> Q a[rho] b[rho]].  Mirrors [LR_sym_gen]'s shape (carrier +         *)
+(* [RecRen1] tower hypothesis, by [LR_mut]) but is FORWARD-ONLY and needs NO    *)
+(* domain/codomain IHs: the Pi case reuses [ren_pack]/[ren_adeq]/[ren_pack_fwd] *)
+(* (the original pack at the composite substitution).  Base cases are the       *)
+(* base-PER renaming lemmas; [LRU0]/[LRU1] use [RecRen1] for the lower tower.   *)
+(* ===================================================================== *)
+Section RenGen.
+  Context (lvl : TypeLevel) (rec0 rec1 : RedRel).
+
+  Definition RenCar Ge (A B : svalty) (P : sval -> sval -> Type) : Type :=
+    wf_svalty Ge A -> wf_svalty Ge B -> ne_below_ctx Ge ->
+    forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
+      { Q : sval -> sval -> Type &
+        ( @LR lvl rec0 rec1 Ge' (ren_ty rho A) (ren_ty rho B) Q
+        * (forall a b, P a b -> Q (ren_val rho a) (ren_val rho b)) )%type }.
+
+  Definition RecRen1 (rec : RedRel) : Type :=
+    forall Ge A B P, rec Ge A B P ->
+      wf_svalty Ge A -> wf_svalty Ge B -> ne_below_ctx Ge ->
+      forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
+        { Q : sval -> sval -> Type &
+          ( rec Ge' (ren_ty rho A) (ren_ty rho B) Q
+          * (forall a b, P a b -> Q (ren_val rho a) (ren_val rho b)) )%type }.
+
+  Context (HR0 : RecRen1 rec0) (HR1 : RecRen1 rec1).
+
+  Lemma LR_ren_gen : forall Ge A B P (H : @LR lvl rec0 rec1 Ge A B P), RenCar Ge A B P.
+  Proof.
+    intros Ge A B P H. induction H using LR_mut; unfold RenCar;
+      intros wfA wfB Hctx Ge' rho Hren Hok.
+    - (* LRnat *)
+      exists (RedNatEq Ge'). split.
+      + cbn [ren_ty ren_val]. apply LRnat.
+      + intros a b Hab. exact (RedNatEq_ren Hab Hctx Hren Hok).
+    - (* LRempty *)
+      exists (RedNeutralEq Ge' (dEl vEmpty)). split.
+      + cbn [ren_ty ren_val]. apply LRempty.
+      + intros a b Hab. exact (RedNeutralEq_ren Hab I Hctx Hren Hok).
+    - (* LRne *)
+      exists (RedNeutralEq Ge' (dEl (vNe (ren_ne rho n)))). split.
+      + cbn [ren_ty ren_val]. eapply LRne. exact (NeConv_ren c I Hctx Hren Hok).
+      + intros a b Hab.
+        exact (RedNeutralEq_ren Hab (wf_svalty_scoped wfA) Hctx Hren Hok).
+    - (* LRpiI *)
+      exists (fun f g => (has_svalty Ge' f (dEl (vPiI (ren_val rho FA) (ren_val (up_renl rho) BA)))
+                        * has_svalty Ge' g (dEl (vPiI (ren_val rho FB) (ren_val (up_renl rho) BB))))%type).
+      split.
+      + cbn [ren_ty ren_val]. apply LRpiI; [ exact (wf_svalty_ren wfA Hren) | exact (wf_svalty_ren wfB Hren) ].
+      + intros f g [Hf Hg]. split.
+        * exact (fst ren_typing Ge f (dEl (vPiI FA BA)) Hf (wf_svalty_scoped wfA) Hctx Ge' rho Hren Hok).
+        * exact (fst ren_typing Ge g (dEl (vPiI FB BB)) Hg (wf_svalty_scoped wfB) Hctx Ge' rho Hren Hok).
+    - (* LRpi -- reuse the renamed pack *)
+      exists (PiRedTmEq (ren_pack PA wfA wfB Hctx Hren Hok)). split.
+      + cbn [ren_ty ren_val].
+        apply (LRpi (PA := ren_pack PA wfA wfB Hctx Hren Hok));
+          [ exact (wf_svalty_ren wfA Hren) | exact (wf_svalty_ren wfB Hren)
+          | exact (ren_adeq ad wfA wfB Hctx Hren Hok) ].
+      + intros f g Hfg. exact (ren_pack_fwd wfA wfB Hctx Hren Hok Hfg).
+    - (* LRU0 *)
+      exists (fun c d => (has_svalty Ge' c (dU r l) * has_svalty Ge' d (dU r l) *
+                 { P : sval -> sval -> Type & rec0 Ge' (dEl c) (dEl d) P })%type).
+      split.
+      + cbn [ren_ty]. apply LRU0; assumption.
+      + intros c d [[Hc Hd] [P0 HP0]]. cbn [ren_ty ren_val]. refine ((_, _), _).
+        * exact (fst ren_typing Ge c (dU r l) Hc I Hctx Ge' rho Hren Hok).
+        * exact (fst ren_typing Ge d (dU r l) Hd I Hctx Ge' rho Hren Hok).
+        * destruct (HR0 HP0 (wf_dEl Hc) (wf_dEl Hd) Hctx Hren Hok)
+            as [Q' [Hrec' _]]. exists Q'. exact Hrec'.
+    - (* LRU1 *)
+      exists (fun c d => (has_svalty Ge' c (dU r l) * has_svalty Ge' d (dU r l) *
+                 { P : sval -> sval -> Type & rec1 Ge' (dEl c) (dEl d) P })%type).
+      split.
+      + cbn [ren_ty]. apply LRU1; assumption.
+      + intros c d [[Hc Hd] [P0 HP0]]. cbn [ren_ty ren_val]. refine ((_, _), _).
+        * exact (fst ren_typing Ge c (dU r l) Hc I Hctx Ge' rho Hren Hok).
+        * exact (fst ren_typing Ge d (dU r l) Hd I Hctx Ge' rho Hren Hok).
+        * destruct (HR1 HP0 (wf_dEl Hc) (wf_dEl Hd) Hctx Hren Hok)
+            as [Q' [Hrec' _]]. exists Q'. exact Hrec'.
+  Qed.
+
+End RenGen.
+
+(* ===================================================================== *)
+(* Tower instantiation + top-level RENAMING STABILITY of [RedTyEq]/[RedTmEq]. *)
+(* ===================================================================== *)
+Definition LRbot_ren : RecRen1 LRbot.
+Proof. intros Ge A B P H; destruct H. Qed.
+
+Definition LR0_ren : RecRen1 LR0.
+Proof. intros Ge A B P H. exact (LR_ren_gen LRbot_ren LRbot_ren H). Qed.
+
+Definition LR1_ren : RecRen1 LR1.
+Proof. intros Ge A B P H. exact (LR_ren_gen LR0_ren LRbot_ren H). Qed.
+
+Lemma RedTyEq_ren : forall Ge A B, RedTyEq Ge A B ->
+    wf_svalty Ge A -> wf_svalty Ge B -> ne_below_ctx Ge ->
+    forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
+      RedTyEq Ge' (ren_ty rho A) (ren_ty rho B).
+Proof.
+  intros Ge A B [P H] wA wB Hctx Ge' rho Hren Hok.
+  destruct (LR_ren_gen LR0_ren LR1_ren H wA wB Hctx Hren Hok) as [Q [HQ _]].
+  exact (existT _ Q HQ).
+Qed.
+
+Lemma RedTmEq_ren : forall Ge A B a b, RedTmEq Ge A B a b ->
+    wf_svalty Ge A -> wf_svalty Ge B -> ne_below_ctx Ge ->
+    forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
+      RedTmEq Ge' (ren_ty rho A) (ren_ty rho B) (ren_val rho a) (ren_val rho b).
+Proof.
+  intros Ge A B a b [P [H Pab]] wA wB Hctx Ge' rho Hren Hok.
+  destruct (LR_ren_gen LR0_ren LR1_ren H wA wB Hctx Hren Hok) as [Q [HQ Hmap]].
+  exact (existT _ Q (HQ, Hmap a b Pab)).
+Qed.
