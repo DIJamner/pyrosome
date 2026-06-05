@@ -17,21 +17,22 @@ memory first.
   two-sided `LR` graph + finite tower + `RedTyEq`/`RedTmEq`/`RedSubEq`). Kernel
   accepts `LR` (positivity holds). `NeConv` neutral base is PROVISIONAL (strict
   diagonal) — becomes the genuine `∼ne` in Ph3.
-- **Ph2 PARTIAL** — `LogRel2Ind.v` (`LR_mut`) + `LogRel2Lemmas.v` (escape +
-  base-PER typing/sym/trans) + **`LogRel2Irr.v` IRRELEVANCE DONE** (axiom-free):
-  `LR_irrelevant_gen` (same-type-pair derivations carry equivalent relations,
-  all 6 cases incl. Pi), top-level `LR2_irrelevant` + `RedTmEq_irr` (Def 7),
-  `TLlt_pirr`. REMAINING Ph2: transport + renaming stability.
+- **UNIVERSE REFACTOR DONE** — `LogRel2.v` now uses the universe-poly **3-level
+  UNFOLDED tower** (lower relations as separate params `rec0`/`rec1`, `LRU` split
+  into `LRU0`/`LRU1`, no value-level `match`; ladder `i0<i,i1<i,i<j,j0<=i,j1<=i`,
+  NO `i0=i1`). Whole `LogRel2*` chain is `Set Universe Polymorphism` +
+  `Unset Strict Universe Declaration`. Validated first in `WIP/UnivProto.v`.
+- **Ph2 IRRELEVANCE DONE** — `LogRel2Irr.v` (axiom-free): `LR_irrelevant_gen`
+  (bidirectional `IrrCar` over `LR_mut`, 7 cases incl. Pi + `LRU0`/`LRU1`),
+  `LR2_irrelevant` + `RedTmEq_irr` (Def 7). REMAINING Ph2: transport + renaming
+  stability.
+- **Ph4 PER SYMMETRY DONE & axiom-free** — `src/.../LogRel2Sym.v` (NO LONGER
+  blocked). `LR_sym_gen` builds the swapped `PolyRedPack` (`sym_pack`/`sym_adeq`
+  — the `LRPack`-field storage the old encoding forbade) and discharges the Pi
+  `bwd` via `LR_irrelevant_gen` + `Apply_val_det`; tower `LRbot/LR0/LR1_sym`
+  (`RecSym1`); top-level `RedTyEq_sym` + `RedTmEq_sym`. REMAINING Ph4:
+  transitivity.
 - **Ph0 DE-RISKED** — prototype `WIP/Phase0Proto.v`. Mechanical refactor.
-- **Ph4 PER SYMMETRY: UNIVERSE-BLOCKED** (do NOT retry the unified carrier).
-  `WIP/LogRel2Sym.v` GAP 2': the symmetry carrier `{ Q & LR B A Q * maps }`
-  needs `Q <= LRPack.u0` (Pi-domain pack storage) AND `Q >= RedRel.u2` (LRU
-  witness), but `LRPack.u0 < RedRel.u2` is intrinsic to the `LR` inductive's
-  sizing. **Full fix plan: `WIP/UNIVERSE_FIX_PLAN.md`** (unify pack-field/relation
-  universe + lower-level `rec` at a strictly smaller universe; the `rec2` `match`
-  collapses the two lower levels, so the cleanest path is a 2-level well-founded
-  tower à la logrel-coq — prototype on `WIP/UnivProto.v` first). Interim: build
-  on `RedTmEq_irr` for results that don't construct swapped packs.
 
 ## Pick one of two next moves
 
@@ -63,11 +64,14 @@ Annotate `nApp`/`nAppI` in `Domain.v` with `(F B : sval)` and thread the Pi type
 - NOTE: this breaks LogRel2 + the whole domain layer until the ripple is
   complete — no intermediate green build. Don't commit until the chain is green.
 
-### B. Finish the green Ph2 PER laws first (no `Domain.v` change)
-Top-level `RedTyEq`/`RedTmEq` symmetry + transitivity + irrelevance + transport,
-over the **Pi** case. Standard logrel plumbing: build a swapped/related
-`PolyRedPack` inside an `LR_mut` induction (motive `M Ge A B P H := LR ... Ge B A
-(flip P)` for symmetry). ~150 lines. Stays green; validates `LR_mut`.
+### B. Finish the remaining green Ph2/Ph4 PER laws (no `Domain.v` change)
+Irrelevance + symmetry are DONE. Remaining: **transitivity** (`RedTyEq`/`RedTmEq`
+trans, Pi case — mirror `LogRel2Sym.v`'s `LR_sym_gen`/`RecSym1` tower pattern but
+with a `RecTrans`-style hypothesis, discharge the Pi codomain via irrelevance) +
+**transport** (Lemma 12, from `RedTmEq_irr`) + **renaming stability** (presheaf
+over renamings, reuse the session 1–6 `Apply_ren_commute`/`ren_*` algebra). Keep
+the whole `LogRel2*` chain `Set Universe Polymorphism` so the poly tower instances
+align (as `LogRel2Sym.v` needs).
 
 ## Build (per CLAUDE.md — never run full `make` during dev)
 ```
