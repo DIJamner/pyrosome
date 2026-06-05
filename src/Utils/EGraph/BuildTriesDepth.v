@@ -151,12 +151,15 @@ Section BuildTries.
 
   Notation fptm := (@FullPosTrie.full_pos_trie_map).
 
-  (* The fold invariant: every clause key's trie pair is depth-[clen]. *)
+  (* The fold invariant: every clause key's trie triple (full,new,old) is
+     depth-[clen] in all three components. *)
   Definition bt_inv (q_clauses : idx_map (list nat * nat))
-    (tries : idx_map (fptm unit * fptm unit)) : Prop :=
+    (tries : idx_map (fptm unit * fptm unit * fptm unit)) : Prop :=
     forall n cl, map.get q_clauses n = Some cl ->
       exists ft, map.get tries n = Some ft
-                 /\ fpt_depth (fst ft) (clen cl) /\ fpt_depth (snd ft) (clen cl).
+                 /\ fpt_depth (fst (fst ft)) (clen cl)
+                 /\ fpt_depth (snd (fst ft)) (clen cl)
+                 /\ fpt_depth (snd ft) (clen cl).
 
   Lemma build_tries_for_symbol_depth
     (current_epoch : positive)
@@ -168,25 +171,30 @@ Section BuildTries.
   Proof.
     unfold build_tries_for_symbol.
     eapply (map.fold_spec (fun _ tries => bt_inv q_clauses tries)).
-    - intros n cl Hget. exists (map.empty, map.empty).
+    - intros n cl Hget. exists (map.empty, map.empty, map.empty).
       rewrite map_map_spec by exact idx_map_plus_ok. rewrite Hget. cbn [option_map].
       split; [reflexivity|]. cbn [fst snd].
-      unfold map.empty, FullPosTrie.full_pos_trie_map. cbn [fpt_depth]. split; exact I.
+      unfold map.empty, FullPosTrie.full_pos_trie_map. cbn [fpt_depth].
+      split; [exact I | split; [exact I | exact I]].
     - intros k v m r Hgetm Hinv n cl Hget.
       rewrite intersect_spec by exact idx_map_plus_ok.
-      destruct (Hinv n cl Hget) as [ft [Hgetr [Hdf Hds]]].
+      destruct (Hinv n cl Hget) as [ft [Hgetr [Hdf [Hdn Hdo]]]].
       rewrite Hgetr, Hget.
-      destruct v as [epoch v0 a_an]. destruct ft as [full frontier]. cbn [fst snd] in Hdf, Hds.
+      destruct v as [epoch v0 a_an]. destruct ft as [[full new] old]. cbn [fst snd] in Hdf, Hdn, Hdo.
       destruct cl as [cargs cv].
       eexists. split; [reflexivity|].
       destruct (match_clause positive positive_Eqb (cargs, cv) k v0) as [assignment|] eqn:Hmc.
       { apply match_clause_length in Hmc.
-        destruct (eqb epoch current_epoch); cbn [fst snd]; split.
-        - apply fpt_put_depth; [exact Hmc | exact Hdf].
-        - apply fpt_put_depth; [exact Hmc | exact Hds].
-        - apply fpt_put_depth; [exact Hmc | exact Hdf].
-        - exact Hds. }
-      { cbn [fst snd]. split; [exact Hdf | exact Hds]. }
+        destruct (eqb epoch current_epoch); cbn [fst snd].
+        - split; [|split].
+          + apply fpt_put_depth; [exact Hmc | exact Hdf].
+          + apply fpt_put_depth; [exact Hmc | exact Hdn].
+          + exact Hdo.
+        - split; [|split].
+          + apply fpt_put_depth; [exact Hmc | exact Hdf].
+          + exact Hdn.
+          + apply fpt_put_depth; [exact Hmc | exact Hdo]. }
+      { cbn [fst snd]. split; [exact Hdf | split; [exact Hdn | exact Hdo]]. }
   Qed.
 
 End BuildTries.

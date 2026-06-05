@@ -98,22 +98,24 @@ Section Slice.
     /\ (forall p, In p (write_unifications idx symbol r) ->
           (In (fst p) (query_vars idx symbol r) \/ In (fst p) (write_vars idx symbol r))
           /\ (In (snd p) (query_vars idx symbol r) \/ In (snd p) (write_vars idx symbol r)))
-    /\ (forall frontier_n sigma,
+    /\ (forall frontier_pos sigma,
          In sigma (intersection_keys idx idx_trie spaced_list_intersect
-                     (ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
-                                (query_vars idx symbol r) db_tries frontier_n)
-                             (query_clause_ptrs idx symbol r))) ->
+                     (ne_map_idx (fun pos ptr =>
+                                    trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
+                                      (query_vars idx symbol r) db_tries frontier_pos pos ptr)
+                                 (query_clause_ptrs idx symbol r))) ->
          List.length (query_vars idx symbol r) = List.length sigma)
-    /\ (forall frontier_n sigma,
+    /\ (forall frontier_pos sigma,
          In sigma (intersection_keys idx idx_trie spaced_list_intersect
-                     (ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
-                                (query_vars idx symbol r) db_tries frontier_n)
-                             (query_clause_ptrs idx symbol r))) ->
-         forall fsym nptr cvars,
-         In (Build_erule_query_ptr idx symbol fsym nptr cvars)
-            (uncurry cons (query_clause_ptrs idx symbol r)) ->
-         map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
-                         (query_vars idx symbol r) db_tries frontier_n
+                     (ne_map_idx (fun pos ptr =>
+                                    trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
+                                      (query_vars idx symbol r) db_tries frontier_pos pos ptr)
+                                 (query_clause_ptrs idx symbol r))) ->
+         forall pos fsym nptr cvars,
+         nth_error (uncurry cons (query_clause_ptrs idx symbol r)) pos
+           = Some (Build_erule_query_ptr idx symbol fsym nptr cvars) ->
+         map.get (fst (trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
+                         (query_vars idx symbol r) db_tries frontier_pos pos
                          (Build_erule_query_ptr idx symbol fsym nptr cvars)))
                  (map fst (filter snd (combine sigma
                     (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))

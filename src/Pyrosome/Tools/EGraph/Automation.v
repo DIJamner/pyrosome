@@ -427,8 +427,8 @@ Section ReducingSkeleton.
                      (option positive) (@Defs.depth positive)
                      (Theorems.lang_model positive PosListMap.sort_of Lp)
                      Hmok rebuild_fuel seqsR er e HmsrR Hin_er).
-            + exact (QcAlignment.trie_join_H9 rebuild_fuel seqsR er Hin_er e).
-            + exact (QcAlignment.trie_join_H10 rebuild_fuel seqsR er Hin_er e).
+            + exact (QcAlignment.trie_join_H9_sn rebuild_fuel seqsR er Hin_er e).
+            + exact (QcAlignment.trie_join_H10_sn rebuild_fuel seqsR er Hin_er e).
         }
         destruct HIn' as [E | HEmpty].
         { (* n=1, rs=rsRR *)
@@ -463,8 +463,8 @@ Section ReducingSkeleton.
                      (option positive) (@Defs.depth positive)
                      (Theorems.lang_model positive PosListMap.sort_of Lp)
                      Hmok rebuild_fuel seqsRR er e HmsrRR Hin_er).
-            + exact (QcAlignment.trie_join_H9 rebuild_fuel seqsRR er Hin_er e).
-            + exact (QcAlignment.trie_join_H10 rebuild_fuel seqsRR er Hin_er e).
+            + exact (QcAlignment.trie_join_H9_sn rebuild_fuel seqsRR er Hin_er e).
+            + exact (QcAlignment.trie_join_H10_sn rebuild_fuel seqsRR er Hin_er e).
         }
         destruct HEmpty.
     }
