@@ -9,6 +9,8 @@
    and underpins transport.  Proof shape follows CoqHott/logrel-coq's
    [LRTmRedConv]/irrelevance. *)
 Set Implicit Arguments.
+Set Universe Polymorphism.
+Unset Strict Universe Declaration.
 
 From coqutil Require Import Datatypes.String.
 From Stdlib Require Import Lists.List.

@@ -6,6 +6,8 @@
    over [LR] through this principle).  Encoding follows CoqHott/logrel-coq and
    mirrors the single-sided [LogRelInd.v]. *)
 Set Implicit Arguments.
+Set Universe Polymorphism.
+Unset Strict Universe Declaration.
 
 From coqutil Require Import Datatypes.String.
 From Stdlib Require Import Lists.List.
