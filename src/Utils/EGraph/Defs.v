@@ -581,17 +581,37 @@ Section WithMap.
     let assignments : list _ := (intersection_keys tries) in
     list_Miter (M:=ST) (exec_write r) assignments.
 
+  (* The match keys for a single frontier choice (no writes). *)
+  Definition erule_frontier_keys
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (r : erule) (frontier_n : idx) : list (list idx) :=
+    intersection_keys
+      (ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
+         r.(query_clause_ptrs)).
+
   (*TODO: avoid using this*)
   Fixpoint idx_of_nat n :=
     match n with
     | 0 => idx_zero
     | S n => idx_succ (idx_of_nat n)
     end.
-  
+
+  (* The semi-naive frontier loop double-counts: a match with k new clauses is
+     found once per frontier choice that lands on a new clause (it uses the
+     TOTAL trie for every non-frontier clause).  Since [exec_write] is
+     idempotent on a repeated assignment (it only re-allocates garbage idxs that
+     are immediately unioned away), we aggregate the keys from every frontier
+     choice into a single [idx_trie] (whose keys are unique [list idx]
+     assignments) and [exec_write] each exactly once. *)
   Definition process_erule db_tries r : ST unit :=
-    (* TODO: don't construct the list of nats/idxs, just iterate directly *)
-    list_Miter (fun n => process_erule' db_tries r (idx_of_nat n))
-      (seq 0 (List.length (uncurry cons r.(query_clause_ptrs)))).
+    let nclauses := List.length (uncurry cons r.(query_clause_ptrs)) in
+    let seen : idx_trie unit :=
+      List.fold_left
+        (fun acc n =>
+           List.fold_left (fun acc' k => map.put acc' k tt)
+             (erule_frontier_keys db_tries r (idx_of_nat n)) acc)
+        (seq 0 nclauses) map.empty in
+    list_Miter (M:=ST) (exec_write r) (map.keys seen).
 
   (* TODO: return the new epoch?  *)
   Definition increment_epoch : ST unit :=
