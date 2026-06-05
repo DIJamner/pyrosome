@@ -722,6 +722,82 @@ Definition ren_is_Apply_ty  := fst ren_is_Apply.
 Definition ren_is_Apply_val := fst (snd ren_is_Apply).
 Definition ren_is_Apply_ne  := snd (snd ren_is_Apply).
 
+(* ===================================================================== *)
+(* SCOPED renaming-conjugation, the renaming analogue of [ShiftSub]         *)
+(* ([Preservation.v:181]) for "Apply commutes with renaming".               *)
+(*                                                                         *)
+(* [RenShSc N m2 rho_b rho_v s s2] : [s2] is the conjugate of [s] by the    *)
+(* renaming [rho], for the [< N] indices the substituted value reads.  We   *)
+(* carry TWO index maps [rho_b] (input/binder side) and [rho_v] (output     *)
+(* side); they coincide everywhere EXCEPT inside a beta step, where the      *)
+(* lambda body's input is read through [up_renl rho_v] while its result      *)
+(* still lives under [rho_v] (the [ShiftSub] [cb]/[cv] split).  The RHS is    *)
+(* the RELATIONAL renaming [Apply_val (ren_sub rho_v)], so binder lifting     *)
+(* goes through the proven [up_ren_sub] -- NO shift/renaming conjugation      *)
+(* ([ins_renl]) is needed (that snag only arises with the SYNTACTIC          *)
+(* [ren_val] under [shift_val]).                                            *)
+(* ===================================================================== *)
+
+Definition RenShSc (N m2 : nat) (rho_b rho_v : list nat) (s s2 : ssub) : Type :=
+  forall k, k < N ->
+    Apply_val m2 (ren_sub rho_v) (nth_default (vNe (nVar k)) s k)
+             (nth_default (vNe (nVar (renm rho_b k))) s2 (renm rho_b k)).
+
+(* The renaming maps the [< N] indices into the target level [m2]. *)
+Definition ren_ok (rho : list nat) (N m2 : nat) : Prop :=
+  forall k, k < N -> renm rho k < m2.
+
+Lemma ren_ok_up : forall rho N m2,
+    ren_ok rho N m2 -> ren_ok (up_renl rho) (S N) (S m2).
+Proof.
+  intros rho N m2 H k Hk. destruct k as [|k'].
+  - rewrite renm_up_0. Lia.lia.
+  - rewrite renm_up_S. assert (renm rho k' < m2) by (apply H; Lia.lia). Lia.lia.
+Qed.
+
+Lemma RenShSc_up : forall N m2 rho_b rho_v s s2,
+    RenShSc N m2 rho_b rho_v s s2 ->
+    RenShSc (S N) (S m2) (up_renl rho_b) (up_renl rho_v) (up s) (up s2).
+Proof.
+  intros N m2 rho_b rho_v s s2 H k Hk. destruct k as [|k'].
+  - (* head: both read [vNe (nVar 0)] *)
+    rewrite renm_up_0.
+    replace (nth_default (vNe (nVar 0)) (up s) 0) with (vNe (nVar 0))
+      by (unfold up, nth_default; reflexivity).
+    replace (nth_default (vNe (nVar 0)) (up s2) 0) with (vNe (nVar 0))
+      by (unfold up, nth_default; reflexivity).
+    apply ap_ne.
+    change (vNe (nVar 0)) with (nth_default (vNe (nVar 0)) (ren_sub (up_renl rho_v)) 0).
+    apply ap_var.
+  - (* tail: shift both reads and use [Apply_val_shift0] *)
+    rewrite renm_up_S, !up_nth_S, <- up_ren_sub.
+    apply Apply_val_shift0. apply H. Lia.lia.
+Qed.
+
+(* The beta conjugate: pushing the renaming [rho] through the beta
+   substitution [a :: id_list m] yields [ren_a :: id_list m2] (head goes to
+   the renamed argument; each [id_list] entry [< N <= m] relocates to its
+   [rho]-image, in range by [ren_ok]).  Input side reads through [up_renl rho]
+   (the body is under the lambda binder). *)
+Lemma RenShSc_beta : forall N m m2 rho a ren_a,
+    N <= m -> ren_ok rho N m2 ->
+    Apply_val m2 (ren_sub rho) a ren_a ->
+    RenShSc (S N) m2 (up_renl rho) rho (a :: id_list m) (ren_a :: id_list m2).
+Proof.
+  intros N m m2 rho a ren_a HNm Hok Ha k Hk. destruct k as [|k'].
+  - (* head: read [a] / [ren_a] *)
+    rewrite renm_up_0.
+    unfold nth_default; cbn [nth_error]. exact Ha.
+  - (* tail: [id_list m @ k'] relocates to [id_list m2 @ (rho k')] *)
+    rewrite renm_up_S, !nth_default_cons_S.
+    assert (Hk'm : k' < m) by Lia.lia.
+    rewrite (id_list_nth_any m k'), (@ltbT k' m Hk'm).
+    assert (Hrk : renm rho k' < m2) by (apply Hok; Lia.lia).
+    rewrite (id_list_nth_any m2 (renm rho k')), (@ltbT (renm rho k') m2 Hrk).
+    apply ap_ne.
+    rewrite <- (ren_sub_nth rho k'). apply ap_var.
+Qed.
+
 (* The renamed image is UNIQUE: any [Apply] by a renaming substitution lands
    on the syntactic [ren_*] (by determinism).  This is the bridge from the
    relational [is_ren]/[Apply_val] world to the functional [ren_val] one. *)
