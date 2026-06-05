@@ -73,10 +73,12 @@ Section ApplyLemmas.
     - (* nVar *) intros k m. rewrite <- (id_list_nth m k). apply ap_var.
     - (* nEmptyrec *) intros rA lA A IHA scrut IHscr m.
       apply ap_emptyrec; [ apply IHA | apply IHscr ].
-    - (* nApp *) intros f IHf a IHa m.
-      eapply ap_app; [ apply IHf | apply IHa | apply vapp_ne ].
-    - (* nAppI *) intros f IHf a IHa m.
-      eapply ap_appI; [ apply IHf | apply IHa | apply vappI_ne ].
+    - (* nApp *) intros f IHf F IHF B IHB a IHa m.
+      eapply ap_app;
+        [ apply IHf | apply IHF | rewrite up_id_list; apply IHB | apply IHa | apply vapp_ne ].
+    - (* nAppI *) intros f IHf F IHF B IHB a IHa m.
+      eapply ap_appI;
+        [ apply IHf | apply IHF | rewrite up_id_list; apply IHB | apply IHa | apply vappI_ne ].
   Qed.
 
   Definition Apply_ty_id  : forall T m, Apply_ty m (id_list m) T T := fst Apply_id_all.

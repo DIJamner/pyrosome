@@ -140,9 +140,9 @@ Section SymGen.
       + (* fwd: PiRedTmEq PA0 f g -> PiRedTmEq (sym_pack...) g f *)
         intros f g [[Hf Hg] app].
         refine ((Hg, Hf), _).
-        intros Delta sg a b FB' FA' gsg fsg ws rn afB afA afsg afsf rab.
+        intros Delta sg a b FB' FA' BB' BA' gsg fsg ws rn afB afA afBB afBA afsg afsf rab.
         pose (rPA := snd (projT2 (Xshp Delta sg FA' FB' ws afA afB)) a b rab).
-        destruct (app Delta sg b a FA' FB' fsg gsg ws rn afA afB afsf afsg rPA)
+        destruct (app Delta sg b a FA' FB' BA' BB' fsg gsg ws rn afA afB afBA afBB afsf afsg rPA)
           as [v [w [[Vf Vg] rvw]]].
         exists w, v; refine ((Vg, Vf), _).
         exact (snd (fst (projT2 (Xpos Delta sg b a FA' FB' ws afA afB rPA))) v w rvw).
@@ -154,10 +154,10 @@ Section SymGen.
            LogRel2Irr's LRpi case: transport in the GOAL, not the hypothesis). *)
         intros f g [[Hf Hg] app].
         refine ((Hg, Hf), _).
-        intros Delta sg a b FA' FB' Gsg Fsg ws rn afA afB afsG afsF rab.
+        intros Delta sg a b FA' FB' BA' BB' Gsg Fsg ws rn afA afB afBA afBB afsG afsF rab.
         pose (rab' := snd (fst (projT2 (Xshp Delta sg FA' FB' ws afA afB))) a b rab).
         pose (rPA0 := snd (projT2 (Xshp Delta sg FA' FB' ws afA afB)) b a rab').
-        destruct (app Delta sg b a FB' FA' Fsg Gsg ws rn afB afA afsF afsG rab')
+        destruct (app Delta sg b a FB' FA' BB' BA' Fsg Gsg ws rn afB afA afBB afBA afsF afsG rab')
           as [v [w [[Vfv Vgw] rvw]]].
         exists w, v; refine ((Vgw, Vfv), _).
         pose proof (snd (projT2 (Xpos Delta sg a b FA' FB' ws afA afB rPA0)) v w rvw) as rwv.

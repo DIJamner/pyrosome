@@ -62,8 +62,8 @@ Section Domain.
   with neutral : Type :=
   | nVar  (k : nat)                      (* de Bruijn index (0 = innermost) *)
   | nEmptyrec (rA lA : term) (A : sval) (scrut : neutral)
-  | nApp  (f : neutral) (a : sval)       (* relevant application [f a] *)
-  | nAppI (f : neutral) (a : sval).      (* irrelevant application *)
+  | nApp  (f : neutral) (F B : sval) (a : sval)  (* relevant [f a]; F dom, B cod (1 binder) *)
+  | nAppI (f : neutral) (F B : sval) (a : sval). (* irrelevant application *)
   Set Elimination Schemes.
 
   (* A semantic SUBSTITUTION: the values to substitute for the in-scope variables. *)
@@ -91,8 +91,10 @@ Section Domain.
     match n with
     | nVar k => nVar (if Nat.ltb k c then k else k + d)
     | nEmptyrec rA lA A s => nEmptyrec rA lA (shift_val c d A) (shift_ne c d s)
-    | nApp f a => nApp (shift_ne c d f) (shift_val c d a)
-    | nAppI f a => nAppI (shift_ne c d f) (shift_val c d a)
+    | nApp f F B a =>
+        nApp (shift_ne c d f) (shift_val c d F) (shift_val (S c) d B) (shift_val c d a)
+    | nAppI f F B a =>
+        nAppI (shift_ne c d f) (shift_val c d F) (shift_val (S c) d B) (shift_val c d a)
     end.
 
   Definition shift_ty (c d : nat) (T : svalty) : svalty :=

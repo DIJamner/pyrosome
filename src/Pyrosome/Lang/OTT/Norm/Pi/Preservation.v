@@ -120,10 +120,14 @@ Proof.
         rewrite (@ltbF (k + 1) (S c2)) by Lia.lia. reflexivity.
   - (* nEmptyrec *) intros rA lA A IHA scrut IHscr c1 c2 Hle. cbn.
     f_equal; [ exact (IHA c1 c2 Hle) | exact (IHscr c1 c2 Hle) ].
-  - (* nApp *) intros f IHf a IHa c1 c2 Hle. cbn.
-    f_equal; [ exact (IHf c1 c2 Hle) | exact (IHa c1 c2 Hle) ].
-  - (* nAppI *) intros f IHf a IHa c1 c2 Hle. cbn.
-    f_equal; [ exact (IHf c1 c2 Hle) | exact (IHa c1 c2 Hle) ].
+  - (* nApp *) intros f IHf F IHF B IHB a IHa c1 c2 Hle. cbn.
+    f_equal;
+      [ exact (IHf c1 c2 Hle) | exact (IHF c1 c2 Hle)
+      | apply (IHB (S c1) (S c2)); Lia.lia | exact (IHa c1 c2 Hle) ].
+  - (* nAppI *) intros f IHf F IHF B IHB a IHa c1 c2 Hle. cbn.
+    f_equal;
+      [ exact (IHf c1 c2 Hle) | exact (IHF c1 c2 Hle)
+      | apply (IHB (S c1) (S c2)); Lia.lia | exact (IHa c1 c2 Hle) ].
 Qed.
 
 (* The cutoff-0 specialization used below. *)
@@ -268,12 +272,14 @@ Lemma Apply_shift_commute :
   * (forall m s n v, Apply_ne m s n v ->
        forall cb cv s2, ShiftSub cb cv s s2 -> cv <= m ->
          Apply_ne (S m) s2 (shift_ne cb 1 n) (shift_val cv 1 v))
-  * (forall m vf a v, Vapp m vf a v ->
+  * (forall m F B vf a v, Vapp m F B vf a v ->
        forall c, c <= m ->
-         Vapp (S m) (shift_val c 1 vf) (shift_val c 1 a) (shift_val c 1 v))
-  * (forall m vf a v, VappI m vf a v ->
+         Vapp (S m) (shift_val c 1 F) (shift_val (S c) 1 B)
+              (shift_val c 1 vf) (shift_val c 1 a) (shift_val c 1 v))
+  * (forall m F B vf a v, VappI m F B vf a v ->
        forall c, c <= m ->
-         VappI (S m) (shift_val c 1 vf) (shift_val c 1 a) (shift_val c 1 v)).
+         VappI (S m) (shift_val c 1 F) (shift_val (S c) 1 B)
+               (shift_val c 1 vf) (shift_val c 1 a) (shift_val c 1 v)).
 Proof.
   refine (Apply_mutind
     (fun m s T T' _ => forall cb cv s2, ShiftSub cb cv s s2 -> cv <= m ->
@@ -282,10 +288,12 @@ Proof.
        Apply_val (S m) s2 (shift_val cb 1 v) (shift_val cv 1 v'))
     (fun m s n v _ => forall cb cv s2, ShiftSub cb cv s s2 -> cv <= m ->
        Apply_ne (S m) s2 (shift_ne cb 1 n) (shift_val cv 1 v))
-    (fun m vf a v _ => forall c, c <= m ->
-       Vapp (S m) (shift_val c 1 vf) (shift_val c 1 a) (shift_val c 1 v))
-    (fun m vf a v _ => forall c, c <= m ->
-       VappI (S m) (shift_val c 1 vf) (shift_val c 1 a) (shift_val c 1 v))
+    (fun m F B vf a v _ => forall c, c <= m ->
+       Vapp (S m) (shift_val c 1 F) (shift_val (S c) 1 B)
+            (shift_val c 1 vf) (shift_val c 1 a) (shift_val c 1 v))
+    (fun m F B vf a v _ => forall c, c <= m ->
+       VappI (S m) (shift_val c 1 F) (shift_val (S c) 1 B)
+             (shift_val c 1 vf) (shift_val c 1 a) (shift_val c 1 v))
     _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
   - (* ap_dU *) intros m s r l cb cv s2 Hss Hc. cbn. apply ap_dU.
   - (* ap_dEl *) intros m s e e' He IHe cb cv s2 Hss Hc. cbn. apply ap_dEl. exact (IHe cb cv s2 Hss Hc).
@@ -314,24 +322,28 @@ Proof.
     apply ap_emptyrec.
     + exact (IHA cb cv s2 Hss Hc).
     + pose proof (IHsc cb cv s2 Hss Hc) as IH. cbn in IH. exact IH.
-  - (* ap_app *) intros m s f vf a a' v Hf IHf Ha IHa Hvapp IHvapp cb cv s2 Hss Hc. cbn.
+  - (* ap_app *) intros m s f vf F F' B B' a a' v Hf IHf HF IHF HB IHB Ha IHa Hvapp IHvapp cb cv s2 Hss Hc. cbn.
     eapply ap_app.
     + exact (IHf cb cv s2 Hss Hc).
+    + exact (IHF cb cv s2 Hss Hc).
+    + apply (IHB (S cb) (S cv) (up s2)); [ apply ShiftSub_up; exact Hss | Lia.lia ].
     + exact (IHa cb cv s2 Hss Hc).
     + exact (IHvapp cv Hc).
-  - (* ap_appI *) intros m s f vf a a' v Hf IHf Ha IHa Hvapp IHvapp cb cv s2 Hss Hc. cbn.
+  - (* ap_appI *) intros m s f vf F F' B B' a a' v Hf IHf HF IHF HB IHB Ha IHa Hvapp IHvapp cb cv s2 Hss Hc. cbn.
     eapply ap_appI.
     + exact (IHf cb cv s2 Hss Hc).
+    + exact (IHF cb cv s2 Hss Hc).
+    + apply (IHB (S cb) (S cv) (up s2)); [ apply ShiftSub_up; exact Hss | Lia.lia ].
     + exact (IHa cb cv s2 Hss Hc).
     + exact (IHvapp cv Hc).
-  - (* vapp_lam *) intros m b a v Hbeta IHbeta c Hc. cbn.
+  - (* vapp_lam *) intros m F B b a v Hbeta IHbeta c Hc. cbn.
     apply vapp_lam.
     exact (IHbeta (S c) c (shift_val c 1 a :: id_list (S m)) (@ShiftSub_beta m a c Hc) Hc).
-  - (* vapp_ne *) intros m n a c Hc. cbn. apply vapp_ne.
-  - (* vappI_lam *) intros m b a v Hbeta IHbeta c Hc. cbn.
+  - (* vapp_ne *) intros m F B n a c Hc. cbn. apply vapp_ne.
+  - (* vappI_lam *) intros m F B b a v Hbeta IHbeta c Hc. cbn.
     apply vappI_lam.
     exact (IHbeta (S c) c (shift_val c 1 a :: id_list (S m)) (@ShiftSub_beta m a c Hc) Hc).
-  - (* vappI_ne *) intros m n a c Hc. cbn. apply vappI_ne.
+  - (* vappI_ne *) intros m F B n a c Hc. cbn. apply vappI_ne.
 Qed.
 
 (* The corollary used by the substitution lemma's binder cases: applying
@@ -455,10 +467,16 @@ Proof.
       rewrite shift_val_comm0. exact IH.
     + (* (2) thread the shift through the codomain substitution *)
       exact (Apply_val_shiftc Hb (@ShiftSub_wkn_cons m ARG c Hc) ltac:(Lia.lia)).
-    + (* (3) reflect the eta-body at the shifted codomain *)
+    + (* (3) reflect the eta-body at the shifted codomain.  The annotated
+         [nApp] now carries the (weakened) domain [shift_val 0 1 F] and codomain
+         [shift_val 1 1 B]; align the head, [F], and [B] with the IH via the
+         shift-commutation lemmas (head + [F] at cutoff 0, [B] one binder up). *)
       pose proof (IHbody (S c) ltac:(Lia.lia)) as IH.
       cbn [shift_ty shift_val shift_ne] in IH.
-      rewrite ((snd (snd shift_shift_comm)) n 0 c (Nat.le_0_l c)). exact IH.
+      rewrite ((snd (snd shift_shift_comm)) n 0 c (Nat.le_0_l c)).
+      rewrite (shift_val_comm0 F c).
+      rewrite ((fst (snd shift_shift_comm)) B 1 (S c) ltac:(Lia.lia)).
+      exact IH.
 Qed.
 
 (* ===================================================================== *)

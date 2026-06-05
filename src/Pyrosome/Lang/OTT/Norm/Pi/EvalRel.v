@@ -156,14 +156,14 @@ Section EvalRel.
       eval_env G Ge ->
       eval_rel Ge f (dEl (vPi vF vB)) vf ->
       eval_rel Ge a (dEl vF) va ->
-      Vapp (length Ge) vf va v ->
+      Vapp (length Ge) vF vB vf va v ->
       Apply_val (length Ge) (va :: id_list (length Ge)) vB vBa ->
       eval_rel Ge (con "app_rel" [a; f; B; F; lG; lF; rF; G]) (dEl vBa) v
   | ev_appI : forall G Ge rF lF F B f a vF vB vf va v vBa,
       eval_env G Ge ->
       eval_rel Ge f (dEl (vPiI vF vB)) vf ->
       eval_rel Ge a (dEl vF) va ->
-      VappI (length Ge) vf va v ->
+      VappI (length Ge) vF vB vf va v ->
       Apply_val (length Ge) (va :: id_list (length Ge)) vB vBa ->
       eval_rel Ge (con "app_irr" [a; f; B; F; lF; rF; G]) (dEl vBa) v
 
