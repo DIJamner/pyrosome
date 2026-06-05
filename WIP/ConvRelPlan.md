@@ -113,19 +113,26 @@ Reflect/Typing/EvalRel. Mechanical.
   types; the type transport is done in the GOAL of the aligned derivation
   (rewriting a hypothesis is blocked by `posPack`'s dependency on `posTyA`).
   REMAINING Ph2: transport + renaming stability.
-- **Ph4 PER SYMMETRY is UNIVERSE-BLOCKED (key finding).** The unified-`LR_mut`
-  symmetry carrier `SymCar P := { Q & LR Ge B A Q * maps }` CANNOT typecheck in
-  the monomorphic finite-tower encoding: the Pi-domain case stores the swapped
-  relation into an `LRPack` field (`Q <= LRPack.u0`), but the `LRU` case forces
-  `Q` = the universe witness `{P & rec h .. P}` at `RedRel.u2`, and
-  `LRPack.u0 < RedRel.u2` is INTRINSIC (the `LR` inductive in `Type@{RedRel.u2}`
-  takes a `PolyRedPack` arg built from `LRPack`).  No annotation reconciles
-  this; naive `Set Universe Polymorphism` doesn't either.  REAL FIX = level-
-  indexed universes (logrel-coq style) so lower-level `rec` returns relations
-  at a strictly smaller universe.  Parked attempt + full diagnosis:
-  `WIP/LogRel2Sym.v` (GAP 2').  Symmetry will likely be reformulated to USE
-  `RedTmEq_irr` rather than carry a swapped derivation, or deferred to the
-  universe-poly refactor.
+- **UNIVERSE REFACTOR DONE (2026-06-05).** `LogRel2.v` ported to the universe-poly
+  **3-level UNFOLDED tower** (`UNIVERSE_FIX_PLAN.md` Step 1B, validated first in
+  `WIP/UnivProto.v`): lower relations as separate params `rec0`/`rec1` (no
+  dispatching `rec` function / no value-level `match`), `LRU` split into
+  `LRU0`/`LRU1`; `Set Universe Polymorphism` + `Unset Strict Universe Declaration`
+  across the whole `LogRel2*` chain.  Recorded ladder `i0<i, i1<i, i<j, j0<=i,
+  j1<=i`, **no `i0=i1` collapse**.  Chain re-greened, all axiom-free.
+- **Ph4 PER SYMMETRY: DONE & axiom-free — universe block CLEARED.**
+  `Norm/Pi/LogRel2Sym.v`.  The former block (swapped carrier `Q` needing both
+  `<= LRPack.u0` and `>= RedRel.u2`) is gone: `Q` now lives at the motive's
+  relation universe `i`, big enough for the `LRU0`/`LRU1` witnesses and small
+  enough to store into an `LRPack` field (the `sym_pack` storage that was
+  impossible).  `LR_sym_gen` (generic) builds the swapped `PolyRedPack`
+  (`sym_pack`/`sym_adeq`) and discharges the Pi `bwd` via IRRELEVANCE
+  (`LR_irrelevant_gen` + `Apply_val_det`); tower `LRbot_sym`/`LR0_sym`/`LR1_sym`
+  (`RecSym1`); top-level `RedTyEq_sym` + `RedTmEq_sym`.  (Supersedes the earlier
+  "fundamentally universe-blocked" finding; full swapped-derivation symmetry now
+  goes through, so the deferred reformulation-via-`RedTmEq_irr` plan is moot.)
+- **REMAINING Ph2/Ph4:** transport + renaming stability + transitivity.  Then
+  Ph0 neutral annotations → Ph3 genuine ∼ne.
 
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
@@ -158,9 +165,9 @@ Reflect/Typing/EvalRel. Mechanical.
 
 1. **Ph1** new two-sided PER core (new additive file; verify POSITIVITY first — riskiest).  [DONE]
 2. **Ph0** annotate neutrals.
-3. **Ph2** irrelevance + transport + renaming stability.
+3. **Ph2** irrelevance [DONE] + transport + renaming stability.
 4. **Ph3** mutual reify/reflect.
-5. **Ph4** PER laws (sym, trans) + rule-by-rule model + contextualization (= validity/RedCtx).
+5. **Ph4** PER laws — SYMMETRY [DONE, `LogRel2Sym.v`], trans pending; + rule-by-rule model + contextualization (= validity/RedCtx).
 6. **Ph5** fundamental lemma → deep-norm (Prop6) / no-confusion (Prop4, via SortInj) /
    neutral-conv (Prop5); connect to gluing `Model.v`/`ModelOk.v` ⇒ eq_term decidability.
 7. **Ph6** extend Pi fragment → full OTT (Cast/Id/ProofIrr/Sigma) as extra reduction
