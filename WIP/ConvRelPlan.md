@@ -186,11 +186,35 @@ Reflect/Typing/EvalRel. Mechanical.
   preconditions; `t_lam_eta` via `Reflect_ren`+`Apply_val_ren_commute`
   (`ren_shift_comm1_val`), `n_app`/`n_appI` via `Apply_val_ren_commute`+
   `RenShSc_beta`.  (Gotcha: pin `ren_ok_le`'s source bound with `with (N:=..)`.)
-- **REMAINING Ph2/Ph4:** base-PER renaming (`NeConv_ren` ⇒ `RedNatEq_ren`/
-  `RedNeutralEq_ren`, now trivially built on `ren_typing`) + the `LR_ren_gen`
-  presheaf itself (the Pi pack REUSES the original pack at the composite
-  `sg2∘sg` — no domain/codomain IHs needed, cleaner than symmetry) + transport
-  (Lemma 12, deferred) + transitivity (deferred).  Then Ph3 genuine ∼ne.
+- **RENAMING STABILITY — COMPLETE, axiom-free, green (2026-06-05).**
+  `LogRel2Ren.v` now holds the full presheaf + top-level `RedTyEq_ren` /
+  `RedTmEq_ren` (`{P & LR2 Ge A B P}` ↦ `{Q & LR2 Ge' A[rho] B[rho] Q}` with a
+  forward value map).  Structure:
+  - base-PER renaming `NeConv_ren`/`RedNatEq_ren`/`RedNeutralEq_ren` (trivially
+    on `ren_typing`);
+  - **`Apply_ren_uncomp_sc`** — the REVERSE renaming composition (composite-side
+    `Apply` ⇒ renamed-side), by `Apply_mutind` on the EXISTING composite
+    derivation.  **This was the gap in the plan's "(comp_sc + det)" note:**
+    `shpRed'` needs the forward `Apply_val_ren_comp_sc` but the codomain
+    `posRed'` needs this reverse direction.  Crucially it needs NO Apply
+    totality (the derivation is given, only replayed) — exactly what
+    distinguishes renaming from transitivity (which must MANUFACTURE a middle
+    witness ≈ normalization);
+  - `comp_sub`/`comp_sub_RenSubSc`/`comp_sub_cons_RenSubSc`/`wf_ssub_comp`/
+    `is_ren_comp_sub` — the `sg2`-after-`rho` composite-substitution algebra;
+  - `ren_pack`/`ren_adeq`/`ren_pack_fwd` — the renamed Pi pack: REUSE `PA0` at
+    the composite (no IHs).  **Cleaner than symmetry: the carrier `RenCar` is
+    FORWARD-ONLY** (no backward map) and the forward map needs NO irrelevance/
+    `Apply_val_det` — `shpRed'`/`posRed'` are STANDALONE named constants sharing
+    the `rp_*` witnesses, so `rab` and the codomain relation match
+    DEFINITIONALLY.  (Gotcha: a record self-projection `shpRed ?PA` under
+    `refine {| |}` stays an unsolved evar that won't reduce — hence the
+    standalone constants + explicit `Build_*`.)
+  - `LR_ren_gen` by `LR_mut` (LRU0/LRU1 via `RecRen1` on the lower tower), tower
+    `LRbot_ren`/`LR0_ren`/`LR1_ren`.
+- **REMAINING Ph2/Ph4:** transport (Lemma 12, deferred) + transitivity
+  (deferred — both need normalization).  Then **Ph3 genuine ∼ne** (the next
+  live item, gated on Ph0 neutral annotations, which are DONE).
 
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
