@@ -26,43 +26,62 @@ Import Core.Notations.
 (* ===================================================================== *)
 
 (* ===================================================================== *)
-(* Part A : well-typed values / neutrals are scoped.                       *)
+(* Part A : well-typed TYPE-CODES (judgments at a universe [dU]) are        *)
+(* scoped.                                                                  *)
+(*                                                                          *)
+(* NOTE: this is deliberately restricted to the universe types [dU r l].    *)
+(* Since the [nApp]/[nAppI] annotation refactor, subject scopedness of a    *)
+(* general [dEl]-typed term needs the stored domain/codomain [F,B] of every *)
+(* application node to be scoped, which in turn needs the typing context to *)
+(* be well-formed (a validity/regularity invariant) — and [t_lam] does not  *)
+(* record well-formedness of its domain.  We never need that generality:    *)
+(* every consumer here ([wf_svalty_scoped], [wf_ssub_*]) only scopes        *)
+(* TYPE-CODES, which inhabit [dU].  A [dU]-typed term is a pure type code   *)
+(* ([vNat]/[vEmpty]/[vPi]/[vPiI]/[vNe (nVar _)]): no [nApp], no lambda, so   *)
+(* the [F,B]/[t_lam] obstructions never arise and no [wf_senv] is needed.    *)
+(* The non-[dU] constructors are discharged by [discriminate] on the type.  *)
 (* ===================================================================== *)
 
 Lemma typing_scoped :
-  (forall Ge v T, has_svalty Ge v T -> ne_below_val (length Ge) v)
-  * (forall Ge n T, wf_neutral Ge n T -> ne_below_ne (length Ge) n).
+  (forall Ge v T, has_svalty Ge v T ->
+     forall r l, T = dU r l -> ne_below_val (length Ge) v)
+  * (forall Ge n T, wf_neutral Ge n T ->
+     forall r l, T = dU r l -> ne_below_ne (length Ge) n).
 Proof.
   refine (has_neutral_mutind
-    (fun Ge v T _ => ne_below_val (length Ge) v)
-    (fun Ge n T _ => ne_below_ne (length Ge) n)
+    (fun Ge v T _ => forall r l, T = dU r l -> ne_below_val (length Ge) v)
+    (fun Ge n T _ => forall r l, T = dU r l -> ne_below_ne (length Ge) n)
     _ _ _ _ _ _ _ _ _ _ _ _ _ _).
-  - (* t_ne *) intros Ge n T hn IHn. exact IHn.
-  - (* t_zero *) intros Ge. exact I.
-  - (* t_suc *) intros Ge v hv IHv. exact IHv.
-  - (* t_Nat *) intros; exact I.
-  - (* t_Empty *) intros; exact I.
-  - (* t_Pi *) intros Ge F B rF lF rB lB r l hF IHF hB IHB. cbn. split.
-    + exact IHF.
-    + cbn [length] in IHB. rewrite length_map in IHB. exact IHB.
-  - (* t_PiI *) intros Ge F B rF lF rB lB r l hF IHF hB IHB. cbn. split.
-    + exact IHF.
-    + cbn [length] in IHB. rewrite length_map in IHB. exact IHB.
-  - (* t_lam *) intros Ge F B b hb IHb. cbn.
-    cbn [length] in IHb. rewrite length_map in IHb. exact IHb.
-  - (* t_lamI *) intros Ge F B b hb IHb. cbn.
-    cbn [length] in IHb. rewrite length_map in IHb. exact IHb.
-  - (* t_lam_eta *) intros Ge F B b ARG B' HR Hap hb IHb. cbn.
-    cbn [length] in IHb. rewrite length_map in IHb. exact IHb.
-  - (* n_var *) intros Ge k T He. cbn.
+  - (* t_ne *) intros Ge n T hn IHn r l Heq. exact (IHn r l Heq).
+  - (* t_zero *) intros Ge r l Heq. discriminate Heq.
+  - (* t_suc *) intros Ge v hv IHv r l Heq. discriminate Heq.
+  - (* t_Nat *) intros Ge r l r0 l0 _. exact I.
+  - (* t_Empty *) intros Ge r l r0 l0 _. exact I.
+  - (* t_Pi *) intros Ge F B rF lF rB lB r l hF IHF hB IHB r0 l0 _.
+    cbn [ne_below_val]. split.
+    + exact (IHF rF lF eq_refl).
+    + specialize (IHB rB lB eq_refl). cbn [length] in IHB.
+      rewrite length_map in IHB. exact IHB.
+  - (* t_PiI *) intros Ge F B rF lF rB lB r l hF IHF hB IHB r0 l0 _.
+    cbn [ne_below_val]. split.
+    + exact (IHF rF lF eq_refl).
+    + specialize (IHB rB lB eq_refl). cbn [length] in IHB.
+      rewrite length_map in IHB. exact IHB.
+  - (* t_lam *) intros Ge F B b hb IHb r l Heq. discriminate Heq.
+  - (* t_lamI *) intros Ge F B b hb IHb r l Heq. discriminate Heq.
+  - (* t_lam_eta *) intros Ge F B b ARG B' HR Hap hb IHb r l Heq. discriminate Heq.
+  - (* n_var *) intros Ge k T He r l Heq. cbn [ne_below_ne].
     apply (proj1 (nth_error_Some Ge k)). rewrite He. discriminate.
-  - (* n_emptyrec *) intros Ge rA lA A scrut r l hA IHA hscr IHscr. cbn. split; assumption.
-  - (* n_app *) intros Ge f F B a B' hf IHf ha IHa Hap. cbn. split; assumption.
-  - (* n_appI *) intros Ge f F B a B' hf IHf ha IHa Hap. cbn. split; assumption.
+  - (* n_emptyrec *) intros Ge rA lA A scrut r l hA IHA hscr IHscr r0 l0 Heq.
+    discriminate Heq.
+  - (* n_app *) intros Ge f F B a B' hf IHf ha IHa Hap r l Heq. discriminate Heq.
+  - (* n_appI *) intros Ge f F B a B' hf IHf ha IHa Hap r l Heq. discriminate Heq.
 Qed.
 
-Definition has_svalty_scoped Ge v T (H : has_svalty Ge v T) := fst typing_scoped Ge v T H.
-Definition wf_neutral_scoped Ge n T (H : wf_neutral Ge n T) := snd typing_scoped Ge n T H.
+Definition has_svalty_scoped Ge v r l (H : has_svalty Ge v (dU r l)) :
+  ne_below_val (length Ge) v := fst typing_scoped Ge v (dU r l) H r l eq_refl.
+Definition wf_neutral_scoped Ge n r l (H : wf_neutral Ge n (dU r l)) :
+  ne_below_ne (length Ge) n := snd typing_scoped Ge n (dU r l) H r l eq_refl.
 
 (* ===================================================================== *)
 (* Part B : applying the renaming substitution [shsub c n] = shifting at    *)
@@ -169,14 +188,18 @@ Proof.
     destruct H as [HA Hscr]. cbn [shift_ne]. apply ap_emptyrec.
     + apply IHA. exact HA.
     + apply IHscr. exact Hscr.
-  - (* nApp *) intros f IHf a IHa m c H. cbn [ne_below_ne] in H.
-    destruct H as [Hf Ha]. cbn [shift_ne]. eapply ap_app.
+  - (* nApp *) intros f IHf F IHF B IHB a IHa m c H. cbn [ne_below_ne] in H.
+    destruct H as (Hf & HF & HB & Ha). cbn [shift_ne]. eapply ap_app.
     + apply IHf. exact Hf.
+    + apply IHF. exact HF.
+    + rewrite up_shsub. apply IHB. exact HB.
     + apply IHa. exact Ha.
     + apply vapp_ne.
-  - (* nAppI *) intros f IHf a IHa m c H. cbn [ne_below_ne] in H.
-    destruct H as [Hf Ha]. cbn [shift_ne]. eapply ap_appI.
+  - (* nAppI *) intros f IHf F IHF B IHB a IHa m c H. cbn [ne_below_ne] in H.
+    destruct H as (Hf & HF & HB & Ha). cbn [shift_ne]. eapply ap_appI.
     + apply IHf. exact Hf.
+    + apply IHF. exact HF.
+    + rewrite up_shsub. apply IHB. exact HB.
     + apply IHa. exact Ha.
     + apply vappI_ne.
 Qed.
@@ -328,16 +351,20 @@ Proof.
     inversion Hap; subst. cbn [shift_ne]. eapply ap_emptyrec.
     + eapply IHA; [ exact HneA | exact Hins | eassumption ].
     + eapply IHscr; [ exact Hnescr | exact Hins | eassumption ].
-  - (* nApp *) intros f IHf a IHa n0 m c s s2 w Hne Hins Hap.
-    cbn [ne_below_ne] in Hne. destruct Hne as [Hnef Hnea].
+  - (* nApp *) intros f IHf F IHF B IHB a IHa n0 m c s s2 w Hne Hins Hap.
+    cbn [ne_below_ne] in Hne. destruct Hne as (Hnef & HneF & HneB & Hnea).
     inversion Hap; subst. cbn [shift_ne]. eapply ap_app.
     + eapply IHf; [ exact Hnef | exact Hins | eassumption ].
+    + eapply IHF; [ exact HneF | exact Hins | eassumption ].
+    + eapply IHB; [ exact HneB | apply InsAt_up; exact Hins | eassumption ].
     + eapply IHa; [ exact Hnea | exact Hins | eassumption ].
     + eassumption.
-  - (* nAppI *) intros f IHf a IHa n0 m c s s2 w Hne Hins Hap.
-    cbn [ne_below_ne] in Hne. destruct Hne as [Hnef Hnea].
+  - (* nAppI *) intros f IHf F IHF B IHB a IHa n0 m c s s2 w Hne Hins Hap.
+    cbn [ne_below_ne] in Hne. destruct Hne as (Hnef & HneF & HneB & Hnea).
     inversion Hap; subst. cbn [shift_ne]. eapply ap_appI.
     + eapply IHf; [ exact Hnef | exact Hins | eassumption ].
+    + eapply IHF; [ exact HneF | exact Hins | eassumption ].
+    + eapply IHB; [ exact HneB | apply InsAt_up; exact Hins | eassumption ].
     + eapply IHa; [ exact Hnea | exact Hins | eassumption ].
     + eassumption.
 Qed.

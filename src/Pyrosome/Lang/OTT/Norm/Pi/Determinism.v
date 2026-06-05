@@ -78,9 +78,9 @@ Proof.
       assert_fails (constr_eq x y); pose proof (Apply_val_det Ha Hb); subst
   | Ha : Apply_list ?m ?s ?l ?x, Hb : Apply_list ?m ?s ?l ?y |- _ =>
       assert_fails (constr_eq x y); pose proof (Apply_list_det Ha Hb); subst
-  | Ha : Vapp ?m ?f ?a ?x, Hb : Vapp ?m ?f ?a ?y |- _ =>
+  | Ha : Vapp ?m ?F ?B ?f ?a ?x, Hb : Vapp ?m ?F ?B ?f ?a ?y |- _ =>
       assert_fails (constr_eq x y); pose proof (Vapp_det Ha Hb); subst
-  | Ha : VappI ?m ?f ?a ?x, Hb : VappI ?m ?f ?a ?y |- _ =>
+  | Ha : VappI ?m ?F ?B ?f ?a ?x, Hb : VappI ?m ?F ?B ?f ?a ?y |- _ =>
       assert_fails (constr_eq x y); pose proof (VappI_det Ha Hb); subst
   | Ha : Reflect ?m ?T ?n ?x, Hb : Reflect ?m ?T ?n ?y |- _ =>
       assert_fails (constr_eq x y); pose proof (Reflect_det Ha Hb); subst

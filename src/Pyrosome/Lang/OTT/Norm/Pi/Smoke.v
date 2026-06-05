@@ -15,10 +15,11 @@ Import Core.Notations.
 Section Smoke.
 
   (* BETA: the identity function [\x. x] applied to [vZero] yields [vZero].
-     [Vapp 0 (vLam (vNe (nVar 0))) vZero vZero] reduces via [vapp_lam] to
-     [Apply_val 0 [vZero] (vNe (nVar 0)) vZero] (id_list 0 = []). *)
+     [Vapp 0 vNat vNat (vLam (vNe (nVar 0))) vZero vZero] reduces via
+     [vapp_lam] to [Apply_val 0 [vZero] (vNe (nVar 0)) vZero] (id_list 0 = []).
+     The domain/codomain annotations [F B] are unconstrained by [vapp_lam]. *)
   Example beta_id_applied_zero :
-    Vapp 0 (vLam (vNe (nVar 0))) vZero vZero.
+    Vapp 0 vNat vNat (vLam (vNe (nVar 0))) vZero vZero.
   Proof.
     apply vapp_lam. apply ap_ne.
     change vZero with (nth_default (vNe (nVar 0)) (vZero :: id_list 0) 0) at 2.
@@ -27,7 +28,7 @@ Section Smoke.
 
   (* BETA, dependent-ish: [\x. suc x] applied to [vZero] yields [vSuc vZero]. *)
   Example beta_suc_applied_zero :
-    Vapp 0 (vLam (vSuc (vNe (nVar 0)))) vZero (vSuc vZero).
+    Vapp 0 vNat vNat (vLam (vSuc (vNe (nVar 0)))) vZero (vSuc vZero).
   Proof.
     apply vapp_lam. apply ap_suc, ap_ne.
     change vZero with (nth_default (vNe (nVar 0)) (vZero :: id_list 0) 0) at 2.
@@ -36,11 +37,12 @@ Section Smoke.
 
   (* ETA: reflecting a variable [nVar 0] at the function type [Nat -> Nat]
      (= El (vPi vNat vNat)) eta-expands it to [\x. (var 1) x], i.e.
-     [vLam (vNe (nApp (nVar 1) (vNe (nVar 0))))].  The bound variable becomes
-     index 0; the reflected head is weakened from index 0 to index 1. *)
+     [vLam (vNe (nApp (nVar 1) vNat vNat (vNe (nVar 0))))].  The bound variable
+     becomes index 0; the reflected head is weakened from index 0 to index 1;
+     the stored [F B = vNat vNat] are the (shifted, closed) domain/codomain. *)
   Example eta_var_at_Nat_to_Nat : forall m,
     Reflect m (dEl (vPi vNat vNat)) (nVar 0)
-            (vLam (vNe (nApp (nVar 1) (vNe (nVar 0))))).
+            (vLam (vNe (nApp (nVar 1) vNat vNat (vNe (nVar 0))))).
   Proof.
     intro m.
     eapply refl_Pi.
