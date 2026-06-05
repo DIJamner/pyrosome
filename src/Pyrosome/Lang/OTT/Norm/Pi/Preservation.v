@@ -606,19 +606,22 @@ Proof.
     + pose proof (IHB (S c) (shift_ty 0 1 T0)
                    ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
       rewrite wk_ctx_under_binder in IH. exact IH.
-  - (* t_lam *) intros Ge F B b hb IHb c T0 Hc. cbn. apply t_lam.
-    pose proof (IHb (S c) (shift_ty 0 1 T0)
-                 ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
-    rewrite wk_ctx_under_binder in IH. exact IH.
+  - (* t_lam *) intros Ge F B b rF lF hF IHF hb IHb c T0 Hc. cbn. eapply t_lam.
+    + exact (IHF c T0 Hc).
+    + pose proof (IHb (S c) (shift_ty 0 1 T0)
+                   ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
+      rewrite wk_ctx_under_binder in IH. exact IH.
   - (* t_lamI *) intros Ge F B b hb IHb c T0 Hc. cbn. apply t_lamI.
     pose proof (IHb (S c) (shift_ty 0 1 T0)
                  ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
     rewrite wk_ctx_under_binder in IH. exact IH.
-  - (* t_lam_eta *) intros Ge F B b ARG B' HR Hap Hb IHb c T0 Hc.
+  - (* t_lam_eta *) intros Ge F B b ARG B' rF lF hF IHF HR Hap Hb IHb c T0 Hc.
     cbn [shift_val shift_ty].
     assert (HL : length (wk_ctx c T0 Ge) = S (length Ge))
       by (apply wk_ctx_length; exact Hc).
     eapply t_lam_eta.
+    + (* the domain is well-typed at its universe *)
+      exact (IHF c T0 Hc).
     + (* reflect the bound variable at the shifted domain *)
       rewrite HL.
       pose proof (@Reflect_weaken _ _ _ _ HR (S c) ltac:(Lia.lia)) as IH.

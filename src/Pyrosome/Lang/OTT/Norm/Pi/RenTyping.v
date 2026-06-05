@@ -99,9 +99,9 @@ Proof.
     cbn [ren_val]. eapply t_PiI.
     + exact (IHF rF lF eq_refl Ge' rho Hctx).
     + exact (IHB rB lB eq_refl _ (up_renl rho) (ren_ctx_up_dEl F Hctx)).
-  - (* t_lam *) intros Ge F B b hb IHb r l Heq Ge' rho Hctx. discriminate Heq.
+  - (* t_lam *) intros Ge F B b rF lF hF IHF hb IHb r l Heq Ge' rho Hctx. discriminate Heq.
   - (* t_lamI *) intros Ge F B b hb IHb r l Heq Ge' rho Hctx. discriminate Heq.
-  - (* t_lam_eta *) intros Ge F B b ARG B' HR Hap hb IHb r l Heq Ge' rho Hctx.
+  - (* t_lam_eta *) intros Ge F B b ARG B' rF lF hF IHF HR Hap hb IHb r l Heq Ge' rho Hctx.
     discriminate Heq.
   - (* n_var *) intros Ge k T He r l Heq Ge' rho Hctx. subst T.
     cbn [ren_ne]. apply n_var. exact (Hctx k (dU r l) He).
