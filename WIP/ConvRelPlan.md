@@ -229,13 +229,14 @@ Reflect/Typing/EvalRel. Mechanical.
   `conv_nf_of_eq`), `conv_sym`, `conv_trans` — all axiom-free.  Mutual scheme
   `conv_mutind`.
 
-- **Ph3 SWAP — DESIGN RESOLVED, NOT YET EXECUTED (2026-06-05).**  Wiring the
-  genuine conversion into `LR` forces the base neutral relation to become
-  **TWO-TYPED**, because of a typing-conversion wall: `has_svalty` has NO
-  conversion rule, so once `n ∼ne m` with `n≠m`, a member typed at `dEl(vNe n)`
-  is NOT typed at `dEl(vNe m)`, and `RedTmEq_wf`'s `LRne` case (right member at
-  the right type) becomes UNPROVABLE from a single-left-typed `RedNeutralEq`.
-  Resolution — generalize the neutral base relation to carry both types:
+- **Ph3 SWAP — DONE, axiom-free, green (2026-06-05).**  The genuine `conv_ne`
+  is now wired into `LR` across all 7 files (`LogRel2{,Ind,Lemmas,Red,Irr,Sym,
+  Ren}.v`); the provisional strict-diagonal `NeConv` is GONE.  Key finding that
+  shaped it (a typing-conversion wall): `has_svalty` has NO conversion rule, so
+  once `n ∼ne m` with `n≠m`, a member typed at `dEl(vNe n)` is NOT typed at
+  `dEl(vNe m)`, and `RedTmEq_wf`'s `LRne` case (right member at the right type)
+  would be UNPROVABLE from a single-left-typed `RedNeutralEq`.  Resolution —
+  the neutral base relation became **TWO-TYPED**:
   ```coq
   (* in LogRel2.v; import LogRel2Conv *)
   Definition NeConv (Ge : senv) (T S : svalty) (n m : neutral) : Type :=
@@ -245,28 +246,35 @@ Reflect/Typing/EvalRel. Mechanical.
   (* rne_ne : NeConv Ge (dEl vNat)(dEl vNat) n m ;  LRempty uses (dEl vEmpty)(dEl vEmpty);
      LRne   : NeConv Ge (dU r l)(dU r l) n m -> ... RedNeutralEq Ge (dEl(vNe n))(dEl(vNe m)) *)
   ```
-  This is a BOUNDED 7-file arity-change refactor (do it as ONE green unit, per
-  the always-green discipline — no partial swap):
-  1. `LogRel2.v` — import `LogRel2Conv`; two-typed `NeConv`/`RedNeutralEq`;
-     fix `rne_ne`, `LRempty`, `LRne` type args.  (LRne's codes are typed
-     diagonally at `dU r l`; only the RELATION's outer pair is `(vNe n,vNe m)`.)
-  2. `LogRel2Lemmas.v` — `RedTmEq_wf` LRne case now goes through with NO `subst`
-     (the wall is gone: `RedNeutralEq_wf` gives `a:dEl(vNe n) * b:dEl(vNe m)`
-     directly).  `NeConv_sym : NeConv Ge T S n m -> NeConv Ge S T m n`,
-     `NeConv_trans : ..T S.. -> ..S R.. -> ..T R..` via `conv_ne_sym`/`_trans`.
-     `RedNeutralEq_sym`/`_trans` swap/chain the type indices likewise.
-  3. `LogRel2Sym.v` LRne case (≈ line 121): drop `destruct..enm; subst`; build
-     the swapped `LRne`/`RedNeutralEq` via `NeConv_sym` + `conv_ne_sym`.
-  4. `LogRel2Ren.v` — add `conv_ren` (conv_ne/conv_nf stable under `ren_ne`/
-     `ren_val`, by `conv_mutind`; app/pi cases recurse the cod annotation under
-     `up_renl rho`); two-typed `NeConv_ren`/`RedNeutralEq_ren`; LRne site (≈465)
-     unchanged shape (diagonal `dU r l`).
-  5. `LogRel2Irr.v` — re-check the LRne `IrrCar` case under two-typed
-     `RedNeutralEq` (Irr does not destructure `NeConv` directly).
-  6. `LogRel2Red.v` (`redTyEq_neEl`/`redTmEq_empty`/`redTmEq_neEl`) +
-     `LogRel2Ind.v` (`mne` motive) — bump `NeConv`/`RedNeutralEq` type args.
-  AFTER the swap: Ph3 proper = mutual reify/reflect (Theorem 11) connecting
-  `conv_ne` to REDUCIBLE conversion `RedTmEq`.
+  How each file landed:
+  1. `LogRel2.v` — imports `LogRel2Conv`; two-typed `NeConv`/`RedNeutralEq`;
+     `rne_ne`/`LRempty`/`LRne` carry both types.  (LRne's codes typed diagonally
+     at `dU r l`; only the RELATION's outer pair is `(vNe n,vNe m)`.)
+  2. `LogRel2Lemmas.v` — `RedTmEq_wf` LRne goes through with NO `subst` (the
+     wall is gone: `RedNeutralEq_wf` gives `a:dEl(vNe n) * b:dEl(vNe m)`).
+     `NeConv_sym : NeConv Ge T S n m -> NeConv Ge S T m n`, `NeConv_trans`
+     `..T S.. -> ..S R.. -> ..T R..` via `conv_ne_sym`/`_trans`;
+     `RedNeutralEq_sym`/`_trans` swap/chain the indices likewise.
+  3. `LogRel2Sym.v` LRne — drops `destruct..enm; subst`; builds the swapped
+     `LRne`/`RedNeutralEq` via `conv_ne_sym` + `RedNeutralEq_sym`.
+  4. `LogRel2Ren.v` — new `conv_ren` (conv_ne/conv_nf stable under `ren_ne`/
+     `ren_val`, by `conv_mutind`; app/pi recurse cod annotation under
+     `up_renl rho`); two-typed `NeConv_ren`/`RedNeutralEq_ren` (param named `T2`
+     to avoid shadowing `Nat.S` in `ren_ok rho (S (length Ge)) ..`); LRne/LRempty
+     presheaf cases carry both types.
+  5. `LogRel2Irr.v` — LRne `IrrCar` unchanged (identity maps via inversion; Irr
+     never destructures `NeConv`).
+  6. `LogRel2Red.v` (`redTyEq_neEl`/`redTmEq_empty`/`redTmEq_neEl`/
+     `RedTmEq_empty_inv`) + `LogRel2Ind.v` (`mne` motive) — bumped type args.
+  Verified axiom-free: `conv_trans`, `RedTmEq_wf`, `LR_sym_gen`, `conv_ren`,
+  `LR_ren_gen` (`Print Assumptions` = Closed under the global context).
+
+- **NEXT (Ph3 proper):** mutual reify/reflect (Theorem 11) connecting `conv_ne`
+  to REDUCIBLE conversion `RedTmEq` — Reflect: `conv_ne n m` at a reducible type
+  ⟹ `RedTmEq (vNe n) (vNe m)`; Reify: `RedTmEq a b` ⟹ `conv_nf a b`.  Mutual
+  (reifying a function applies it to a reflected var).  Reuse `Reflect`/`Reify`
+  + the deep-normalization machinery.  Transport (Lemma 12) + transitivity stay
+  deferred to post-fundamental (Ph5).
 
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,

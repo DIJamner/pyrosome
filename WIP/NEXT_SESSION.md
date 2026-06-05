@@ -60,21 +60,29 @@ recursively (not required equal); untyped+structural is complete here because
 Proven `conv_refl`/`conv_sym`/`conv_trans` + diagonal embeddings
 `conv_ne_of_eq`/`conv_nf_of_eq` + scheme `conv_mutind`.
 
-## Next move — EXECUTE the Ph3 SWAP (mechanical, design resolved)
+## State update (2026-06-05): Ph3 SWAP COMPLETE
 
-Wire `conv_ne` into `LR`.  Full executable spec is in `ConvRelPlan.md` STATUS
-("Ph3 SWAP — DESIGN RESOLVED").  Key finding: the base neutral relation must
-become **TWO-TYPED** (`NeConv Ge T S n m` / `RedNeutralEq Ge T S`) because
-`has_svalty` has no conversion rule, so `RedTmEq_wf`'s `LRne` case can't type
-the right member at `dEl(vNe m)` from a left-typed relation.  It's a BOUNDED
-7-file arity-change refactor — do it as ONE green unit (no partial swap).
-Files in order: `LogRel2.v` (defs + `LRne`/`LRempty`/`rne_ne`), `LogRel2Lemmas.v`
-(escape + PER laws via `conv_ne_sym`/`_trans`), `LogRel2Sym.v` (LRne case),
-`LogRel2Ren.v` (add `conv_ren`, two-typed `NeConv_ren`), `LogRel2Irr.v`
-(LRne `IrrCar`), `LogRel2Red.v` + `LogRel2Ind.v` (bump type args).
-AFTER the swap: Ph3 proper = mutual reify/reflect (Theorem 11), connecting
-`conv_ne` to REDUCIBLE conversion.  Transport (Lemma 12) + transitivity stay
-deferred to post-fundamental (Ph5).
+The genuine `conv_ne` is now wired into `LR` across all 7 `LogRel2*` files,
+axiom-free and green; the provisional strict-diagonal `NeConv` is GONE.  The
+base neutral relation is now **TWO-TYPED** (`NeConv Ge T S n m` /
+`RedNeutralEq Ge T S`) — forced by a typing-conversion wall (`has_svalty` has no
+conversion rule, so `RedTmEq_wf`'s `LRne` case couldn't type the right member at
+`dEl(vNe m)` from a left-typed relation).  Added `conv_ren` (renaming stability
+of conv).  See `ConvRelPlan.md` STATUS "Ph3 SWAP — DONE" for the per-file
+landing notes and the verified axiom-free list.
+
+## Next move — Ph3 PROPER: mutual reify / reflect (Theorem 11)
+
+Connect `conv_ne` (LogRel2Conv.v) to REDUCIBLE conversion `RedTmEq` (LogRel2.v):
+- **Reflect:** `conv_ne n m` at a reducible type ⟹ `RedTmEq Ge T S (vNe n) (vNe m)`.
+- **Reify:** `RedTmEq Ge A B a b` ⟹ `conv_nf a b` (+ deep-normalize).
+Mutual because reifying a function applies it to a reflected variable.  Reuse
+the existing `Reflect`/`Reify` infrastructure + the deep-normalization
+machinery; induct over `LR` via `LR_mut`.  This is the old `reflect_red` blocker,
+now approachable because the relation is two-sided + the neutral conversion is
+genuine.  Transport (Lemma 12) + transitivity stay deferred to post-fundamental
+(Ph5).  Then the fundamental lemma (Ph5) → connect to gluing `Model.v`/`ModelOk.v`
+⇒ `eq_term` decidability.
 
 ## Build (per CLAUDE.md — never run full `make` during dev)
 ```

@@ -53,11 +53,11 @@ Definition redTyEq_nat Ge : RedTyEq Ge (dEl vNat) (dEl vNat) :=
   existT _ (RedNatEq Ge) (@LRnat tl2 LR0 LR1 Ge).
 
 Definition redTyEq_empty Ge : RedTyEq Ge (dEl vEmpty) (dEl vEmpty) :=
-  existT _ (RedNeutralEq Ge (dEl vEmpty)) (@LRempty tl2 LR0 LR1 Ge).
+  existT _ (RedNeutralEq Ge (dEl vEmpty) (dEl vEmpty)) (@LRempty tl2 LR0 LR1 Ge).
 
-Definition redTyEq_neEl Ge n m r l (c : NeConv Ge (dU r l) n m)
+Definition redTyEq_neEl Ge n m r l (c : NeConv Ge (dU r l) (dU r l) n m)
   : RedTyEq Ge (dEl (vNe n)) (dEl (vNe m)) :=
-  existT _ (RedNeutralEq Ge (dEl (vNe n))) (@LRne tl2 LR0 LR1 Ge n m r l c).
+  existT _ (RedNeutralEq Ge (dEl (vNe n)) (dEl (vNe m))) (@LRne tl2 LR0 LR1 Ge n m r l c).
 
 Definition redTyEq_piI Ge FA BA FB BB
            (wA : wf_svalty Ge (dEl (vPiI FA BA)))
@@ -90,14 +90,14 @@ Definition redTmEq_nat Ge a b (h : RedNatEq Ge a b)
   : RedTmEq Ge (dEl vNat) (dEl vNat) a b :=
   existT _ (RedNatEq Ge) (@LRnat tl2 LR0 LR1 Ge, h).
 
-Definition redTmEq_empty Ge n m (c : NeConv Ge (dEl vEmpty) n m)
+Definition redTmEq_empty Ge n m (c : NeConv Ge (dEl vEmpty) (dEl vEmpty) n m)
   : RedTmEq Ge (dEl vEmpty) (dEl vEmpty) (vNe n) (vNe m) :=
-  existT _ (RedNeutralEq Ge (dEl vEmpty)) (@LRempty tl2 LR0 LR1 Ge, rneT c).
+  existT _ (RedNeutralEq Ge (dEl vEmpty) (dEl vEmpty)) (@LRempty tl2 LR0 LR1 Ge, rneT c).
 
-Definition redTmEq_neEl Ge n m r l (c : NeConv Ge (dU r l) n m) p q
-           (cpq : NeConv Ge (dEl (vNe n)) p q)
+Definition redTmEq_neEl Ge n m r l (c : NeConv Ge (dU r l) (dU r l) n m) p q
+           (cpq : NeConv Ge (dEl (vNe n)) (dEl (vNe m)) p q)
   : RedTmEq Ge (dEl (vNe n)) (dEl (vNe m)) (vNe p) (vNe q) :=
-  existT _ (RedNeutralEq Ge (dEl (vNe n)))
+  existT _ (RedNeutralEq Ge (dEl (vNe n)) (dEl (vNe m)))
          (@LRne tl2 LR0 LR1 Ge n m r l c, rneT cpq).
 
 Definition redTmEq_piI Ge FA BA FB BB
@@ -140,5 +140,5 @@ Lemma RedTmEq_nat_inv : forall Ge a b,
 Proof. intros Ge a b [P [HLR Pab]]. inversion HLR; subst; exact Pab. Qed.
 
 Lemma RedTmEq_empty_inv : forall Ge a b,
-    RedTmEq Ge (dEl vEmpty) (dEl vEmpty) a b -> RedNeutralEq Ge (dEl vEmpty) a b.
+    RedTmEq Ge (dEl vEmpty) (dEl vEmpty) a b -> RedNeutralEq Ge (dEl vEmpty) (dEl vEmpty) a b.
 Proof. intros Ge a b [P [HLR Pab]]. inversion HLR; subst; exact Pab. Qed.

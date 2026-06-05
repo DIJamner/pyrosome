@@ -18,7 +18,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
-  Domain Apply Typing Preservation LogRel2.
+  Domain Apply Typing Preservation LogRel2Conv LogRel2.
 Import Core.Notations.
 
 (* A dummy universe level, used only to witness [has_svalty _ vNat (dU _ _)]
@@ -38,10 +38,10 @@ Proof.
   - destruct n0 as [[wn wm] _]; split; apply t_ne; assumption.
 Qed.
 
-Lemma RedNeutralEq_wf : forall Ge T a b,
-    RedNeutralEq Ge T a b -> (has_svalty Ge a T * has_svalty Ge b T)%type.
+Lemma RedNeutralEq_wf : forall Ge T S a b,
+    RedNeutralEq Ge T S a b -> (has_svalty Ge a T * has_svalty Ge b S)%type.
 Proof.
-  intros Ge T a b H; destruct H as [n m [[wn wm] _]].
+  intros Ge T S a b H; destruct H as [n m [[wn wm] _]].
   split; apply t_ne; assumption.
 Qed.
 
@@ -69,8 +69,7 @@ Proof.
   intros Ge A B a b [P [H Pab]]; destruct H.
   - (* LRnat *)   exact (RedNatEq_wf Pab).
   - (* LRempty *) exact (RedNeutralEq_wf Pab).
-  - (* LRne *)    destruct n0 as [[wn wm] eqnm]; subst m.
-                  exact (RedNeutralEq_wf Pab).
+  - (* LRne *)    exact (RedNeutralEq_wf Pab).
   - (* LRpiI *)   destruct Pab as [Hf Hg]; split; assumption.
   - (* LRpi *)    destruct Pab as [[Hf Hg] _]; split; assumption.
   - (* LRU0 *)    destruct Pab as [[Hc Hd] _]; split; assumption.
@@ -81,14 +80,14 @@ Qed.
 (* Base-case PER laws (provisional [NeConv] is already a PER).            *)
 (* ===================================================================== *)
 
-Lemma NeConv_sym : forall Ge T n m, NeConv Ge T n m -> NeConv Ge T m n.
-Proof. intros Ge T n m [[wn wm] e]; repeat split; [exact wm | exact wn | exact (eq_sym e)]. Qed.
+Lemma NeConv_sym : forall Ge T S n m, NeConv Ge T S n m -> NeConv Ge S T m n.
+Proof. intros Ge T S n m [[wn wm] e]; repeat split; [exact wm | exact wn | exact (conv_ne_sym e)]. Qed.
 
-Lemma NeConv_trans : forall Ge T n m p,
-    NeConv Ge T n m -> NeConv Ge T m p -> NeConv Ge T n p.
+Lemma NeConv_trans : forall Ge T S R n m p,
+    NeConv Ge T S n m -> NeConv Ge S R m p -> NeConv Ge T R n p.
 Proof.
-  intros Ge T n m p [[wn wm] e1] [[wm' wp] e2];
-    repeat split; [exact wn | exact wp | exact (eq_trans e1 e2)].
+  intros Ge T S R n m p [[wn wm] e1] [[wm' wp] e2];
+    repeat split; [exact wn | exact wp | exact (conv_ne_trans e1 e2)].
 Qed.
 
 Lemma RedNatEq_sym : forall Ge a b, RedNatEq Ge a b -> RedNatEq Ge b a.
@@ -108,13 +107,13 @@ Proof.
   - inversion Hbc; subst. apply rne_ne; eapply NeConv_trans; eassumption.
 Qed.
 
-Lemma RedNeutralEq_sym : forall Ge T a b,
-    RedNeutralEq Ge T a b -> RedNeutralEq Ge T b a.
-Proof. intros Ge T a b [n m c]; apply rneT; apply NeConv_sym; assumption. Qed.
+Lemma RedNeutralEq_sym : forall Ge T S a b,
+    RedNeutralEq Ge T S a b -> RedNeutralEq Ge S T b a.
+Proof. intros Ge T S a b [n m c]; apply rneT; apply NeConv_sym; assumption. Qed.
 
-Lemma RedNeutralEq_trans : forall Ge T a b c,
-    RedNeutralEq Ge T a b -> RedNeutralEq Ge T b c -> RedNeutralEq Ge T a c.
+Lemma RedNeutralEq_trans : forall Ge T S R a b c,
+    RedNeutralEq Ge T S a b -> RedNeutralEq Ge S R b c -> RedNeutralEq Ge T R a c.
 Proof.
-  intros Ge T a b c Hab Hbc; destruct Hab as [n m cab]; inversion Hbc; subst.
+  intros Ge T S R a b c Hab Hbc; destruct Hab as [n m cab]; inversion Hbc; subst.
   apply rneT; eapply NeConv_trans; eassumption.
 Qed.

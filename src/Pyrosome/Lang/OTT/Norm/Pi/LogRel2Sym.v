@@ -10,7 +10,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
-  Domain Apply Typing Preservation LogRel2 LogRel2Ind LogRel2Lemmas LogRel2Irr.
+  Domain Apply Typing Preservation LogRel2Conv LogRel2 LogRel2Ind LogRel2Lemmas LogRel2Irr.
 Import Core.Notations.
 
 Notation term := (@term string).
@@ -118,11 +118,11 @@ Section SymGen.
     - (* LRempty *)
       eexists; repeat split;
         [ apply LRempty | apply RedNeutralEq_sym | apply RedNeutralEq_sym ].
-    - (* LRne *)
-      match goal with c : NeConv _ _ _ _ |- _ => destruct c as [[wn wm] enm] end.
-      subst.
+    - (* LRne -- genuine [conv_ne]: build the SWAPPED neutral pair via
+         [conv_ne_sym] (no longer a syntactic [subst] on [n = m]). *)
+      match goal with c : NeConv _ _ _ _ _ |- _ => destruct c as [[wn wm] cnm] end.
       eexists; repeat split.
-      + eapply LRne; repeat split; eassumption.
+      + eapply LRne; repeat split; [ exact wm | exact wn | exact (conv_ne_sym cnm) ].
       + apply RedNeutralEq_sym.
       + apply RedNeutralEq_sym.
     - (* LRpiI *)

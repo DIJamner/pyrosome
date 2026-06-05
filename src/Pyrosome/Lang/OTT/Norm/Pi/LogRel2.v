@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
-From Pyrosome.Lang.OTT.Norm.Pi Require Import Domain Apply Typing Preservation.
+From Pyrosome.Lang.OTT.Norm.Pi Require Import Domain Apply Typing Preservation LogRel2Conv.
 Import Core.Notations.
 
 Notation term := (@term string).
@@ -74,23 +74,25 @@ Definition lvl_of (l : term) : TypeLevel :=
   end.
 
 (* ---------------------------------------------------------------------- *)
-(* PROVISIONAL neutral conversion.  Phase-3 (after the Phase-0 domain-     *)
-(* neutral annotations make argument types inferable) replaces this with   *)
-(* the genuine [∼ne] relation of Theorem 11.  For Phase 1 we use the       *)
-(* strict diagonal -- both neutrals well-typed and syntactically equal --   *)
-(* which is already a (degenerate) PER, enough to validate the core.       *)
-Definition NeConv (Ge : senv) (T : svalty) (n m : neutral) : Type :=
-  (wf_neutral Ge n T * wf_neutral Ge m T * (n = m))%type.
+(* GENUINE neutral conversion (Phase 3): both neutrals well-typed -- at     *)
+(* (possibly DISTINCT but convertible) types [T] (for [n]) and [S] (for     *)
+(* [m]) -- and structurally convertible by [conv_ne] (LogRel2Conv.v, the    *)
+(* paper's [∼annot], relating type annotations up to conversion).  The two  *)
+(* type indices are forced by escape: [has_svalty] has no conversion rule,  *)
+(* so the right member must be typed at the right type [S = dEl (vNe m)],    *)
+(* not the left [dEl (vNe n)].  At base/code types [T = S] (diagonal).      *)
+Definition NeConv (Ge : senv) (T S : svalty) (n m : neutral) : Type :=
+  (wf_neutral Ge n T * wf_neutral Ge m S * conv_ne n m)%type.
 
 (* Two-sided base relations.  [RedNatEq] is the PER of convertible naturals;
    [RedNeutralEq] the PER of convertible neutrals at a fixed type. *)
 Inductive RedNatEq (Ge : senv) : sval -> sval -> Type :=
 | rne_zero : RedNatEq Ge vZero vZero
 | rne_suc  : forall v w, RedNatEq Ge v w -> RedNatEq Ge (vSuc v) (vSuc w)
-| rne_ne   : forall n m, NeConv Ge (dEl vNat) n m -> RedNatEq Ge (vNe n) (vNe m).
+| rne_ne   : forall n m, NeConv Ge (dEl vNat) (dEl vNat) n m -> RedNatEq Ge (vNe n) (vNe m).
 
-Inductive RedNeutralEq (Ge : senv) (T : svalty) : sval -> sval -> Type :=
-| rneT : forall n m, NeConv Ge T n m -> RedNeutralEq Ge T (vNe n) (vNe m).
+Inductive RedNeutralEq (Ge : senv) (T S : svalty) : sval -> sval -> Type :=
+| rneT : forall n m, NeConv Ge T S n m -> RedNeutralEq Ge T S (vNe n) (vNe m).
 
 (* The renaming gate (purely syntactic, no [LR] reference), unchanged. *)
 Definition is_ren (sg : ssub) : Type :=
@@ -212,9 +214,9 @@ Inductive LR
     (rec1 : RedRel@{i1 j1}) : RedRel@{i j} :=
 | LRnat   : forall Ge, @LR lvl rec0 rec1 Ge (dEl vNat) (dEl vNat) (RedNatEq Ge)
 | LRempty : forall Ge,
-    @LR lvl rec0 rec1 Ge (dEl vEmpty) (dEl vEmpty) (RedNeutralEq Ge (dEl vEmpty))
-| LRne    : forall Ge n m r l, NeConv Ge (dU r l) n m ->
-    @LR lvl rec0 rec1 Ge (dEl (vNe n)) (dEl (vNe m)) (RedNeutralEq Ge (dEl (vNe n)))
+    @LR lvl rec0 rec1 Ge (dEl vEmpty) (dEl vEmpty) (RedNeutralEq Ge (dEl vEmpty) (dEl vEmpty))
+| LRne    : forall Ge n m r l, NeConv Ge (dU r l) (dU r l) n m ->
+    @LR lvl rec0 rec1 Ge (dEl (vNe n)) (dEl (vNe m)) (RedNeutralEq Ge (dEl (vNe n)) (dEl (vNe m)))
 | LRpiI   : forall Ge FA BA FB BB,
     wf_svalty Ge (dEl (vPiI FA BA)) -> wf_svalty Ge (dEl (vPiI FB BB)) ->
     @LR lvl rec0 rec1 Ge (dEl (vPiI FA BA)) (dEl (vPiI FB BB))

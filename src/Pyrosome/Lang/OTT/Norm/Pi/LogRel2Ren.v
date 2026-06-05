@@ -11,7 +11,7 @@ From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
   Domain Apply Typing Preservation ApplySubst RenSubst RenTyping
-  LogRel2 LogRel2Ind LogRel2Lemmas LogRel2Irr.
+  LogRel2Conv LogRel2 LogRel2Ind LogRel2Lemmas LogRel2Irr.
 Import Core.Notations.
 
 Notation term := (@term string).
@@ -27,18 +27,50 @@ Notation term := (@term string).
 (* from the LR pack's stored typing.                                         *)
 (* ===================================================================== *)
 
-(* The pointwise neutral conversion [NeConv] renames: both sides are          *)
-(* [wf_neutral] (renamed by [ren_typing]) and the syntactic diagonal [n = m]  *)
-(* is preserved by [ren_ne]. *)
-Lemma NeConv_ren : forall Ge T n m, NeConv Ge T n m ->
-    ne_below_ty (length Ge) T -> ne_below_ctx Ge ->
-    forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
-      NeConv Ge' (ren_ty rho T) (ren_ne rho n) (ren_ne rho m).
+(* Genuine [conv_ne]/[conv_nf] are stable under a syntactic renaming: both are
+   purely structural maps, so [ren_ne]/[ren_val] preserve them (binder
+   annotations recurse under [up_renl rho]).  This replaces the diagonal's
+   trivial [n = m] preservation. *)
+Lemma conv_ren :
+  (forall a b, conv_nf a b -> forall rho, conv_nf (ren_val rho a) (ren_val rho b))
+  * (forall n m, conv_ne n m -> forall rho, conv_ne (ren_ne rho n) (ren_ne rho m)).
 Proof.
-  intros Ge T n m [[wn wm] e] Hty Hctx Ge' rho Hren Hok.
-  subst m. unfold NeConv. repeat split.
-  - exact (snd ren_typing Ge n T wn Hty Hctx Ge' rho Hren Hok).
-  - exact (snd ren_typing Ge n T wm Hty Hctx Ge' rho Hren Hok).
+  apply (conv_mutind
+    (fun a b (_ : conv_nf a b) => forall rho, conv_nf (ren_val rho a) (ren_val rho b))
+    (fun n m (_ : conv_ne n m) => forall rho, conv_ne (ren_ne rho n) (ren_ne rho m))).
+  - intros n m _ IH rho. cbn [ren_val]. apply cnf_ne. exact (IH rho).
+  - intros rho. apply cnf_zero.
+  - intros v w _ IH rho. cbn [ren_val]. apply cnf_suc. exact (IH rho).
+  - intros rho. apply cnf_nat.
+  - intros rho. apply cnf_empty.
+  - intros F B F' B' _ IHF _ IHB rho. cbn [ren_val].
+    apply cnf_pi; [ exact (IHF rho) | exact (IHB (up_renl rho)) ].
+  - intros F B F' B' _ IHF _ IHB rho. cbn [ren_val].
+    apply cnf_piI; [ exact (IHF rho) | exact (IHB (up_renl rho)) ].
+  - intros b b' _ IH rho. cbn [ren_val]. apply cnf_lam. exact (IH (up_renl rho)).
+  - intros b b' _ IH rho. cbn [ren_val]. apply cnf_lamI. exact (IH (up_renl rho)).
+  - intros k rho. cbn [ren_ne]. apply cne_var.
+  - intros rA lA A scrut A' scrut' _ IHA _ IHs rho. cbn [ren_ne].
+    apply cne_emptyrec; [ exact (IHA rho) | exact (IHs rho) ].
+  - intros f F B a f' F' B' a' _ IHf _ IHF _ IHB _ IHa rho. cbn [ren_ne].
+    apply cne_app; [ exact (IHf rho) | exact (IHF rho) | exact (IHB (up_renl rho)) | exact (IHa rho) ].
+  - intros f F B a f' F' B' a' _ IHf _ IHF _ IHB _ IHa rho. cbn [ren_ne].
+    apply cne_appI; [ exact (IHf rho) | exact (IHF rho) | exact (IHB (up_renl rho)) | exact (IHa rho) ].
+Qed.
+
+(* The pointwise neutral conversion [NeConv] renames: both sides are
+   [wf_neutral] (renamed by [ren_typing], each at its OWN type [T]/[S]) and the
+   structural [conv_ne] is preserved by [ren_ne] ([conv_ren]). *)
+Lemma NeConv_ren : forall Ge T T2 n m, NeConv Ge T T2 n m ->
+    ne_below_ty (length Ge) T -> ne_below_ty (length Ge) T2 -> ne_below_ctx Ge ->
+    forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
+      NeConv Ge' (ren_ty rho T) (ren_ty rho T2) (ren_ne rho n) (ren_ne rho m).
+Proof.
+  intros Ge T T2 n m [[wn wm] cnm] HtyT HtyS Hctx Ge' rho Hren Hok.
+  unfold NeConv. repeat split.
+  - exact (snd ren_typing Ge n T wn HtyT Hctx Ge' rho Hren Hok).
+  - exact (snd ren_typing Ge m T2 wm HtyS Hctx Ge' rho Hren Hok).
+  - exact (snd conv_ren n m cnm rho).
 Qed.
 
 (* The PER of convertible naturals renames (it lives at [dEl vNat], whose
@@ -53,18 +85,18 @@ Proof.
   - cbn [ren_val]. apply rne_zero.
   - cbn [ren_val]. apply rne_suc. exact IH.
   - cbn [ren_val]. apply rne_ne.
-    exact (NeConv_ren Hnm I Hctx Hren Hok).
+    exact (NeConv_ren Hnm I I Hctx Hren Hok).
 Qed.
 
-(* The PER of convertible neutrals at a fixed type renames. *)
-Lemma RedNeutralEq_ren : forall Ge T v w, RedNeutralEq Ge T v w ->
-    ne_below_ty (length Ge) T -> ne_below_ctx Ge ->
+(* The PER of convertible neutrals at a (two-typed) pair renames. *)
+Lemma RedNeutralEq_ren : forall Ge T T2 v w, RedNeutralEq Ge T T2 v w ->
+    ne_below_ty (length Ge) T -> ne_below_ty (length Ge) T2 -> ne_below_ctx Ge ->
     forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
-      RedNeutralEq Ge' (ren_ty rho T) (ren_val rho v) (ren_val rho w).
+      RedNeutralEq Ge' (ren_ty rho T) (ren_ty rho T2) (ren_val rho v) (ren_val rho w).
 Proof.
-  intros Ge T v w H Hty Hctx Ge' rho Hren Hok.
+  intros Ge T T2 v w H HtyT HtyS Hctx Ge' rho Hren Hok.
   destruct H as [n m Hnm]. cbn [ren_val]. apply rneT.
-  exact (NeConv_ren Hnm Hty Hctx Hren Hok).
+  exact (NeConv_ren Hnm HtyT HtyS Hctx Hren Hok).
 Qed.
 
 (* ===================================================================== *)
@@ -457,14 +489,14 @@ Section RenGen.
       + cbn [ren_ty ren_val]. apply LRnat.
       + intros a b Hab. exact (RedNatEq_ren Hab Hctx Hren Hok).
     - (* LRempty *)
-      exists (RedNeutralEq Ge' (dEl vEmpty)). split.
+      exists (RedNeutralEq Ge' (dEl vEmpty) (dEl vEmpty)). split.
       + cbn [ren_ty ren_val]. apply LRempty.
-      + intros a b Hab. exact (RedNeutralEq_ren Hab I Hctx Hren Hok).
+      + intros a b Hab. exact (RedNeutralEq_ren Hab I I Hctx Hren Hok).
     - (* LRne *)
-      exists (RedNeutralEq Ge' (dEl (vNe (ren_ne rho n)))). split.
-      + cbn [ren_ty ren_val]. eapply LRne. exact (NeConv_ren c I Hctx Hren Hok).
+      exists (RedNeutralEq Ge' (dEl (vNe (ren_ne rho n))) (dEl (vNe (ren_ne rho m)))). split.
+      + cbn [ren_ty ren_val]. eapply LRne. exact (NeConv_ren c I I Hctx Hren Hok).
       + intros a b Hab.
-        exact (RedNeutralEq_ren Hab (wf_svalty_scoped wfA) Hctx Hren Hok).
+        exact (RedNeutralEq_ren Hab (wf_svalty_scoped wfA) (wf_svalty_scoped wfB) Hctx Hren Hok).
     - (* LRpiI *)
       exists (fun f g => (has_svalty Ge' f (dEl (vPiI (ren_val rho FA) (ren_val (up_renl rho) BA)))
                         * has_svalty Ge' g (dEl (vPiI (ren_val rho FB) (ren_val (up_renl rho) BB))))%type).
