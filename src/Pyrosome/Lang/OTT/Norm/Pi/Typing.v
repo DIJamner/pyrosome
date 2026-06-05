@@ -72,7 +72,8 @@ Section Typing.
       has_svalty Ge F (dU rF lF) ->
       has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge) B (dU rB lB) ->
       has_svalty Ge (vPiI F B) (dU r l)
-  | t_lam   : forall Ge F B b,
+  | t_lam   : forall Ge F B b rF lF,
+      has_svalty Ge F (dU rF lF) ->
       has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge) b (dEl B) ->
       has_svalty Ge (vLam b) (dEl (vPi F B))
   | t_lamI  : forall Ge F B b,
@@ -88,7 +89,8 @@ Section Typing.
      is itself a lambda and [B' = B[ARG/0] <> B], which rigid [t_lam] cannot
      type.  The [Reflect] premise pins [ARG] to the canonical eta-expansion of
      the variable, so the rule is no more permissive than eta on normal forms. *)
-  | t_lam_eta : forall Ge F B b ARG B',
+  | t_lam_eta : forall Ge F B b ARG B' rF lF,
+      has_svalty Ge F (dU rF lF) ->
       Reflect (S (length Ge)) (dEl (shift_val 0 1 F)) (nVar 0) ARG ->
       Apply_val (S (length Ge)) (ARG :: id_list (S (length Ge)))
                 (shift_val 1 1 B) B' ->
