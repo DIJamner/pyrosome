@@ -30,48 +30,45 @@ memory first.
   blocked). `LR_sym_gen` builds the swapped `PolyRedPack` (`sym_pack`/`sym_adeq`
   — the `LRPack`-field storage the old encoding forbade) and discharges the Pi
   `bwd` via `LR_irrelevant_gen` + `Apply_val_det`; tower `LRbot/LR0/LR1_sym`
-  (`RecSym1`); top-level `RedTyEq_sym` + `RedTmEq_sym`. REMAINING Ph4:
-  transitivity.
-- **Ph0 DE-RISKED** — prototype `WIP/Phase0Proto.v`. Mechanical refactor.
+  (`RecSym1`); top-level `RedTyEq_sym` + `RedTmEq_sym`.
+- **Ph0 NEUTRAL ANNOTATIONS DONE & green** — `(F,B)` on `nApp`/`nAppI`, whole
+  domain layer + `LogRel2*` re-greened (commits `a24ad6d`, `3c68002`). Single-
+  sided `LogRel*` chain retired to `WIP/OTT_LogRel_single_sided/` (commit
+  `220ce2a`; out of the build, kept as reference for renaming/subst algebra).
+- **TRANSITIVITY BLOCKED (finding)** — needs general Apply totality (≈
+  normalization); see `ConvRelPlan.md` STATUS. Defer to post-fundamental (Ph5).
 
-## Pick one of two next moves
+## Next move: RENAMING STABILITY (the tractable remaining PER item)
 
-### A. Execute the mechanical Ph0 ripple (critical path → Ph3)
-Annotate `nApp`/`nAppI` in `Domain.v` with `(F B : sval)` and thread the Pi type
-`(F,B)` as indices through `Vapp`/`VappI`/`Apply_ne`. Design is validated by
-`WIP/Phase0Proto.v` (annotated `nApp f F B a`; `Vapp m F B vf a v`;
-`vapp_ne : Vapp m F B (vNe n) a (vNe (nApp n F B a))`; `ap_app` substitutes F at
-`s`, B at `up s`, feeds substituted `(F',B')` to `Vapp`). Key facts:
-- The one hard proof is ALREADY DONE: `Apply_reflect_cod` in `ApplySubst.v`
-  (the `refl_Pi` codomain reconciliation). REUSE it.
-- `Apply_deterministic` + `Reflect_det` keep their proof shape (prototype proves
-  this); only `Vapp`/`VappI` pattern underscore-arity changes.
-- Edit order (dependency-respecting, build each `.vo` green before the next):
-  `Domain.v` (ctor + `shift_ne`, B at `S c`) → `Apply.v` (ap_app/ap_appI,
-  Vapp/VappI indices, `Apply_mutind` P3/P4 motives, `Apply_deterministic`
-  underscores) → `Reflect.v` (annotated `refl_Pi` stamps `shift_val 0 1 F` /
-  `shift_val 1 1 B`; `Reflect_det`) → `Typing.v` (`ne_below_ne`; `n_app`/`n_appI`
-  promote existential F,B to stored — nearly free) → `Preservation.v` (shift
-  commutation + Vapp/VappI shift-preservation — BULK) → `ApplyLemmas.v` (2 cases)
-  → `ApplySubst.v` (4 cases — BULK) → `EvalRel.v` (`ev_app`/`ev_appI` thread the
-  in-scope `vF vB`).
-- INSULATED, recompile only (no source edit): `SortInj.v`, `Model.v`,
-  `ModelOk.v`, `Reify.v`.
-- DECISION: the single-sided `LogRel*` chain (`LogRel`, `LogRelInd`,
-  `LogRelLemmas`, `LogRelRed`, `LogRelSubst`, `LogRelRen`, `LogRelFund`, `Smoke`)
-  is superseded by LogRel2 → delete it rather than repair (else it breaks under
-  the `Domain.v` change). Confirm with the user before deleting.
-- NOTE: this breaks LogRel2 + the whole domain layer until the ripple is
-  complete — no intermediate green build. Don't commit until the chain is green.
+Transitivity + transport are deferred (blocked on general Apply totality ≈
+normalization — see `ConvRelPlan.md` STATUS). The tractable remaining Ph2/Ph4
+work is **stability under renaming** (the LR2 presheaf over renamings), which
+lives over RENAMINGS, where `ren_Apply_total` supplies the very Apply witness
+transitivity lacked.
 
-### B. Finish the remaining green Ph2/Ph4 PER laws (no `Domain.v` change)
-Irrelevance + symmetry are DONE. Remaining: **transitivity** (`RedTyEq`/`RedTmEq`
-trans, Pi case — mirror `LogRel2Sym.v`'s `LR_sym_gen`/`RecSym1` tower pattern but
-with a `RecTrans`-style hypothesis, discharge the Pi codomain via irrelevance) +
-**transport** (Lemma 12, from `RedTmEq_irr`) + **renaming stability** (presheaf
-over renamings, reuse the session 1–6 `Apply_ren_commute`/`ren_*` algebra). Keep
-the whole `LogRel2*` chain `Set Universe Polymorphism` so the poly tower instances
-align (as `LogRel2Sym.v` needs).
+Prerequisite (salvage from `WIP/OTT_LogRel_single_sided/LogRelRen.v`, porting
+the `(F,B)` updates into a NEUTRAL home — extend `ApplySubst.v` or add a new
+`Norm/Pi/RenSubst.v`, NOT a `LogRel*` file):
+- scopedness: `ne_below_shift`, `ne_below_mono`, `sub_below`/`_up`/`_beta`,
+  `Apply_ne_below` (Apply-preserves-scope). The `(F,B)` porting recipe is in
+  that folder's README and was exercised in `ApplySubst.v` (`Apply_shift_eq`,
+  `Apply_cancel`) and `Determinism.v`.
+- renaming-as-Apply bridge: `ren_Apply_total`, `Apply_ren_comp`/`_comp_sc`/
+  `_decomp`, `ren_is_Apply`, `Apply_ren_eq`. These have OLD 2-field `nApp`/
+  `Vapp` cases — re-thread `F` (shift at cutoff) and `B` (shift under one
+  binder) exactly as in `ApplySubst.v`.
+
+Then prove the presheaf: a renaming `rho : Ge -> Ge'` sends `RedTyEq Ge A B`
+to `RedTyEq Ge' A[rho] B[rho]` (and likewise `RedTmEq`). Generic `LR_ren_gen`
+by `LR_mut` (mirror `LR_sym_gen`'s shape) + `RecRen1` tower; Pi case builds the
+renamed pack using `ren_Apply_total` for the renamed domain/codomain witnesses.
+
+Keep the whole `LogRel2*` chain `Set Universe Polymorphism` so the poly tower
+instances align (as `LogRel2Sym.v` needs).
+
+After renaming stability: Ph3 genuine `∼ne` (the Ph0 annotation prerequisite is
+now satisfied), then Ph5 fundamental lemma (whence transitivity/transport come
+for free / become provable).
 
 ## Build (per CLAUDE.md — never run full `make` during dev)
 ```
