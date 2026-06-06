@@ -362,6 +362,36 @@ Reflect/Typing/EvalRel. Mechanical.
 
   Transport (Lemma 12) + transitivity stay deferred to post-fundamental (Ph5).
 
+- **CRUX BLOCKER FOUND & VERIFIED (2026-06-06) — two-sided reflect/reify-at-Pi
+  hits the `has_svalty` TYPING-CONVERSION WALL on the eta bound variable.**
+  Discharging `RR_pi_at` (the relevant-Pi case of `RR_gen`) requires reflecting
+  the eta bound variable `nVar 0` into the DOMAIN pack `redTmEq (shpRed PA ws afA
+  afB)` at `dEl FA' ≡ dEl FB'`.  The only entry point is the domain IH's REFLECT,
+  whose premise is `NeConv Delta (dEl FA') (dEl FB') (nVar 0) (nVar 0)` =
+  `wf_neutral Delta (nVar 0) (dEl FA') * wf_neutral Delta (nVar 0) (dEl FB') *
+  conv_ne ..`.  But `wf_neutral _ (nVar 0) T` is provable ONLY via `n_var`, which
+  RIGIDLY pins `nth_error Delta 0 = Some T` (verified: `n_var` is the unique
+  `nVar`-headed constructor; `has_svalty`/`wf_neutral` have NO conversion rule).
+  So `nVar 0` can be typed at `dEl FA'` OR `dEl FB'` but NEVER BOTH unless
+  `FA' = FB'` SYNTACTICALLY.  Off-diagonal (`FA' ≢ FB'`, only `conv_nf`-related —
+  e.g. `dEl (vNe p) ≡ dEl (vNe q)`, `p ≠ q`) is the ESSENCE of the two-sided PER,
+  so the wall bites pervasively.  This is the SAME wall that forced the two-typed
+  neutral base ([[ott-logrel2-two-typed-neutral]]), now resurfacing structurally.
+  The SINGLE-SIDED dev avoided it (one domain `F`, one-sided typing — its
+  `reflect_pi_step_from_app` compiled).  PROVABLE PIECE landed in-analysis: the
+  domain-codes reify `conv_nf FA FB` comes cleanly from `domIH` at the IDENTITY
+  sub (`wf_ssub_id` + `Apply_val_id`, `snd` of the carrier).  CONSEQUENCE: the
+  codomain reify `conv_nf BA BB` and BOTH REFLECT directions are blocked on the
+  wall (can't manufacture the related fresh-var domain member).  This is a DESIGN
+  FORK (see NEXT_SESSION.md): (a) add a typed-conversion rule
+  `t_conv`/`n_conv` to `has_svalty`/`wf_neutral` (standard OTT; big domain-layer
+  ripple; soundness vs `ModelOk` must be checked); (b) weaken `RRCar`'s REFLECT
+  premise to one-sided typing + `conv_ne`, recovering the other side's typing
+  elsewhere (but escape `RedTmEq_wf`'s `LRne` case needs BOTH — the original
+  reason for two-typing); (c) reduce off-diagonal reflect-at-Pi to the diagonal
+  via symmetry/transport (both deferred/normalization-strength).  `RR_gen`+`RR0`
+  (the engine) stay green with `RR_pi_at`/`RR_piI_at` abstract.
+
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
   so `(F,B)` must be threaded as INDICES through `Vapp`/`VappI`/`Apply_ne` (e.g.
