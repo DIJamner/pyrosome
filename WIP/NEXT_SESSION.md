@@ -22,17 +22,34 @@ DESIGN DECISIONS taken this session (per Dustin):
   `exp_subst`/`ty_subst` to `Some _` (they always reduce) so `whnf` never
   accepts an un-pushed substitution.  See the CAVEAT block atop Neutral.v.
 
-NEXT (still in/after Neutral.v, or a small `Reduction` addendum): write the
-sort-erased `whstep` (redex + head-congruence via `pa`) and `whstep_sound`
-(`rel_sound l (fun _ => whstep)`).  REDEX case = eq_term_by + eq_term_subst +
-`term_sorts_eq`/`eq_term_conv` (sort realignment).  HEAD-CONGRUENCE case = invert
-`wf_term [] (con name args) t` (handle the `wf_term_conv` wrapper), recurse on the
-principal arg, lift via `term_con_congruence`.  GOTCHA: building the `eq_args`
-"one position steps, rest refl" needs the changed variable to NOT occur in
-head-ward (later-bound) sibling types — TRUE for a function/scrutinee principal
-arg (siblings' types depend on the DOMAIN, not the function), but a general
-one-position congruence lemma needs that non-occurrence as a hypothesis.  Then
-files 3 LogicalRelation, 4 FundamentalLemma, 5 Decidable.
+DONE this session beyond the predicates: `Reduction.v` now also has the
+sort-erased `redex` + `redex_sound` (recovers the sort via `term_sorts_eq` +
+`eq_term_conv`, presupposition from `wf_term_subst_monotonicity`) — the design is
+LOCKED IN and proven.
+
+OPEN FORK BEFORE FILE 3 (decide first — it determines whether more reduction
+machinery is even needed):  **does the LR normalize via a hand-rolled `whstep`,
+or via `Compilers/PartialEval.v`'s `partial_eval` (already proven sound by
+`partial_eval_correct`)?**
+- If `partial_eval`: NO `whstep`/head-congruence needed.  The LR uses
+  `partial_eval` as a black-box normalizer (soundness free); the only remaining
+  obligation is that its output is a `whnf` (= normalization), which is the
+  fundamental-lemma content anyway.  RECOMMENDED — avoids the fiddly congruence.
+- If hand-rolled `whstep`: still must prove `whstep_head` soundness.  Plan:
+  invert via `WfCutElim.v:194 invert_wf_term_con` (gives `In term_rule` +
+  `wf_args` + `eq_sort \/ eq`), recurse on the principal arg (sort-erased IH),
+  lift with `term_con_congruence`.  GOTCHA: the `eq_args` "one position steps,
+  rest refl" helper needs the changed variable to NOT occur in head-ward
+  (later-bound) sibling types — TRUE for a function/scrutinee principal arg
+  (siblings depend on the DOMAIN, not the function) but a general lemma needs
+  that non-occurrence as a hypothesis.  `invert_wf_term_con` + `set_nth` + a
+  non-occurrence-gated `eq_args_set_nth` is the shape.
+
+THEN files 3 LogicalRelation (the big design step: reducibility over `term`
+indexed by `sort`, all at Pyrosome ctx=[], object env in the sort; reify/reflect
+via reduction + type-directed eta), 4 FundamentalLemma, 5 Decidable.  `pa` (the
+principal-arg selector) must be instantiated for OTT (eliminators app_rel/app_irr
++ the always-reducing exp_subst/ty_subst → Some _).
 
 ## UPDATE 2026-06-06o — PIVOT FILE 1/5 LANDED: `Reduction.v` GREEN + axiom-free.
 
