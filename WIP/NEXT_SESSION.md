@@ -26,14 +26,17 @@ driver was this scopedness gap, which side-conds fix more cheaply).
   (`Vapp_shift := snd (fst Apply_shift_commute)`, aligned by `shift_val_comm0` +
   `shift_shift_comm`).
 
-**REMAINING prototype item: `conv_ty_eta_ren`** (→ RenTyping.v:428).  Same shape as
-`ren_typing`'s `t_lam_eta` case (`Reflect_ren` + `Apply_val_ren_commute`, plus the
-`ren_ctx`/`ren_ok` plumbing: `ren_ok_up`, `ren_ctx_up_dEl`, `ne_below_ctx_up_dEl`,
-`RenShSc_beta`, `ren_is_Apply_val`, `renm_up_0`/`ren_shift_comm{0,1}_val`) PLUS two
-`Vapp` premises via `Vapp_ren` (RenSubst.v:871) with the same ren-commute alignment.
-The ren motive's `ne_below_ty T` assumption supplies the codomain `ne_below B`
-(confirmed: that is exactly how `ren_typing`'s `t_lam_eta` gets `HB`), so NO extra
-side-condition needed.
+- `conv_ty_eta_ren`           (renaming)      → RenTyping.v:428.  DONE.  Mirrors
+  `ren_typing`'s `t_lam_eta` (`Reflect_ren` + `Apply_val_ren_commute` + the
+  `ren_ctx`/`ren_ok` plumbing) PLUS two `Vapp_ren` (`:= snd (fst Apply_ren_commute)`)
+  with the same ren-commute alignment (`ren_shift_comm{0,1}_val`).  Needed ONE new
+  helper, `ne_below_ren_val : ne_below_val N v -> ren_ok rho N m2 -> ne_below_val m2
+  (ren_val rho v)` (3-liner via `ren_is_Apply_val` + `Apply_val_ne_below` +
+  `ren_sub_nth`) — `t_lam_eta` has no ne_below side-conds so `ren_typing` never
+  needed it; the `ctm_eta` side-conds must be re-established over the target ctx.
+
+**METATHEORY COMPLETE.**  All four lemmas the `n_conv` switch needs are PROVEN +
+axiom-free in `WIP/ConvEtaProto.v`.  No more prototype unknowns.
 
 **THEN the core port (mechanical, multi-file rebuild ~1h):** (a) move the inductive
 into a real file BELOW Typing (new `ConvEta.v` importing `Domain Apply Reflect
