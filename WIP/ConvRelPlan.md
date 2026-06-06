@@ -91,6 +91,36 @@ Reflect/Typing/EvalRel. Mechanical.
 
 ## STATUS
 
+- **R2 STILL FALSE — the `is_lam` gate is NOT HEREDITARY (2026-06-06e, machine-grounded).**
+  Reify-tm `forall a b, PiRedTmEq PA a b -> conv_nf a b` (RRCar's reify-tm at a
+  relevant Pi) is FALSE even WITH the `is_lam` gate.  The gate forces members `vLam _`
+  at the TOP, but a member's BODY can still be an eta-SHORT bare neutral at a nested
+  FUNCTION codomain.  Counterexample at `dEl (vPi (vPi vNat vNat) (vPi vNat vNat))`
+  (both type-checked in dev via t_lam/t_ne/n_var/n_app):
+    eta-SHORT: `vLam (vNe (nVar 0))`
+    eta-LONG : `vLam (vLam (vNe (nApp (nVar 1) vNat vNat (vNe (nVar 0)))))`  (= eta-exp of var0)
+  Eta-equal, so any PER-style `PiRedTmEq` relates them (its app clause relates f to
+  its eta-expansion); but `cnf_lam` reduces their `conv_nf` to
+  `conv_nf (vNe (nVar 0)) (vLam ...)` which has NO rule (VERIFIED:
+  `forall x, conv_nf (vNe (nVar 0)) (vLam x) -> False` by inversion).  Same flavor
+  as the pre-is_lam falsity, one level deeper.  Building the VR layer does NOT fix
+  this: R2 is Theorem-11/reify (proved before the fundamental lemma) and quantifies
+  over ALL members of a fixed PA, so no validity argument constrains the bodies.
+  R1 (`conv_nf BA BB` raw codes) and R3 (RR_app2) share the SAME eta-irrelevance
+  core (the app-clause handle on bodies is always eta-SUBSTITUTED: `v = ba[ARGn/0]`,
+  ARGn = reflect(var0) != var0 for higher-order domains).
+  DECISION FORK (Dustin): (A) NbE REIFY FUNCTION — restate reify-tm as
+  `P a b -> conv_nf (reify a)(reify b)` with `reify` eta-expanding at Pi
+  (paper-faithful; reify f = vLam(reify_cod(f·reflect var0)); reify-tm then follows
+  from posIH); (B) HEREDITARY eta-long-NF gate on `PiRedTmEq` members (member carries
+  a reify witness, like the paper's `PiRedTm.nf`); (C) move reify-tm after the
+  fundamental lemma, members constrained to eval-images.  The current `conv_nf a b`
+  on RAW members is wrong at Pi.
+  CORRECTION (independent): term/type SCOPEDNESS is NOT a blocker — `typing_ne_below`
+  / `has_svalty_ne_below` / `wf_neutral_ne_below` (RenTyping.v) prove it in full
+  (precond `ne_below_ctx Ge`, from `wf_senv Ge`); the dU-restricted note in
+  ApplySubst.v `typing_scoped` is STALE.
+
 - **GATE LANDED (2026-06-06d): `is_lam` member gate added to `PiRedTmEq`; whole
   `LogRel2*` chain + `Glue` re-greened, axiom-free.**  Per Dustin's call (option
   (B), paper-faithful NbE), `PiRedTmEq` now requires both members to be lambdas
