@@ -150,40 +150,11 @@ Definition ren_Apply_ne_total  := snd (snd ren_Apply_total).
 (* target level [m] sends an [<N]-scoped value to an [m]-scoped one.        *)
 (* ===================================================================== *)
 
-(* Shifting at any cutoff extends the scope by one. *)
-Lemma ne_below_shift :
-  (forall T m c, ne_below_ty m T -> ne_below_ty (S m) (shift_ty c 1 T))
-  * ((forall v m c, ne_below_val m v -> ne_below_val (S m) (shift_val c 1 v))
-  *  (forall n m c, ne_below_ne m n -> ne_below_ne (S m) (shift_ne c 1 n))).
-Proof.
-  apply (sval_mutind
-    (fun T  => forall m c, ne_below_ty  m T -> ne_below_ty  (S m) (shift_ty  c 1 T))
-    (fun v  => forall m c, ne_below_val m v -> ne_below_val (S m) (shift_val c 1 v))
-    (fun nn => forall m c, ne_below_ne  m nn -> ne_below_ne  (S m) (shift_ne  c 1 nn)));
-    try (intros; exact I).
-  - (* dEl *) intros e IHe m c H. apply IHe; exact H.
-  - (* vNe *) intros nn IHnn m c H. apply IHnn; exact H.
-  - (* vSuc *) intros v IHv m c H. apply IHv; exact H.
-  - (* vPi *) intros F IHF B IHB m c [HF HB]. split; [ apply IHF | apply IHB ]; assumption.
-  - (* vPiI *) intros F IHF B IHB m c [HF HB]. split; [ apply IHF | apply IHB ]; assumption.
-  - (* vLam *) intros b IHb m c H. apply IHb; exact H.
-  - (* vLamI *) intros b IHb m c H. apply IHb; exact H.
-  - (* nVar *) intros k m c H. cbn [ne_below_ne] in H. cbn [shift_ne].
-    destruct (Nat.ltb k c); cbn [ne_below_ne]; Lia.lia.
-  - (* nEmptyrec *) intros rA lA A IHA scrut IHscr m c [HA Hs].
-    split; [ apply IHA | apply IHscr ]; assumption.
-  - (* nApp -- F at cutoff [c], B at [S c] *)
-    intros f IHf F IHF B IHB a IHa m c H. cbn [ne_below_ne] in H |- *.
-    destruct H as (Hf & HF & HB & Ha).
-    repeat split; [ apply IHf | apply IHF | apply IHB | apply IHa ]; assumption.
-  - (* nAppI *)
-    intros f IHf F IHF B IHB a IHa m c H. cbn [ne_below_ne] in H |- *.
-    destruct H as (Hf & HF & HB & Ha).
-    repeat split; [ apply IHf | apply IHF | apply IHB | apply IHa ]; assumption.
-Qed.
-
-Definition ne_below_shift_val := fst (snd ne_below_shift).
-Definition ne_below_shift_ne  := snd (snd ne_below_shift).
+(* [ne_below_shift] (shifting at any cutoff extends the scope by one) and its
+   projections [ne_below_shift_val]/[ne_below_shift_ne] were MOVED down to
+   Preservation.v (they are purely structural [sval_mutind] facts and are now
+   needed there by [conv_eta_shift]).  They remain available here via the
+   [Preservation] import. *)
 
 (* Scope monotonicity. *)
 Lemma ne_below_mono :
