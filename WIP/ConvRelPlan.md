@@ -91,6 +91,78 @@ Reflect/Typing/EvalRel. Mechanical.
 
 ## STATUS
 
+- **GATE LANDED (2026-06-06d): `is_lam` member gate added to `PiRedTmEq`; whole
+  `LogRel2*` chain + `Glue` re-greened, axiom-free.**  Per Dustin's call (option
+  (B), paper-faithful NbE), `PiRedTmEq` now requires both members to be lambdas
+  (`is_lam v := { b & v = vLam b }`, the paper's `PiRedTm.isfun`).  This REMOVES
+  the falsity below: bare neutrals at a Pi are no longer direct members (they
+  enter via `refl_Pi`, which outputs `vLam`).  Edits: `LogRel2.v` (def + new
+  `is_lam`); `LogRel2Lemmas`/`LogRel2Reflect` `RedTmEq_wf{,_gen}` LRpi destruct
+  `[[[..] _] _]`; `LogRel2Sym` fwd/bwd swap typings AND gates; `LogRel2Ren`
+  `ren_pack_fwd` rebuilds the gate (`ren_val rho (vLam b) = vLam (ren_val (up_renl
+  rho) b)`); `LogRel2Reflect` `RR_pi_case` REFLECT supplies the two gates
+  (`eexists; reflexivity`).  `LogRel2Irr` unchanged (members preserved).
+  Verified `Closed under the global context`: `RR_gen`, `LR_sym_gen`,
+  `LR_ren_gen` (+ build clean for the rest).
+  CONSEQUENCE for the residuals: (R2) is now a TRUE, provable statement (no longer
+  a dead end), BUT still NOT a one-liner -- with both members `vLam ba`/`vLam bb`,
+  `conv_nf` reduces via `cnf_lam` to `conv_nf ba bb`, and the lambda body is NOT
+  recovered by `Vapp` at the fresh var (the beta sub `a::id_list` contracts the
+  binder -- `entry (i+1) = vNe(nVar i)`, a non-invertible renaming -- so the app
+  clause gives `conv_nf (ba⟨contract⟩) (bb⟨contract⟩)`, not `conv_nf ba bb`).
+  So (R1)+(R2)+(R3) all still need the genuine VR/reify-adequacy layer; the gate's
+  contribution is making them ACHIEVABLE rather than (R2) being false. NEXT =
+  build the VR layer (reducible substitutions + reify adequacy) and discharge the
+  three residuals; then prove (R2) inside `RR_pi_case` and drop the `Hreify_tm`
+  Context.
+
+- **BLOCKER FOUND & MACHINE-VERIFIED (2026-06-06d) [RESOLVED by the gate above]:
+  residual (R2) was FALSE as stated -- structural reify-tm at Pi is INCOMPATIBLE
+  with the UNGATED `PiRedTmEq`.**  (R2) is `RRCar`'s reify-tm clause specialised
+  to the relevant
+  Pi: `forall a b, PiRedTmEq PA a b -> conv_nf a b`.  It cannot hold, and neither
+  can the eventual user-facing completeness theorem
+  `reify_tm : LR2 Ge A A P -> P a b -> conv_nf a b`.
+
+  REASON.  `PiRedTmEq` (LogRel2.v) gates members only by `has_svalty _ (dEl(vPi
+  ..))` + the application clause; it has NO "member is a function / reduces to a
+  `vLam`" gate (the paper's `PiRedTm.{nf,red,isfun}` field).  So a BARE NEUTRAL
+  at a Pi type (e.g. a variable `vNe (nVar 0)` typed at `dEl(vPi vNat vNat)` by
+  `t_ne`/`n_var`) is a member, ALONGSIDE its eta-expansion `vLam (vNe (nApp
+  (nVar 1) vNat vNat (vNe (nVar 0))))` (typed by `t_lam`/`t_lam_eta`).  These two
+  are eta-equal -- the whole POINT of `PiRedTmEq` is to relate them ("eta baked
+  in at negative types") -- yet `conv_nf (vLam _) (vNe _)` has NO constructor.
+
+  COQ-VERIFIED (all in dev against `LogRel2Reflect.v`'s context, axiom-free):
+  1. `forall x y, conv_nf (vLam x) (vNe y) -> False`  (by `inversion`).
+  2. `forall Ge, nth_error Ge 0 = Some (dEl(vPi vNat vNat)) ->
+      has_svalty Ge (vNe (nVar 0)) (dEl(vPi vNat vNat))`  (`t_ne`+`n_var`).
+  3. eta-relatedness CORE: at `m=1`, BOTH
+       `Vapp 1 vNat vNat (vNe (nVar 0)) vZero v`  and
+       `Vapp 1 vNat vNat (vLam (vNe (nApp (nVar 1) vNat vNat (vNe (nVar 0))))) vZero v`
+     hold with the SAME `v = vNe (nApp (nVar 0) vNat vNat vZero)` (`vapp_ne` /
+     `vapp_lam`+`ap_app`+`ap_var`).  i.e. the lambda and the bare neutral apply to
+     the same argument to the same result -- they ARE reducibly related.
+
+  CONSEQUENCE.  `RR_pi_case`'s `- (* REIFY-tm *) exact Hreify_tm` line cannot be
+  honoured, so `RR_pi_res` (which assumes `Hreify_tm` = R2) is unprovable, so the
+  `RR_pi_at_from_res` reduction is a dead end on the reify-tm component.  (R1)
+  `conv_nf BA BB` and (R3) `RR_app2` are reflect-side and unaffected by THIS
+  argument, but reify-tm must be fixed first since it is part of the same motive.
+
+  FIX OPTIONS (architectural -- DECISION FOR DUSTIN):
+  - **(B) gate `PiRedTmEq` members to functions** (paper-faithful NbE; RECOMMENDED).
+    Add an `isFun`/`{ bf & f = vLam bf }` (or "reduces to `vLam`") field to
+    `PiRedTmEq`.  Then members are `vLam`, reify-tm is structural via `cnf_lam` +
+    the codomain reify IH (`posIH`).  Bare neutrals at Pi enter the LR ONLY via
+    REFLECTION (`refl_Pi` already outputs `vLam`), so the eta-short form is never a
+    direct member -- it is represented by its eta-long reflection, exactly NbE.
+    Cost: thread the new field through `LogRel2{Irr,Sym,Ren,Lemmas,Red,Ind}` and
+    escape; `refl_Pi` supplies it for free.  Positivity unaffected (positive Σ).
+  - **(A) add eta to `conv_nf`** (declarative-style; the paper's *spec* conv has
+    eta).  Reverses the stated design goal ("conv stays structural, eta baked into
+    NFs") and complicates `conv_trans`/decidability.  NOT recommended.
+
 - **RR_pi_at REDUCED to 3 reify/reflect residuals, axiom-free + green
   (2026-06-06c).**  `LogRel2Reflect.v` now proves the relevant-Pi crux
   `RR_pi_at` MODULO three explicit residuals (two-sided port of the single-sided

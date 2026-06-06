@@ -10,6 +10,18 @@ relation.** Goal: decidable conversion for OTT. Branch `gluing-nbe`. Read
 `WIP/ConvRelPlan.md` (design + live STATUS) and the `[[ott-convrel-pivot]]`
 memory first.
 
+## UPDATE 2026-06-06d — `is_lam` GATE LANDED (read [[ott-pi-reify-gate-blocker]])
+
+Machine-verified that residual (R2) (Pi reify-tm) was FALSE under the UNgated
+`PiRedTmEq` (it admitted eta-short bare-neutral members; `conv_nf (vLam _)(vNe _)`
+has no rule).  Per Dustin's call, added the paper-faithful `is_lam` member gate
+(`PiRedTmEq` members must be lambdas).  Whole `LogRel2*` chain + `Glue` re-greened,
+axiom-free.  R1/R2/R3 are now TRUE/achievable but STILL need the VR/reify-adequacy
+layer (the gate removed the falsity, not the work).  **NEXT = build the VR layer
+(reducible substitutions + reify adequacy), discharge R1/R2/R3, then prove R2
+inside `RR_pi_case` and drop the `Hreify_tm` Context.**  Details in ConvRelPlan
+STATUS "GATE LANDED".
+
 ## State (all committed + pushed on `gluing-nbe`, all axiom-free)
 
 - **Ph1 DONE** — `src/Pyrosome/Lang/OTT/Norm/Pi/LogRel2.v`: the two-sided PER core

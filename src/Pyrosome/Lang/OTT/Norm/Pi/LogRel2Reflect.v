@@ -495,7 +495,7 @@ Proof.
     + apply t_ne; exact wp.
     + apply t_ne. eapply n_conv; [ exact wq | apply cnf_ne; exact (snd cnm) ].
   - destruct Pab as [Hf Hg]; split; assumption.
-  - destruct Pab as [[Hf Hg] _]; split; assumption.
+  - destruct Pab as [[[Hf Hg] _] _]; split; assumption.
   - destruct Pab as [[Hc Hd] _]; split; assumption.
   - destruct Pab as [[Hc Hd] _]; split; assumption.
 Qed.
@@ -842,9 +842,13 @@ Section RRPiDev.
       exists (vLam body_n), (vLam body_m). split; [ split | ].
       + exact Hrefn.
       + exact Hrefm.
-      + split; [ split | ].
+      + (* the [P]-member [PiRedTmEq PA (vLam body_n) (vLam body_m)]: the two
+           [is_lam] gates are trivial since the eta-expansion yields lambdas. *)
+        refine (((_, _), (_, _)), _).
         * exact Htyn.
         * exact Htym.
+        * eexists; reflexivity.
+        * eexists; reflexivity.
         * exact (@Happ n m ARGn ARGm body_n body_m rab Hbn Hbm rbody).
     - (* REIFY-tm *) exact Hreify_tm.
     - (* REIFY-ty *) cbn. apply cnf_pi; [ exact dom_reify_ty | exact Hcod ].
