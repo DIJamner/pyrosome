@@ -575,6 +575,173 @@ Proof.
   - cbn [shift_ty]. f_equal. symmetry. apply (fst (snd shift_shift_comm)). Lia.lia.
 Qed.
 
+(* [ne_below_shift] (MOVED here from RenSubst.v -- purely structural, needed by
+   [conv_eta_shift] below): shifting at any cutoff extends the scope by one. *)
+Lemma ne_below_shift :
+  (forall T m c, ne_below_ty m T -> ne_below_ty (S m) (shift_ty c 1 T))
+  * ((forall v m c, ne_below_val m v -> ne_below_val (S m) (shift_val c 1 v))
+  *  (forall n m c, ne_below_ne m n -> ne_below_ne (S m) (shift_ne c 1 n))).
+Proof.
+  apply (sval_mutind
+    (fun T  => forall m c, ne_below_ty  m T -> ne_below_ty  (S m) (shift_ty  c 1 T))
+    (fun v  => forall m c, ne_below_val m v -> ne_below_val (S m) (shift_val c 1 v))
+    (fun nn => forall m c, ne_below_ne  m nn -> ne_below_ne  (S m) (shift_ne  c 1 nn)));
+    try (intros; exact I).
+  - (* dEl *) intros e IHe m c H. apply IHe; exact H.
+  - (* vNe *) intros nn IHnn m c H. apply IHnn; exact H.
+  - (* vSuc *) intros v IHv m c H. apply IHv; exact H.
+  - (* vPi *) intros F IHF B IHB m c [HF HB]. split; [ apply IHF | apply IHB ]; assumption.
+  - (* vPiI *) intros F IHF B IHB m c [HF HB]. split; [ apply IHF | apply IHB ]; assumption.
+  - (* vLam *) intros b IHb m c H. apply IHb; exact H.
+  - (* vLamI *) intros b IHb m c H. apply IHb; exact H.
+  - (* nVar *) intros k m c H. cbn [ne_below_ne] in H. cbn [shift_ne].
+    destruct (Nat.ltb k c); cbn [ne_below_ne]; Lia.lia.
+  - (* nEmptyrec *) intros rA lA A IHA scrut IHscr m c [HA Hs].
+    split; [ apply IHA | apply IHscr ]; assumption.
+  - (* nApp -- F at cutoff [c], B at [S c] *)
+    intros f IHf F IHF B IHB a IHa m c H. cbn [ne_below_ne] in H |- *.
+    destruct H as (Hf & HF & HB & Ha).
+    repeat split; [ apply IHf | apply IHF | apply IHB | apply IHa ]; assumption.
+  - (* nAppI *)
+    intros f IHf F IHF B IHB a IHa m c H. cbn [ne_below_ne] in H |- *.
+    destruct H as (Hf & HF & HB & Ha).
+    repeat split; [ apply IHf | apply IHF | apply IHB | apply IHa ]; assumption.
+Qed.
+
+Definition ne_below_shift_val := fst (snd ne_below_shift).
+Definition ne_below_shift_ne  := snd (snd ne_below_shift).
+
+(* The [Vapp] shift projection of the commutation engine. *)
+Definition Vapp_shift := snd (fst Apply_shift_commute).
+
+(* ===================================================================== *)
+(* [conv_eta_shift] : the eta-closed conversion is stable under SHIFT       *)
+(* (binder insertion at cutoff [c]).  The [ctm_eta] case is [t_lam_eta]'s   *)
+(* shift case PLUS the two [Vapp] eta-application premises (shifted via      *)
+(* [Vapp_shift]).  Consumed by the [n_conv] case of [weaken_typing] below.  *)
+(* (Migrated from WIP/ConvEtaProto.v.)                                       *)
+(* ===================================================================== *)
+Lemma conv_eta_shift :
+  (forall Ge A B, conv_ty_eta Ge A B ->
+     forall c T0, c <= length Ge ->
+       conv_ty_eta (wk_ctx c T0 Ge) (shift_val c 1 A) (shift_val c 1 B))
+  /\ (forall Ge T a b, conv_tm_eta Ge T a b ->
+     forall c T0, c <= length Ge ->
+       conv_tm_eta (wk_ctx c T0 Ge) (shift_ty c 1 T)
+                   (shift_val c 1 a) (shift_val c 1 b))
+  /\ (forall Ge T n m, conv_ne_eta Ge T n m ->
+     forall c T0, c <= length Ge ->
+       conv_ne_eta (wk_ctx c T0 Ge) (shift_ty c 1 T)
+                   (shift_ne c 1 n) (shift_ne c 1 m)).
+Proof.
+  apply conv_eta_mutind.
+  - (* cte_nat *) intros Ge c T0 Hc. cbn [shift_val]. apply cte_nat.
+  - (* cte_empty *) intros Ge c T0 Hc. cbn [shift_val]. apply cte_empty.
+  - (* cte_pi *) intros Ge F F' B B' _ IHF _ IHB c T0 Hc. cbn [shift_val].
+    apply cte_pi.
+    + exact (IHF c T0 Hc).
+    + pose proof (IHB (S c) (shift_ty 0 1 T0)
+                    ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
+      rewrite wk_ctx_under_binder in IH. cbn [shift_ty] in IH. exact IH.
+  - (* cte_piI *) intros Ge F F' B B' _ IHF _ IHB c T0 Hc. cbn [shift_val].
+    apply cte_piI.
+    + exact (IHF c T0 Hc).
+    + pose proof (IHB (S c) (shift_ty 0 1 T0)
+                    ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
+      rewrite wk_ctx_under_binder in IH. cbn [shift_ty] in IH. exact IH.
+  - (* cte_ne *) intros Ge n n' r l _ IH c T0 Hc. cbn [shift_val].
+    eapply cte_ne. pose proof (IH c T0 Hc) as IH'. cbn [shift_ty] in IH'. exact IH'.
+  - (* ctm_ne_nat *) intros Ge n n' _ IH c T0 Hc. cbn [shift_val shift_ty].
+    apply ctm_ne_nat. pose proof (IH c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
+  - (* ctm_ne_empty *) intros Ge n n' _ IH c T0 Hc. cbn [shift_val shift_ty].
+    apply ctm_ne_empty. pose proof (IH c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
+  - (* ctm_ne_el *) intros Ge cc n n' _ IH c T0 Hc. cbn [shift_val shift_ty].
+    apply ctm_ne_el. pose proof (IH c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
+  - (* ctm_zero *) intros Ge c T0 Hc. cbn [shift_val shift_ty]. apply ctm_zero.
+  - (* ctm_suc *) intros Ge v v' _ IH c T0 Hc. cbn [shift_val shift_ty].
+    apply ctm_suc. pose proof (IH c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
+  - (* ctm_code *) intros Ge r l cc cc' _ IH c T0 Hc. cbn [shift_val shift_ty].
+    apply ctm_code. exact (IH c T0 Hc).
+  - (* ctm_eta *)
+    intros Ge F B f g ARG B' fa ga nbF nbf nbg HR Hap Hfa Hga _Hcod IHcod c T0 Hc.
+    cbn [shift_val shift_ty].
+    assert (HL : length (wk_ctx c T0 Ge) = S (length Ge)) by (apply wk_ctx_length; exact Hc).
+    eapply ctm_eta.
+    + (* nbF *) rewrite HL. apply ne_below_shift_val. exact nbF.
+    + (* nbf *) rewrite HL. apply ne_below_shift_val. exact nbf.
+    + (* nbg *) rewrite HL. apply ne_below_shift_val. exact nbg.
+    + (* Reflect *) rewrite HL.
+      pose proof (@Reflect_weaken _ _ _ _ HR (S c) ltac:(Lia.lia)) as IH.
+      cbn [shift_ty shift_val shift_ne] in IH.
+      rewrite shift_val_comm0. exact IH.
+    + (* Apply_val *) rewrite HL.
+      pose proof (Apply_val_shiftc Hap
+                    (@ShiftSub_beta (S (length Ge)) ARG (S c) ltac:(Lia.lia))
+                    ltac:(Lia.lia)) as IH.
+      rewrite (fst (snd shift_shift_comm) B 1 (S c) ltac:(Lia.lia)). exact IH.
+    + (* Vapp fa *) rewrite HL.
+      pose proof (@Vapp_shift _ _ _ _ _ _ Hfa (S c) ltac:(Lia.lia)) as IH.
+      cbn [shift_val shift_ne] in IH.
+      rewrite !shift_val_comm0.
+      rewrite (fst (snd shift_shift_comm) B 1 (S c) ltac:(Lia.lia)). exact IH.
+    + (* Vapp ga *) rewrite HL.
+      pose proof (@Vapp_shift _ _ _ _ _ _ Hga (S c) ltac:(Lia.lia)) as IH.
+      cbn [shift_val shift_ne] in IH.
+      rewrite !shift_val_comm0.
+      rewrite (fst (snd shift_shift_comm) B 1 (S c) ltac:(Lia.lia)). exact IH.
+    + (* codomain conv *)
+      pose proof (IHcod (S c) (shift_ty 0 1 T0)
+                    ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
+      rewrite wk_ctx_under_binder in IH. cbn [shift_ty] in IH. exact IH.
+  - (* ctm_piI_ne *) intros Ge F B n n' _ IH c T0 Hc. cbn [shift_val shift_ty].
+    apply ctm_piI_ne. pose proof (IH c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
+  - (* ctm_lamI *) intros Ge F B b b' _ IH c T0 Hc. cbn [shift_val shift_ty].
+    apply ctm_lamI.
+    pose proof (IH (S c) (shift_ty 0 1 T0)
+                  ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH'.
+    rewrite wk_ctx_under_binder in IH'. cbn [shift_ty] in IH'. exact IH'.
+  - (* cne_eta_var *) intros Ge k T He c T0 Hc. cbn -[Nat.ltb shift_ty].
+    destruct (Nat.ltb k c) eqn:E; cbn -[Nat.ltb shift_ty].
+    + apply ltb_true in E. apply cne_eta_var.
+      exact (@wk_ctx_nth_lt c T0 Ge k T E Hc He).
+    + apply ltb_false in E. replace (k + 1) with (S k) by Lia.lia.
+      apply cne_eta_var. exact (@wk_ctx_nth_ge c T0 Ge k T E Hc He).
+  - (* cne_eta_emptyrec *) intros Ge rA lA A A' s s' _ IHA _ IHs c T0 Hc.
+    cbn [shift_ne shift_ty shift_val].
+    apply cne_eta_emptyrec.
+    + exact (IHA c T0 Hc).
+    + pose proof (IHs c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
+  - (* cne_eta_app *)
+    intros Ge f f' F F' B B' a a' Bres _ IHf _ IHF _ IHB _ IHa Hap c T0 Hc.
+    cbn [shift_ne shift_ty shift_val].
+    eapply cne_eta_app.
+    + (* f *) pose proof (IHf c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
+    + (* F *) exact (IHF c T0 Hc).
+    + (* B *) pose proof (IHB (S c) (shift_ty 0 1 T0)
+                    ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH'.
+      rewrite wk_ctx_under_binder in IH'. cbn [shift_ty] in IH'. exact IH'.
+    + (* a *) pose proof (IHa c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
+    + (* Apply_val Bres *) rewrite (@wk_ctx_length c T0 Ge Hc).
+      exact (Apply_val_shiftc Hap (@ShiftSub_beta (length Ge) a c Hc) Hc).
+  - (* cne_eta_appI *)
+    intros Ge f f' F F' B B' a a' Bres _ IHf _ IHF _ IHB _ IHa Hap c T0 Hc.
+    cbn [shift_ne shift_ty shift_val].
+    eapply cne_eta_appI.
+    + pose proof (IHf c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
+    + exact (IHF c T0 Hc).
+    + pose proof (IHB (S c) (shift_ty 0 1 T0)
+                    ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH'.
+      rewrite wk_ctx_under_binder in IH'. cbn [shift_ty] in IH'. exact IH'.
+    + pose proof (IHa c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
+    + rewrite (@wk_ctx_length c T0 Ge Hc).
+      exact (Apply_val_shiftc Hap (@ShiftSub_beta (length Ge) a c Hc) Hc).
+Qed.
+
+Definition conv_ty_eta_shift : forall Ge A B, conv_ty_eta Ge A B ->
+    forall c T0, c <= length Ge ->
+      conv_ty_eta (wk_ctx c T0 Ge) (shift_val c 1 A) (shift_val c 1 B) :=
+  proj1 conv_eta_shift.
+
 Lemma weaken_typing :
   (forall Ge v T, has_svalty Ge v T ->
      forall c T0, c <= length Ge ->
@@ -658,7 +825,7 @@ Proof.
     + rewrite (@wk_ctx_length c T0 Ge Hc).
       exact (Apply_val_shiftc Hap (@ShiftSub_beta (length Ge) a c Hc) Hc).
   - (* n_conv *) intros Ge n A B w IH cAB c T0 Hc. cbn [shift_ty].
-    eapply n_conv; [ exact (IH c T0 Hc) | exact (conv_nf_shift cAB c 1) ].
+    eapply n_conv; [ exact (IH c T0 Hc) | exact (@conv_ty_eta_shift Ge A B cAB c T0 Hc) ].
 Qed.
 
 (* Front insertion (cutoff 0) : the special case used by [wf_ssub_up]. *)
