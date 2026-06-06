@@ -1,87 +1,84 @@
 # Next-session kickoff — OTT two-sided PER migration
 
-## UPDATE 2026-06-06m — ARCHITECTURE PIVOT (DECIDED): remove the NbE value domain; port the paper's reduction-on-syntax LR. Mode = RIP OUT IN PLACE; target = Pi directly.
+## UPDATE 2026-06-06n — PIVOT SUBSTRATE CORRECTED (Dustin): EVERYTHING over PYROSOME TERMS (`term`/`sort`/`eq_term`), NOT a de Bruijn `tm`. Remove value domain; rip out in place; target Pi.
 
-**WHY.**  The reference (metamltt, `/tmp/metamltt`) has NO separate value domain.  It
-works on ONE de Bruijn term syntax `tm` (Syntax.v: `tRel/tU/tPi/tLam/tApp Dom Cod f a/
-tNat/...`) with WEAK-HEAD REDUCTION `t ↝ u` (`wh_reduce`, Reduction.v: `Beta`,
-congruences, `whnf` by reduce-to-normal).  All of `~annot`, `~ne`, declarative `≡`,
-and reify `⇓` are relations OVER `tm`; "values"/normal forms are PREDICATES on terms
-(`t ¬↝`, neutral/positive-type predicates), not a datatype.  Our `OTT/Norm[/Pi]` dev
-instead built a separate typed value domain `sval/neutral/svalty` (Domain.v) + a
-denotational evaluator (`Apply_val/Vapp/Reflect/Reify/EvalRel`) — classic NbE.  That
-divergence is what made the reify/reflect adequacy (RR_pi_at / Thm-11) so painful
-(read-back over a value domain instead of reduction over syntax).  DECISION: drop the
-value domain and port the paper's TECHNIQUE.
+**SUPERSEDES UPDATE-m's `tm` plan — that was WRONG.** Do NOT introduce a separate de
+Bruijn `tm` (nor reuse `sval`). Work DIRECTLY on Pyrosome `@term V`/`@sort V`
+(Theory/Term.v: `term = var V | con V (list term)`, NAMED vars, substitution `e[/s/]`)
+in a language `l = ott_*`, and use Pyrosome's `eq_term l c t e1 e2` (Theory/Core.v) AS
+the declarative equality. NO separate conversion judgment, NO `Syntax.v`, NO
+`Declarative.v`, NO `Domain.v`. (This is what Dustin's earlier "why a separate
+conversion when eq_term exists?" was steering toward — the answer is: don't have one.)
 
-**SCOPE OF "PORT" — architecture, NOT the literal Coq.**  metamltt rests on Ltac2 +
-Equations-with-UIP (`Set Equations With UIP`) + ssreflect + a custom binder generator
-(sulfur/autosubst-style `bind tm in tm`).  Pyrosome uses NONE of these and avoids
-UIP.  So HAND-ROLL the architecture in plain Rocq + coqutil: de Bruijn `tm` with
-manual shift/ren/subst (reuse the PATTERNS already in `RenSubst.v` — `up_renl`,
-`ren_val`, `shift_val`, the comm lemmas — they transfer almost verbatim to `tm`),
-reduction as a relation/function, neutral as a Prop predicate, NO Equations/Ltac2/UIP.
+**WHY pivot (unchanged):** metamltt has no value domain — reduction-on-syntax LR; our
+NbE value domain (`sval`+`Apply/Reflect/Reify`) is what made RR_pi_at painful. But the
+SUBSTRATE is Pyrosome terms, not the paper's `tm`: port the TECHNIQUE (reduction +
+reducibility LR + reify/reflect + fundamental lemma) instantiated on Pyrosome's own
+syntax & judgments. Paper infra (Ltac2/Equations-UIP/ssreflect/autosubst) is
+irrelevant — we never touch the paper's term type.
 
-**MODE (Dustin): RIP OUT IN PLACE.**  Edit `src/Pyrosome/Lang/OTT/Norm/Pi/` directly;
-the whole tree is RED until the port lands (accepted).  Build incrementally
-bottom-up so each new file is green before the next.  **TARGET: Pi directly** (no
-non-Pi warm-up).  The current green commit (NeConv carries conv_ne_eta, equivalence
-conv_*_eta) is the rollback point on `gluing-nbe`; the conv_*_eta EQUIVALENCE DESIGN
-(refl/sym/trans/conv/chchk constructors, = paper ConvTy/Tm/Ne) PORTS FORWARD onto
-`tm` — keep it.
+**REDUCTION = directed orientation of the lang's computation rules; ⊆ eq_term FOR
+FREE.** Beta/computation are `term_eq_rule c lhs rhs t` entries in `ott_pi`/`ott_comp`
+(Lang/OTT/Computations.v `ott_comp`). Define weak-head `step : sort -> term -> term ->
+Prop` rewriting by those. **REUSE `Compilers/OperationalBridge.v`**: it already has
+`star` (refl-trans closure), `rel_sound l R := wf_term l [] a t -> R t a b -> eq_term l
+[] t a b`, and `step_sound`+`step_wf` ⇒ `star_step_sound`/`star_step_wf`. So once
+`step` is sound (each step = `eq_term_by`) and preserves `wf_term` (subject reduction),
+`↝* ⊆ eq_term` and wf-preservation are basically FREE. `Compilers/PartialEval.v`
+(`partial_eval l c t fuel e` with `eq_term l c t e (partial_eval …)`) is a ready
+fuel-evaluator to mine for the normalizer. ETA is NOT a reduction step — handle it
+TYPE-DIRECTED in the LR/reify at function sorts (paper `ConvTmEta`).
 
-**FILE PLAN (OTT/Norm/Pi/).**  DELETE (value-domain + evaluator):
-`Domain.v, Apply.v, ApplyLemmas.v, ApplySubst.v, ApplyConv.v, Reflect.v, Reify.v,
-ReifyConv.v, EvalRel.v, Determinism.v`.  REWRITE over `tm`:
-- `Syntax.v` (NEW, replaces Domain): `tm` (annotated, de Bruijn) + shift/ren/subst +
-  the comm lemmas (lift from RenSubst).  `tApp Dom Cod f a` (+ `tAppI`), no separate
-  neutral type.
-- `Reduction.v` (NEW, replaces Apply*/EvalRel/Determinism): `↝` (Beta + congruences),
-  `whnf`, determinism, subject reduction.
-- `Neutrals.v` (NEW): `ne` predicate + `~ne` (= our conv_ne_eta, now over `tm`,
-  single-typed, congruence-only; Sym/Trans/ChChk/Correct as LEMMAS — see paper
-  Neutrals.v, whose `ConvNeAppCong` uses a FREE result type `R` with dual witnesses
-  `R≡Cod[a]`,`R≡Cod'[a']` — adopt that so Sym is provable; supersedes our
-  cne_sym/trans/conv CONSTRUCTORS, which were the value-domain workaround).
-- `UpToAnnot.v` (NEW, replaces LogRel2Conv): `~annot` (structural up-to-annotation)
-  + `CorrectTm/Ty` (~annot + typing ⇒ ≡, trivial congruence).
-- `Declarative.v` (replaces Typing): ONE mutual `derivation` = WfCtx/WfTy/WfTm +
-  ConvTy/ConvTm/ConvNe with Refl/Sym/Trans/Conv + the eta rule `ConvTmEta` (paper
-  Declarative.v 160-234).  This FUSES typing+conversion (the paper does; our split
-  conv_*_eta vs has_svalty becomes one inductive).
-- `Renaming.v` (replaces RenSubst/RenTyping/Preservation-weakening): renaming &
-  substitution stability of `derivation` and `↝`.
-- `Normalization.v`: `whnf` termination (fuel/`wh_terminates`).
-- `LogicalRelation.v` + `LogicalRelation/{Reduction,ReifyReflect,Irrelevance,
-  Symmetry,Transitivity}.v` (replaces LogRel2*): the reducibility LR over `tm`
-  (paper LogicalRelation/*).  `reifyReflect` is now over `tm` via reduction (no
-  value read-back) — the part that was RR_pi_at.
-- `FundamentalLemma.v`, `Corollaries.v` (NEW): fundamental lemma ⇒ normalization +
-  decidable conversion.
-- `Glue.v`, `Model.v`, `ModelOk.v` (REWRITE bridge): KEEP the gluing STRUCTURE
-  `norm_ceq_term t e1 e2 := eq_term fo_lang [] t e1 e2 * glue_term t e1 e2`
-  (Norm/Model.v) but redefine `glue_*` from "evaluate to same VALUE" to "reduce to
-  convertible normal form / related by the syntactic LR".  The named-Pyrosome-`term`
-  ↔ de-Bruijn-`tm` bridge stays at THIS boundary (as it already does for sval).
-- `Smoke.v`: port the sanity tests.
+**FILE PLAN.** DELETE the entire value-domain tree in `OTT/Norm/Pi/` (and non-Pi
+`OTT/Norm/` value files): Domain, Apply, ApplyLemmas, ApplySubst, ApplyConv, Reflect,
+Reify, ReifyConv, EvalRel, Determinism, Typing(sval), Preservation(sval), RenSubst,
+RenTyping, LogRel2*, Model(eval-glue), ModelOk, SortInj, Glue, Smoke. Surface langs
+(Lang/OTT/*.v: Base/Nat/Pi/Computations/…) UNCHANGED. NEW (all over Pyrosome `term`,
+lang `ott_full`):
+- `Reduction.v`: weak-head `step`/`↝` from computation `term_eq_rule`s; `step_sound`
+  (⊆ eq_term via eq_term_by) + `step_wf` (subject reduction); whnf predicate; via
+  OperationalBridge get `↝* ⊆ eq_term`. Determinism/confluence as needed.
+- `Neutral.v`: neutral & whnf predicates on `term` (head = var / blocked elim).
+  Possibly structural `~annot`/`~ne` as DEFINED notions IF the LR needs
+  annotation-insensitive neutral comparison — but declarative equality stays `eq_term`.
+- `LogicalRelation.v` (+submodules): reducibility over `term` INDEXED BY `sort` in the
+  lang (≈ paper LogicalRelation/*, with Γ=Pyrosome `ctx`, types=`sort`, members=`term`).
+  Reify/reflect via reduction (old RR_pi_at, now reduction-based + type-directed eta).
+- `FundamentalLemma.v`: `wf_term`/`eq_term` ⇒ reducible (use Pyrosome cut-elimination
+  Theory/CutElim.v/CutFreeInd.v/WfCutElim.v for canonical derivations/inversion +
+  Theory/Renaming.v).
+- `Decidable.v`/`Corollaries.v`: normalization + **decidability of `eq_term` for OTT**
+  (the payoff). A Pyrosome `Model` instance, if still wanted, is a corollary — likely
+  drop the `norm_ceq`/eval-glue Model entirely.
 
-**EXECUTION ORDER (bottom-up, each green before next):** Syntax → Reduction →
-Normalization → Neutrals → UpToAnnot → Declarative → Renaming → LogicalRelation(+subs)
-→ FundamentalLemma → Corollaries → Glue/Model/ModelOk → Smoke.
+**REUSE (Pyrosome, not the value dev):** `Compilers/OperationalBridge.v` (reduction
+soundness/closure scaffolding), `Compilers/PartialEval.v` (fuel evaluator),
+`Theory/CutElim.v`+`CutFreeInd.v`+`WfCutElim.v` (canonical derivations for the
+fundamental lemma), `Theory/Renaming.v`, `Theory/ClosedTerm.v`/`ClosedCore.v`,
+`basic_core_crush` (Core.v). The conv EQUIVALENCE is free (`eq_term` has
+refl/sym/trans/conv/subst already). The metamltt LR ARCHITECTURE (reducibility shape,
+reify/reflect, eta-at-Pi) is the conceptual guide. NOTHING from the
+`sval`/`Apply`/`RenSubst` dev transfers as CODE (named ≠ de Bruijn).
 
-**KEEP / SALVAGE.**  Surface languages (`ott_nat/ott_base/subst_ott/ott_info`,
-`Lang/OTT/*.v`) UNCHANGED.  The de Bruijn shift/ren/subst PROOF PATTERNS in RenSubst.v
-(huge, reusable on `tm`).  The conv equivalence DESIGN + the `ne_below`/scoping idea
-(now just well-scopedness of `tm`).  The Model gluing template (Norm/Model.v).  PER
-proof patterns (LogRel2Sym/Irr) inform the LR Symmetry/Irrelevance modules.
+**EXECUTION ORDER (each green before next):** Reduction → Neutral → LogicalRelation
+(+subs) → FundamentalLemma → Decidable/Corollaries. No Syntax (term exists), no
+Declarative (eq_term exists), no named↔deBruijn bridge.
 
-**FIRST CONCRETE STEP next session:** write `Syntax.v` (the `tm` grammar + shift/ren/
-subst + comm lemmas, lifted from RenSubst), build it, then `Reduction.v`.  Prototype
-`tm` + a couple of reduction/whnf lemmas in WIP first if unsure of the grammar
-annotations.
+**OPEN DESIGN Qs (decide at start of next session, before coding the LR):**
+1. `step`: generic "rewrite by any oriented `term_eq_rule`" vs hand-listed weak-head
+   `step` for the specific OTT computation rules (generic=reusable; hand-listed=easier
+   determinism).
+2. Does the LR need structural `~annot`/`~ne` at all, or can neutral members be
+   compared by `eq_term` + a "stuck" predicate? (Paper needs `~ne` only because its `≡`
+   is declarative-only; here `eq_term` IS declarative — maybe unneeded.)
+3. Context: closed (`[]`, where OperationalBridge is stated) first, or open contexts
+   from the start (needed to go under Pi binders in reify).
+
+**FIRST CONCRETE STEP next session:** read `Compilers/OperationalBridge.v` +
+`PartialEval.v` fully; pick `step` (Q1); write `Reduction.v` (`step`+`step_sound`+
+`step_wf`), build green via OperationalBridge.
 
 ---
-
 ## UPDATE 2026-06-06l — conv_ty_eta CORE PORT LANDED + green; construction-side = reflect-adequacy (NOT a separable bridge)
 
 **CORE PORT DONE & COMMITTED (commit on `gluing-nbe`).**  The four WIP metatheory
