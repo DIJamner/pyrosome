@@ -116,8 +116,34 @@ become BIDIRECTIONAL (an `iff`) once `sym` is a constructor — and still goes t
    gluing-model eta law).
 
 GREEN FRONTIER right now: Typing, Preservation, ApplySubst, RenSubst, RenTyping,
-LogRel2, LogRel2Ind, LogRel2Red (all axiom-free).  First break still LogRel2Lemmas:79
-(step 4).  Build single files with `scripts/vbuild.sh`.
+Reify, ApplyConv, ReifyConv, LogRel2, LogRel2Ind, LogRel2Red, LogRel2Lemmas,
+LogRel2Irr, LogRel2Sym, LogRel2Ren (ALL axiom-free, incl LR_sym_gen).  Steps 1-4
+DONE + committed.  Build single files with `scripts/vbuild.sh`.
+
+REMAINING = LogRel2Reflect (step 5, RR_pi_at) + downstream (Glue, Smoke, Model,
+ModelOk, SortInj).  **LogRel2Reflect scope (49 `conv_nf`/`cnf_` sites):** NeConv now
+carries `conv_ne_eta`, so the reify-direction must be RE-AIMED at the declarative
+conversion (paper: reify `⇓` produces `≡`, NOT `~annot`).  Concretely:
+- FIRST BREAK reify_nat:44 / reify_neutral:50 / 395-396: they `destruct` the NeConv
+  field (now `conv_ne_eta`) and feed `cnf_ne` (wants `conv_ne`).  conv_ne_eta→conv_nf
+  is UNSOUND (eta-short vs eta-long) — so these reify lemmas must CONCLUDE
+  `conv_*_eta` (e.g. `reify_neutral : RedNeutralEq Ge T a b -> conv_tm_eta Ge T a b`),
+  not `conv_nf`.  Cascades to `reify_tm`/`reify_ty` (the RRCar engine ~169-340,
+  `conv_nf_ty` → a `conv_sty_eta`) and the Pi reflect (dom_reify_ty:636,
+  Hcod:683, the eta-body construction 700-775).
+- The eta-falsity that blocked R1 DISSOLVES: `Hcod : conv_nf BA BB` (off-diagonal
+  FALSE) becomes `conv_ty_eta Ge BA BB` produced by the codomain reflect IH (posIH);
+  `cte_pi` builds the Pi conv from domain reify-ty + that codomain conv; the n_conv
+  retypes via cte_ne/cte_pi + cne_conv (all now available).
+- conv_nf/conv_ne / Reify / ApplyConv / ReifyConv themselves STAY (structural
+  ~annot is still a real notion; just no longer what the LR carries).  May still be
+  used internally by reify if a structural step is wanted, but the LR-facing
+  conclusions move to conv_*_eta.
+- `typing_ctx_conv`:609 still needs `conv_ty_eta_ctx_conv` (cte_var changes under
+  conv_ctx); 526/547/560 use conv_nf in `conv_ctx` (cc_dEl) — decide whether
+  conv_ctx stays structural or moves to conv_ty_eta.
+This is metamltt Theorem 11 (Reify/Reflect) adequacy — the central open problem; do
+it as a focused phase, prototyping the re-aimed reify signatures in WIP first.
 
 ## UPDATE 2026-06-06k — conv_ty_eta METATHEORY DE-RISKED in WIP (ne_below side-conds ⇒ STANDALONE, no fusion)
 
