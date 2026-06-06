@@ -1,5 +1,69 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06i — R1 PLAN HITS A TYPING-CONVERSION WALL; FORK FOR DUSTIN
+
+**The UPDATE-h/g plan (port `reifyReflect`: bare reflect + read-back reify-ty)
+does NOT close the relevant-Pi case.**  Pinned down the exact obstruction (it is
+the unresolved "watch" item the UPDATE-g plan itself flagged in its step 5 — *"the
+typing rule `n_conv`'s conversion side — confirm it composes with the read-back
+conv"*; it does NOT compose):
+
+- At a Pi node the RIGHT member's typing is *only* obtainable from the LEFT typing.
+  `NeConv` is SINGLE-typed (paper `RelAtNe`), so a reflected neutral `m` is typed
+  ONLY at the LEFT Pi: `wm : wf_neutral Ge m (dEl (vPi FA BA))`.  But the member
+  goal `PiRedTmEq PA (vNe n) (vNe m)` requires `has_svalty Ge (vNe m) (dEl (vPi FB
+  BB))` (the RIGHT Pi).  The ONLY bridge is `n_conv` (Typing.v), which needs
+  **RAW `conv_nf (vPi FA BA) (vPi FB BB)`** = raw `conv_nf FA FB` (= `dom_reify_ty`,
+  fine) **+ raw `conv_nf BA BB`** (= R1).
+- raw `conv_nf BA BB` is OFF-DIAGONAL-FALSE — it is precisely the R1 eta-falsity
+  ([[ott-r2-hereditary-eta]]): off-diagonal codomain codes can be eta-short-vs-eta-
+  long and `conv_nf` has no eta rule.
+- Read-back reify-ty only ever yields `conv_nf` of the **read-backs** (`ReifyTy`
+  eta-expands), NEVER of the raw codes.  So switching reify-ty to read-back makes
+  the *reify-ty THEOREM* true but does NOTHING for the *typing bridge* inside the
+  Pi REFLECT, which consumes RAW `conv_nf` via `n_conv`.  Bare reflect and the old
+  eta-long reflect hit this IDENTICALLY (the old `eta_bodies` only "worked" by
+  assuming the false `Hcod : conv_nf BA BB` Context).
+
+**ROOT CAUSE.**  Our `n_conv` (and the neutral annotations) use the STRUCTURAL
+`conv_nf` (paper Def-13 `∼annot`, which is sound ONLY on already-reified eta-long
+forms).  The paper's `WfTmConv`/`ConvTmConv` use the **eta-closed DECLARATIVE `≡`**
+(`ConvTy`/`ConvTm`), which is exactly what `reifyReflect`'s reify-ty (DnTy) produces
+— so in the paper the thing reify produces and the thing typing-conversion consumes
+are the SAME eta-closed judgment.  In our dev they are DIFFERENT: reify produces
+read-back-`conv_nf`, typing needs raw-`conv_nf`.  THIS is the fork.
+
+**FORK (a genuine architectural decision; surfaced to Dustin):**
+1. **Make `n_conv`'s conversion ETA-CLOSED = "same read-back."**  Change `n_conv`
+   to require `(forall nA nB, ReifyTy m A nA -> ReifyTy m B nB -> conv_nf nA nB)`
+   instead of raw `conv_nf A B`.  This is eta-closed by construction (ReifyTy
+   eta-expands neutral args via `Reify`/`rne_app`), and it is EXACTLY what the
+   read-back reify-ty produces — so the Pi typing bridge closes directly from
+   `posIH`/`domIH` reify-ty.  COST: edit Typing.v `n_conv`; re-green the domain
+   layer (Apply/Determinism/Preservation/Reflect/RenTyping consumers of `n_conv`);
+   RE-CHECK soundness vs `Norm/Model.v`+`ModelOk.v` (do read-back-equal `dEl`
+   types denote the same type? — should, read-back is semantics-preserving).
+   Caveat: totality of `ReifyTy` is sidestepped by the universal form (vacuous if
+   no read-back), but usefulness wants read-backs to exist where invoked.
+   RECOMMENDED — directly dissolves the wall, paper-faithful in spirit.
+2. **Separate eta-closed declarative type-conversion judgment** `conv_ty_eta` used
+   by `n_conv`; keep `conv_nf` as the final structural decision; prove reify
+   produces `conv_ty_eta`.  Closest to the paper's two-judgment shape; most new
+   infrastructure (a whole new mutually-defined conversion + its metatheory).
+3. **Investigate whether reducible-Pi codomain CODES are read-back-stable**
+   (eta-long), so raw `conv_nf` = read-back `conv_nf` and raw R1 becomes provable
+   with `n_conv` kept structural.  LIGHTEST if true; RISKY — likely FALSE (the
+   off-diagonal eta counterexample applies to type codes too: a codomain code can
+   carry an eta-short neutral arg at a function type).
+4. **Defer the whole Pi reflect + R1 past the fundamental lemma** (like
+   transitivity/transport); keep the current green file with R1/R3 as open
+   residuals and build the fundamental lemma around the non-Pi content first.
+
+Current file `LogRel2Reflect.v` is GREEN + axiom-free with R1 (`Hcod : conv_nf BA
+BB`) and R3 (`RR_app2 = Happ`) as the two abstract residuals of `RR_pi_res`; R1 is
+now KNOWN-unprovable as stated, so `RR_pi_res`/`RR_pi_step` can never be discharged
+without resolving the fork above.
+
 ## UPDATE 2026-06-06h — cross-checked the paper's Coq (metamltt); R1 = port reifyReflect
 
 Cloned the paper's dev (`git clone --branch fscd2026
