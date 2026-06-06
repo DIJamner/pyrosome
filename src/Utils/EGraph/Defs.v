@@ -762,38 +762,6 @@ Section WithMap.
     | analysis_repair i => Mret (analysis_repair i)
     end.
 
-  Definition entry_subsumed_by e1 e2 :=
-    match e1, e2 with
-    | analysis_repair i1, analysis_repair i2 => eqb i1 i2
-    | union_repair old_idx new_idx improved_new_analysis,
-      union_repair old_idx' new_idx' improved_new_analysis' =>
-        andb (eqb old_idx old_idx')
-          (andb (eqb new_idx new_idx')
-             (implb improved_new_analysis improved_new_analysis'))
-    | analysis_repair i,
-      union_repair old_idx new_idx improved_new_analysis =>
-        orb (eqb i old_idx)
-          (andb improved_new_analysis (eqb i new_idx))
-    | _, _ => false
-    end.
-  
-  (* Removes all redunant worklist items.
-     Generalizes `dedup eqb` by also removing analysis repairs subsumed by union repairs.
-   *)
-  Fixpoint worklist_dedup l :=
-    match l with
-    | [] => []
-    | e::l =>
-        (* TODO: small inefficiency: to make sure this is Kosher wrt analyses,
-       could technically have a situation where (old, new, false)
-       and (old,new,true) don't dedup, even though true subsumes false.
-       This may never actually happen due to non-local invariants.
-         *)
-        let l' := worklist_dedup l in        
-        if List.existsb (entry_subsumed_by e) l' then l'
-        else e::l'
-    end.
-
   Fixpoint rebuild fuel : ST (result unit) :=
     match fuel with
     | 0 => Mret (Failure (dlist.dcons "rebuild: out of fuel"%string dlist.dnil))
@@ -801,7 +769,13 @@ Section WithMap.
         @!let todo <- pull_worklist in
           if todo : list worklist_entry then ret (Success tt)
           else let todo <- list_Mmap canonicalize_worklist_entry todo in
-               (list_Miter repair (worklist_dedup todo));
+               (* No worklist dedup: profiling on real workloads (value_subst with
+                  sort rules) showed the former [worklist_dedup] removed ZERO entries
+                  across entire saturations (forward + reversed phases, worklists up
+                  to 6657 entries) while costing O(n^2) -- ~84% of rebuild at the
+                  larger worklists. Repairs are idempotent, so deduping is never
+                  needed for correctness; we just repair every (canonicalized) entry. *)
+               (list_Miter repair todo);
                (rebuild fuel)
     end.
   
