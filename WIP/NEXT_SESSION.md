@@ -1,5 +1,39 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06p — PIVOT FILE 2/5 LANDED: `Neutral.v` GREEN + axiom-free.
+
+`src/Pyrosome/Lang/OTT/Norm/Pi/Neutral.v` (committed).  Generic over a
+principal-argument selector `pa : V -> option nat` (eliminator head ↦ index of
+its head sub-term; non-eliminators ↦ `None`):
+- `neutral` (inductive): `var x` | eliminator whose principal arg is neutral.
+- `whnf e := neutral e \/ (con-headed by a non-eliminator)`.
+- `neutral_whnf`, `var_neutral`/`var_whnf`, `neutral_inv`, `whnf_elim_neutral`
+  (an eliminator-headed whnf is neutral).  All axiom-free.
+
+DESIGN DECISIONS taken this session (per Dustin):
+- (Q1, step index) Use the SORT-ERASED weak-head relation `whstep : term ->
+  term -> Prop` and prove `rel_sound l (fun _ => whstep)`, recovering the sort
+  from `wf_term` via the sort-uniqueness theorem `Theory/Core.v:1708
+  term_sorts_eq` (+ `wf_term_subst_monotonicity:1255` for the redex
+  presupposition `wf_term [] e1[/s/] t0[/s/]`).  This is cleaner than threading
+  an existential sub-sort.  `whstep` itself NOT YET written — see NEXT.
+- (Q2, whnf) Recommended model adopted: whnf = head-canonical-former or
+  var-headed blocked elim, NO pending head substitution.  In OTT, `pa` must send
+  `exp_subst`/`ty_subst` to `Some _` (they always reduce) so `whnf` never
+  accepts an un-pushed substitution.  See the CAVEAT block atop Neutral.v.
+
+NEXT (still in/after Neutral.v, or a small `Reduction` addendum): write the
+sort-erased `whstep` (redex + head-congruence via `pa`) and `whstep_sound`
+(`rel_sound l (fun _ => whstep)`).  REDEX case = eq_term_by + eq_term_subst +
+`term_sorts_eq`/`eq_term_conv` (sort realignment).  HEAD-CONGRUENCE case = invert
+`wf_term [] (con name args) t` (handle the `wf_term_conv` wrapper), recurse on the
+principal arg, lift via `term_con_congruence`.  GOTCHA: building the `eq_args`
+"one position steps, rest refl" needs the changed variable to NOT occur in
+head-ward (later-bound) sibling types — TRUE for a function/scrutinee principal
+arg (siblings' types depend on the DOMAIN, not the function), but a general
+one-position congruence lemma needs that non-occurrence as a hypothesis.  Then
+files 3 LogicalRelation, 4 FundamentalLemma, 5 Decidable.
+
 ## UPDATE 2026-06-06o — PIVOT FILE 1/5 LANDED: `Reduction.v` GREEN + axiom-free.
 
 `src/Pyrosome/Lang/OTT/Norm/Pi/Reduction.v` (committed).  Generic over any
