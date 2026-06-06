@@ -130,10 +130,43 @@ whole tower — no separate refactor.
    from `domIH` at the identity sub.  Full detail + the airtight argument in
    `ConvRelPlan.md` STATUS ("CRUX BLOCKER FOUND & VERIFIED").
 
+## HOW THE PAPER RESOLVES IT (logrel-coq lineage, confirmed from source)
+
+The CoqHott logrel-coq generic-typing interface (`GenericTyping.v`, branch
+`coq-8.20`) handles the variable with TWO interface fields:
+- `convneu_var {Γ n A} : [Γ |- tRel n : A] -> [Γ |- tRel n ~ tRel n : A]`
+  — a variable typed at `A` is neutral-convertible to itself AT `A`;
+- `convneu_conv {Γ t u A A'} : [Γ |- t ~ u : A] -> [Γ |- A ≅ A'] ->
+  [Γ |- t ~ u : A']` — neutral conversion is CLOSED UNDER TYPE CONVERSION.
+The off-diagonal fresh variable is `convneu_var` at its CONTEXT type `FA'`, then
+`convneu_conv` (with `FA' ≅ FB'`) transports it to the ambient `FB'`.  The
+variable is NEVER typed at two types directly; the conversion-closure of the
+neutral-conversion judgment does it.  That closure rests on declarative typing
+having a CONVERSION RULE (`Γ |- t : A -> Γ |- A ≅ B -> Γ |- t : B`).  Our
+`has_svalty`/`wf_neutral` omit exactly that rule == the wall.  So the principled
+fix is OPTION (a): add a typed conversion rule.  In our pre-`LR` domain layer the
+only positivity-safe "type conversion" is structural `conv_nf`/`conv_nf_ty`
+(values are already normal codes), so the rule is e.g.
+`n_conv : wf_neutral Ge n A -> conv_nf_ty A B -> wf_neutral Ge n B`
+(and/or `t_conv` on `has_svalty`).  Then `wf_neutral Δ (nVar 0) (dEl FA')`
+(`n_var`) + `conv_nf FA' FB'` (already in hand from the reify-ty domain leaf via
+`conv_ren`) gives `wf_neutral Δ (nVar 0) (dEl FB')`, so the variable's `NeConv`
+at `(dEl FA')(dEl FB')` is buildable and `domIH`'s REFLECT fires.
+
+SOUNDNESS GATE before doing it: confirm structural `conv_nf`-conversion of TYPE
+CODES is valid in the gluing model (`Norm/Model.v`+`ModelOk.v`) — i.e. conv_nf-
+related codes denote equal types.  RIPPLE: `n_conv`/`t_conv` is a new constructor
+in the `has_svalty`/`wf_neutral` mutual block ⇒ every mutual induction over it
+(`Determinism`, `Preservation`, `Reflect` typing, `RenTyping`, the `LogRel2*`
+escape/sym/trans/ren) gets one more (usually easy, conv-closed) case.  Escape
+`RedTmEq_wf` then upgrades synth-type typing to ambient via `n_conv` — the second
+place the rule is needed (consistent with logrel-coq, where escape lands typing
+at the carried type because typing has conversion).
+
 ## Next move — RESOLVE THE DESIGN FORK (needs Dustin), then finish `RR_pi_at`
 
 The wall is a genuine design decision (it changes the core typing judgment or the
-carrier).  Options, in `ConvRelPlan.md`:
+carrier).  Options, in `ConvRelPlan.md` (the paper points at (a)):
 - **(a)** add `t_conv`/`n_conv` (typed conversion) to `has_svalty`/`wf_neutral`
   — standard OTT; lets `nVar 0 : dEl FA'` transport to `dEl FB'` via
   `conv_nf FA' FB'`; BIG domain-layer ripple (Apply/Determinism/Preservation/
