@@ -26,7 +26,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
-  Domain Apply ApplyLemmas Typing Reflect Preservation ApplySubst
+  Domain Apply ApplyLemmas Typing Reflect Preservation ApplySubst RenTyping
   Reify ApplyConv ReifyConv
   LogRel2Conv LogRel2 LogRel2Ind LogRel2Lemmas.
 Import Core.Notations.
@@ -815,9 +815,49 @@ Section RRPiDev.
 
   (* (R2) REIFY-tm: reducibly-convertible function members read back to       *)
   (* [conv_nf] (needs casing on the members + the codomain reify IH).         *)
-  Context (Hreify_tm : forall a b na nb, PiRedTmEq PA a b ->
+  Lemma reify_tm_pi : forall a b na nb, PiRedTmEq PA a b ->
               Reify (length Ge) (dEl (vPi FA BA)) a na ->
-              Reify (length Ge) (dEl (vPi FB BB)) b nb -> conv_nf na nb).
+              Reify (length Ge) (dEl (vPi FB BB)) b nb -> conv_nf na nb.
+  Proof.
+    intros a b na nb Hab Hra Hrb.
+    assert (Hctx : ne_below_ctx Ge) by (intros k T HT; exact (wf_svalty_scoped (Hwf k HT))).
+    destruct Hab as [[[Hta Htb] [[ba Ea] [bb Eb]]] Happm]. subst a b.
+    inversion Hra; subst.
+    inversion Hrb; subst.
+    apply cnf_lam.
+    destruct (pi_bound_var_reflects PA ws0 afA0 afB0 HwfD
+                (@domIH Dlt (wkn_list (length Ge)) (shift_val 0 1 FA) (shift_val 0 1 FB)
+                       ws0 afA0 afB0))
+      as [ARGn [ARGm [[Hargn Hargm] rab]]].
+    rewrite HL in Hargn, Hargm.
+    pose proof (Reflect_det Hargn X) as HeqA; subst ARG.
+    pose proof (Reflect_det Hargm X3) as HeqB; subst ARG0.
+    assert (afBA : Apply_val (S (length Dlt)) (up (wkn_list (length Ge))) BA (shift_val 1 1 BA))
+      by (rewrite <- shsub_0; rewrite up_shsub; rewrite HL; apply Apply_val_shift_eq; exact (snd sc_A)).
+    assert (afBB : Apply_val (S (length Dlt)) (up (wkn_list (length Ge))) BB (shift_val 1 1 BB))
+      by (rewrite <- shsub_0; rewrite up_shsub; rewrite HL; apply Apply_val_shift_eq; exact (snd sc_B)).
+    assert (afsf : Apply_val (length Dlt) (wkn_list (length Ge)) (vLam ba) (shift_val 0 1 (vLam ba)))
+      by (rewrite HL; apply Apply_val_wkn; exact (has_svalty_ne_below Hta Hctx)).
+    assert (afsg : Apply_val (length Dlt) (wkn_list (length Ge)) (vLam bb) (shift_val 0 1 (vLam bb)))
+      by (rewrite HL; apply Apply_val_wkn; exact (has_svalty_ne_below Htb Hctx)).
+    destruct (Happm Dlt (wkn_list (length Ge)) ARGn ARGm
+                (shift_val 0 1 FA) (shift_val 0 1 FB) (shift_val 1 1 BA) (shift_val 1 1 BB)
+                (shift_val 0 1 (vLam ba)) (shift_val 0 1 (vLam bb))
+                ws0 (RenSubst.is_ren_wkn _) afA0 afB0 afBA afBB afsf afsg rab)
+      as [v [w [[HVv HVw] rvw]]].
+    rewrite HL in HVv, HVw.
+    pose proof (Vapp_det HVv X1) as Hv; subst v.
+    pose proof (Vapp_det HVw X5) as Hw; subst w.
+    pose proof (@posIH Dlt (wkn_list (length Ge)) ARGn ARGm (shift_val 0 1 FA) (shift_val 0 1 FB)
+                  ws0 afA0 afB0 rab HwfD) as posRR.
+    pose proof (posAppA PA rab) as HposA. rewrite HL in HposA.
+    pose proof (Apply_val_det HposA X0) as HeqBA.
+    pose proof (posAppB PA rab) as HposB. rewrite HL in HposB.
+    pose proof (Apply_val_det HposB X4) as HeqBB.
+    rewrite <- HeqBA in X2. rewrite <- HL in X2.
+    rewrite <- HeqBB in X6. rewrite <- HL in X6.
+    exact (snd (fst posRR) fa fa0 body body0 rvw X2 X6).
+  Qed.
 
   (* (R3) The eta-expansion's APPLICATION CLAUSE: for the two eta-long bodies *)
   (* produced by [eta_bodies], the substituted-and-applied lambdas reduce to  *)
@@ -846,9 +886,11 @@ Section RRPiDev.
                   * redTmEq (posPack PA rab') v w )%type } }.
   Context (Happ : RR_app2).
 
-  (* The relevant-Pi case of Theorem 11, MODULO the three residuals.  All the
-     eta-expansion construction, both [t_lam_eta] typings, the context-conversion
-     bridge, the domain reify-ty, and the Pi-code reify-ty are discharged. *)
+  (* The relevant-Pi case of Theorem 11, MODULO the two residuals [Hcod] (R1)
+     and [Happ] (R3).  (R2) reify-tm is now PROVEN axiom-free above
+     ([reify_tm_pi]).  All the eta-expansion construction, both [t_lam_eta]
+     typings, the context-conversion bridge, the domain reify-ty, and the
+     Pi-code reify-ty are discharged. *)
   Lemma RR_pi_case : RRCar Ge (dEl (vPi FA BA)) (dEl (vPi FB BB)) (PiRedTmEq PA).
   Proof.
     intros _. split; [ split | ].
@@ -868,7 +910,7 @@ Section RRPiDev.
         * eexists; reflexivity.
         * eexists; reflexivity.
         * exact (@Happ n m ARGn ARGm body_n body_m rab Hbn Hbm rbody).
-    - (* REIFY-tm *) exact Hreify_tm.
+    - (* REIFY-tm *) exact reify_tm_pi.
     - (* REIFY-ty *) cbn. apply cnf_pi; [ exact dom_reify_ty | exact Hcod ].
   Qed.
 
@@ -880,10 +922,11 @@ End RRPiDev.
 (* ===================================================================== *)
 
 (* The residual relevant-Pi obligation: at every Pi node, given the two IHs   *)
-(* and [wf_senv], supply (R1) the codomain reify-ty [conv_nf BA BB], (R2) the *)
-(* function reify-tm, and (R3) the eta-expansion application clause.  These   *)
-(* are the genuine VR-layer core (see ReifyDev.v); EVERYTHING else in the     *)
-(* relevant-Pi case is discharged by [RR_pi_case]. *)
+(* and [wf_senv], supply (R1) the codomain reify-ty [conv_nf BA BB] and (R3)  *)
+(* the eta-expansion application clause.  ((R2) reify-tm is now PROVEN inside  *)
+(* [RR_pi_case] via [reify_tm_pi].)  These are the genuine VR-layer core (see  *)
+(* ReifyDev.v); EVERYTHING else in the relevant-Pi case is discharged by       *)
+(* [RR_pi_case]. *)
 Definition RR_pi_res (lvl : TypeLevel) (rec0 rec1 : RedRel) : Type :=
   forall Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB)
     (wpiA : wf_svalty Ge (dEl (vPi FA BA)))
@@ -901,9 +944,6 @@ Definition RR_pi_res (lvl : TypeLevel) (rec0 rec1 : RedRel) : Type :=
           (redTmEq (posPack PA rab)))
     (Hwf : wf_senv Ge),
     ( conv_nf BA BB
-    * (forall a b na nb, PiRedTmEq PA a b ->
-         Reify (length Ge) (dEl (vPi FA BA)) a na ->
-         Reify (length Ge) (dEl (vPi FB BB)) b nb -> conv_nf na nb)
     * RR_app2 PA wpiA wpiB Hwf )%type.
 
 Lemma RR_pi_at_from_res : forall lvl rec0 rec1,
@@ -911,8 +951,8 @@ Lemma RR_pi_at_from_res : forall lvl rec0 rec1,
 Proof.
   intros lvl rec0 rec1 Hres Ge FA BA FB BB PA wpiA wpiB ad domIH posIH Hwf.
   destruct (Hres Ge FA BA FB BB PA wpiA wpiB ad domIH posIH Hwf)
-    as [[Hcod Hreify] Happ].
+    as [Hcod Happ].
   exact (@RR_pi_case lvl rec0 rec1 Ge FA BA FB BB PA wpiA wpiB ad
-           domIH posIH Hwf Hcod Hreify Happ Hwf).
+           domIH posIH Hwf Hcod Happ Hwf).
 Qed.
 
