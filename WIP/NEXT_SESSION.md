@@ -1,5 +1,36 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06h — cross-checked the paper's Coq (metamltt); R1 = port reifyReflect
+
+Cloned the paper's dev (`git clone --branch fscd2026
+https://gitlab.inria.fr/josselin.poiret/metamltt.git`; network OK via git, NOT
+WebFetch).  The reify-reflect is `theories/LogicalRelation/ReifyReflect.v`,
+`Theorem reifyReflect` (~line 161), `induction r using LR_rect`, THREE components:
+  1. reify-ty: `Γ ⊢ A ⇓ B` (DnTy = declarative `≡` + whnf-norm + subterm-norm);
+  2. reify-tm: `∀ a b, ⊩ a≡b:A≡B → Γ ⊢ a ⇓ b ⦂ A≡B` (DnTm; eta via `ConvTmEta`);
+  3. **reflect: `∀ a b, a ~ne b ⦂ A → ⊩ a≡b : A≡B` — BARE-neutral membership.**
+KEY: their reflect gives the BARE neutrals as members.  OUR RRCar reflect gives
+ETA-LONG values (`∃ vn vm, Reflect n vn × Reflect m vm × P vn vm`) — an artifact
+of the is_lam gate.  The gate is gone, so reflect should become bare-membership.
+- Pi reify-ty: `reflectDom (tRel0 ~ne tRel0)` (= bare reflect of the bound var,
+  `X`'s 3rd comp) builds `varred`; then `X0` (posIH) at `wk_ren`+`tRel0` gives
+  the codomain reify-ty `CodNf`.  EXACTLY "reflect-to-bare bound var ⇒ posIH at
+  it ⇒ R1".  posTy at the bare var = the codomain itself (no eta subst).
+- Pi reflect: `apply LR_Pi_R; econstructor` builds the PiRedTm record for the
+  bare neutrals; app clause via `X0` (codomain reflect) on `nApp`, domain norm
+  via `X`.  SIMPLER than our `eta_bodies`/`t_lam_eta` (which can largely go).
+- Pi reify-tm: `reifyCod` (codomain reify-tm IH) on `tApp .. f (tRel0)`
+  (eta-expand via application) + bare bound var.  Our `reify_tm_pi` instead uses
+  the eta-LONG reflect (`pi_bound_var_reflects`); re-basing on bare reflect would
+  re-do it in the paper's style (cleaner, decoupled from the eta-long Reflect).
+
+SO R1 = port `reifyReflect`: (i) RRCar reflect → bare membership; (ii) reify-ty →
+read-back/DnTy style (raw `conv_nf_ty` is unsound on un-reified codes — neutral
+ARGS need eta via `Reify`, cf. `rne_app`); (iii) re-derive reify-tm on the bare
+bound var.  Substantial restructure of `RR_gen`+`RR_pi_case` (eta_bodies removed),
+but fully TEMPLATED by ReifyReflect.v and likely net-simplifying.  Reference dev
+at /tmp/metamltt (re-clone if gone).
+
 ## UPDATE 2026-06-06g — is_lam GATE REMOVED (paper-faithful); R1 precisely scoped
 
 **GATE REMOVED (committed+pushed, whole LogRel2* chain + Glue green, RR_gen
