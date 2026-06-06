@@ -1,5 +1,54 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06k — conv_ty_eta METATHEORY DE-RISKED in WIP (ne_below side-conds ⇒ STANDALONE, no fusion)
+
+**Refined the UPDATE-j plan and validated it in `WIP/ConvEtaProto.v` (compiles,
+axiom-free under the repo -R map).**  The eta rule `ctm_eta` + neutral-app rules
+carry `Reflect`/`Apply_val`/`Vapp` premises; TWO facts force `ne_below_val`
+side-conditions on them — (1) ne_below transport `ne_below f ⇒ ne_below g` across
+`ctm_eta` is structurally UNPROVABLE (`g` relates to `f` only via the BETA-REDUCED
+apps `fa`/`ga`; `Vapp` can't be inverted backward), and (2) `Reflect_ren`'s
+signature DEMANDS `ne_below_ty`/`ne_below_ne`.  KEY: `ne_below` premises (NOT full
+typing) suffice, so `conv_*_eta` stays a **STANDALONE** mutual inductive — `n_conv`
+referencing it is one-directional, **NO fusion** into the `has_svalty`/`wf_neutral`
+block (the UPDATE-j "co-define with typing" instinct was over-cautious; the real
+driver was this scopedness gap, which side-conds fix more cheaply).
+
+**VALIDATED (all axiom-free vs the real Apply/Reflect/Vapp metatheory):**
+- inductive `conv_ty_eta`/`conv_tm_eta`/`conv_ne_eta` with `ne_below_val (length
+  Ge) F/f/g` side-conds on `ctm_eta` — type-checks, positivity OK.
+- `conv_ty_eta_ne_below`     (fwd transport)  → RenTyping.v:263.
+- `conv_ty_eta_ne_below_rev` (bwd transport)  → RenTyping.v:425 (replaces the
+  `conv_nf_sym`+`conv_nf_ne_below` combo; conv_ty_eta may NOT be symmetric since
+  `cne_eta_app`'s result type `Bres` is computed from the LEFT arg).
+- `conv_ty_eta_shift`        (binder insert at cutoff c, via `wk_ctx`) →
+  Preservation.v:661.  `ctm_eta` case = `t_lam_eta`'s shift PLUS two `Vapp` shifts
+  (`Vapp_shift := snd (fst Apply_shift_commute)`, aligned by `shift_val_comm0` +
+  `shift_shift_comm`).
+
+**REMAINING prototype item: `conv_ty_eta_ren`** (→ RenTyping.v:428).  Same shape as
+`ren_typing`'s `t_lam_eta` case (`Reflect_ren` + `Apply_val_ren_commute`, plus the
+`ren_ctx`/`ren_ok` plumbing: `ren_ok_up`, `ren_ctx_up_dEl`, `ne_below_ctx_up_dEl`,
+`RenShSc_beta`, `ren_is_Apply_val`, `renm_up_0`/`ren_shift_comm{0,1}_val`) PLUS two
+`Vapp` premises via `Vapp_ren` (RenSubst.v:871) with the same ren-commute alignment.
+The ren motive's `ne_below_ty T` assumption supplies the codomain `ne_below B`
+(confirmed: that is exactly how `ren_typing`'s `t_lam_eta` gets `HB`), so NO extra
+side-condition needed.
+
+**THEN the core port (mechanical, multi-file rebuild ~1h):** (a) move the inductive
+into a real file BELOW Typing (new `ConvEta.v` importing `Domain Apply Reflect
+LogRel2Conv`, OR add `Apply Reflect` imports to `LogRel2Conv`); (b) `Typing.v`
+`n_conv`: `conv_nf A B` → `conv_ty_eta Ge A B` (constructor count unchanged ⇒ Scheme/
+`has_neutral_mutind` untouched); (c) `conv_ty_eta_ne_below`/`_rev` proven at/after
+RenTyping (need `Apply_val_ne_below`/`Reflect_scoped`@RenSubst), `conv_ty_eta_shift`
+in Preservation BEFORE `shift_typing`, `conv_ty_eta_ren` at RenTyping; (d) migrate the
+n_conv consumer sites: Preservation:661, RenTyping:263/425/428 (transport — easy);
+(e) FRESH n_conv constructions need the structural→declarative bridge with TYPING
+available: LogRel2Sym:133-138 + LogRel2Reflect:510/610/757 = the HIGH "reify produces
+conv_ty_eta" lemma (diagonal `conv_nf⇒conv_ty_eta` is NOT free for app-spine neutrals
+— needs arg types from typing); (f) Model/ModelOk soundness (eta-conv dEl types denote
+same type).  See memory [[ott-conv-ty-eta-declarative]].
+
 ## UPDATE 2026-06-06j — DUSTIN CHOSE conv_ty_eta (opt 2); REALIZATION = DECLARATIVE (mutual w/ typing)
 
 Dustin's call on the UPDATE-i fork: **option 2 — a separate eta-closed DECLARATIVE
