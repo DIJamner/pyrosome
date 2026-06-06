@@ -201,7 +201,12 @@ Definition conv_nf_ty (A B : svalty) : Type :=
    it eta-EXPANDS ([refl_Pi] -> [vLam ...]).  This keeps every relevant-function
    value a [vLam], so REIFY-tm never faces a structural [vNe]-vs-[vLam]
    mismatch the untyped [conv_nf] cannot express. *)
+(* [wf_senv Ge] is THREADED through the carrier (it is only consumed by the
+   relevant-Pi case, which needs [wf_ssub_id]/[wf_ssub_wkn] to eta-expand; the
+   base/universe cases ignore it).  Mirrors the single-sided [reflect_motive]'s
+   leading [wf_senv Ge ->]. *)
 Definition RRCar (Ge : senv) (A B : svalty) (P : sval -> sval -> Type) : Type :=
+  wf_senv Ge ->
   ( (forall n m, NeConv Ge A B n m ->
        { vn & { vm & (Reflect (length Ge) A n vn
                     * Reflect (length Ge) B m vm
@@ -271,7 +276,7 @@ Section RRGen.
     intros Ge A B P H.
     induction H using LR_mut.
     - (* LRnat : reflection is the identity (refl_Nat) *)
-      split; [ split | ].
+      intros Hwf. split; [ split | ].
       + intros n m c. exists (vNe n), (vNe m). split; [ split | ].
         * apply refl_Nat.
         * apply refl_Nat.
@@ -279,7 +284,7 @@ Section RRGen.
       + intros a b r. exact (reify_nat r).
       + exact cnf_nat.
     - (* LRempty : reflection is the identity (refl_Empty) *)
-      split; [ split | ].
+      intros Hwf. split; [ split | ].
       + intros n m c. exists (vNe n), (vNe m). split; [ split | ].
         * apply refl_Empty.
         * apply refl_Empty.
@@ -288,7 +293,7 @@ Section RRGen.
       + exact cnf_empty.
     - (* LRne : base neutral element type (refl_neEl identity) *)
       match goal with H : NeConv _ _ _ _ _ |- _ => rename H into cne end.
-      split; [ split | ].
+      intros Hwf. split; [ split | ].
       + intros p q c. exists (vNe p), (vNe q). split; [ split | ].
         * apply refl_neEl.
         * apply refl_neEl.
@@ -300,7 +305,7 @@ Section RRGen.
     - (* LRpi : the relevant-Pi mutual KNOT *)
       apply Hpi; assumption.
     - (* LRU0 : codes at a level-0 universe (refl_U identity) *)
-      split; [ split | ].
+      intros Hwf. split; [ split | ].
       + intros n m c. exists (vNe n), (vNe m). split; [ split | ].
         * apply refl_U.
         * apply refl_U.
@@ -309,10 +314,10 @@ Section RRGen.
           -- apply t_ne. exact (snd (fst c)).
           -- exact (HNe0 h c).
       + intros c d Hcd. destruct Hcd as [_ [P0 Hrec]].
-        exact (snd (HR0 Hrec)).
+        exact (snd (HR0 Hrec Hwf)).
       + exact tt.
     - (* LRU1 : codes at a level-1 universe (refl_U identity) *)
-      split; [ split | ].
+      intros Hwf. split; [ split | ].
       + intros n m c. exists (vNe n), (vNe m). split; [ split | ].
         * apply refl_U.
         * apply refl_U.
@@ -321,7 +326,7 @@ Section RRGen.
           -- apply t_ne. exact (snd (fst c)).
           -- exact (HNe1 h c).
       + intros c d Hcd. destruct Hcd as [_ [P0 Hrec]].
-        exact (snd (HR1 Hrec)).
+        exact (snd (HR1 Hrec Hwf)).
       + exact tt.
   Qed.
 
