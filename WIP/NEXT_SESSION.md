@@ -71,18 +71,41 @@ conversion rule, so `RedTmEq_wf`'s `LRne` case couldn't type the right member at
 of conv).  See `ConvRelPlan.md` STATUS "Ph3 SWAP — DONE" for the per-file
 landing notes and the verified axiom-free list.
 
-## Next move — Ph3 PROPER: mutual reify / reflect (Theorem 11)
+## State update (2026-06-05): Ph3 PROPER — BASE + UNIVERSE CASES DONE
 
-Connect `conv_ne` (LogRel2Conv.v) to REDUCIBLE conversion `RedTmEq` (LogRel2.v):
-- **Reflect:** `conv_ne n m` at a reducible type ⟹ `RedTmEq Ge T S (vNe n) (vNe m)`.
-- **Reify:** `RedTmEq Ge A B a b` ⟹ `conv_nf a b` (+ deep-normalize).
-Mutual because reifying a function applies it to a reflected variable.  Reuse
-the existing `Reflect`/`Reify` infrastructure + the deep-normalization
-machinery; induct over `LR` via `LR_mut`.  This is the old `reflect_red` blocker,
-now approachable because the relation is two-sided + the neutral conversion is
-genuine.  Transport (Lemma 12) + transitivity stay deferred to post-fundamental
-(Ph5).  Then the fundamental lemma (Ph5) → connect to gluing `Model.v`/`ModelOk.v`
-⇒ `eq_term` decidability.
+`LogRel2Reflect.v` is built, axiom-free, green: the self-contained LEAVES of
+mutual reify/reflect (Theorem 11), i.e. every case that does NOT recurse through
+Pi members.
+- REIFY: `reify_nat` / `reify_neutral` (base PER member ⟹ `conv_nf`).
+- REFLECT (base El): `reflect_nat` / `reflect_empty` / `reflect_neEl`.
+- REFLECT (universe): `reflect_U` (neutral CODES reducibly convertible at U; the
+  substantive case — builds the NEW reducible type `dEl(vNe·)` via `LRne`,
+  `lvl_of_cases` picks `LR0`/`LR1`) + companion `reflect_neEl_ty` (type-FORMATION
+  `RedTyEq Ge (dEl(vNe n))(dEl(vNe m))`).
+
+## Next move — Ph3 PROPER: the relevant-Pi MUTUAL KNOT (Theorem 11 core)
+
+Reflect-at-`vPi` and reify-at-`vPi` are ONE mutual induction over the `LR`
+derivation (`LogRel2Ind.LR_mut`; domain via `shpAd`, codomain via `posAd` — both
+well-founded sub-derivations).  Read `WIP/ConvRelPlan.md` STATUS "Ph3 PROPER" for
+the full structure mined from the single-sided roadmap
+(`WIP/OTT_LogRel_single_sided/LogRelFund.v` steps (1)–(4) + the session-6
+CORRECTION) and the two findings:
+1. Reflect-at-Pi CALLS reify (the conv-side needs `conv_nf` of the domain
+   types/members to fill `cne_app`'s annotation slots) — hence one mutual proof.
+   The single-sided eta-expansion construction (`shpAd`/`posAd` IHs +
+   `Apply_reflect_cod` + `t_lam_eta`) ports directly; the genuine open core is the
+   application clause's beta-reduct reducibility, now to be closed by the
+   two-sided PER (relate the two reflections DIRECTLY via `posAd`'s reflect IH +
+   genuine `conv_ne`, NOT `Reflect_det`).  `Reflect_ren` + `conv_ren` transport.
+2. **DECISION NEEDED — reify at the irrelevant `vPiI` fragment is not
+   expressible against the current STRUCTURAL `conv_nf` (no proof-irrelevance
+   rule).**  Either add irrelevance to `conv_nf`, or prove Theorem 11 for the
+   RELEVANT fragment only and defer `vPiI`/`vLamI` to Ph6 (full OTT).  Reflect-at-
+   `vPiI` is fine; only reify is gapped.  See ConvRelPlan STATUS for options.
+
+Then the fundamental lemma (Ph5) → connect to gluing `Model.v`/`ModelOk.v` ⇒
+`eq_term` decidability.  Transport (Lemma 12) + transitivity stay deferred (Ph5).
 
 ## Build (per CLAUDE.md — never run full `make` during dev)
 ```

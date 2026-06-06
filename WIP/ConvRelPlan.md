@@ -269,12 +269,60 @@ Reflect/Typing/EvalRel. Mechanical.
   Verified axiom-free: `conv_trans`, `RedTmEq_wf`, `LR_sym_gen`, `conv_ren`,
   `LR_ren_gen` (`Print Assumptions` = Closed under the global context).
 
-- **NEXT (Ph3 proper):** mutual reify/reflect (Theorem 11) connecting `conv_ne`
-  to REDUCIBLE conversion `RedTmEq` — Reflect: `conv_ne n m` at a reducible type
-  ⟹ `RedTmEq (vNe n) (vNe m)`; Reify: `RedTmEq a b` ⟹ `conv_nf a b`.  Mutual
-  (reifying a function applies it to a reflected var).  Reuse `Reflect`/`Reify`
-  + the deep-normalization machinery.  Transport (Lemma 12) + transitivity stay
-  deferred to post-fundamental (Ph5).
+- **Ph3 PROPER — BASE + UNIVERSE CASES DONE & green (2026-06-05).**
+  `LogRel2Reflect.v` (axiom-free) lands the self-contained LEAVES of mutual
+  reify/reflect (Theorem 11) — the cases that do NOT recurse through Pi members:
+  - REIFY: `reify_nat` / `reify_neutral` (`RedNatEq`/`RedNeutralEq` member ⟹
+    `conv_nf`).
+  - REFLECT (base El): `reflect_nat`/`reflect_empty`/`reflect_neEl` — a `conv_ne`
+    pair well-typed at a base element type is reducibly convertible there
+    (reflection = identity, `Reflect`'s `refl_Nat`/etc.).
+  - REFLECT (universe): `reflect_U` — `conv_ne` neutral CODES are reducibly
+    convertible AT the universe; the substantive case (manufactures the NEW
+    reducible type `dEl(vNe·)` from a neutral via `LRne`, landing in `LR0`/`LR1`
+    selected by `lvl_of_cases l` — never `tl2`).  Companion `reflect_neEl_ty`:
+    `RedTyEq Ge (dEl(vNe n))(dEl(vNe m))` (type-FORMATION from neutral codes,
+    for the fundamental lemma's `dEl`-formation).
+
+- **REMAINING (Ph3 proper): the relevant-Pi MUTUAL KNOT.**  Reflect-at-`vPi` and
+  reify-at-`vPi` are ONE mutual induction over the `LR` derivation (well-founded:
+  domain via `shpAd`, codomain via `posAd` — see `LogRel2Ind.LR_mut`).  Mining the
+  retired single-sided roadmap (`WIP/OTT_LogRel_single_sided/LogRelFund.v`,
+  steps (1)–(4) + the session-6 CORRECTION), now re-framed two-sided:
+  - **Reflect-at-Pi** (`conv_ne n m` at `vPi FA BA`/`vPi FB BB` ⟹ `PiRedTmEq`
+    members = the eta-expansions `vLam`): the single-sided construction (reflect
+    bound var via `shpAd` IH; `Apply_reflect_cod`; reflect eta-body via `posAd` IH;
+    assemble `vLam body` typed by `t_lam_eta`) PORTS directly.  Its conv-side
+    additionally needs reify of the domain TYPES + the domain MEMBER (to fill
+    `cne_app`'s `conv_nf F F'`/`conv_nf B B'`/`conv_nf a a'`) + `conv_ren` on
+    `n`,`m` — i.e. it CALLS reify.  This is why the two directions are one mutual
+    proof, not two.
+  - **The genuine open core** (single-sided `reflect_pi_reify_step`, the session-6
+    CORRECTION): the application clause's beta-reduct `body[a::sg]` must be
+    reducible at the codomain instance `posPack PA ra`.  Single-sided this was
+    blocked because the bridge to the `posAd`-reflection is UP-TO-LR / eta
+    (a bare neutral does not reflect at a relevant Pi; `Reflect_det` fails for
+    higher-order codomains).  The TWO-SIDED PER is the intended fix: relate the
+    two sides' reflections DIRECTLY via `posAd`'s reflect IH + genuine `conv_ne`,
+    instead of proving a single canonical value.  `Reflect_ren` (naturality of
+    reflection under renamings, `RenSubst.v`) + `conv_ren` are the transport kit.
+    Still substantial; THE crux of the development.
+  - **DESIGN FINDING — reify at the IRRELEVANT Pi (`vPiI`) is NOT expressible
+    against the current structural `conv_nf`.**  `LRpiI`'s relation relates ANY
+    two typed terms (proof irrelevance), but `LogRel2Conv.conv_nf` is purely
+    STRUCTURAL (`cnf_lamI` needs `conv_nf` of the bodies — no irrelevance rule).
+    So `RedTmEq` member ⟹ `conv_nf` is FALSE at `vPiI` for structurally-distinct
+    irrelevant terms.  Reify-at-`vPiI` sits on the critical path (a relevant-Pi
+    codomain can BE a `vPiI`).  Resolution options (decision for next session /
+    Dustin): (a) add a proof-irrelevance rule to `conv_nf` for the irrelevant
+    fragment (reify irrelevant terms to a canonical/erased form); (b) state reify
+    over a reflexive sub-relation; (c) defer the irrelevant fragment with the rest
+    of full OTT (Ph6) and prove Theorem 11 for the RELEVANT fragment only.  Note
+    the order doc already groups `vPiI`/`vLamI` (= paper's negative/irrelevant
+    types) into Ph6.  Reflect-at-`vPiI` is FINE (`reflect`'s `mpiI`: members are
+    just typings, reflection = `refl_PiI` identity) — only reify is gapped.
+
+  Transport (Lemma 12) + transitivity stay deferred to post-fundamental (Ph5).
 
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
