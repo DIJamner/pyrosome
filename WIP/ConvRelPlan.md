@@ -284,6 +284,29 @@ Reflect/Typing/EvalRel. Mechanical.
     `RedTyEq Ge (dEl(vNe n))(dEl(vNe m))` (type-FORMATION from neutral codes,
     for the fundamental lemma's `dEl`-formation).
 
+- **Ph3 PROPER — MUTUAL-INDUCTION ENGINE DONE & green (2026-06-06).**
+  `LogRel2Reflect.v` now carries the full `LR_mut`-driven combined reify/reflect
+  induction `RR_gen` (axiom-free): motive `RRCar` bundles REFLECT (`NeConv` ⟹
+  `P`-related), REIFY-tm (`P` ⟹ `conv_nf`), REIFY-ty (codes ⟹ `conv_nf_ty`).
+  All 5 NON-Pi cases (nat/empty/ne/U0/U1) discharged axiom-free; the two Pi
+  cases are the abstract premises `RR_pi_at`/`RR_piI_at` (universal
+  `RR_pi_step`/`RR_piI_step`).  Tower kit `RRbot`/`NeElBuild_LR`/`NeElBuild_vac`;
+  `RR0 : RecRR1 LR0` closes the level-0 instance.  Design notes recorded in-file:
+  (i) reflect-at-`vPi` MUST eta-expand (bare-neutral Pi members would force
+  REIFY-tm to compare `vNe` vs eta-long `vLam`, unprovable in structural
+  `conv_nf`) — so the single-sided eta construction genuinely ports, it is NOT a
+  trivial bare-neutral membership; (ii) reify-at-`vPiI` deferred (Ph6).
+- **UNIVERSE FINDING (2026-06-06) — tower needs the crux as a POLY LEMMA, not an
+  abstract premise.**  `RR1`/`RR2` (and hence user `reflect_red`/`reify_tm`/
+  `reify_ty`) canNOT be closed from the ABSTRACT `Hpi : RR_pi_step`: the tower is
+  universe-polymorphic, so `RR_gen` at `rec0 := LR0` needs the SAME poly instance
+  in `HR0` (a poly constant, flexible) and in `Hpi _ _ _` — but a BOUND hypothesis
+  is monomorphic, so `Hpi _ _ _` is pinned to `Hpi`'s binding universes ⇒ rigid
+  universe clash.  `RR0` dodges it only via `rec0 = LRbot` (trivial universes).
+  CONSEQUENCE: discharging `RR_pi_at` (the eta mutual knot) as an axiom-free poly
+  LEMMA is BOTH the math crux AND the universe-unblocker for the whole tower; no
+  separate refactor.  `RR_gen`+`RR0` are the engine the proven crux plugs into.
+
 - **REMAINING (Ph3 proper): the relevant-Pi MUTUAL KNOT.**  Reflect-at-`vPi` and
   reify-at-`vPi` are ONE mutual induction over the `LR` derivation (well-founded:
   domain via `shpAd`, codomain via `posAd` — see `LogRel2Ind.LR_mut`).  Mining the

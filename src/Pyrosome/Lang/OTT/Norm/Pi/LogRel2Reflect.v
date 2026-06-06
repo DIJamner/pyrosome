@@ -26,7 +26,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
-  Domain Apply Typing Preservation LogRel2Conv LogRel2 LogRel2Lemmas.
+  Domain Apply Typing Preservation LogRel2Conv LogRel2 LogRel2Ind LogRel2Lemmas.
 Import Core.Notations.
 
 (* ===================================================================== *)
@@ -144,3 +144,222 @@ Proof.
         apply (@LRne tl1 LR0 LRbot Ge n m r l).
         repeat split; assumption.
 Qed.
+
+(* ===================================================================== *)
+(* Phase-3 PROPER -- the MUTUAL reify/reflect INDUCTION (paper Theorem 11). *)
+(*                                                                         *)
+(* The base + universe leaves above plug into a SINGLE induction over the   *)
+(* [LR] derivation ([LogRel2Ind.LR_mut]).  The relevant- and irrelevant-Pi  *)
+(* cases are the genuine mutual KNOT (reifying a function applies it to a    *)
+(* reflected variable -> reflect at the domain; reflecting at a Pi recurses  *)
+(* into the codomain pack -> reify the domain types/members for the [∼ne]    *)
+(* annotation slots), so they are kept as the two abstract premises          *)
+(* [RR_pi_step] / [RR_piI_step]; EVERY other case is discharged axiom-free.  *)
+(* This mirrors the proven single-sided methodology (WIP single_sided        *)
+(* [LogRelFund.reflect_pi_step]): a green, axiom-free skeleton isolating      *)
+(* EXACTLY the residual Pi obligations, discharged separately afterwards.     *)
+(*                                                                         *)
+(* The combined motive [RRCar] bundles THREE statements at a type pair       *)
+(* [A,B] with relation [P]:                                                  *)
+(*   REFLECT  : [NeConv]-related neutrals are [P]-related (their reflections);*)
+(*   REIFY-tm : [P]-related members read back to [conv_nf];                  *)
+(*   REIFY-ty : the type CODES themselves read back to [conv_nf]             *)
+(*              ([conv_nf_ty]; trivial at the universe).                     *)
+(* REIFY-ty feeds reflect-at-Pi's annotation slots and REFLECT feeds         *)
+(* reify-at-Pi's eta variable -- hence ONE induction, not three.            *)
+(*                                                                         *)
+(* NOTE (design, for Dustin): the eta-baked [PiRedTmEq] would also admit a   *)
+(* BARE neutral [vNe n] as a relevant-Pi member, which would make REIFY-tm   *)
+(* at [vPi] compare a [vNe] against an eta-long [vLam] -- not derivable in    *)
+(* the purely-structural [conv_nf].  So reflect-at-[vPi] MUST eta-expand      *)
+(* (produce [vLam] members, as single-sided), keeping all relevant-Pi        *)
+(* members eta-long so REIFY-tm only ever hits [cnf_lam].  This is why the    *)
+(* relevant-Pi case stays the genuine crux (it ports the single-sided        *)
+(* eta-expansion construction), NOT a trivial bare-neutral membership.       *)
+(* ===================================================================== *)
+
+(* Reify-type target: at an [El] the underlying codes are [conv_nf]; at the
+   universe there is nothing structural to read back (both type indices of
+   every [LR] node share a former, so the off-diagonal arms never occur). *)
+Definition conv_nf_ty (A B : svalty) : Type :=
+  match A, B with
+  | dEl u, dEl w => conv_nf u w
+  | dU _ _, dU _ _ => unit
+  | _, _ => unit
+  end.
+
+(* The combined reify/reflect carrier (level-independent: no [LR] inside, so
+   it survives unchanged through the finite tower). *)
+Definition RRCar (Ge : senv) (A B : svalty) (P : sval -> sval -> Type) : Type :=
+  ( (forall n m, NeConv Ge A B n m -> P (vNe n) (vNe m))
+  * (forall a b, P a b -> conv_nf a b)
+  * conv_nf_ty A B )%type.
+
+(* Lower-tower recursion: reify/reflect already hold for a delegate relation
+   [rec] (threaded, instantiated down the finite tower). *)
+Definition RecRR1 (rec : RedRel) : Type :=
+  forall Ge A B P, rec Ge A B P -> RRCar Ge A B P.
+
+(* Universe REFLECT must MANUFACTURE neutral-[El] reducibility in the delegate
+   relation -- it is a NEW reducible type from a neutral code, not a transport.
+   Guarded by the level order so the unused tower slots ([rec = LRbot]) are
+   dischargeable vacuously. *)
+Definition NeElBuild (lvl lt : TypeLevel) (rec : RedRel) : Type :=
+  forall Ge n m r l, TLlt lt lvl ->
+    NeConv Ge (dU r l) (dU r l) n m ->
+    { P0 : sval -> sval -> Type & rec Ge (dEl (vNe n)) (dEl (vNe m)) P0 }.
+
+(* The relevant-Pi case (the mutual knot), abstracted at one tower level. *)
+Definition RR_pi_at (lvl : TypeLevel) (rec0 rec1 : RedRel) : Type :=
+  forall Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB)
+    (wpiA : wf_svalty Ge (dEl (vPi FA BA)))
+    (wpiB : wf_svalty Ge (dEl (vPi FB BB)))
+    (ad : PolyRedPackAdequate (@LR lvl rec0 rec1) PA),
+    (forall Delta sg FA' FB' (ws : wf_ssub Delta sg Ge)
+            (afA : Apply_val (length Delta) sg FA FA')
+            (afB : Apply_val (length Delta) sg FB FB'),
+        RRCar Delta (dEl FA') (dEl FB') (redTmEq (shpRed PA ws afA afB))) ->
+    (forall Delta sg a b FA' FB' (ws : wf_ssub Delta sg Ge)
+            (afA : Apply_val (length Delta) sg FA FA')
+            (afB : Apply_val (length Delta) sg FB FB')
+            (rab : redTmEq (shpRed PA ws afA afB) a b),
+        RRCar Delta (dEl (posTyA PA rab)) (dEl (posTyB PA rab))
+          (redTmEq (posPack PA rab))) ->
+    RRCar Ge (dEl (vPi FA BA)) (dEl (vPi FB BB)) (PiRedTmEq PA).
+
+(* The irrelevant-Pi case, abstracted: DEFERRED to Ph6 (full OTT).  REFLECT-at-
+   [vPiI] is doable (members are just typings, [refl_PiI] identity) but REIFY
+   at [vPiI] is NOT expressible against the structural [conv_nf] (no proof-
+   irrelevance rule; [LRpiI] also relates the two sides' components by nothing).
+   Kept as one abstract premise for the relevant-fragment Theorem 11. *)
+Definition RR_piI_at (lvl : TypeLevel) (rec0 rec1 : RedRel) : Type :=
+  forall Ge FA BA FB BB
+    (wA : wf_svalty Ge (dEl (vPiI FA BA)))
+    (wB : wf_svalty Ge (dEl (vPiI FB BB))),
+    RRCar Ge (dEl (vPiI FA BA)) (dEl (vPiI FB BB))
+      (fun f g => (has_svalty Ge f (dEl (vPiI FA BA))
+                 * has_svalty Ge g (dEl (vPiI FB BB)))%type).
+
+(* Universally-quantified premises: ONE proof at all levels discharges the
+   whole tower (the relevant-Pi crux / the deferred irrelevant case). *)
+Definition RR_pi_step  : Type := forall lvl rec0 rec1, RR_pi_at  lvl rec0 rec1.
+Definition RR_piI_step : Type := forall lvl rec0 rec1, RR_piI_at lvl rec0 rec1.
+
+Section RRGen.
+  Context (lvl : TypeLevel) (rec0 rec1 : RedRel).
+  Context (HR0 : RecRR1 rec0) (HR1 : RecRR1 rec1).
+  Context (HNe0 : NeElBuild lvl tl0 rec0) (HNe1 : NeElBuild lvl tl1 rec1).
+  Context (Hpi : RR_pi_at lvl rec0 rec1) (HpiI : RR_piI_at lvl rec0 rec1).
+
+  Lemma RR_gen : forall Ge A B P (H : @LR lvl rec0 rec1 Ge A B P),
+      RRCar Ge A B P.
+  Proof.
+    intros Ge A B P H.
+    induction H using LR_mut.
+    - (* LRnat *)
+      split; [ split | ].
+      + intros n m c. apply rne_ne; exact c.
+      + intros a b r. exact (reify_nat r).
+      + exact cnf_nat.
+    - (* LRempty *)
+      split; [ split | ].
+      + intros n m c. apply rneT; exact c.
+      + intros a b r. exact (reify_neutral r).
+      + exact cnf_empty.
+    - (* LRne : base neutral element type *)
+      match goal with H : NeConv _ _ _ _ _ |- _ => rename H into cne end.
+      split; [ split | ].
+      + intros p q c. apply rneT; exact c.
+      + intros a b r0. exact (reify_neutral r0).
+      + cbn. apply cnf_ne. exact (snd cne).
+    - (* LRpiI : DEFERRED (irrelevant fragment) *)
+      apply HpiI; assumption.
+    - (* LRpi : the relevant-Pi mutual KNOT *)
+      apply Hpi; assumption.
+    - (* LRU0 : codes at a level-0 universe *)
+      split; [ split | ].
+      + intros n m c. repeat split.
+        * apply t_ne. exact (fst (fst c)).
+        * apply t_ne. exact (snd (fst c)).
+        * exact (HNe0 h c).
+      + intros c d Hcd. destruct Hcd as [_ [P0 Hrec]].
+        exact (snd (HR0 Hrec)).
+      + exact tt.
+    - (* LRU1 : codes at a level-1 universe *)
+      split; [ split | ].
+      + intros n m c. repeat split.
+        * apply t_ne. exact (fst (fst c)).
+        * apply t_ne. exact (snd (fst c)).
+        * exact (HNe1 h c).
+      + intros c d Hcd. destruct Hcd as [_ [P0 Hrec]].
+        exact (snd (HR1 Hrec)).
+      + exact tt.
+  Qed.
+
+End RRGen.
+
+(* ===================================================================== *)
+(* Finite-tower instantiation (mirrors [LogRel2Sym]'s [LRbot]/[LR0]/[LR1]).  *)
+(* ===================================================================== *)
+
+(* [LRbot] is vacuous, so reify/reflect hold for it trivially. *)
+Definition RRbot : RecRR1 LRbot.
+Proof. intros Ge A B P H; destruct H. Qed.
+
+(* A neutral-[El] reducibility builder at ANY level/delegate ([LRne] is level-
+   agnostic): the substantive content of universe-reflect. *)
+Definition NeElBuild_LR (lvlg lt lvl : TypeLevel) (rec0 rec1 : RedRel)
+  : NeElBuild lvlg lt (@LR lvl rec0 rec1) :=
+  fun Ge n m r l _ c =>
+    existT _ (RedNeutralEq Ge (dEl (vNe n)) (dEl (vNe m)))
+           (@LRne lvl rec0 rec1 Ge n m r l c).
+
+(* Vacuous builder for the OFF tower slots: the level guard is uninhabited. *)
+Definition NeElBuild_vac (lvl lt : TypeLevel) (rec : RedRel)
+  (no : TLlt lt lvl -> False) : NeElBuild lvl lt rec :=
+  fun Ge n m r l h _ => False_rect _ (no h).
+
+Lemma TLlt_t0_t0 : TLlt tl0 tl0 -> False. Proof. inversion 1. Qed.
+Lemma TLlt_t1_t0 : TLlt tl1 tl0 -> False. Proof. inversion 1. Qed.
+Lemma TLlt_t1_t1 : TLlt tl1 tl1 -> False. Proof. inversion 1. Qed.
+
+(* The tower instances are written as [fun]-bodies (not explicit applications)
+   so the bound [H : LR<k> ...] drives universe inference -- writing [LR0]/[LR1]
+   explicitly in two positions would create mismatched polymorphic instances
+   (same alignment discipline as [LogRel2Sym]'s [LR0_sym]/[LR1_sym]). *)
+Definition RR0 (Hpi : RR_pi_step) (HpiI : RR_piI_step) : RecRR1 LR0 :=
+  fun Ge A B P H =>
+    RR_gen RRbot RRbot
+      (@NeElBuild_vac _ _ _ TLlt_t0_t0)
+      (@NeElBuild_vac _ _ _ TLlt_t1_t0)
+      (Hpi _ _ _) (HpiI _ _ _) H.
+
+(* RR0 closes the LEVEL-0 instance (rec0 = rec1 = LRbot): the abstract Pi
+   premise [Hpi _ _ _] is applied at the trivial bottom universes, so the
+   monomorphic bound [Hpi] aligns.  This is genuine Theorem 11 at [LR0]
+   (modulo [Hpi]/[HpiI]). *)
+
+(* ===================================================================== *)
+(* UNIVERSE FINDING (2026-06-06) -- why [RR1]/[RR2] (and the top-level        *)
+(* user [reflect_red]/[reify_tm]/[reify_ty]) are NOT closed from an ABSTRACT  *)
+(* premise.                                                                  *)
+(*                                                                          *)
+(* The finite tower is UNIVERSE-POLYMORPHIC (LR0/LR1/LR2 are distinct        *)
+(* polymorphic instances of [LR], the whole point of the unfolded encoding). *)
+(* Closing [RR1] needs [RR_gen] at [rec0 := LR0]; that single [rec0] must be  *)
+(* the SAME instance both in [HR0 : RecRR1 LR0] (= [RR0 ...], a poly constant *)
+(* -> flexible) AND in the Pi premise [Hpi _ _ _ : RR_pi_at tl1 LR0 LRbot].   *)
+(* But [Hpi : RR_pi_step] is a BOUND hypothesis: a bound variable is          *)
+(* MONOMORPHIC, so [Hpi _ _ _] is pinned to [Hpi]'s binding universes and     *)
+(* cannot be re-instantiated at [LR0]'s tower universes -> rigid-vs-rigid     *)
+(* universe clash (Coq: "RR_pi_at@{..} <> RR_pi_at@{..}").  [RR0] dodges this *)
+(* only because its [rec0 = LRbot] carries trivial universes.                 *)
+(*                                                                          *)
+(* CONSEQUENCE: the tower closes ONLY when the relevant-Pi case is a genuine  *)
+(* POLYMORPHIC LEMMA (freshly instantiated per level), i.e. once the crux     *)
+(* [RR_pi_at] is PROVEN (axiom-free) rather than assumed.  So discharging     *)
+(* [RR_pi_at] (the eta-expansion mutual knot) is BOTH the mathematical crux   *)
+(* AND the unblocker for [RR1]/[RR2]/[reflect_red]/[reify_tm]/[reify_ty];     *)
+(* there is no separate universe refactor to do.  [RR_gen] + [RR0] are the    *)
+(* green, axiom-free engine that the proven crux plugs straight into.         *)
+(* ===================================================================== *)
