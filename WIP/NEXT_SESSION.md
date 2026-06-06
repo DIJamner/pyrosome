@@ -1,5 +1,86 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06r — `whstep` LANDED in `Reduction.v`, GREEN + axiom-free. NEXT = file 3 LogicalRelation over `star whstep`.
+
+Did exactly the UPDATE-q NEXT step.  Everything in
+`src/Pyrosome/Lang/OTT/Norm/Pi/Reduction.v` (build: `bash scripts/vbuild.sh
+src/Pyrosome/Lang/OTT/Norm/Pi/Reduction.v`).  All four new results
+`Closed under the global context`.
+
+WHAT LANDED (all generic over `wf_lang l` + a principal-arg selector `pa : V ->
+option nat`; everything at Pyrosome `ctx = []`):
+- `set_nth` (top-level list update at an index; identity if out of range).
+- `eq_args_step_at` — the "one position steps, rest refl" congruence for
+  `eq_args`.  **The non-occurrence gate the directive anticipated is NOT
+  needed.**  The stepped arg `a` and its reduct `b` are CONVERTIBLE (the
+  sort-erased IH gives `eq_term [] _ a b`), so every later-bound sibling's sort
+  is preserved UP TO `eq_sort` (from `eq_args_implies_eq_subst` + the
+  `eq_sort_subst` constructor); discharge the refl obligation with
+  `wf_term_conv`.  So the congruence is fully GENERIC — no occurrence side-
+  condition, no `pa`-shape assumption.  (Cleaner than UPDATE-q's plan.)
+- `whstep` (inductive): `whstep_redex` (any `redex`) | `whstep_congr` (reduce
+  the principal arg `nth_error args i` when `pa name = Some i`, result
+  `con name (set_nth args i b)`).  Lives in `Reduction.v` (NOT Neutral.v) — it
+  only needs `redex` + `pa`, not the neutral predicates.
+- `whstep_sound : rel_sound V l (fun _ => whstep)` — the `whstep_head`
+  obligation.  Congruence case = `invert_wf_term_con` → `eq_args_step_at` →
+  `term_con_congruence`, with the rule type realigned across `set_nth` by the
+  same `eq_sort_subst` conversion.
+- `whstep_wf` / `star_whstep_wf` / `star_whstep_sound` (proved DIRECTLY via
+  `eq_term_wf_r` + induction on `star`, not through OperationalBridge's sectioned
+  `step_*` — see gotcha 3).
+
+GOTCHAS hit (all resolved; will recur in file 3):
+1. **`WfCutElim` must be imported QUALIFIED** (`From Pyrosome.Theory Require
+   WfCutElim.`, NO `Import`) — its `Import` SHADOWS the bare `wf_term`/`wf_args`
+   names this stack relies on (you get "term l : lang expected Type" and "Wrong
+   argument name Model (possible name: V_Eqb)").  Use
+   `WfCutElim.invert_wf_term_con`.
+2. **`core_model_ok` needs `ModelImpls`** imported.  `eq_args_refl` takes its
+   `Model_ok` as an EXPLICIT arg → call `apply (eq_args_refl (core_model_ok
+   wfl))`.  `eq_args_implies_eq_subst` does NOT take `Model_ok` (unused there) →
+   plain `apply`.  `(step := …)`/`(Model := …)` named-arg syntax only works for
+   IMPLICIT args.
+3. OperationalBridge's `step_wf`/`star_step_*` are sectioned over a SORTED
+   `step : sort->term->term->Prop`; for the sort-erased `whstep` the `step`
+   metavar can't be inferred from the goal and the leading explicit arg is `V`
+   (not `l`).  Just reprove directly (3 short proofs) instead of fighting it.
+
+NEXT = file 3/5 `LogicalRelation.v`: reducibility over `term` indexed by `sort`
+(all at `ctx=[]`, object env in the sort), normalizing via `star whstep`.  Need
+to INSTANTIATE `pa` for OTT (eliminators `app_rel`/`app_irr` → principal =
+function position; the always-reducing `exp_subst`/`ty_subst` → `Some _`).  The
+Neutral.v `neutral`/`whnf` predicates (file 2) drive the LR case split; reify/
+reflect via reduction + type-directed eta.  See UPDATE-n FILE PLAN.
+
+## UPDATE 2026-06-06q — FORK RESOLVED (Dustin): build `whstep`; `partial_eval` is OUT.
+
+The file-3 fork below ("whstep vs partial_eval normalizer") is DECIDED: hand-rolled
+weak-head `whstep` is NECESSARY; `partial_eval` is NOT useful for the LR. (This reverses
+the earlier RECOMMENDED note that leaned on `partial_eval` as a black-box normalizer.)
+
+WHY: `partial_eval_correct` gives SOUNDNESS ONLY (`eq_term l c t e (partial_eval …)`).
+`partial_eval` is a fuel FUNCTION that returns `e` unchanged on fuel exhaustion / proof-
+checker failure — NO whnf guarantee, NO determinism/confluence, and (the killer) it is
+NOT an inductive relation. The reduction-on-syntax LR is defined by case analysis on the
+whnf reached by reduction and proved by INDUCTION ON REDUCTIONS; it needs relation-level
+facts a black-box function cannot give: anti-reduction / backward closure, the whnf-
+driven LR clauses, weak-head determinism (a type reduces to a UNIQUE head former), and
+reflect (a neutral is a stable normal form that does not step). The "its output is a
+whnf = normalization = fundamental-lemma content anyway" rationale is CIRCULAR: defining
+reducibility via `partial_eval` would itself require a normalization theorem, which
+needs the reduction relation. `partial_eval` survives only as a possible later
+executable-evaluator convenience in `Decidable.v`, certified from the already-
+established normalization — never as the LR substrate.
+
+NEXT CONCRETE STEP: write `whstep` = the head-congruence closure of `Reduction.v`'s
+`redex`/`step`, reducing the principal arg of an eliminator spine via `Neutral.v`'s `pa`
+selector. Its one real obligation is `whstep_head` soundness (invert via
+`WfCutElim.v:194 invert_wf_term_con`, recurse on the principal arg, lift with
+`term_con_congruence`; the `eq_args` "one position steps, rest refl" helper must be
+non-occurrence-gated — TRUE for a function/scrutinee principal arg since siblings depend
+on the DOMAIN, not the head). Then file 3 LogicalRelation over `star whstep`.
+
 ## UPDATE 2026-06-06p — PIVOT FILE 2/5 LANDED: `Neutral.v` GREEN + axiom-free.
 
 `src/Pyrosome/Lang/OTT/Norm/Pi/Neutral.v` (committed).  Generic over a
