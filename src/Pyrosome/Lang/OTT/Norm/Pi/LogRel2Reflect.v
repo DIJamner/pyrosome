@@ -27,6 +27,7 @@ From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
   Domain Apply ApplyLemmas Typing Reflect Preservation ApplySubst
+  Reify ApplyConv ReifyConv
   LogRel2Conv LogRel2 LogRel2Ind LogRel2Lemmas.
 Import Core.Notations.
 
