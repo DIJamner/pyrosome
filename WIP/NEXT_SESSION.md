@@ -23,7 +23,32 @@ counterexample; see [[ott-r2-hereditary-eta]]).
   `Reflect_conv`.  Projections `ReifyTy_conv`/`Reify_conv_val`/`ReifyNe_conv`,
   `Apply_conv_val`/`Apply_conv_Vapp`.
 
-**NEXT = the integration into `LogRel2Reflect.v` (Task 2 + 3):**
+**RRCar REWIRE DONE (2026-06-06e, committed+pushed, green+axiom-free):**
+`LogRel2Reflect.v` RRCar reify-tm is now the read-back form
+`(forall a b na nb, P a b -> Reify A a na -> Reify B b nb -> conv_nf na nb)`;
+`RR_gen` re-greened all cases (base via `Reify_conv_val`, universe via
+`ReifyTy_conv`, line-762 consumer via `Reflect_conv`).  R2 residual (`Hreify_tm`/
+`RR_pi_res` middle) rethreaded to the read-back form — now TRUE/provable.
+
+**NEXT = discharge the 3 residuals `RR_pi_res` (now all provable), in
+`LogRel2Reflect.v`'s `RRPiDev` section (all IHs `domIH`/`posIH` in scope):**
+- (R2) read-back reify-tm at Pi: members `vLam ba`/`vLam bb` (is_lam); invert both
+  `Reify` (→ `rfy_Pi`, bodies = reify of the members applied to the reflected
+  bound vars `ARGn`/`ARGm`); the two applications are codomain-`redTmEq`-related via
+  the `PiRedTmEq` app clause at the bound-var domain member (`pi_bound_var_reflects`/
+  `domIH`); `posIH`'s read-back reify-tm gives `conv_nf` of the bodies.  This is
+  the eta_bodies machinery in the REIFY direction.
+- (R1) `conv_nf BA BB`: already proved as `dom_reify_ty`/`Hcod` analog — actually
+  R1 is the codomain `conv_nf BA BB`; revisit whether `posIH` reify-ty at the
+  bound var gives it (was the entangled one).
+- (R3) `RR_app2` (eta application clause / beta-reduct closure): the reflect-side;
+  hardest (never closed even single-sided) — but now `Reify`/`Apply_conv`/
+  `Reflect_conv` are available.
+Then prove R2 INSIDE `RR_pi_case` and drop the `Hreify_tm` Context; close
+`RR_pi_res`/`RR_pi_step`; instantiate the tower (`RR0`/`RR1`/`RR2`) + user
+`reflect_red`/`reify_tm`/`reify_ty`.
+
+OLD plan (superseded, kept for reference) — the integration into `LogRel2Reflect.v`:
 1. Change `RRCar`'s reify-tm clause from `(forall a b, P a b -> conv_nf a b)` to
    the read-back form.  RECOMMENDED: UNIVERSAL form (no totality needed):
    `(forall a b na nb, P a b -> Reify (length Ge) A a na -> Reify (length Ge) B b nb -> conv_nf na nb)`.
