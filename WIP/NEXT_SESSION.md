@@ -1,5 +1,44 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06f — R2 (reify-tm at Pi) DISCHARGED, axiom-free; R1 analysis
+
+**R2 DONE (committed+pushed, `LogRel2Reflect.v` green + `Closed under the global
+context`):** `reify_tm_pi` proves the read-back reify-tm at Pi via the validated
+recipe (invert both `rfy_Pi`; align reflected bound vars with `Reflect_det`; pull
+the codomain members reducibly-related through the `PiRedTmEq` app clause `Happm`
++ `Vapp_det`; close by `posIH` reify-tm after aligning `posTyA/posTyB = B'/B'0`
+via `Apply_val_det`).  The `Hreify_tm` Context is GONE; `RR_pi_res` /
+`RR_pi_at_from_res` now carry only **(R1) `conv_nf BA BB`** and **(R3) `RR_app2`**.
+Imported `RenTyping` (for `has_svalty_ne_below`/`typing_ne_below`; no cycle).
+Helper facts that worked: `up_shsub`+`Apply_val_shift_eq` give the
+`up (wkn_list)`↦`shift_val 1 1` codomain witness; `ne_below_ctx Ge` follows from
+`wf_senv Ge` via `wf_svalty_scoped`; `Hwf k HT` (T inferred, only 2 args).
+
+**R1 IS THE ENTANGLED CODOMAIN REIFY-TY — analysis (NEEDS A DESIGN CALL):**
+`Hcod : conv_nf BA BB` is the codomain code reify-ty (RRCar's third component is
+`conv_nf_ty A B` = raw `conv_nf` of the codes; at Pi `cnf_pi` splits it into
+`conv_nf FA FB` (= `dom_reify_ty`, FINE) and `conv_nf BA BB` (= R1)).
+- R1 on RAW codes has the SAME eta falsity R2 had: codomain codes can be
+  eta-short-vs-eta-long and `conv_nf` has no eta rule.  So reify-ty must ALSO
+  become a read-back form (parallel to reify-tm).
+- BUT even read-back, the Pi codomain read-back (`ReifyTy (S m) BA BA'` in
+  `rty_Pi`) reads BA at the BARE bound var (var0 stays var0).  `posIH` only gives
+  reify-ty about `posTyA = BA[ARG]` with `ARG` the ETA-LONG reflection of var0 —
+  NOT the bare-var codomain.  So R1 needs a reify-ty IH at the BARE bound var,
+  which the current `PolyRedPack` doesn't expose (bare var0 is not a `PiRedTmEq`
+  member at higher domains: `is_lam` gate).
+- `ReifyConv.ReifyTy_conv` does NOT help: it only PROPAGATES an existing
+  `conv_nf c c2`; it cannot establish it.
+- LIKELY FIX (type-level analog of option A): change `rty_Pi`/`rty_PiI` in
+  `Reify.v` to REFLECT the bound var and read back the INSTANCE (`posTy`),
+  mirroring `rfy_Pi` for terms — then `posIH` applies directly and R1 follows by
+  the R2 recipe.  Cost: `Reify.v` (`rty_Pi`), `Reify_det`, `ReifyConv` re-proofs,
+  + reformulate RRCar reify-ty to read-back + re-green all RR_gen cases.  ALT:
+  defer R1 + the reify-ty component post-fundamental like transitivity.
+
+**R3 (`RR_app2`, the reflect-side beta-reduct/RedSub closure) — still the hardest;
+never closed even single-sided.  Untouched this session.**
+
 ## UPDATE 2026-06-06e — OPTION A (NbE read-back) CHOSEN; adequacy layer BUILT
 
 Dustin chose option (A): a type-directed reify (read-back) FUNCTION/relation that
