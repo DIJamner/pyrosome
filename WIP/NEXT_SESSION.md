@@ -1,5 +1,55 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06e — OPTION A (NbE read-back) CHOSEN; adequacy layer BUILT
+
+Dustin chose option (A): a type-directed reify (read-back) FUNCTION/relation that
+eta-expands at Pi, with reify-tm restated on read-backs.  Reason: R2 (`P a b ->
+conv_nf a b` on raw members) is FALSE even with the `is_lam` gate — member bodies
+can be eta-short bare neutrals at NESTED function codomains (machine-verified
+counterexample; see [[ott-r2-hereditary-eta]]).
+
+**DONE this session (3 new files, all green + axiom-free, committed+pushed):**
+- `Reify.v` — `ReifyTy`/`Reify`/`ReifyNe` mutual read-back relations (dual of
+  `Reflect`; eta-expands at relevant Pi via `rfy_Pi`, structural elsewhere) +
+  `Reify_det` (determinism).
+- `ApplyConv.v` — `Apply_conv`: `Apply` is a CONGRUENCE for conv under
+  pointwise-conv substitutions (`conv_sub`, with length).  Proved by induction on
+  the Apply DERIVATION (not the type) — dodges the dependent-codomain
+  non-termination.  Keystone for read-back congruence.  Also `conv_sub_refl/
+  cons/up/nth`, `conv_tyc`.
+- `ReifyConv.v` — `Reflect_conv` + `Reify_conv` (ReifyTy/Reify/ReifyNe): Reflect
+  and Reify map conv-related inputs (at conv-related types `conv_svty`, Empty_set
+  on dU/dEl mismatch) to conv-related normal forms.  Eta cases use `Apply_conv` +
+  `Reflect_conv`.  Projections `ReifyTy_conv`/`Reify_conv_val`/`ReifyNe_conv`,
+  `Apply_conv_val`/`Apply_conv_Vapp`.
+
+**NEXT = the integration into `LogRel2Reflect.v` (Task 2 + 3):**
+1. Change `RRCar`'s reify-tm clause from `(forall a b, P a b -> conv_nf a b)` to
+   the read-back form.  RECOMMENDED: UNIVERSAL form (no totality needed):
+   `(forall a b na nb, P a b -> Reify (length Ge) A a na -> Reify (length Ge) B b nb -> conv_nf na nb)`.
+   (Totality of Reify on reducible members can be a SEPARATE lemma for the final
+   completeness theorem; the universal form keeps RR_gen totality-free.)
+2. Re-green `RR_gen` all cases:
+   - base/neutral cases: invert the two `Reify` (→ `vNe (ReifyNe ·)`), close via
+     `ReifyNe_conv` from the members' `conv_ne` (RedNeutralEq).
+   - universe code cases: via `ReifyTy_conv` / `Reify_conv_val`.
+   - Pi case: invert both `Reify` (→ `rfy_Pi`, bodies = reify of the members
+     applied to the reflected bound vars); the bodies are conv by the codomain
+     reify IH (`posIH`) applied to the app-clause results (the eta_bodies
+     machinery, now TRUE because reify eta-expands).  R1/R3 fold in here.
+3. Internal consumer `eta_bodies` line ~762 (`conv_nf ARGn ARGm` for `cne_app`):
+   now DIRECT via `Reflect_conv` (Reflect of nVar0 at conv-related domains) — no
+   longer needs the reify-tm component.
+4. Fix `RecRR1`/`RR0`/`RRbot`/tower + `RR_pi_res`/`RR_pi_at_from_res` to the new
+   clause; drop the `Hreify_tm` Context; discharge R1/R2/R3; unblock RR1/RR2 tower
+   + user `reflect_red`/`reify_tm`/`reify_ty`.
+Dependency: `LogRel2Reflect.v` should import `Reify ReifyConv` (no cycle: ReifyConv
+depends only on Apply/Reflect/Reify/ApplyConv/LogRel2Conv).
+Then Ph5 fundamental lemma → gluing `Model.v`/`ModelOk.v` ⇒ `eq_term` decidability.
+
+---
+
+
 Paste this as the opening prompt (or just read it) to resume the OTT/Norm/Pi
 migration to a two-sided PER-of-conversion logical relation (Divide and Check).
 
