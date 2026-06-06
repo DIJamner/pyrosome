@@ -1,5 +1,74 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06j — DUSTIN CHOSE conv_ty_eta (opt 2); REALIZATION = DECLARATIVE (mutual w/ typing)
+
+Dustin's call on the UPDATE-i fork: **option 2 — a separate eta-closed DECLARATIVE
+type-conversion judgment used by `n_conv`, `conv_nf` stays the final structural
+decision, reify produces the conversion.**
+
+**LAYERING FINDING (rules out the naive read-back realization).**  I first tried
+`conv_ty_eta m A B := forall nA nB, ReifyTy m A nA -> ReifyTy m B nB -> conv_nf nA
+nB` (read-back equality) in a low defs file.  This DOES NOT WORK with the current
+file layering: `n_conv` is in `Typing.v`, so its conversion premise must be
+SHIFT/REN-stable for the LOW typing metatheory — `Preservation.v` line 661 (typing
+under shift) and `RenTyping.v` lines 263/423/260 (typing/scoping under renaming)
+each have an `n_conv` case that transports the conversion.  But read-back stability
+(`ReifyTy_shift`/`ReifyTy_ren`, which DO NOT EXIST yet) needs `Reflect`/`Apply`
+shift-commutation, and `Reflect_ren` lives in `RenSubst.v` — ABOVE `Preservation`.
+So `conv_ty_eta_shift` is UN-provable at the `Preservation` layer.  Confirmed deps:
+`RenSubst → Preservation`, `Reflect_ren ∈ RenSubst`, `Apply_ren_comp ∈ RenSubst`;
+only `Apply_val_shift0` is low (in `Preservation.v` itself).  Any eta-closed
+conversion expressive enough needs application (`Apply`) — so it CANNOT be a purely
+low structural inductive either.
+
+**REALIZATION (matches Dustin's word "declarative"): co-define the conversion WITH
+typing.**  Add a type-directed eta-closed conversion (`conv_ty_eta`/`conv_tm_eta`,
+likely `conv_ne_eta`) in the SAME mutual block as `has_svalty`/`wf_neutral` in
+`Typing.v` (paper's `Declarative.v`: `ConvTy`/`ConvTm`/`ConvNe` mutual with
+`WfTm`).  Then its shift/ren stability is proven STRUCTURALLY in the SAME
+`Preservation`/`RenTyping` inductions (no Reify/Reflect needed — the conversion's
+own constructors drive it; the eta rule's codomain instance uses `Apply_val`,
+whose shift is available low, exactly as `t_lam_eta` already does).  This dissolves
+the layering wall.  `n_conv : wf_neutral Ge n (dEl A) -> conv_ty_eta Ge A B ->
+wf_neutral Ge n (dEl B)`.
+
+**BUILD SPEC (proposed constructor set for the eta-closed type-directed conversion;
+prototype in WIP/ConvEtaProto.v before touching the core inductive):**
+- `conv_ty_eta Ge : sval -> sval -> Prop` (type codes): congruence (cte_nat,
+  cte_empty, cte_pi [dom + cod under binder], cte_piI, cte_ne via conv_ne_eta) +
+  refl/sym/trans (or admissible).
+- `conv_tm_eta Ge : svalty -> sval -> sval -> Prop` (TYPE-DIRECTED values): structural
+  congruence at base/neutral + the ETA rule at relevant Pi: `conv_tm_eta Ge (dEl(vPi
+  F B)) f g` when (eta-expand both: `conv_tm_eta (Ge,F) (dEl B') (f·var0) (g·var0)`
+  via `Apply_val`/`Vapp`, mirroring `t_lam_eta`/`rfy_Pi`).  This is where eta is
+  baked in — knowing the type makes it well-defined (the untyped version is not).
+- `conv_ne_eta Ge : neutral -> neutral -> Prop`: cne-like, args related by
+  `conv_tm_eta` at the annotation type.
+- Then: (i) `conv_ty_eta_of_nf`/`refl` (diagonal), (ii) shift/ren stability proven
+  alongside typing, (iii) HIGH lemma "reify/LR reify-ty produces conv_ty_eta", (iv)
+  migrate `n_conv`, (v) re-green stack, (vi) Model soundness (read-back-equal `dEl`
+  types denote the same type ⇒ eta-conv types do too).
+
+This is a big central-definition change (enlarges the core typing inductive ⇒ full
+OTT/Pi rebuild) — multi-session.  Tasks #1–#5 created.  Prototype the conversion
+inductive + its key closure (Pi typing bridge: `conv_ty_eta Ge (vPi FA BA)(vPi FB
+BB)` from domain + codomain-at-bare-var conversions) in WIP first
+(`WIP/ConvEtaProto.v`).
+
+**WHY DECLARATIVE/INDUCTIVE, NOT read-back-equality (the TOTALITY trap).**  A
+read-back `conv_ty_eta := forall nA nB, ReifyTy A nA -> ReifyTy B nB -> conv_nf nA
+nB` is *almost* layerable low (`Reflect_weaken`@Preservation:451 + `Apply_val_shiftc`
+make `ReifyTy_shift` provable at the Preservation layer; `Reflect_ren`@RenSubst makes
+`ReifyTy_ren` provable at the RenTyping layer).  BUT `RenTyping.v:263`'s `n_conv`
+case needs `conv_ty_eta_ne_below` (`ne_below A` ⇒ `ne_below B`), and from the
+UNIVERSAL read-back form that requires instantiating at SOME read-backs of A,B —
+i.e. **ReifyTy TOTALITY** (every scoped code has a read-back) ≈ normalization,
+circular here.  The EXISTENTIAL form (read-backs EXIST + conv_nf) carries them but
+then PRODUCING `conv_ty_eta` from LR reify-ty needs totality too.  The DECLARATIVE
+INDUCTIVE conversion sidesteps totality entirely: `ne_below`/shift/ren stability are
+proven STRUCTURALLY on the conversion's own derivation (no read-back).  This is
+exactly why the paper's typing conversion is declarative, not read-back equality.
+
 ## UPDATE 2026-06-06i — R1 PLAN HITS A TYPING-CONVERSION WALL; FORK FOR DUSTIN
 
 **The UPDATE-h/g plan (port `reifyReflect`: bare reflect + read-back reify-ty)
