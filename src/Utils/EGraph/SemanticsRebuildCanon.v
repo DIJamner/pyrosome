@@ -59,8 +59,6 @@ Proof.
       split; [exact IHsnd | f_equal; exact IHfst].
 Qed.
 
-(* D2: worklist_dedup is the identity on a list of union_repair      *)
-(* entries with pairwise distinct olds (same old => same entry).     *)
 (* D3: good_worklist: the structural precondition that rebuild_canon *)
 (* requires on the worklist.                                          *)
 Definition good_worklist
@@ -79,45 +77,6 @@ Definition good_worklist
   /\ (forall b, @atom_in_db _ _ _ _ _ b e.(db) -> ~ @is_root _ _ _ _ _ _ e (atom_ret b) ->
                 exists d, In d ed_list /\ atom_fn b = atom_fn (ed_atom _ _ d)
                   /\ atom_args b = atom_args (ed_atom _ _ d)).
-
-(* Helper: NoDup (map ed_to_entry ed_list) from NoDup ed_list + pairwise disjoint olds. *)
-(* Direct: worklist_dedup (map ed_to_entry ed_list) is the identity  *)
-(* given NoDup ed_list + pairwise disjoint olds.                     *)
-Local Lemma worklist_dedup_ed_list
-  {idx : Type} {Eqb_idx : Eqb idx} {Eqb_idx_ok : Eqb_ok Eqb_idx}
-  {symbol : Type}
-  ed_list
-  (Hnodup : List.NoDup ed_list)
-  (Hdisj : forall dj dk, In dj ed_list -> In dk ed_list -> dj <> dk -> @ed_disjoint idx symbol dj dk)
-  : worklist_dedup idx Eqb_idx (map (ed_to_entry idx symbol) ed_list) = map (ed_to_entry idx symbol) ed_list.
-Proof.
-  induction ed_list as [|d0 rest IH].
-  - reflexivity.
-  - inversion Hnodup as [|? ? Hnotin_d0 Hnodup_rest]. subst.
-    cbn [map worklist_dedup].
-    assert (HIH : worklist_dedup idx Eqb_idx (map (ed_to_entry idx symbol) rest) = map (ed_to_entry idx symbol) rest).
-    { apply IH.
-      - exact Hnodup_rest.
-      - intros dj dk Hdj Hdk Hne.
-        exact (Hdisj dj dk (or_intror Hdj) (or_intror Hdk) Hne). }
-    rewrite HIH.
-    assert (Hexb : List.existsb (entry_subsumed_by idx Eqb_idx (ed_to_entry idx symbol d0)) (map (ed_to_entry idx symbol) rest) = false).
-    { apply Bool.not_true_iff_false. rewrite existsb_exists.
-      intros (x & Hx & Hfx).
-      apply in_map_iff in Hx.
-      destruct Hx as (dk & Hdk_eq & Hdk_in).
-      subst x.
-      unfold ed_to_entry, entry_subsumed_by in Hfx.
-      apply andb_prop in Hfx as [Hxold _].
-      pose proof (eqb_spec (ed_old _ _ d0) (ed_old _ _ dk)) as Hspec.
-      rewrite Hxold in Hspec.
-      assert (Hd0_ne_dk : d0 <> dk).
-      { intros Heq. subst dk. exact (Hnotin_d0 Hdk_in). }
-      pose proof (Hdisj d0 dk (or_introl eq_refl) (or_intror Hdk_in) Hd0_ne_dk) as Hdisj_0k.
-      destruct Hdisj_0k as (_ & Hne_old & _).
-      exact (Hne_old (eq_sym Hspec)). }
-    rewrite Hexb. reflexivity.
-Qed.
 
 (* The main assembly: given a good_worklist precondition, rebuild    *)
 (* (S fuel) establishes db_inv(True) and preserves roots.           *)
@@ -204,10 +163,6 @@ Proof.
     specialize (HD1 e' Hnew_roots).
     destruct (list_Mmap (canonicalize_worklist_entry idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result) (w :: wl') e') as [todo' e''] eqn:Hmmap.
     cbn [fst snd] in HD1. destruct HD1 as [HD1_snd HD1_fst]. subst e'' todo'.
-    (* D2 via worklist_dedup_ed_list: worklist_dedup (map ed_to_entry ed_list) = map ed_to_entry ed_list *)
-    rewrite <- Hmap_ed.
-    rewrite (worklist_dedup_ed_list ed_list Hnodup Hdisj).
-    rewrite Hmap_ed.
     (* Now apply B3: list_Miter_repair_union_pass *)
     (* Establish union_pass_inv e1 e' ed_list *)
     assert (Hinv0 : @union_pass_inv _ lt _ _ _ _ _ e1 e' ed_list).

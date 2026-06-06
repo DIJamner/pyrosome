@@ -3874,19 +3874,6 @@ Section WithMap.
     intros [Hh Ht]; split; [exact Hh | apply (IH _ Ht)].
   Qed.
 
-  (* [worklist_dedup] returns a subset of its input, so any [all]
-     predicate transports to the dedup. *)
-  Lemma worklist_dedup_preserves_all (P : worklist_entry idx -> Prop) l :
-    all P l -> all P (worklist_dedup _ _ l).
-  Proof.
-    induction l as [|h t IH]; cbn; auto.
-    intros [Hh Ht].
-    destruct (List.existsb (entry_subsumed_by idx Eqb_idx h)
-                (worklist_dedup _ _ t)).
-    - apply IH; exact Ht.
-    - cbn; split; [exact Hh | apply IH; exact Ht].
-  Qed.
-
   (* List-iterated [canonicalize_worklist_entry] preserves [egraph_ok]
      and [denote] pointwise, AND if every input entry was
      [worklist_entry_ok] in the pre-state's equiv, every output entry
@@ -10463,12 +10450,12 @@ Section WithMap.
       + match goal with |- context[list_Mmap ?f (w::wl') ?st] =>
           pose proof (list_Mmap_canon_ar (w::wl') Hwl st) as Hcanon end.
         rewrite Hcanon. cbn [Mseq Mbind StateMonad.state_monad].
-        assert (Hdedup : all (fun ent => exists j, ent = analysis_repair idx j) (worklist_dedup idx Eqb_idx (w::wl')))
-          by (apply worklist_dedup_preserves_all; exact Hwl).
+        assert (Hdedup : all (fun ent => exists j, ent = analysis_repair idx j) (w::wl'))
+          by exact Hwl.
         match goal with |- context[list_Miter repair ?dl ?st] => remember st as st0 eqn:Hst0 end.
-        pose proof (list_Miter_repair_ar (worklist_dedup idx Eqb_idx (w::wl'))) as Hmit. unfold vc in Hmit.
+        pose proof (list_Miter_repair_ar (w::wl')) as Hmit. unfold vc in Hmit.
         specialize (Hmit st0 Hdedup).
-        destruct (list_Miter repair (worklist_dedup idx Eqb_idx (w::wl')) st0) as [u s1] eqn:Hmiter.
+        destruct (list_Miter repair (w::wl') st0) as [u s1] eqn:Hmiter.
         cbn [snd] in Hmit. destruct Hmit as [Hmit_db Hmit_wl].
         assert (Hwl_st0 : all (fun ent => exists j, ent = analysis_repair idx j) (worklist st0))
           by (rewrite Hst0; exact I).
@@ -10528,14 +10515,14 @@ Section WithMap.
       + match goal with |- context[list_Mmap ?f (w::wl') ?st] =>
             pose proof (list_Mmap_canon_ar (w::wl') Hwl st) as Hcanon end.
         rewrite Hcanon. cbn [Mseq Mbind StateMonad.state_monad].
-        assert (Hdedup : all (fun ent => exists j, ent = analysis_repair idx j) (worklist_dedup idx Eqb_idx (w::wl')))
-          by (apply worklist_dedup_preserves_all; exact Hwl).
+        assert (Hdedup : all (fun ent => exists j, ent = analysis_repair idx j) (w::wl'))
+          by exact Hwl.
         match goal with |- context[list_Miter repair ?dl ?st] => remember st as st0 eqn:Hst0 end.
-        pose proof (list_Miter_repair_ar_equiv (worklist_dedup idx Eqb_idx (w::wl'))) as Hmit_eq. unfold vc in Hmit_eq.
+        pose proof (list_Miter_repair_ar_equiv (w::wl')) as Hmit_eq. unfold vc in Hmit_eq.
         specialize (Hmit_eq st0 Hdedup).
-        pose proof (list_Miter_repair_ar (worklist_dedup idx Eqb_idx (w::wl'))) as Hmit. unfold vc in Hmit.
+        pose proof (list_Miter_repair_ar (w::wl')) as Hmit. unfold vc in Hmit.
         specialize (Hmit st0 Hdedup).
-        destruct (list_Miter repair (worklist_dedup idx Eqb_idx (w::wl')) st0) as [u s1] eqn:Hmiter.
+        destruct (list_Miter repair (w::wl') st0) as [u s1] eqn:Hmiter.
         cbn [snd] in Hmit_eq, Hmit |- *.
         assert (Hwl_st0 : all (fun ent => exists j, ent = analysis_repair idx j) (worklist st0))
           by (rewrite Hst0; exact I).
@@ -10579,9 +10566,7 @@ Section WithMap.
     assert (Hwl_s1 : all (worklist_entry_ok s1.(equiv)) (w :: wl')).
     { rewrite Hequiv_s1; exact Hwl_pulled. }
     destruct (Hmap Hok_s1 Hwl_s1) as (Hok_s2 & Hde_s2 & _Hext_s2 & Hwl_canon_s2).
-    pose proof (worklist_dedup_preserves_all
-                  (worklist_entry_ok s2.(equiv)) wl_canon Hwl_canon_s2)
-      as Hwl_dedup_s2.
+    pose proof Hwl_canon_s2 as Hwl_dedup_s2.
     destruct (Hmiter Hok_s2 Hwl_dedup_s2) as (Hok_s3 & Hde_s3 & _Hext_s3).
     destruct (HIH Hok_s3) as [Hok_res Hde_res].
     split; [exact Hok_res|].
@@ -10979,8 +10964,8 @@ Section WithMap.
     vc_bind Hmap_both. clear Hmap_both.
     rename s0 into s1, a into wl_canon.
     pose proof (vc_and _ _ _
-                  (list_Miter_repair_denote_iff (worklist_dedup _ _ wl_canon))
-                  (list_Miter_repair_survives_side l (worklist_dedup _ _ wl_canon)))
+                  (list_Miter_repair_denote_iff wl_canon)
+                  (list_Miter_repair_survives_side l wl_canon))
       as Hmiter_both.
     vc_bind Hmiter_both. clear Hmiter_both.
     rename s0 into s2, a into u_miter.
@@ -10996,9 +10981,7 @@ Section WithMap.
     { rewrite Hequiv_s1; exact Hwl_pulled. }
     destruct (Hmap_de Hok_s1 Hwl_s1) as (Hok_s2 & _ & _ & Hwl_canon_s2).
     specialize (Hmap_side Hok_s1 Hwl_s1 Hall_s1).
-    pose proof (worklist_dedup_preserves_all
-                  (worklist_entry_ok s2.(equiv)) wl_canon Hwl_canon_s2)
-      as Hwl_dedup_s2.
+    pose proof Hwl_canon_s2 as Hwl_dedup_s2.
     destruct (Hmiter_de Hok_s2 Hwl_dedup_s2) as (Hok_s3 & _ & _).
     specialize (Hmiter_side Hok_s2 Hwl_dedup_s2 Hmap_side).
     destruct (HIH Hok_s3 Hmiter_side) as [Hok_res Hall_res].
