@@ -29,6 +29,20 @@ Prop` rewriting by those. **REUSE `Compilers/OperationalBridge.v`**: it already 
 fuel-evaluator to mine for the normalizer. ETA is NOT a reduction step — handle it
 TYPE-DIRECTED in the LR/reify at function sorts (paper `ConvTmEta`).
 
+**CONTEXT MODEL (Dustin, 2026-06-06n) — EVERYTHING is at Pyrosome `ctx = []`.** In
+Pyrosome the `ctx` holds META-variables, NOT object variables; the OTT encoding puts
+the OBJECT-level context/binding into the SORT as an `env` term. The surface sorts are
+`scon "exp" [A; i; G]` (expr of type `A`, level `i`, in object env `G`), `scon "ty"
+[i; G]`, `scon "sub" [Gd; Gc]`, `scon "env" []` (confirmed in Norm/Model.v `glue_*`).
+So ALL judgments/reduction/LR/fundamental-lemma are stated at Pyrosome `ctx = []`
+(exactly as the existing Model: `eq_term fo_lang [] t e1 e2`), and OBJECT open-ness is
+the `env` `G` inside the sort. Consequences: (a) `OperationalBridge`'s `[]`-statements
+fit DIRECTLY — no open-Pyrosome-ctx generalization needed; (b) "under a Pi binder" in
+reify = EXTEND the object env `G` (a term-level op, e.g. the subst-calculus
+`ext`/`snoc`), never extend the Pyrosome ctx; (c) renaming/weakening that mattered in
+the value dev is now object-`env` weakening via `subst_ott`, not Pyrosome ctx renaming.
+This RESOLVES open-Q3 below (always closed `[]`).
+
 **FILE PLAN.** DELETE the entire value-domain tree in `OTT/Norm/Pi/` (and non-Pi
 `OTT/Norm/` value files): Domain, Apply, ApplyLemmas, ApplySubst, ApplyConv, Reflect,
 Reify, ReifyConv, EvalRel, Determinism, Typing(sval), Preservation(sval), RenSubst,
@@ -41,12 +55,16 @@ lang `ott_full`):
 - `Neutral.v`: neutral & whnf predicates on `term` (head = var / blocked elim).
   Possibly structural `~annot`/`~ne` as DEFINED notions IF the LR needs
   annotation-insensitive neutral comparison — but declarative equality stays `eq_term`.
-- `LogicalRelation.v` (+submodules): reducibility over `term` INDEXED BY `sort` in the
-  lang (≈ paper LogicalRelation/*, with Γ=Pyrosome `ctx`, types=`sort`, members=`term`).
-  Reify/reflect via reduction (old RR_pi_at, now reduction-based + type-directed eta).
-- `FundamentalLemma.v`: `wf_term`/`eq_term` ⇒ reducible (use Pyrosome cut-elimination
-  Theory/CutElim.v/CutFreeInd.v/WfCutElim.v for canonical derivations/inversion +
-  Theory/Renaming.v).
+- `LogicalRelation.v` (+submodules): reducibility over `term` INDEXED BY `sort`, ALL
+  at Pyrosome `ctx = []` (see CONTEXT MODEL below). The sort carries the OBJECT env, so
+  the LR is indexed by sorts like `scon "ty" [i; G]` / `scon "exp" [A; i; G]` with `G`
+  the object env. Reify/reflect via reduction (old RR_pi_at, reduction-based +
+  type-directed eta); going under a Pi binder EXTENDS `G` (a term op), not the
+  Pyrosome ctx.
+- `FundamentalLemma.v`: `wf_term`/`eq_term` (at `ctx=[]`) ⇒ reducible (use Pyrosome
+  cut-elimination Theory/CutElim.v/CutFreeInd.v/WfCutElim.v for canonical derivations/
+  inversion + Theory/Renaming.v). Substitution lemmas are over the OBJECT subst
+  calculus (`sub` terms / `subst_ott`), not Pyrosome meta-substitution.
 - `Decidable.v`/`Corollaries.v`: normalization + **decidability of `eq_term` for OTT**
   (the payoff). A Pyrosome `Model` instance, if still wanted, is a corollary — likely
   drop the `norm_ceq`/eval-glue Model entirely.
@@ -71,8 +89,9 @@ Declarative (eq_term exists), no named↔deBruijn bridge.
 2. Does the LR need structural `~annot`/`~ne` at all, or can neutral members be
    compared by `eq_term` + a "stuck" predicate? (Paper needs `~ne` only because its `≡`
    is declarative-only; here `eq_term` IS declarative — maybe unneeded.)
-3. Context: closed (`[]`, where OperationalBridge is stated) first, or open contexts
-   from the start (needed to go under Pi binders in reify).
+3. [RESOLVED — see CONTEXT MODEL above] ALWAYS Pyrosome `ctx = []`; object open-ness
+   is the `env` `G` in the sort. No open-Pyrosome-ctx generalization; under-binder =
+   extend `G`.
 
 **FIRST CONCRETE STEP next session:** read `Compilers/OperationalBridge.v` +
 `PartialEval.v` fully; pick `step` (Q1); write `Reduction.v` (`step`+`step_sound`+
