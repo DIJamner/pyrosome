@@ -284,10 +284,25 @@ Reflect/Typing/EvalRel. Mechanical.
     `RedTyEq Ge (dEl(vNe n))(dEl(vNe m))` (type-FORMATION from neutral codes,
     for the fundamental lemma's `dEl`-formation).
 
+- **ETA DESIGN — RESOLVED (2026-06-06, paper-faithful).**  Question raised: at a
+  relevant Pi, REIFY-tm (`PiRedTmEq` member ⟹ `conv_nf`) cannot relate a bare
+  `vNe` member to an eta-long `vLam` member (structural `conv_nf` has no
+  `vNe`∼`vLam` rule).  ANSWER (paper "Divide and Check" + this repo's `conv_nf`
+  header): the paper does NOT add eta to conversion; `conv_nf`/`conv_ne` stay
+  UNTYPED+structural (Def 13 `∼annot`).  Eta is BAKED INTO NORMAL FORMS by
+  `Reflect`: a neutral at a relevant Pi reflects to its eta-expansion `vLam`, so
+  every relevant-function value is a `vLam`, never a bare `vNe`.  IMPLEMENTATION:
+  `RRCar`'s REFLECT is now TYPE-DIRECTED — it produces the `Reflect`-value
+  (`{vn vm & Reflect A n vn * Reflect B m vm * P vn vm}`); identity at
+  base/code/universe (`refl_Nat`/`refl_U`/…), eta-long at relevant Pi
+  (`refl_Pi`).  REIFY-tm at `vPi` thus only ever hits `cnf_lam` (vLam-vLam); the
+  mismatch never arises.  (Earlier bare-neutral REFLECT motive was a base-only
+  simplification, now corrected.)
 - **Ph3 PROPER — MUTUAL-INDUCTION ENGINE DONE & green (2026-06-06).**
   `LogRel2Reflect.v` now carries the full `LR_mut`-driven combined reify/reflect
-  induction `RR_gen` (axiom-free): motive `RRCar` bundles REFLECT (`NeConv` ⟹
-  `P`-related), REIFY-tm (`P` ⟹ `conv_nf`), REIFY-ty (codes ⟹ `conv_nf_ty`).
+  induction `RR_gen` (axiom-free): motive `RRCar` bundles REFLECT (type-directed:
+  `NeConv` ⟹ `Reflect`-values `P`-related), REIFY-tm (`P` ⟹ `conv_nf`), REIFY-ty
+  (codes ⟹ `conv_nf_ty`).
   All 5 NON-Pi cases (nat/empty/ne/U0/U1) discharged axiom-free; the two Pi
   cases are the abstract premises `RR_pi_at`/`RR_piI_at` (universal
   `RR_pi_step`/`RR_piI_step`).  Tower kit `RRbot`/`NeElBuild_LR`/`NeElBuild_vac`;
