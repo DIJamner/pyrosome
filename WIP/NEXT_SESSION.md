@@ -182,11 +182,36 @@ Dustin chose the paper's single-typed-neutral + typed-conversion architecture
   bound variable reflects from a SINGLE left typing, the domain IH returns both
   reflections + the domain member.
 
-**NEXT = the genuine Theorem-11 adequacy core (Ph5), `RR_pi_at` still abstract.**
-Assemble `vLam ARGn`/`vLam ARGm` via `refl_Pi`/`t_lam_eta` (port single-sided
-`reflect_pi_step_from_app`, now two-sided & UNBLOCKED), then discharge
-`PiRedTmEq`'s application clause = the reflect/reify adequacy never closed even
-single-sided.  Full detail in `WIP/ConvRelPlan.md` STATUS (top entry).
+## DONE (2026-06-06c) — RR_pi_at REDUCED to 3 reify/reflect residuals (axiom-free)
+
+`LogRel2Reflect.v` now PROVES the relevant-Pi crux `RR_pi_at` MODULO three
+explicitly-isolated residuals (the two-sided port of single-sided
+`reflect_pi_step_from_reify`).  All NEW content axiom-free + green:
+- `RedTmEq_wf_gen` — level-generic escape (`@LR lvl rec0 rec1`, not just `LR2`).
+- `conv_ctx` + `typing_ctx_conv` — CONTEXT CONVERSION metatheorem (typing stable
+  under pointwise-`conv_nf` context entries).  Bridges the two-sided gap: the
+  RIGHT eta-body is reflected in the LEFT-domain context but `t_lam_eta` for the
+  RIGHT Pi needs the RIGHT-domain context (differ only at the convertible front
+  domain).
+- `eta_bodies` — the two-sided eta-expansion: from a `NeConv` pair at the LEFT Pi
+  builds `vLam body_n`/`vLam body_m`, both `refl_Pi` reflects, both `t_lam_eta`
+  typings, and the codomain member (via `pi_bound_var_reflects`,
+  `Apply_reflect_cod`, `n_app`/`n_conv`, `typing_ctx_conv`).
+- `dom_reify_ty` — domain reify-ty leaf (`conv_nf FA FB` from `domIH` at id sub).
+- `RR_pi_case` + `RR_pi_res` + **`RR_pi_at_from_res`** — `RR_pi_at` follows from
+  `RR_pi_res`, i.e. the three residuals:
+    (R1) `conv_nf BA BB`  (codomain reify-ty for RAW codes),
+    (R2) `forall a b, PiRedTmEq PA a b -> conv_nf a b`  (function reify-tm),
+    (R3) `RR_app2`  (the eta-expansion application clause; two-sided analog of
+         single-sided `reflect_pi_app_step`).
+
+**NEXT = discharge the three `RR_pi_res` residuals (the genuine VR-layer core).**
+(R1)+(R3) are entangled reify/reflect adequacy for the eta substitution (NOT a
+renaming for higher-order domains; see `WIP/ReifyDev.v`), needing a
+validity/reducible-substitution (VR) layer + reducibility-eta-irrelevance.  (R2)
+needs casing on the members + the codomain reify IH.  Closing all three fully
+discharges `RR_pi_at` and unblocks the `RR1`/`RR2` tower +
+`reflect_red`/`reify_tm`/`reify_ty`.  Full detail in `WIP/ConvRelPlan.md` STATUS.
 
 ## Superseded fork — RE-PLAN around the single-typed-neutral pivot (RESOLVED above)
 

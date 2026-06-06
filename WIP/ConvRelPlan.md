@@ -91,6 +91,47 @@ Reflect/Typing/EvalRel. Mechanical.
 
 ## STATUS
 
+- **RR_pi_at REDUCED to 3 reify/reflect residuals, axiom-free + green
+  (2026-06-06c).**  `LogRel2Reflect.v` now proves the relevant-Pi crux
+  `RR_pi_at` MODULO three explicit residuals (two-sided port of the single-sided
+  `reflect_pi_step_from_reify` methodology).  The eta-expansion construction,
+  both `t_lam_eta` typings, the domain reify-ty, and the Pi-code reify-ty are all
+  DISCHARGED; only the genuine VR-layer core remains abstract.  New (all
+  axiom-free, verified `Closed under the global context`):
+  1. `RedTmEq_wf_gen` -- level-generic escape: a `P`-member at ANY
+     `@LR lvl rec0 rec1` node is well-typed at both indices (needed because the
+     abstract-level packs in `RR_pi_at` are NOT `LR2`, so `RedTmEq_wf` fails).
+  2. `conv_ctx` + `conv_ctx_refl`/`_length`/`_map_shift`/`_nth` +
+     `typing_ctx_conv` -- CONTEXT CONVERSION: `has_svalty`/`wf_neutral` are
+     stable under replacing context entries by `conv_nf`-related ones (var case
+     via `n_conv`; binder cases extend with the identical shifted domain).  This
+     bridges the two-sided gap: the RIGHT eta-body `body_m` is reflected in the
+     LEFT-domain context `dEl (shift FA) :: ..` but `t_lam_eta` for the RIGHT Pi
+     types it in `dEl (shift FB) :: ..` (differ only at the convertible front
+     domain `conv_nf FA FB`).
+  3. `eta_bodies` -- the two-sided eta-expansion.  From `NeConv` at the LEFT Pi:
+     `pi_bound_var_reflects` gives `ARGn`/`ARGm` + the domain member `rab`;
+     `posIH`'s REFLECT on the two eta-body neutrals (LEFT typed by `n_app`, RIGHT
+     typed at `posTyB` then `n_conv`'d to `posTyA` via the codomain reify-ty)
+     yields `body_n`/`body_m`; `refl_Pi` assembles both `vLam`s; `t_lam_eta`
+     (RIGHT via `typing_ctx_conv`) types them.  Outputs the two `Reflect`s, two
+     typings, the codomain member, and the eta-body `Reflect`s.
+  4. `dom_reify_ty` -- `conv_nf FA FB` from `domIH` at the identity substitution.
+  5. `RR_pi_case` + `RR_pi_res` + `RR_pi_at_from_res` -- `RR_pi_at lvl rec0 rec1`
+     follows from `RR_pi_res lvl rec0 rec1`, i.e. supplying at every Pi node:
+       (R1) `conv_nf BA BB`  (codomain reify-ty for RAW codes -- shared by REFLECT
+            + REIFY-ty; the eta substitution is NOT a renaming for higher-order
+            domains, so this is genuine adequacy, not transport);
+       (R2) `forall a b, PiRedTmEq PA a b -> conv_nf a b`  (function reify-tm);
+       (R3) `RR_app2`  (the eta-expansion application clause; two-sided analog of
+            single-sided `reflect_pi_app_step` -- the beta-reduct / RedSub-closure
+            adequacy never closed even single-sided).
+  RESIDUAL (the live NEXT): discharge (R1)+(R2)+(R3) = the VR/validity layer
+  (reducible substitutions + reducibility-eta-irrelevance), mutually entangled
+  with `reflect_red` for higher-order domains (see `WIP/ReifyDev.v`).  Closing
+  them fully discharges `RR_pi_at` and unblocks the `RR1`/`RR2` tower (the
+  monomorphic-`Hpi` universe wall lifts once `RR_pi_at` is a poly LEMMA).
+
 - **TYPING-CONVERSION WALL DISSOLVED -- paper-faithful single-typed migration
   DONE, axiom-free, green (2026-06-06).**  Per Dustin's call ("be faithful to the
   paper"), adopted the paper's SINGLE-TYPED neutral architecture + typed
