@@ -1,5 +1,57 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06g — is_lam GATE REMOVED (paper-faithful); R1 precisely scoped
+
+**GATE REMOVED (committed+pushed, whole LogRel2* chain + Glue green, RR_gen
+`Closed under the global context`).**  Per Dustin's call + the *Divide and Check*
+paper (Poiret–Maillard–Tabareau, hal-05495420, PDF at /root/divide-and-check.pdf,
+code https://gitlab.inria.fr/josselin.poiret/metamltt/-/tree/fscd2026/theories):
+the paper's **Def 10** (reducible conversion at function types) is **GATELESS** —
+no `is_lam`, no neutral case — because the eta-law means the witness need not
+distinguish neutral from lambda members.  Our `is_lam` gate (ec0f8f6) was the
+deviation.  Removed it from `PiRedTmEq`; reversed all gate destructs/constructs
+(`RedTmEq_wf{,_gen}`, `LogRel2Sym` fwd/bwd, `LogRel2Ren` `ren_pack_fwd`,
+`RR_pi_case` REFLECT); re-proved `reify_tm_pi` gatelessly (members general,
+`rfy_Pi` eta-expands either way).
+
+**R1 IS BIGGER THAN THE "posIH at a bare-var member" SHORTCUT — precise scope.**
+Reading the paper's Def 8 + `∼ne` (§3.1) pins it down:
+- Paper deep-conversion `t A⇓B u := (Γ⊢t≡u:A) × (Γ⊢A≡B) × ⇓A t × ⇓B u`
+  (DECLARATIVE `≡` with eta + deep normalization), and `∼ne`'s `NeApp` relates
+  arguments by `a A⇓A' a'` (eta lives in `≡`/normalizing read-back); annotations
+  only pairwise-convertible.  Our `conv_nf`/`conv_ne` is the *structural*
+  comparison of ALREADY-REIFIED (eta-long) NFs — sound ONLY on reified terms.
+- Hence reify-**ty** (RRCar's 3rd component, currently RAW `conv_nf_ty A B`) is
+  WRONG on raw codomain codes for the SAME eta reason R2-raw was; it must become
+  a **read-back** form (ReifyTy/ReifyNe, which eta-expand neutral args via
+  `Reify`), parallel to what was done for reify-tm.
+- The Π codomain read-back is structural at the BARE bound var (paper `PiTyNf`;
+  our `rty_Pi` is already correct — do NOT change it).  Closing it needs a
+  reify-ty IH at the BARE bound var ⇒ needs **reflect-to-bare** (Theorem 11's
+  Reflect proper: `Γ ⊢ a ∼ne b : A → Γ ⊩ a ≡ b`, neutrals reducible AS
+  THEMSELVES).  `RR_gen` currently only reflects neutrals to their ETA-LONG
+  values (`refl_Pi`), NOT as bare members.
+
+**PLAN for R1 (a coordinated RR_gen extension, ~the Reflect half of Thm 11):**
+1. Add a 4th component to `RRCar`: reflect-to-bare
+   `forall n m, NeConv Ge A n m -> P (vNe n) (vNe m)`.
+2. Reformulate RRCar's reify-ty (3rd) component to read-back:
+   `forall nA nB, <ReifyTy-readback A nA> -> <readback B nB> -> conv_nf_ty nA nB`.
+3. Re-prove `RR_gen` all cases incl. the 4th component:
+   - base/neutral (LRnat/empty/ne): bare neutral directly a member (RedNeutralEq).
+   - universe (LRU0/1): codes.
+   - Pi (`RR_pi_case`): reflect-to-bare via the GATELESS app clause + posIH's
+     reflect-to-bare at the codomain on `nApp`; typing the right member at the
+     right Pi uses the SAME node's reify-ty (R1, proven first via domIH's 4th
+     component giving the bare DOMAIN var + posIH reify-ty at it).  Circularity
+     breaks because domIH/posIH are proper IHs (smaller types).
+4. R1 (`Hcod`) then = domIH 4th comp (bare domain var, `snoc_wkn_hd_list` ⇒
+   posTy=BA/BB) + posIH read-back reify-ty.  Drop the `Hcod` Context.
+5. Watch: the typing rule `n_conv`'s conversion side — confirm it composes with
+   the read-back conv (it uses `conv_nf` on the type; the reflected-member typing
+   bridge in `eta_bodies` already does this).
+R3 (`RR_app2`) likely also yields once reflect-to-bare exists.
+
 ## UPDATE 2026-06-06f — R2 (reify-tm at Pi) DISCHARGED, axiom-free; R1 analysis
 
 **R2 DONE (committed+pushed, `LogRel2Reflect.v` green + `Closed under the global
