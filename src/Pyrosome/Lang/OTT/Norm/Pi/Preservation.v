@@ -651,6 +651,10 @@ Proof.
       rewrite wk_ctx_under_binder in IH. cbn [shift_ty] in IH. exact IH.
   - (* cte_ne *) intros Ge n n' r l _ IH c T0 Hc. cbn [shift_val].
     eapply cte_ne. pose proof (IH c T0 Hc) as IH'. cbn [shift_ty] in IH'. exact IH'.
+  - (* cte_refl *) intros Ge A c T0 Hc. apply cte_refl.
+  - (* cte_sym *) intros Ge A B _ IH c T0 Hc. apply cte_sym. exact (IH c T0 Hc).
+  - (* cte_trans *) intros Ge A B C _ IH1 _ IH2 c T0 Hc.
+    eapply cte_trans; [ exact (IH1 c T0 Hc) | exact (IH2 c T0 Hc) ].
   - (* ctm_ne_nat *) intros Ge n n' _ IH c T0 Hc. cbn [shift_val shift_ty].
     apply ctm_ne_nat. pose proof (IH c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
   - (* ctm_ne_empty *) intros Ge n n' _ IH c T0 Hc. cbn [shift_val shift_ty].
@@ -700,6 +704,12 @@ Proof.
     pose proof (IH (S c) (shift_ty 0 1 T0)
                   ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH'.
     rewrite wk_ctx_under_binder in IH'. cbn [shift_ty] in IH'. exact IH'.
+  - (* ctm_refl *) intros Ge T a c T0 Hc. apply ctm_refl.
+  - (* ctm_sym *) intros Ge T a b _ IH c T0 Hc. apply ctm_sym. exact (IH c T0 Hc).
+  - (* ctm_trans *) intros Ge T a b cc _ IH1 _ IH2 c T0 Hc.
+    eapply ctm_trans; [ exact (IH1 c T0 Hc) | exact (IH2 c T0 Hc) ].
+  - (* ctm_conv *) intros Ge A B a b _ IHtm _ IHty c T0 Hc. cbn [shift_ty] in *.
+    eapply ctm_conv; [ exact (IHtm c T0 Hc) | exact (IHty c T0 Hc) ].
   - (* cne_eta_var *) intros Ge k T He c T0 Hc. cbn -[Nat.ltb shift_ty].
     destruct (Nat.ltb k c) eqn:E; cbn -[Nat.ltb shift_ty].
     + apply ltb_true in E. apply cne_eta_var.
@@ -735,6 +745,10 @@ Proof.
     + pose proof (IHa c T0 Hc) as IH'. cbn [shift_ty shift_val] in IH'. exact IH'.
     + rewrite (@wk_ctx_length c T0 Ge Hc).
       exact (Apply_val_shiftc Hap (@ShiftSub_beta (length Ge) a c Hc) Hc).
+  - (* cne_refl *) intros Ge T n c T0 Hc. apply cne_refl.
+  - (* cne_sym *) intros Ge T n m _ IH c T0 Hc. apply cne_sym. exact (IH c T0 Hc).
+  - (* cne_trans *) intros Ge T n m p _ IH1 _ IH2 c T0 Hc.
+    eapply cne_trans; [ exact (IH1 c T0 Hc) | exact (IH2 c T0 Hc) ].
 Qed.
 
 Definition conv_ty_eta_shift : forall Ge A B, conv_ty_eta Ge A B ->

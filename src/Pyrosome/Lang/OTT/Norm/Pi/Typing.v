@@ -80,6 +80,14 @@ Section Typing.
   | cte_ne    : forall Ge n n' r l,
       conv_ne_eta Ge (dU r l) n n' ->
       conv_ty_eta Ge (vNe n) (vNe n')
+  (* equivalence closure (paper ConvTyRefl/Sym/Trans -- makes [conv_ty_eta] a
+     genuine equivalence so it can serve as the PER the LR neutral relation
+     carries; symmetry is a CONSTRUCTOR, dissolving the asymmetry [cne_eta_app]'s
+     pinned [Bres] would otherwise cause). *)
+  | cte_refl  : forall Ge A, conv_ty_eta Ge A A
+  | cte_sym   : forall Ge A B, conv_ty_eta Ge B A -> conv_ty_eta Ge A B
+  | cte_trans : forall Ge A B C,
+      conv_ty_eta Ge A B -> conv_ty_eta Ge B C -> conv_ty_eta Ge A C
   (* type-DIRECTED value conversion (paper ConvTm): structural at base/code,
      ETA-expanding at relevant Pi (the rule that makes it eta-closed). *)
   with conv_tm_eta : senv -> svalty -> sval -> sval -> Prop :=
@@ -117,6 +125,15 @@ Section Typing.
   | ctm_lamI   : forall Ge F B b b',
       conv_tm_eta (ext F Ge) (dEl B) b b' ->
       conv_tm_eta Ge (dEl (vPiI F B)) (vLamI b) (vLamI b')
+  (* equivalence closure + type conversion (paper ConvTmRefl/Sym/Trans +
+     ConvTmConv). *)
+  | ctm_refl  : forall Ge T a, conv_tm_eta Ge T a a
+  | ctm_sym   : forall Ge T a b, conv_tm_eta Ge T b a -> conv_tm_eta Ge T a b
+  | ctm_trans : forall Ge T a b c,
+      conv_tm_eta Ge T a b -> conv_tm_eta Ge T b c -> conv_tm_eta Ge T a c
+  | ctm_conv  : forall Ge A B a b,
+      conv_tm_eta Ge (dEl A) a b -> conv_ty_eta Ge A B ->
+      conv_tm_eta Ge (dEl B) a b
   (* neutral conversion (paper ConvNe): args related by conv_tm_eta at the
      annotation type (this is where eta enters type codes). *)
   with conv_ne_eta : senv -> svalty -> neutral -> neutral -> Prop :=
@@ -139,7 +156,13 @@ Section Typing.
       conv_ty_eta (ext F Ge) B B' ->
       conv_tm_eta Ge (dEl F) a a' ->
       Apply_val (length Ge) (a :: id_list (length Ge)) B Bres ->
-      conv_ne_eta Ge (dEl Bres) (nAppI f F B a) (nAppI f' F' B' a').
+      conv_ne_eta Ge (dEl Bres) (nAppI f F B a) (nAppI f' F' B' a')
+  (* equivalence closure (paper proves NeConvSym/Trans as LEMMAS via the free
+     result type; we take them as CONSTRUCTORS, sidestepping the pinned [Bres]). *)
+  | cne_refl  : forall Ge T n, conv_ne_eta Ge T n n
+  | cne_sym   : forall Ge T n m, conv_ne_eta Ge T m n -> conv_ne_eta Ge T n m
+  | cne_trans : forall Ge T n m p,
+      conv_ne_eta Ge T n m -> conv_ne_eta Ge T m p -> conv_ne_eta Ge T n p.
   Set Elimination Schemes.
 
   (* ===== Typing judgments ===== *)
@@ -294,158 +317,102 @@ Definition conv_ne_ne_below : forall n p, conv_ne n p ->
     forall m, ne_below_ne m n -> ne_below_ne m p := snd conv_ne_below.
 
 (* ===================================================================== *)
-(* Eta-closed conversion preserves scopedness ([ne_below]) -- forward and  *)
-(* backward.  Consumed by the [n_conv] cases of [typing_ne_below] and       *)
-(* [ren_typing] (RenTyping.v).  Every constructor recurses structurally     *)
-(* off the corresponding member except [ctm_eta], whose result scopedness   *)
-(* is its own side-condition.  (Migrated from WIP/ConvEtaProto.v.)          *)
+(* Eta-closed conversion preserves scopedness ([ne_below]), BIDIRECTIONALLY *)
+(* (an iff).  The bidirection is forced by the [cte_sym]/[ctm_sym]/[cne_sym] *)
+(* constructors: the forward [sym] case needs the backward IH and vice-versa.*)
+(* Consumed by the [n_conv] cases of [typing_ne_below] (fwd) and [ren_typing]*)
+(* (bwd).  (Keystone validated in WIP/ConvEtaPaper.v.)                       *)
 (* ===================================================================== *)
-Lemma conv_eta_ne_below :
+Lemma conv_eta_ne_below_iff :
   (forall Ge A B, conv_ty_eta Ge A B ->
-     ne_below_val (length Ge) A -> ne_below_val (length Ge) B)
+     (ne_below_val (length Ge) A <-> ne_below_val (length Ge) B))
   /\ (forall Ge T a b, conv_tm_eta Ge T a b ->
-     ne_below_ty (length Ge) T -> ne_below_val (length Ge) a ->
-     ne_below_val (length Ge) b)
+     ne_below_ty (length Ge) T ->
+     (ne_below_val (length Ge) a <-> ne_below_val (length Ge) b))
   /\ (forall Ge T n m, conv_ne_eta Ge T n m ->
-     ne_below_ty (length Ge) T -> ne_below_ne (length Ge) n ->
-     ne_below_ne (length Ge) m).
+     ne_below_ty (length Ge) T ->
+     (ne_below_ne (length Ge) n <-> ne_below_ne (length Ge) m)).
 Proof.
   apply conv_eta_mutind.
-  - (* cte_nat *) intros Ge HA. exact HA.
-  - (* cte_empty *) intros Ge HA. exact HA.
-  - (* cte_pi *) intros Ge F F' B B' _ IHF _ IHB HA.
-    cbn [ne_below_val] in HA |- *. destruct HA as [HF HB].
-    split.
-    + apply IHF; exact HF.
-    + pose proof (IHB) as IHB'.
-      cbn [length] in IHB'; rewrite length_map in IHB'.
-      apply IHB'. exact HB.
-  - (* cte_piI *) intros Ge F F' B B' _ IHF _ IHB HA.
-    cbn [ne_below_val] in HA |- *. destruct HA as [HF HB].
-    split.
-    + apply IHF; exact HF.
-    + pose proof (IHB) as IHB'.
-      cbn [length] in IHB'; rewrite length_map in IHB'.
-      apply IHB'. exact HB.
-  - (* cte_ne *) intros Ge n n' r l _ IH HA.
-    cbn [ne_below_val] in HA |- *.
-    apply (IH I HA).
-  - (* ctm_ne_nat *) intros Ge n n' _ IH HT Ha.
-    cbn [ne_below_val ne_below_ty] in *. apply (IH I Ha).
-  - (* ctm_ne_empty *) intros Ge n n' _ IH HT Ha.
-    cbn [ne_below_val ne_below_ty] in *. apply (IH I Ha).
-  - (* ctm_ne_el *) intros Ge c n n' _ IH HT Ha.
-    cbn [ne_below_val ne_below_ty] in *. apply (IH HT Ha).
-  - (* ctm_zero *) intros Ge HT Ha. exact Ha.
-  - (* ctm_suc *) intros Ge v v' _ IH HT Ha.
-    cbn [ne_below_val ne_below_ty] in *. apply (IH I Ha).
-  - (* ctm_code *) intros Ge r l c c' _ IH HT Ha.
-    cbn [ne_below_ty] in *. apply IH; exact Ha.
-  - (* ctm_eta -- result scopedness is the side-condition [nbg]. *)
-    intros Ge F B f g ARG B' fa ga _nbF _nbf nbg _ _ _ _ _ _ HT Hf.
-    exact nbg.
-  - (* ctm_piI_ne *) intros Ge F B n n' _ IH HT Ha.
-    cbn [ne_below_val ne_below_ty] in *. apply (IH HT Ha).
-  - (* ctm_lamI *) intros Ge F B b b' _ IH HT Ha.
-    cbn [ne_below_val ne_below_ty] in *.
-    pose proof (IH) as IH'. cbn [length] in IH'; rewrite length_map in IH'.
-    apply IH'; [ exact (proj2 HT) | exact Ha ].
-  - (* cne_eta_var *) intros Ge k T He HT Hn. exact Hn.
-  - (* cne_eta_emptyrec *) intros Ge rA lA A A' s s' _ IHA _ IHs HT Hn.
-    cbn [ne_below_ne ne_below_ty] in *. destruct Hn as [HA Hs].
-    split; [ apply (IHA HA) | apply (IHs I Hs) ].
-  - (* cne_eta_app *)
-    intros Ge f f' F F' B B' a a' Bres _ IHf _ IHF _ IHB _ IHa Hap HT Hn.
-    cbn [ne_below_ne] in Hn |- *. destruct Hn as (Hnf & HnF & HnB & Hna).
-    repeat split.
-    + apply IHf; [ cbn [ne_below_ty ne_below_val]; split; [ exact HnF | exact HnB ] | exact Hnf ].
-    + apply (IHF HnF).
-    + pose proof (IHB) as IHB'. cbn [length] in IHB'; rewrite length_map in IHB'.
-      apply IHB'. exact HnB.
-    + apply IHa; [ cbn [ne_below_ty]; exact HnF | exact Hna ].
+  (* ---- conv_ty_eta ---- *)
+  - (* cte_nat *) intros Ge. reflexivity.
+  - (* cte_empty *) intros Ge. reflexivity.
+  - (* cte_pi *) intros Ge F F' B B' _ IHF _ IHB.
+    cbn [length] in IHB; rewrite length_map in IHB.
+    cbn [ne_below_val]. rewrite IHF, IHB. reflexivity.
+  - (* cte_piI *) intros Ge F F' B B' _ IHF _ IHB.
+    cbn [length] in IHB; rewrite length_map in IHB.
+    cbn [ne_below_val]. rewrite IHF, IHB. reflexivity.
+  - (* cte_ne *) intros Ge n n' r l _ IH. cbn [ne_below_val]. apply (IH I).
+  - (* cte_refl *) intros Ge A. reflexivity.
+  - (* cte_sym *) intros Ge A B _ IH. symmetry. exact IH.
+  - (* cte_trans *) intros Ge A B C _ IH1 _ IH2. rewrite IH1. exact IH2.
+  (* ---- conv_tm_eta ---- *)
+  - (* ctm_ne_nat *) intros Ge n n' _ IH HT. cbn [ne_below_val]. apply (IH I).
+  - (* ctm_ne_empty *) intros Ge n n' _ IH HT. cbn [ne_below_val]. apply (IH I).
+  - (* ctm_ne_el *) intros Ge c n n' _ IH HT. cbn [ne_below_val]. apply (IH HT).
+  - (* ctm_zero *) intros Ge HT. reflexivity.
+  - (* ctm_suc *) intros Ge v v' _ IH HT. cbn [ne_below_val]. apply (IH I).
+  - (* ctm_code *) intros Ge r l c c' _ IH HT. apply IH.
+  - (* ctm_eta -- both members scoped by side-conditions nbf, nbg. *)
+    intros Ge F B f g ARG B' fa ga _ nbf nbg _ _ _ _ _ IH HT.
+    split; intros _; assumption.
+  - (* ctm_piI_ne *) intros Ge F B n n' _ IH HT. cbn [ne_below_val]. apply (IH HT).
+  - (* ctm_lamI *) intros Ge F B b b' _ IH HT. cbn [ne_below_val ne_below_ty] in *.
+    cbn [length] in IH; rewrite length_map in IH. apply IH. exact (proj2 HT).
+  - (* ctm_refl *) intros Ge T a HT. reflexivity.
+  - (* ctm_sym *) intros Ge T a b _ IH HT. symmetry. apply (IH HT).
+  - (* ctm_trans *) intros Ge T a b c _ IH1 _ IH2 HT. rewrite (IH1 HT). apply (IH2 HT).
+  - (* ctm_conv -- index dEl A -> dEl B; recover ne_below A via the cty iff. *)
+    intros Ge A B a b _ IHtm _ IHty HT. cbn [ne_below_ty] in HT.
+    apply IHtm. cbn [ne_below_ty]. apply IHty. exact HT.
+  (* ---- conv_ne_eta ---- *)
+  - (* cne_eta_var *) intros Ge k T He HT. reflexivity.
+  - (* cne_eta_emptyrec *) intros Ge rA lA A A' s s' _ IHA _ IHs HT.
+    cbn [ne_below_ne]. rewrite (IHs I).
+    assert (HiffA : ne_below_val (length Ge) A <-> ne_below_val (length Ge) A') by apply IHA.
+    rewrite HiffA. reflexivity.
+  - (* cne_eta_app -- per-direction; the arg-type gate [ne_below F] comes from
+       the INPUT side's [nApp] components (carried across via [IHF]). *)
+    intros Ge f f' F F' B B' a a' Bres _ IHf _ IHF _ IHB _ IHa Hap HT.
+    cbn [length] in IHB; rewrite length_map in IHB. cbn [ne_below_ne]. split.
+    + intros (Hf & HF & HB & Ha). repeat split.
+      * apply (proj1 (IHf ltac:(cbn [ne_below_ty ne_below_val]; split; [exact HF|exact HB]))); exact Hf.
+      * apply (proj1 IHF); exact HF.
+      * apply (proj1 IHB); exact HB.
+      * apply (proj1 (IHa ltac:(cbn [ne_below_ty]; exact HF))); exact Ha.
+    + intros (Hf' & HF' & HB' & Ha').
+      assert (HF : ne_below_val (length Ge) F) by (apply (proj2 IHF); exact HF').
+      assert (HB : ne_below_val (S (length Ge)) B) by (apply (proj2 IHB); exact HB').
+      repeat split.
+      * apply (proj2 (IHf ltac:(cbn [ne_below_ty ne_below_val]; split; [exact HF|exact HB]))); exact Hf'.
+      * exact HF.
+      * exact HB.
+      * apply (proj2 (IHa ltac:(cbn [ne_below_ty]; exact HF))); exact Ha'.
   - (* cne_eta_appI *)
-    intros Ge f f' F F' B B' a a' Bres _ IHf _ IHF _ IHB _ IHa Hap HT Hn.
-    cbn [ne_below_ne] in Hn |- *. destruct Hn as (Hnf & HnF & HnB & Hna).
-    repeat split.
-    + apply IHf; [ cbn [ne_below_ty ne_below_val]; split; [ exact HnF | exact HnB ] | exact Hnf ].
-    + apply (IHF HnF).
-    + pose proof (IHB) as IHB'. cbn [length] in IHB'; rewrite length_map in IHB'.
-      apply IHB'. exact HnB.
-    + apply IHa; [ cbn [ne_below_ty]; exact HnF | exact Hna ].
+    intros Ge f f' F F' B B' a a' Bres _ IHf _ IHF _ IHB _ IHa Hap HT.
+    cbn [length] in IHB; rewrite length_map in IHB. cbn [ne_below_ne]. split.
+    + intros (Hf & HF & HB & Ha). repeat split.
+      * apply (proj1 (IHf ltac:(cbn [ne_below_ty ne_below_val]; split; [exact HF|exact HB]))); exact Hf.
+      * apply (proj1 IHF); exact HF.
+      * apply (proj1 IHB); exact HB.
+      * apply (proj1 (IHa ltac:(cbn [ne_below_ty]; exact HF))); exact Ha.
+    + intros (Hf' & HF' & HB' & Ha').
+      assert (HF : ne_below_val (length Ge) F) by (apply (proj2 IHF); exact HF').
+      assert (HB : ne_below_val (S (length Ge)) B) by (apply (proj2 IHB); exact HB').
+      repeat split.
+      * apply (proj2 (IHf ltac:(cbn [ne_below_ty ne_below_val]; split; [exact HF|exact HB]))); exact Hf'.
+      * exact HF.
+      * exact HB.
+      * apply (proj2 (IHa ltac:(cbn [ne_below_ty]; exact HF))); exact Ha'.
+  - (* cne_refl *) intros Ge T n HT. reflexivity.
+  - (* cne_sym *) intros Ge T n m _ IH HT. symmetry. apply (IH HT).
+  - (* cne_trans *) intros Ge T n m p _ IH1 _ IH2 HT. rewrite (IH1 HT). apply (IH2 HT).
 Qed.
 
 Definition conv_ty_eta_ne_below : forall Ge A B, conv_ty_eta Ge A B ->
     ne_below_val (length Ge) A -> ne_below_val (length Ge) B :=
-  proj1 conv_eta_ne_below.
-
-Lemma conv_eta_ne_below_rev :
-  (forall Ge A B, conv_ty_eta Ge A B ->
-     ne_below_val (length Ge) B -> ne_below_val (length Ge) A)
-  /\ (forall Ge T a b, conv_tm_eta Ge T a b ->
-     ne_below_ty (length Ge) T -> ne_below_val (length Ge) b ->
-     ne_below_val (length Ge) a)
-  /\ (forall Ge T n m, conv_ne_eta Ge T n m ->
-     ne_below_ty (length Ge) T -> ne_below_ne (length Ge) m ->
-     ne_below_ne (length Ge) n).
-Proof.
-  apply conv_eta_mutind.
-  - (* cte_nat *) intros Ge HB. exact HB.
-  - (* cte_empty *) intros Ge HB. exact HB.
-  - (* cte_pi *) intros Ge F F' B B' _ IHF _ IHB HB0.
-    cbn [ne_below_val] in HB0 |- *. destruct HB0 as [HF HB].
-    split.
-    + apply IHF; exact HF.
-    + cbn [length] in IHB; rewrite length_map in IHB. apply IHB. exact HB.
-  - (* cte_piI *) intros Ge F F' B B' _ IHF _ IHB HB0.
-    cbn [ne_below_val] in HB0 |- *. destruct HB0 as [HF HB].
-    split.
-    + apply IHF; exact HF.
-    + cbn [length] in IHB; rewrite length_map in IHB. apply IHB. exact HB.
-  - (* cte_ne *) intros Ge n n' r l _ IH HB0.
-    cbn [ne_below_val] in HB0 |- *. apply (IH I HB0).
-  - (* ctm_ne_nat *) intros Ge n n' _ IH HT Hb. cbn [ne_below_val ne_below_ty] in *. apply (IH I Hb).
-  - (* ctm_ne_empty *) intros Ge n n' _ IH HT Hb. cbn [ne_below_val ne_below_ty] in *. apply (IH I Hb).
-  - (* ctm_ne_el *) intros Ge cc n n' _ IH HT Hb. cbn [ne_below_val ne_below_ty] in *. apply (IH HT Hb).
-  - (* ctm_zero *) intros Ge HT Hb. exact Hb.
-  - (* ctm_suc *) intros Ge v v' _ IH HT Hb. cbn [ne_below_val ne_below_ty] in *. apply (IH I Hb).
-  - (* ctm_code *) intros Ge r l cc cc' _ IH HT Hb. cbn [ne_below_ty] in *. apply IH; exact Hb.
-  - (* ctm_eta -- left scopedness is the side-condition [nbf]. *)
-    intros Ge F B f g ARG B' fa ga nbF nbf _nbg _ _ _ _ _ _ HT Hg. exact nbf.
-  - (* ctm_piI_ne *) intros Ge F B n n' _ IH HT Hb. cbn [ne_below_val ne_below_ty] in *. apply (IH HT Hb).
-  - (* ctm_lamI *) intros Ge F B b b' _ IH HT Hb. cbn [ne_below_val ne_below_ty] in *.
-    cbn [length] in IH; rewrite length_map in IH. apply IH; [ exact (proj2 HT) | exact Hb ].
-  - (* cne_eta_var *) intros Ge k T He HT Hm. exact Hm.
-  - (* cne_eta_emptyrec *) intros Ge rA lA A A' s s' _ IHA _ IHs HT Hm.
-    cbn [ne_below_ne ne_below_ty] in *. destruct Hm as [HA Hs].
-    split; [ apply (IHA HA) | apply (IHs I Hs) ].
-  - (* cne_eta_app *)
-    intros Ge f f' F F' B B' a a' Bres _ IHf _ IHF _ IHB _ IHa Hap HT Hm.
-    cbn [ne_below_ne] in Hm |- *. destruct Hm as (Hnf' & HnF' & HnB' & Hna').
-    assert (HnF : ne_below_val (length Ge) F) by (apply (IHF HnF')).
-    assert (HnB : ne_below_val (S (length Ge)) B).
-    { cbn [length] in IHB; rewrite length_map in IHB. apply IHB. exact HnB'. }
-    assert (Hna : ne_below_val (length Ge) a)
-      by (apply IHa; [ cbn [ne_below_ty]; exact HnF | exact Hna' ]).
-    repeat split.
-    + apply IHf; [ cbn [ne_below_ty ne_below_val]; split; [ exact HnF | exact HnB ] | exact Hnf' ].
-    + exact HnF.
-    + exact HnB.
-    + exact Hna.
-  - (* cne_eta_appI *)
-    intros Ge f f' F F' B B' a a' Bres _ IHf _ IHF _ IHB _ IHa Hap HT Hm.
-    cbn [ne_below_ne] in Hm |- *. destruct Hm as (Hnf' & HnF' & HnB' & Hna').
-    assert (HnF : ne_below_val (length Ge) F) by (apply (IHF HnF')).
-    assert (HnB : ne_below_val (S (length Ge)) B).
-    { cbn [length] in IHB; rewrite length_map in IHB. apply IHB. exact HnB'. }
-    assert (Hna : ne_below_val (length Ge) a)
-      by (apply IHa; [ cbn [ne_below_ty]; exact HnF | exact Hna' ]).
-    repeat split.
-    + apply IHf; [ cbn [ne_below_ty ne_below_val]; split; [ exact HnF | exact HnB ] | exact Hnf' ].
-    + exact HnF.
-    + exact HnB.
-    + exact Hna.
-Qed.
-
+  fun Ge A B H => proj1 (proj1 conv_eta_ne_below_iff Ge A B H).
 Definition conv_ty_eta_ne_below_rev : forall Ge A B, conv_ty_eta Ge A B ->
     ne_below_val (length Ge) B -> ne_below_val (length Ge) A :=
-  proj1 conv_eta_ne_below_rev.
+  fun Ge A B H => proj2 (proj1 conv_eta_ne_below_iff Ge A B H).
