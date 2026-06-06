@@ -162,7 +162,13 @@ Section Typing.
   | cne_refl  : forall Ge T n, conv_ne_eta Ge T n n
   | cne_sym   : forall Ge T n m, conv_ne_eta Ge T m n -> conv_ne_eta Ge T n m
   | cne_trans : forall Ge T n m p,
-      conv_ne_eta Ge T n m -> conv_ne_eta Ge T m p -> conv_ne_eta Ge T n p.
+      conv_ne_eta Ge T n m -> conv_ne_eta Ge T m p -> conv_ne_eta Ge T n p
+  (* neutral type-conversion (paper NeConvChChk): retype a neutral conversion
+     across a convertible El-type.  Needed to move the carried conv_ne_eta when a
+     neutral is retyped via [n_conv] (e.g. LogRel2Sym's LRne symmetry). *)
+  | cne_conv  : forall Ge A B n m,
+      conv_ne_eta Ge (dEl A) n m -> conv_ty_eta Ge A B ->
+      conv_ne_eta Ge (dEl B) n m.
   Set Elimination Schemes.
 
   (* ===== Typing judgments ===== *)
@@ -408,6 +414,9 @@ Proof.
   - (* cne_refl *) intros Ge T n HT. reflexivity.
   - (* cne_sym *) intros Ge T n m _ IH HT. symmetry. apply (IH HT).
   - (* cne_trans *) intros Ge T n m p _ IH1 _ IH2 HT. rewrite (IH1 HT). apply (IH2 HT).
+  - (* cne_conv -- index dEl A -> dEl B; recover ne_below A via the cty iff. *)
+    intros Ge A B n m _ IHne _ IHty HT. cbn [ne_below_ty] in HT.
+    apply IHne. cbn [ne_below_ty]. apply IHty. exact HT.
 Qed.
 
 Definition conv_ty_eta_ne_below : forall Ge A B, conv_ty_eta Ge A B ->

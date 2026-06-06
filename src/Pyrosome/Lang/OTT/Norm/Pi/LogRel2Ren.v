@@ -43,7 +43,8 @@ Proof.
   unfold NeConv. repeat split.
   - exact (snd ren_typing Ge n T wn HtyT Hctx Ge' rho Hren Hok).
   - exact (snd ren_typing Ge m T wm HtyT Hctx Ge' rho Hren Hok).
-  - exact (snd conv_ren n m cnm rho).
+  - exact (conv_ne_eta_ren cnm HtyT (proj1 (wf_neutral_ne_below wn Hctx))
+             Hctx Hren Hok).
 Qed.
 
 (* The PER of convertible naturals renames (it lives at [dEl vNat], whose

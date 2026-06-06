@@ -76,7 +76,7 @@ Proof.
     match goal with c : NeConv _ (dU _ _) _ _ |- _ => rename c into cnm end.
     destruct Pab as [p q [[wp wq] _]]; split.
     + apply t_ne; exact wp.
-    + apply t_ne. eapply n_conv; [ exact wq | apply cnf_ne; exact (snd cnm) ].
+    + apply t_ne. eapply n_conv; [ exact wq | eapply cte_ne; exact (snd cnm) ].
   - (* LRpiI *)   destruct Pab as [Hf Hg]; split; assumption.
   - (* LRpi *)    destruct Pab as [[Hf Hg] _]; split; assumption.
   - (* LRU0 *)    destruct Pab as [[Hc Hd] _]; split; assumption.
@@ -88,13 +88,13 @@ Qed.
 (* ===================================================================== *)
 
 Lemma NeConv_sym : forall Ge T n m, NeConv Ge T n m -> NeConv Ge T m n.
-Proof. intros Ge T n m [[wn wm] e]; repeat split; [exact wm | exact wn | exact (conv_ne_sym e)]. Qed.
+Proof. intros Ge T n m [[wn wm] e]; repeat split; [exact wm | exact wn | exact (cne_sym e)]. Qed.
 
 Lemma NeConv_trans : forall Ge T n m p,
     NeConv Ge T n m -> NeConv Ge T m p -> NeConv Ge T n p.
 Proof.
   intros Ge T n m p [[wn wm] e1] [[wm' wp] e2];
-    repeat split; [exact wn | exact wp | exact (conv_ne_trans e1 e2)].
+    repeat split; [exact wn | exact wp | exact (cne_trans e1 e2)].
 Qed.
 
 Lemma RedNatEq_sym : forall Ge a b, RedNatEq Ge a b -> RedNatEq Ge b a.
