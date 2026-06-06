@@ -110,32 +110,54 @@ clash; `RR0` dodges via `rec0 = LRbot`).  So discharging `RR_pi_at` as a genuine
 axiom-free POLY LEMMA is BOTH the math crux AND the universe-unblocker for the
 whole tower — no separate refactor.
 
-## Next move — DISCHARGE `RR_pi_at` (the relevant-Pi eta MUTUAL KNOT)
+## DONE THIS SESSION (2026-06-06b) — plumbing + CRUX BLOCKER verified
 
-This is THE crux.  `RR_pi_at lvl rec0 rec1` (see `LogRel2Reflect.v`) must be
-proven axiom-free + universe-POLY (so the tower closes).  Decompose like the
-single-sided dev (`reflect_pi_step → _app → _beta`).  Pieces:
-- **REIFY-ty**: `conv_nf FA FB` from `domIH` at the IDENTITY sub
-  (`Preservation.wf_ssub_id` + `ApplyLemmas.Apply_val_id`), `conv_nf BA BB` from
-  `posIH` at the fresh-var/up-identity instance (`ApplyLemmas.up_id_list`,
-  `snoc_wkn_hd_list`).
-- **REFLECT (eta-expand)**: ports `WIP/OTT_LogRel_single_sided/LogRelFund.v`
-  `reflect_pi_step_from_app` (`wf_ssub_wkn`/`Apply_val_wkn`/`Apply_reflect_cod`/
-  `refl_Pi`/`t_lam_eta`), now TWO-SIDED: build `vLam body_n`/`vLam body_m` via the
-  domain/codomain IHs (both REFLECT and REIFY directions of `RRCar`), `conv_ren`+
-  `Reflect_ren` for transport.  Genuine open core = the app-clause beta-reduct
-  reducibility, closed by relating the two `posIH` reflections DIRECTLY via the
-  two-sided PER + `conv_ne` (NOT `Reflect_det`).
-- **REIFY-tm**: case on members; `cnf_lam` (vLam-vLam, apply-to-var + `posIH`
-  reify); mixed `vNe`/`vLam` self-refute via the codomain reify (incompatible
-  base values).
+1. **PLUMBING DONE & green (committed+pushed).** `RRCar` now threads `wf_senv Ge`
+   (the leading `wf_senv Ge ->`, mirroring single-sided `reflect_motive`); only
+   the relevant-Pi case consumes it.  `RR_gen` re-greened (`intros Hwf` per case;
+   the universe REIFY-tm feeds `Hwf` to the lower-tower delegate `HR0`/`HR1`).
+   `RR_pi_at`/`RR_piI_at` stay abstract; file green + axiom-free.
+2. **CRUX BLOCKER FOUND & VERIFIED — the `has_svalty` typing-conversion wall.**
+   `RR_pi_at`'s REFLECT/REIFY both need to reflect the eta bound variable `nVar 0`
+   into the DOMAIN pack at `dEl FA' ≡ dEl FB'` via `domIH`'s REFLECT, whose
+   premise `NeConv Delta (dEl FA')(dEl FB')(nVar 0)(nVar 0)` requires `nVar 0`
+   typed at BOTH `dEl FA'` AND `dEl FB'`.  `wf_neutral _ (nVar 0) T` is ONLY
+   provable by `n_var`, which pins `nth_error Delta 0 = Some T` — so impossible
+   unless `FA' = FB'` SYNTACTICALLY, while off-diagonal (`conv_nf`-related but
+   unequal) is the whole point of two-sided.  No conversion rule on
+   `has_svalty`/`wf_neutral` (verified via `Print`).  Single-sided dodged it (one
+   domain).  PROVABLE leaf confirmed in dev: `conv_nf FA FB` (domain-codes reify)
+   from `domIH` at the identity sub.  Full detail + the airtight argument in
+   `ConvRelPlan.md` STATUS ("CRUX BLOCKER FOUND & VERIFIED").
 
-**PLUMBING NEEDED FIRST:** `RR_pi_at`'s proof needs `wf_senv Ge` (for
-`wf_ssub_id`/`wf_ssub_wkn`), which `RRCar`/`RR_gen` currently do NOT thread.
-Decide: add `wf_senv Ge` premise to `RRCar` (thread through `RR_gen`, all cases
-re-greened — base cases ignore it) — mirrors single-sided `reflect_red`'s `wfG`.
-Then prove `RR_pi_at`; the tower (`RR1`/`RR2`) + user `reflect_red`/`reify_tm`/
-`reify_ty` close immediately (re-add them).
+## Next move — RESOLVE THE DESIGN FORK (needs Dustin), then finish `RR_pi_at`
+
+The wall is a genuine design decision (it changes the core typing judgment or the
+carrier).  Options, in `ConvRelPlan.md`:
+- **(a)** add `t_conv`/`n_conv` (typed conversion) to `has_svalty`/`wf_neutral`
+  — standard OTT; lets `nVar 0 : dEl FA'` transport to `dEl FB'` via
+  `conv_nf FA' FB'`; BIG domain-layer ripple (Apply/Determinism/Preservation/
+  Reflect/RenTyping + `LogRel2*`) and soundness vs `Norm/Model.v`+`ModelOk.v`
+  MUST be re-checked (is structural `conv_nf`-conversion of types model-valid?).
+- **(b)** weaken `RRCar`'s REFLECT premise to one-sided typing + `conv_ne`,
+  recovering the other side's typing from the relation — but escape
+  `RedTmEq_wf`'s `LRne` case needs BOTH sides (the reason the neutral base went
+  two-typed); would need a different escape route.
+- **(c)** prove `RR_pi_at` only for the DIAGONAL (`FA=FB`,`BA=BB`) and reach
+  off-diagonal via symmetry/transport — but transport+trans are deferred
+  (normalization-strength) and `RR_gen`'s `LRpi` case is GENERAL, so a diagonal
+  `RR_pi_at` does not plug into `RR_gen` as-is.
+
+Once resolved: the eta construction itself ports from single-sided
+`reflect_pi_step_from_app` (`wf_ssub_wkn`/`Apply_val_wkn`/`Apply_reflect_cod`/
+`refl_Pi`/`t_lam_eta`), TWO-SIDED (build `vLam body_n`/`vLam body_m` via the
+dom/cod IHs; `conv_ren`+`Reflect_ren` for transport; app-clause beta-reduct
+closed by relating the two `posIH` reflections via the PER + `conv_ne`).  The
+codomain reify `conv_nf BA BB` also waits on the resolution (it needs the
+reflected-var domain member to instantiate `posIH`).  Helper signatures are all
+confirmed in-scope from `ApplyLemmas`/`ApplySubst`/`RenSubst`/`RenTyping`/
+`LogRel2Ren` (note: `wf_ssub_id` has `Ge` IMPLICIT — use `@wf_ssub_id Ge Hwf`).
+Then the tower (`RR1`/`RR2`) + user `reflect_red`/`reify_tm`/`reify_ty` close.
 
 Then the fundamental lemma (Ph5) → connect to gluing `Model.v`/`ModelOk.v` ⇒
 `eq_term` decidability.  Transport (Lemma 12) + transitivity stay deferred (Ph5).
