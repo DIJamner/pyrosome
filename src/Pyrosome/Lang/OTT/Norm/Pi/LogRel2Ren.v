@@ -381,14 +381,11 @@ Section RenPackSec.
   Lemma ren_pack_fwd : forall f g,
       PiRedTmEq PA0 f g -> PiRedTmEq ren_pack (ren_val rho f) (ren_val rho g).
   Proof.
-    intros f g [[[Hf Hg] [Lf Lg]] app]. refine (((_, _), (_, _)), _).
+    intros f g [[Hf Hg] app]. refine ((_, _), _).
     - exact (fst ren_typing Ge f (dEl (vPi FA BA)) Hf
                (wf_svalty_scoped wpiA) Hctx Ge' rho Hren Hok).
     - exact (fst ren_typing Ge g (dEl (vPi FB BB)) Hg
                (wf_svalty_scoped wpiB) Hctx Ge' rho Hren Hok).
-    - (* is_lam (ren_val rho f) -- renaming preserves [vLam] head *)
-      destruct Lf as [bf ->]; cbn [ren_val]; eexists; reflexivity.
-    - destruct Lg as [bg ->]; cbn [ren_val]; eexists; reflexivity.
     - intros Delta sg2 a b FA1 FB1 BA1 BB1 fsg gsg ws2 rn2 afA2 afB2 afBA2 afBB2 afsf2 afsg2 rab2.
       assert (afBA3 : Apply_val (S (length Delta)) (up (comp_sub sg2 rho (length Ge))) BA BA1).
       { eapply Apply_val_ren_comp_sc;

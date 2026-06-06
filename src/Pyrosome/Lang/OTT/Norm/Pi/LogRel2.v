@@ -164,28 +164,20 @@ Definition posPack Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB) Delta sg a b
   snd (projT2 (projT2 (@posRed Ge FA BA FB BB PA Delta sg a b FA' FB' ws afA afB rab))).
 Arguments posPack {Ge FA BA FB BB} PA {Delta sg a b FA' FB' ws afA afB} rab.
 
-(* A relevant-function reducible VALUE is a lambda (the paper's [PiRedTm.isfun]
-   field).  This is the GATE that makes structural reify-tm at a Pi sound: an
-   UNgated [PiRedTmEq] also admits eta-SHORT bare neutrals ([vNe n : dEl(vPi..)],
-   e.g. a variable) alongside their eta-LONG [vLam] expansions -- the two are
-   reducibly related (eta), but [conv_nf (vLam _) (vNe _)] has no rule, so direct
-   structural reify-tm is impossible (machine-verified, see ConvRelPlan STATUS
-   "BLOCKER FOUND").  Gating members to lambdas restores it: bare neutrals at a
-   Pi enter the LR only via REFLECTION ([refl_Pi], which already outputs a
-   [vLam]), exactly as in normalization-by-evaluation. *)
-Definition is_lam (v : sval) : Type := { b : sval & v = vLam b }.
-
 (* The reducible-conversion relation at a Pi type pair, computed FROM the pack
-   data (a Definition, not the inductive).  [f ≡ g] iff both are typed LAMBDAS
-   (the [is_lam] gate, see above) and, under every renaming [sg] and every domain
-   conversion [a ≡ b], the applications [f a] and [g b] are reducibly convertible
-   at the codomain.  No neutral case: at negative types eta is baked in, which
-   dissolves the bare-neutral-vs-eta-long mismatch of the single-sided dev. *)
+   data (a Definition, not the inductive).  [f ≡ g] iff both are typed and, under
+   every renaming [sg] and every domain conversion [a ≡ b], the applications
+   [f a] and [g b] are reducibly convertible at the codomain.  GATELESS (paper
+   Def 10): there is NO neutral case and NO [is_lam] requirement -- because
+   functions satisfy an eta-law, the reducibility witness need not distinguish
+   neutral members from lambda members.  A bare neutral (e.g. a variable) is a
+   member via the SAME application clause as a lambda; the eta-short-vs-eta-long
+   mismatch is dissolved at reify time, where [Reify] ([rfy_Pi]) eta-expands ANY
+   member through [f @ x] before comparing. *)
 Definition PiRedTmEq (Ge : senv) (FA BA FB BB : sval) (PA : PolyRedPack Ge FA BA FB BB)
   : sval -> sval -> Type :=
   fun f g =>
     (has_svalty Ge f (dEl (vPi FA BA)) * has_svalty Ge g (dEl (vPi FB BB)) *
-     (is_lam f * is_lam g) *
      (forall Delta sg a b FA' FB' BA' BB' fsg gsg
         (ws : wf_ssub Delta sg Ge) (rn : is_ren sg)
         (afA : Apply_val (length Delta) sg FA FA')

@@ -78,7 +78,7 @@ Proof.
     + apply t_ne; exact wp.
     + apply t_ne. eapply n_conv; [ exact wq | apply cnf_ne; exact (snd cnm) ].
   - (* LRpiI *)   destruct Pab as [Hf Hg]; split; assumption.
-  - (* LRpi *)    destruct Pab as [[[Hf Hg] _] _]; split; assumption.
+  - (* LRpi *)    destruct Pab as [[Hf Hg] _]; split; assumption.
   - (* LRU0 *)    destruct Pab as [[Hc Hd] _]; split; assumption.
   - (* LRU1 *)    destruct Pab as [[Hc Hd] _]; split; assumption.
 Qed.

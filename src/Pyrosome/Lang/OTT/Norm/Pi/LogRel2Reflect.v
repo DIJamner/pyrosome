@@ -509,7 +509,7 @@ Proof.
     + apply t_ne; exact wp.
     + apply t_ne. eapply n_conv; [ exact wq | apply cnf_ne; exact (snd cnm) ].
   - destruct Pab as [Hf Hg]; split; assumption.
-  - destruct Pab as [[[Hf Hg] _] _]; split; assumption.
+  - destruct Pab as [[Hf Hg] _]; split; assumption.
   - destruct Pab as [[Hc Hd] _]; split; assumption.
   - destruct Pab as [[Hc Hd] _]; split; assumption.
 Qed.
@@ -821,7 +821,7 @@ Section RRPiDev.
   Proof.
     intros a b na nb Hab Hra Hrb.
     assert (Hctx : ne_below_ctx Ge) by (intros k T HT; exact (wf_svalty_scoped (Hwf k HT))).
-    destruct Hab as [[[Hta Htb] [[ba Ea] [bb Eb]]] Happm]. subst a b.
+    destruct Hab as [[Hta Htb] Happm].
     inversion Hra; subst.
     inversion Hrb; subst.
     apply cnf_lam.
@@ -836,13 +836,13 @@ Section RRPiDev.
       by (rewrite <- shsub_0; rewrite up_shsub; rewrite HL; apply Apply_val_shift_eq; exact (snd sc_A)).
     assert (afBB : Apply_val (S (length Dlt)) (up (wkn_list (length Ge))) BB (shift_val 1 1 BB))
       by (rewrite <- shsub_0; rewrite up_shsub; rewrite HL; apply Apply_val_shift_eq; exact (snd sc_B)).
-    assert (afsf : Apply_val (length Dlt) (wkn_list (length Ge)) (vLam ba) (shift_val 0 1 (vLam ba)))
+    assert (afsf : Apply_val (length Dlt) (wkn_list (length Ge)) a (shift_val 0 1 a))
       by (rewrite HL; apply Apply_val_wkn; exact (has_svalty_ne_below Hta Hctx)).
-    assert (afsg : Apply_val (length Dlt) (wkn_list (length Ge)) (vLam bb) (shift_val 0 1 (vLam bb)))
+    assert (afsg : Apply_val (length Dlt) (wkn_list (length Ge)) b (shift_val 0 1 b))
       by (rewrite HL; apply Apply_val_wkn; exact (has_svalty_ne_below Htb Hctx)).
     destruct (Happm Dlt (wkn_list (length Ge)) ARGn ARGm
                 (shift_val 0 1 FA) (shift_val 0 1 FB) (shift_val 1 1 BA) (shift_val 1 1 BB)
-                (shift_val 0 1 (vLam ba)) (shift_val 0 1 (vLam bb))
+                (shift_val 0 1 a) (shift_val 0 1 b)
                 ws0 (RenSubst.is_ren_wkn _) afA0 afB0 afBA afBB afsf afsg rab)
       as [v [w [[HVv HVw] rvw]]].
     rewrite HL in HVv, HVw.
@@ -902,13 +902,10 @@ Section RRPiDev.
       exists (vLam body_n), (vLam body_m). split; [ split | ].
       + exact Hrefn.
       + exact Hrefm.
-      + (* the [P]-member [PiRedTmEq PA (vLam body_n) (vLam body_m)]: the two
-           [is_lam] gates are trivial since the eta-expansion yields lambdas. *)
-        refine (((_, _), (_, _)), _).
+      + (* the [P]-member [PiRedTmEq PA (vLam body_n) (vLam body_m)] (gateless). *)
+        refine ((_, _), _).
         * exact Htyn.
         * exact Htym.
-        * eexists; reflexivity.
-        * eexists; reflexivity.
         * exact (@Happ n m ARGn ARGm body_n body_m rab Hbn Hbm rbody).
     - (* REIFY-tm *) exact reify_tm_pi.
     - (* REIFY-ty *) cbn. apply cnf_pi; [ exact dom_reify_ty | exact Hcod ].

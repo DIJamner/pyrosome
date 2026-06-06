@@ -150,8 +150,8 @@ Section SymGen.
         apply (LRpi (PA := sym_pack PA0 Xshp Xpos));
           [ exact wpiB | exact wpiA | exact (sym_adeq PA0 Xshp Xpos) ].
       + (* fwd: PiRedTmEq PA0 f g -> PiRedTmEq (sym_pack...) g f *)
-        intros f g [[[Hf Hg] [Lf Lg]] app].
-        refine ((Hg, Hf, (Lg, Lf)), _).
+        intros f g [[Hf Hg] app].
+        refine ((Hg, Hf), _).
         intros Delta sg a b FB' FA' BB' BA' gsg fsg ws rn afB afA afBB afBA afsg afsf rab.
         pose (rPA := snd (projT2 (Xshp Delta sg FA' FB' ws afA afB)) a b rab).
         destruct (app Delta sg b a FA' FB' BA' BB' fsg gsg ws rn afA afB afBA afBB afsf afsg rPA)
@@ -164,8 +164,8 @@ Section SymGen.
            ([LR_irrelevant_gen]) reconciles the two codomain relations, after
            [Apply_val_det] aligns the codomain types (same technique as
            LogRel2Irr's LRpi case: transport in the GOAL, not the hypothesis). *)
-        intros f g [[[Hf Hg] [Lf Lg]] app].
-        refine ((Hg, Hf, (Lg, Lf)), _).
+        intros f g [[Hf Hg] app].
+        refine ((Hg, Hf), _).
         intros Delta sg a b FA' FB' BA' BB' Gsg Fsg ws rn afA afB afBA afBB afsG afsF rab.
         pose (rab' := snd (fst (projT2 (Xshp Delta sg FA' FB' ws afA afB))) a b rab).
         pose (rPA0 := snd (projT2 (Xshp Delta sg FA' FB' ws afA afB)) b a rab').
