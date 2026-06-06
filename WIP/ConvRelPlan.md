@@ -89,6 +89,47 @@ domain neutrals (annotations make argument types inferable).
 codomain B); same for `nAppI`. Ripple: Apply/shift/ren/Determinism/Preservation/
 Reflect/Typing/EvalRel. Mechanical.
 
+## STATUS
+
+- **TYPING-CONVERSION WALL DISSOLVED -- paper-faithful single-typed migration
+  DONE, axiom-free, green (2026-06-06).**  Per Dustin's call ("be faithful to the
+  paper"), adopted the paper's SINGLE-TYPED neutral architecture + typed
+  conversion (`WfTmConv`), not the two-typed `n_conv`-only patch.  Landed:
+  1. **`n_conv` on `wf_neutral`** (`Typing.v`): `wf_neutral Ge n (dEl A) ->
+     conv_nf A B -> wf_neutral Ge n (dEl B)` -- the value-world `WfTmConv`/paper
+     `ConvNeChChk`.  Sound (in the gluing model `dEl A ≡ dEl B` denote the same
+     type).  `Typing.v` now imports `LogRel2Conv` for `conv_nf`.
+  2. **Domain-layer re-greened** (4 files): the `has_neutral_mutind` `n_conv`
+     case is `discriminate` for the `dU`-only lemmas (`typing_scoped`,
+     `ren_typing_dU`), and uses three new conv-stability helpers otherwise --
+     `conv_shift` (LogRel2Conv), `conv_ne_below` (Typing), `conv_ren`
+     (RenTyping; the LogRel2Ren duplicate removed).
+  3. **`NeConv`/`RedNeutralEq` now SINGLE-typed** (`LogRel2.v`): `NeConv Ge T n m`
+     (both at one type `T`); `RedNeutralEq Ge T` carries the LEFT type only;
+     `LRne`'s relation is `RedNeutralEq Ge (dEl (vNe n))` (paper's `RelAtNe Γ A`).
+  4. **Escape + symmetry re-greened** (`LogRel2Lemmas`/`Sym`/`Ren`/`Red`/`Ind`):
+     `RedTmEq_wf`'s `LRne` right member is re-typed at the node's RIGHT type via
+     `n_conv` + the `LRne` premise `conv_ne n m` (the `WfTmConv`-bridge);
+     `LR_sym_gen`'s `LRne` likewise re-types both members across the swapped
+     codes.  (`LogRel2Irr` needed no change.)
+  5. **`RRCar` REFLECT is now SINGLE-typed at the LEFT type** (`LogRel2Reflect.v`):
+     premise `NeConv Ge A n m` (was the two-typed `NeConv Ge A B n m`); all 5
+     non-Pi cases discharged axiom-free unchanged in spirit.
+  6. **CRUX SET-UP, wall demonstrated GONE: `pi_bound_var_reflects`**
+     (`LogRel2Reflect.v`, axiom-free).  The exact step the two-typed encoding
+     could NOT perform -- reflecting the eta bound variable `nVar 0` into the
+     domain pack -- now goes through: the premise is `NeConv Delta (dEl FA')
+     (nVar 0) (nVar 0)` (LEFT typing only, by `n_var`), yet the domain IH returns
+     BOTH eta reflections (`ARGn` at `dEl FA'`, `ARGm` at `dEl FB'`) + the domain
+     MEMBER -- exactly what feeds `posRed`/`posAd` in the eta-expansion.
+  RESIDUAL (unchanged, the genuine Theorem-11 core, STILL `RR_pi_at` abstract):
+  assemble `vLam ARGn`/`vLam ARGm` (`refl_Pi`/`t_lam_eta`) and discharge
+  `PiRedTmEq`'s application clause = the reflect/reify adequacy core the
+  single-sided dev reduced to and never closed (Ph5).  The WALL that blocked even
+  reaching it is gone.  Whole `LogRel2*` chain + `Glue` re-greened; verified
+  axiom-free: `RR_gen`, `pi_bound_var_reflects`, `RedTmEq_wf`, `LR_sym_gen`,
+  `LR_ren_gen`, `conv_ne_below`, `reflect_U`.
+
 ## STATUS (updated 2026-06-05)
 
 - **Ph1 DONE & VALIDATED.** `Norm/Pi/LogRel2.v` — the two-sided PER core

@@ -9,7 +9,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
-  Domain Apply ApplyLemmas Reflect EvalRel Typing.
+  Domain Apply ApplyLemmas Reflect EvalRel Typing LogRel2Conv.
 Import Core.Notations.
 
 (* ===================================================================== *)
@@ -588,7 +588,7 @@ Proof.
        has_svalty (wk_ctx c T0 Ge) (shift_val c 1 v) (shift_ty c 1 T))
     (fun Ge n T _ => forall c T0, c <= length Ge ->
        wf_neutral (wk_ctx c T0 Ge) (shift_ne c 1 n) (shift_ty c 1 T))
-    _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
   - (* t_ne *) intros Ge n T hn IHn c T0 Hc. cbn. apply t_ne. exact (IHn c T0 Hc).
   - (* t_zero *) intros Ge c T0 Hc. cbn. apply t_zero.
   - (* t_suc *) intros Ge v hv IHv c T0 Hc. cbn. apply t_suc. exact (IHv c T0 Hc).
@@ -657,6 +657,8 @@ Proof.
     + exact (IHa c T0 Hc).
     + rewrite (@wk_ctx_length c T0 Ge Hc).
       exact (Apply_val_shiftc Hap (@ShiftSub_beta (length Ge) a c Hc) Hc).
+  - (* n_conv *) intros Ge n A B w IH cAB c T0 Hc. cbn [shift_ty].
+    eapply n_conv; [ exact (IH c T0 Hc) | exact (conv_nf_shift cAB c 1) ].
 Qed.
 
 (* Front insertion (cutoff 0) : the special case used by [wf_ssub_up]. *)

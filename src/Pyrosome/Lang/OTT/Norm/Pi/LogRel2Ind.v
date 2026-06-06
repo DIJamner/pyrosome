@@ -31,7 +31,7 @@ Section LRInduction.
   Context
     (mnat   : forall Ge, M _ _ _ _ (@LRnat lvl rec0 rec1 Ge))
     (mempty : forall Ge, M _ _ _ _ (@LRempty lvl rec0 rec1 Ge))
-    (mne    : forall Ge n m r l (c : NeConv Ge (dU r l) (dU r l) n m),
+    (mne    : forall Ge n m r l (c : NeConv Ge (dU r l) n m),
                 M _ _ _ _ (@LRne lvl rec0 rec1 Ge n m r l c))
     (mpiI   : forall Ge FA BA FB BB
                 (wA : wf_svalty Ge (dEl (vPiI FA BA)))

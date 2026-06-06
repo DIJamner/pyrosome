@@ -74,25 +74,28 @@ Definition lvl_of (l : term) : TypeLevel :=
   end.
 
 (* ---------------------------------------------------------------------- *)
-(* GENUINE neutral conversion (Phase 3): both neutrals well-typed -- at     *)
-(* (possibly DISTINCT but convertible) types [T] (for [n]) and [S] (for     *)
-(* [m]) -- and structurally convertible by [conv_ne] (LogRel2Conv.v, the    *)
-(* paper's [∼annot], relating type annotations up to conversion).  The two  *)
-(* type indices are forced by escape: [has_svalty] has no conversion rule,  *)
-(* so the right member must be typed at the right type [S = dEl (vNe m)],    *)
-(* not the left [dEl (vNe n)].  At base/code types [T = S] (diagonal).      *)
-Definition NeConv (Ge : senv) (T S : svalty) (n m : neutral) : Type :=
-  (wf_neutral Ge n T * wf_neutral Ge m S * conv_ne n m)%type.
+(* GENUINE neutral conversion (Phase 3), SINGLE-TYPED (paper-faithful: the   *)
+(* paper's neutral conversion [Γ ⊢ n ~ne m ⦂ R] carries ONE result type, and *)
+(* the neutral TERM relation [RelAtNe Γ A t u] is single-typed at the LEFT   *)
+(* whnf [A]; two-sidedness is reserved for STRUCTURED types).  Both neutrals  *)
+(* are well-typed at the SAME type [T] and structurally convertible by        *)
+(* [conv_ne] (LogRel2Conv.v, the paper's [∼annot]).  The off-diagonal typing  *)
+(* the previous two-typed encoding chased (typing the right member at a        *)
+(* DISTINCT convertible type) is now recovered, where needed, by the neutral   *)
+(* typing-conversion rule [n_conv] (Typing.v; the value-world [WfTmConv]) --   *)
+(* this is what dissolves the eta-variable typing wall.                        *)
+Definition NeConv (Ge : senv) (T : svalty) (n m : neutral) : Type :=
+  (wf_neutral Ge n T * wf_neutral Ge m T * conv_ne n m)%type.
 
-(* Two-sided base relations.  [RedNatEq] is the PER of convertible naturals;
-   [RedNeutralEq] the PER of convertible neutrals at a fixed type. *)
+(* Base relations.  [RedNatEq] is the PER of convertible naturals;
+   [RedNeutralEq] the PER of convertible neutrals at a fixed (single) type. *)
 Inductive RedNatEq (Ge : senv) : sval -> sval -> Type :=
 | rne_zero : RedNatEq Ge vZero vZero
 | rne_suc  : forall v w, RedNatEq Ge v w -> RedNatEq Ge (vSuc v) (vSuc w)
-| rne_ne   : forall n m, NeConv Ge (dEl vNat) (dEl vNat) n m -> RedNatEq Ge (vNe n) (vNe m).
+| rne_ne   : forall n m, NeConv Ge (dEl vNat) n m -> RedNatEq Ge (vNe n) (vNe m).
 
-Inductive RedNeutralEq (Ge : senv) (T S : svalty) : sval -> sval -> Type :=
-| rneT : forall n m, NeConv Ge T S n m -> RedNeutralEq Ge T S (vNe n) (vNe m).
+Inductive RedNeutralEq (Ge : senv) (T : svalty) : sval -> sval -> Type :=
+| rneT : forall n m, NeConv Ge T n m -> RedNeutralEq Ge T (vNe n) (vNe m).
 
 (* The renaming gate (purely syntactic, no [LR] reference), unchanged. *)
 Definition is_ren (sg : ssub) : Type :=
@@ -214,9 +217,9 @@ Inductive LR
     (rec1 : RedRel@{i1 j1}) : RedRel@{i j} :=
 | LRnat   : forall Ge, @LR lvl rec0 rec1 Ge (dEl vNat) (dEl vNat) (RedNatEq Ge)
 | LRempty : forall Ge,
-    @LR lvl rec0 rec1 Ge (dEl vEmpty) (dEl vEmpty) (RedNeutralEq Ge (dEl vEmpty) (dEl vEmpty))
-| LRne    : forall Ge n m r l, NeConv Ge (dU r l) (dU r l) n m ->
-    @LR lvl rec0 rec1 Ge (dEl (vNe n)) (dEl (vNe m)) (RedNeutralEq Ge (dEl (vNe n)) (dEl (vNe m)))
+    @LR lvl rec0 rec1 Ge (dEl vEmpty) (dEl vEmpty) (RedNeutralEq Ge (dEl vEmpty))
+| LRne    : forall Ge n m r l, NeConv Ge (dU r l) n m ->
+    @LR lvl rec0 rec1 Ge (dEl (vNe n)) (dEl (vNe m)) (RedNeutralEq Ge (dEl (vNe n)))
 | LRpiI   : forall Ge FA BA FB BB,
     wf_svalty Ge (dEl (vPiI FA BA)) -> wf_svalty Ge (dEl (vPiI FB BB)) ->
     @LR lvl rec0 rec1 Ge (dEl (vPiI FA BA)) (dEl (vPiI FB BB))

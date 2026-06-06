@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
-From Pyrosome.Lang.OTT.Norm.Pi Require Import Domain Apply Reflect.
+From Pyrosome.Lang.OTT.Norm.Pi Require Import Domain Apply Reflect LogRel2Conv.
 Import Core.Notations.
 
 (* ===================================================================== *)
@@ -112,7 +112,17 @@ Section Typing.
         wf_neutral Ge f (dEl (vPiI F B)) ->
         has_svalty Ge a (dEl F) ->
         Apply_val (length Ge) (a :: id_list (length Ge)) B B' ->
-        wf_neutral Ge (nAppI f F B a) (dEl B').
+        wf_neutral Ge (nAppI f F B a) (dEl B')
+  (* TYPING-CONVERSION for neutrals (paper's [WfTmConv] / [ConvNeChChk], in the
+     value world): a neutral typed at [dEl A] is typed at any [dEl B] whose code
+     is convertible to [A] ([conv_nf], the structural [∼annot]).  This is the
+     mechanism that dissolves the typing-conversion wall: the eta bound variable
+     [nVar 0], typed at the LEFT domain [dEl FA'] by [n_var], transports to the
+     RIGHT domain [dEl FB'] via [conv_nf FA' FB'] (the domain reify-ty).  Sound:
+     in the gluing model [dEl A] and [dEl B] with [conv_nf A B] denote the same
+     type, so membership transports. *)
+  | n_conv  : forall Ge n A B,
+        wf_neutral Ge n (dEl A) -> conv_nf A B -> wf_neutral Ge n (dEl B).
   Set Elimination Schemes.
 
 End Typing.
@@ -124,9 +134,9 @@ Scheme has_svalty_rect := Induction for has_svalty Sort Prop
 Definition has_neutral_mutind
   (P0 : forall Ge v T, has_svalty Ge v T -> Prop)
   (P1 : forall Ge n T, wf_neutral Ge n T -> Prop) := fun
-  fne fzero fsuc fNat fEmpty fPi fPiI flam flamI flameta fvar femptyrec fapp fappI =>
-  ( @has_svalty_rect P0 P1 fne fzero fsuc fNat fEmpty fPi fPiI flam flamI flameta fvar femptyrec fapp fappI
-  , @wf_neutral_rect P0 P1 fne fzero fsuc fNat fEmpty fPi fPiI flam flamI flameta fvar femptyrec fapp fappI ).
+  fne fzero fsuc fNat fEmpty fPi fPiI flam flamI flameta fvar femptyrec fapp fappI fnconv =>
+  ( @has_svalty_rect P0 P1 fne fzero fsuc fNat fEmpty fPi fPiI flam flamI flameta fvar femptyrec fapp fappI fnconv
+  , @wf_neutral_rect P0 P1 fne fzero fsuc fNat fEmpty fPi fPiI flam flamI flameta fvar femptyrec fapp fappI fnconv ).
 
 (* Canonical forms at El Empty: only a neutral inhabits it (used by Emptyrec). *)
 Lemma canonical_empty : forall Ge v, has_svalty Ge v (dEl vEmpty) -> exists n, v = vNe n.
@@ -146,3 +156,43 @@ Qed.
 (* A neutral value's typing is a neutral typing. *)
 Lemma has_svalty_neutral : forall Ge n T, has_svalty Ge (vNe n) T -> wf_neutral Ge n T.
 Proof. intros Ge n T H. inversion H; subst. assumption. Qed.
+
+(* Structural conversion preserves scopedness ([ne_below]): convertible normal
+   forms share variable structure (the variable case [cne_var] relates [nVar k]
+   to itself), so a bound on one bounds the other.  Needed by the [n_conv] case
+   of [typing_ne_below] / [ren_typing] (RenTyping.v). *)
+Lemma conv_ne_below :
+  (forall a b, conv_nf a b -> forall m, ne_below_val m a -> ne_below_val m b)
+  * (forall n p, conv_ne n p -> forall m, ne_below_ne m n -> ne_below_ne m p).
+Proof.
+  apply (conv_mutind
+    (fun a b (_ : conv_nf a b) => forall m, ne_below_val m a -> ne_below_val m b)
+    (fun n p (_ : conv_ne n p) => forall m, ne_below_ne m n -> ne_below_ne m p)).
+  - intros n p _ IH m H. cbn [ne_below_val] in *. apply IH; exact H.
+  - intros m H. exact H.
+  - intros v w _ IH m H. cbn [ne_below_val] in *. apply IH; exact H.
+  - intros m H. exact H.
+  - intros m H. exact H.
+  - intros F B F' B' _ IHF _ IHB m H. cbn [ne_below_val] in *.
+    destruct H as [HF HB]. split; [ apply IHF; exact HF | apply IHB; exact HB ].
+  - intros F B F' B' _ IHF _ IHB m H. cbn [ne_below_val] in *.
+    destruct H as [HF HB]. split; [ apply IHF; exact HF | apply IHB; exact HB ].
+  - intros b b' _ IH m H. cbn [ne_below_val] in *. apply IH; exact H.
+  - intros b b' _ IH m H. cbn [ne_below_val] in *. apply IH; exact H.
+  - intros k m H. exact H.
+  - intros rA lA A scrut A' scrut' _ IHA _ IHs m H. cbn [ne_below_ne] in *.
+    destruct H as [HA Hs]. split; [ apply IHA; exact HA | apply IHs; exact Hs ].
+  - intros f F B a f' F' B' a' _ IHf _ IHF _ IHB _ IHa m H. cbn [ne_below_ne] in *.
+    destruct H as [Hf [HF [HB Ha]]].
+    split; [ apply IHf; exact Hf | split; [ apply IHF; exact HF
+           | split; [ apply IHB; exact HB | apply IHa; exact Ha ] ] ].
+  - intros f F B a f' F' B' a' _ IHf _ IHF _ IHB _ IHa m H. cbn [ne_below_ne] in *.
+    destruct H as [Hf [HF [HB Ha]]].
+    split; [ apply IHf; exact Hf | split; [ apply IHF; exact HF
+           | split; [ apply IHB; exact HB | apply IHa; exact Ha ] ] ].
+Qed.
+
+Definition conv_nf_ne_below : forall a b, conv_nf a b ->
+    forall m, ne_below_val m a -> ne_below_val m b := fst conv_ne_below.
+Definition conv_ne_ne_below : forall n p, conv_ne n p ->
+    forall m, ne_below_ne m n -> ne_below_ne m p := snd conv_ne_below.
