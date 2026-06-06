@@ -16,6 +16,15 @@ Notation ne_list A := (A * list A)%type.
 Definition ne_map {A B} (f : A -> B) (l : ne_list A) : ne_list B :=
   (f (fst l), map f (snd l)).
 
+(* Indexed map over a non-empty list: the head gets position 0 and the
+   tail elements get positions 1,2,.... Used for the proper semi-naive
+   (OLD/NEW/TOTAL) frontier selection, where each clause's *position* in
+   query_clause_ptrs (not its per-symbol hash-cons id) drives the choice. *)
+Definition ne_map_idx {A B} (f : nat -> A -> B) (l : ne_list A) : ne_list B :=
+  (f 0 (fst l),
+    List.map (fun p => f (fst p) (snd p))
+      (List.combine (List.seq 1 (List.length (snd l))) (snd l))).
+
 (*TODO: move*)
 #[export] Instance dlist_default : WithDefault dlist := dnil.
 
@@ -28,6 +37,10 @@ Section WithMap.
       (*TODO: just extend to Natlike?*)
       (idx_succ : idx -> idx)
       (idx_zero : WithDefault idx)
+      (* epoch order, used for the semi-naive "new" window; all instantiations
+         provide a real <= (e.g. Pos.leb).  Needs no correctness spec: the
+         soundness proofs only rely on new <= full, for any boolean split. *)
+      (idx_leb : idx -> idx -> bool)
       (*TODO: any reason to have separate from idx?*)
     (symbol : Type)
       (Eqb_symbol : Eqb symbol)
@@ -508,30 +521,47 @@ Section WithMap.
   (* build all the tries for a given symbol at once
      TODO: likely bug returning leaf in some cases
    *)
+  (* Per clause id, a triple (full, new, old):
+       full = every matching assignment;
+       new  = matched via an entry with epoch = current_epoch (the delta);
+       old  = matched via an entry with epoch <> current_epoch.
+     Since each (symbol,args) has exactly one entry/epoch, full partitions
+     into new (epoch = current) and old (epoch <> current).  The proper
+     semi-naive frontier selection picks one of the three by clause position. *)
+  (* [window] is the semi-naive look-back: a db row is "new" iff its [epoch] is
+     within [window] ticks of [current_epoch], i.e. epoch + window >= current_epoch
+     (tested by [idx_leb current_epoch (epoch+window)] since epochs only grow by
+     idx_succ).  [window = 0] gives exactly the single-epoch delta [epoch =
+     current_epoch] (current_epoch is the max present).  The schedule driver passes
+     [window = W_total - w_i] on the FIRST iteration of each phase so it re-matches
+     every fact added since that phase last fired (fixing the cross-phase
+     incompleteness of plain semi-naive); subsequent iterations use [window = 0]. *)
   Definition build_tries_for_symbol
     (current_epoch : idx)
+    (window : nat)
     (q_clauses : idx_map (list nat * nat))
     (tbl : idx_trie db_entry)
-    : idx_map (idx_trie unit * idx_trie unit) (* full * frontier *)
-    :=    
-    let upd_trie_pair (args : list idx) '(Build_db_entry epoch v a) '(full, frontier) clause :=
+    : idx_map (idx_trie unit * idx_trie unit * idx_trie unit) (* full * new * old *)
+    :=
+    let upd_trie_pair (args : list idx) '(Build_db_entry epoch v a) '(full, new, old) clause :=
       match match_clause clause args v with
       | Some assignment =>
           (* TODO: possible issue w/ tuple ordering
              TODO: test match_clause
            *)
           let full' : idx_trie unit := map.put full assignment tt in
-          if eqb epoch current_epoch
-          then (full', map.put frontier assignment tt)
-          else (full', frontier)
-      | None => (full, frontier)
-      end          
-    in  
+          if idx_leb current_epoch (Nat.iter window idx_succ epoch)
+          then (full', map.put new assignment tt, old)
+          else (full', new, map.put old assignment tt)
+      | None => (full, new, old)
+      end
+    in
     map.fold (fun tries args vp => map_intersect (upd_trie_pair args vp) tries q_clauses)
-      (map_map (fun _ => (map.empty, map.empty : idx_trie unit)) q_clauses) tbl.
+      (map_map (fun _ => (map.empty, map.empty, map.empty : idx_trie unit)) q_clauses) tbl.
 
-  Definition build_tries (q : rule_set) : ST (symbol_map (idx_map (idx_trie unit * idx_trie unit))) :=
-    fun i => (map_intersect (build_tries_for_symbol i.(epoch)) q.(query_clauses) i.(db), i).
+  Definition build_tries (window : nat) (q : rule_set)
+    : ST (symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit))) :=
+    fun i => (map_intersect (build_tries_for_symbol i.(epoch) window) q.(query_clauses) i.(db), i).
 
   Context (spaced_list_intersect
              (*TODO: nary merge?*)
@@ -557,28 +587,78 @@ Section WithMap.
 
   Definition trie_of_clause
     (query_vars : list idx)
-    (* each trie pair is (total, frontier) *)
-    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (* each trie triple is (total, new, old) *)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
     (frontier_n : idx)
     '(Build_erule_query_ptr f n clause_vars) : idx_trie unit * list bool :=
     let flags := variable_flags query_vars clause_vars in
     (* If f is not in db_tries, it means the DB contains no matching nodes *)
     match map.get db_tries f with
     | Some trie_list =>
-        let (total,frontier) := unwrap_with_default (map.get trie_list n) in
-        let inner_trie := if eqb (n : idx) frontier_n then frontier else total in
+        let '(total, new, old) := unwrap_with_default (map.get trie_list n) in
+        let inner_trie := if eqb (n : idx) frontier_n then new else total in
+        (inner_trie, flags)
+    | None => (map.empty, flags)
+    end.
+
+  (* Proper semi-naive clause selection: each clause is tagged with its
+     POSITION in the query (not its per-symbol hash-cons id n).  Given the
+     frontier position [frontier_pos], a clause at position [pos] picks
+       old  (pos < frontier_pos),
+       new  (pos = frontier_pos),
+       full (pos > frontier_pos).
+     This realizes  OLD_0 .. OLD_{i-1} /\ NEW_i /\ TOTAL_{i+1} .. TOTAL_{k-1},
+     so every new match is generated exactly once (at i = min new-clause). *)
+  Definition trie_of_clause_sn
+    (query_vars : list idx)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
+    (frontier_pos : nat)
+    (pos : nat)
+    '(Build_erule_query_ptr f n clause_vars) : idx_trie unit * list bool :=
+    let flags := variable_flags query_vars clause_vars in
+    match map.get db_tries f with
+    | Some trie_list =>
+        let '(full, new, old) := unwrap_with_default (map.get trie_list n) in
+        let inner_trie :=
+          match Nat.compare pos frontier_pos with
+          | Lt => old
+          | Eq => new
+          | Gt => full
+          end in
         (inner_trie, flags)
     | None => (map.empty, flags)
     end.
   
   Definition process_erule'
-    (* each trie pair is (total, frontier) *)
-    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (* each trie triple is (total, new, old) *)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
     (r : erule) (frontier_n : idx) : ST unit :=
     let tries : ne_list _ :=
       ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
         r.(query_clause_ptrs) in
     let assignments : list _ := (intersection_keys tries) in
+    list_Miter (M:=ST) (exec_write r) assignments.
+
+  (* The match keys for a single frontier choice (no writes). *)
+  Definition erule_frontier_keys
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
+    (r : erule) (frontier_n : idx) : list (list idx) :=
+    intersection_keys
+      (ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
+         r.(query_clause_ptrs)).
+
+  (* One frontier position of the proper semi-naive scan: intersect the
+     position-indexed tries (OLD prefix / NEW pivot / TOTAL suffix) and
+     exec_write each resulting key.  No dedup trie: by min-index, each new
+     match appears in exactly one frontier position. *)
+  Definition process_erule'_sn
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
+    (r : erule) (frontier_pos : nat) : ST unit :=
+    let tries : ne_list _ :=
+      ne_map_idx (fun pos ptr =>
+                    trie_of_clause_sn r.(query_vars) db_tries frontier_pos pos ptr)
+        r.(query_clause_ptrs) in
+    let assignments : list _ := intersection_keys tries in
     list_Miter (M:=ST) (exec_write r) assignments.
 
   (*TODO: avoid using this*)
@@ -587,11 +667,14 @@ Section WithMap.
     | 0 => idx_zero
     | S n => idx_succ (idx_of_nat n)
     end.
-  
+
+  (* Proper semi-naive evaluation: scan one frontier position per clause.
+     Position i intersects OLD_0..OLD_{i-1} /\ NEW_i /\ TOTAL_{i+1}.. .  By the
+     min-index argument every new match is produced in exactly one position, so
+     no post-hoc dedup trie is needed — just exec_write each key per position. *)
   Definition process_erule db_tries r : ST unit :=
-    (* TODO: don't construct the list of nats/idxs, just iterate directly *)
-    list_Miter (fun n => process_erule' db_tries r (idx_of_nat n))
-      (seq 0 (List.length (uncurry cons r.(query_clause_ptrs)))).
+    let nclauses := List.length (uncurry cons r.(query_clause_ptrs)) in
+    list_Miter (M:=ST) (process_erule'_sn db_tries r) (seq 0 nclauses).
 
   (* TODO: return the new epoch?  *)
   Definition increment_epoch : ST unit :=
@@ -733,8 +816,8 @@ Section WithMap.
   Definition worklist_empty : ST bool :=
     fun i => (if i.(worklist) then true else false, i).
 
-  Definition run1iter (rs : rule_set) : ST bool :=
-    @!let tries <- build_tries rs in
+  Definition run1iter (window : nat) (rs : rule_set) : ST bool :=
+    @!let tries <- build_tries window rs in
       let old_max <- max_id in
       increment_epoch;
       (list_Miter (process_erule tries) rs.(compiled_rules));
@@ -743,25 +826,28 @@ Section WithMap.
       (* TODO: compute an adequate upper bound for fuel *)
       (rebuild rebuild_fuel);
       ret (andb (eqb new_max old_max) is_empty).
-  
-  Fixpoint saturate_until' rs (P : ST bool) fuel : ST bool :=
+
+  (* [window] is used only by the FIRST iteration (the cross-phase catch-up);
+     every subsequent iteration uses [window = 0] = the ordinary single-epoch
+     delta, since the previous iteration's writes already advanced the epoch. *)
+  Fixpoint saturate_until' window rs (P : ST bool) fuel : ST bool :=
     match fuel with
     | 0 => Mret false
     | S fuel =>
         @!let done <- P in
           if (done : bool) then ret true
           else
-            let no_changes <- run1iter rs in
+            let no_changes <- run1iter window rs in
             (* Short circuit if no new facts were added *)
             if (no_changes : bool) then ret false
-            else (saturate_until' rs P fuel)
+            else (saturate_until' 0 rs P fuel)
     end.
 
   (* run the const rules once before the saturation loop *)
-  Definition saturate_until rs (P : ST bool) fuel : ST bool :=
+  Definition saturate_until window rs (P : ST bool) fuel : ST bool :=
     @! (process_const_rules rs);
        (rebuild rebuild_fuel);
-       (saturate_until' rs P fuel).
+       (saturate_until' window rs P fuel).
     
   
   Definition are_unified (x1 x2 : idx) : state instance bool :=
@@ -771,14 +857,14 @@ Section WithMap.
   
   Definition trie_of_clause'
     (query_vars : list idx)
-    (* each trie pair is (total, frontier) *)
-    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (* each trie triple is (total, new, old) *)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit)))
     '(Build_erule_query_ptr f n clause_vars) : idx_trie unit * list bool :=
     let flags := variable_flags query_vars clause_vars in
     match map.get db_tries f with
     | Some trie_list =>
         (* never use the frontier*)
-        let (total,_) := unwrap_with_default (map.get trie_list n) in
+        let '(total, _, _) := unwrap_with_default (map.get trie_list n) in
         let flags := variable_flags query_vars clause_vars in
         (total, flags)
     | None => (map.empty, flags)
@@ -791,7 +877,7 @@ Section WithMap.
   Definition run_query (rs : rule_set) n : ST _ :=
     match nth_error rs.(compiled_rules) n with
     | Some r =>
-        @! let db_tries <- build_tries rs in
+        @! let db_tries <- build_tries 0 rs in
           (*TODO: frontier_n a hack*)
           let tries : ne_list _ := ne_map (trie_of_clause' r.(query_vars) db_tries)
                                      r.(query_clause_ptrs) in
@@ -805,7 +891,7 @@ Section WithMap.
   Definition run_query' (rs : rule_set) n : ST _ :=
     match nth_error rs.(compiled_rules) n with
     | Some r =>
-        @! let db_tries <- build_tries rs in
+        @! let db_tries <- build_tries 0 rs in
           (*TODO: frontier_n a hack*)
           let tries : ne_list _ := ne_map (trie_of_clause' r.(query_vars) db_tries)
                                      r.(query_clause_ptrs) in
@@ -890,19 +976,19 @@ Arguments rebuild {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
   fuel%_nat_scope _.
 
 
-Arguments saturate_until' {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope 
-  idx_zero {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
+Arguments saturate_until' {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope
+  idx_zero idx_leb%_function_scope {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
   {idx_map}%_function_scope {idx_map_plus} {idx_trie}%_function_scope
   {analysis_result}%_type_scope {H}
-  spaced_list_intersect%_function_scope 
-  _ rs P fuel%_nat_scope.
+  spaced_list_intersect%_function_scope
+  _ window%_nat_scope rs P fuel%_nat_scope.
 
-Arguments saturate_until {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope 
-  idx_zero {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
+Arguments saturate_until {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope
+  idx_zero idx_leb%_function_scope {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
   {idx_map}%_function_scope {idx_map_plus} {idx_trie}%_function_scope
   {analysis_result}%_type_scope {H}
   spaced_list_intersect%_function_scope rebuild_fuel
-  rs P fuel%_nat_scope _.
+  window%_nat_scope rs P fuel%_nat_scope _.
 
 Arguments are_unified {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
   {symbol_map idx_map idx_trie}%_function_scope

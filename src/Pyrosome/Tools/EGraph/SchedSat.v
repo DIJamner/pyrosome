@@ -74,6 +74,9 @@ Section WithVar.
 
   Context (succ : V -> V).
 
+  (* epoch order for the semi-naive "new" window *)
+  Context (V_leb : V -> V -> bool).
+
   (* Include sort_of as special symbol/fn in db. *)
   Context (sort_of : V).
 
@@ -110,19 +113,19 @@ Section WithVar.
       (forall e i, egraph_ok e -> sound i e ->
          egraph_ok (snd (process_const_rules V V_Eqb succ V_default V V_map V_map V_trie X rs e))
          /\ exists i', map.extends i' i /\ sound i' (snd (process_const_rules V V_Eqb succ V_default V V_map V_map V_trie X rs e)))
-      /\ (forall e r, In r (compiled_rules V V V_map V_map rs) ->
-            run1iter_rule_hyps V V_Eqb V_default V V_map V_map_plus V_map V_map_plus V_trie X spaced_list_intersect m rs e r).
+      /\ (forall w e r, In r (compiled_rules V V V_map V_map rs) ->
+            run1iter_rule_hyps V V_Eqb V_default succ V_leb w V V_map V_map_plus V_map V_map_plus V_trie X spaced_list_intersect m rs e r).
 
     (* One pass of the schedule (list_Miter_breakable, stopping at the first
        entry whose termination check fires) is sound: each entry runs
        saturate_until on its rule_set, sound by saturate_until_sound, and the
        interpretations compose. *)
-    Lemma list_Miter_breakable_sound (rfuel : nat) (p : state instance bool)
+    Lemma list_Miter_breakable_sound (rfuel : nat) (W_total : nat) (p : state instance bool)
       (HP : forall e i, egraph_ok e -> sound i e -> egraph_ok (snd (p e)) /\ sound i (snd (p e))) :
       forall (sched : list (nat * rule_set V V V_map V_map)),
       (forall n rs, In (n, rs) sched -> rs_saturation_hyps rs) ->
       forall i e, egraph_ok e -> sound i e ->
-      match list_Miter_breakable (fun entry => saturate_until succ V_default (analysis_result:=X) spaced_list_intersect rfuel (snd entry) p (fst entry)) sched e with
+      match list_Miter_breakable (fun entry => saturate_until succ V_default V_leb (analysis_result:=X) spaced_list_intersect rfuel (W_total - fst entry) (snd entry) p (fst entry)) sched e with
       | (_, e') => egraph_ok e' /\ exists i', map.extends i' i /\ sound i' e'
       end.
     Proof.
@@ -133,18 +136,18 @@ Section WithVar.
         destruct entry as [fuel_i rs_i].
         cbn [fst snd].
         destruct (Hsched fuel_i rs_i (or_introl eq_refl)) as [Hconst_i Hrules_i].
-        pose proof (@saturate_until_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+        pose proof (@saturate_until_sound V V_Eqb V_Eqb_ok lt succ V_default V_leb V V_Eqb V_Eqb_ok
                       V_map V_map_plus V_map_plus_ok V_map_ok V_map V_map_plus V_map_ok
                       V_trie V_trie_ok X V_map_plus_ok spaced_list_intersect _ m Hm
-                      lt_asymmetric lt_succ lt_trans rfuel rs_i p HP Hconst_i Hrules_i fuel_i i e Hok Hsnd) as Hsat.
-        destruct (saturate_until succ V_default (analysis_result:=X) spaced_list_intersect rfuel rs_i p fuel_i e) as [break e1] eqn:Hsu.
+                      lt_asymmetric lt_succ lt_trans (W_total - fuel_i) rfuel rs_i p HP Hconst_i Hrules_i fuel_i i e Hok Hsnd) as Hsat.
+        destruct (saturate_until succ V_default V_leb (analysis_result:=X) spaced_list_intersect rfuel (W_total - fuel_i) rs_i p fuel_i e) as [break e1] eqn:Hsu.
         destruct Hsat as (Hok1 & i1 & Hext1 & Hsnd1).
         destruct break.
         + split; [exact Hok1|]. exists i1. split; [exact Hext1 | exact Hsnd1].
         + assert (Hsched' : forall n rs, In (n, rs) sched' -> rs_saturation_hyps rs)
             by (intros n rs Hin; apply (Hsched n rs); right; exact Hin).
           pose proof (IH Hsched' i1 e1 Hok1 Hsnd1) as HIH.
-          destruct (list_Miter_breakable (fun entry => saturate_until succ V_default (analysis_result:=X) spaced_list_intersect rfuel (snd entry) p (fst entry)) sched' e1) as [b e2] eqn:Hlmb.
+          destruct (list_Miter_breakable (fun entry => saturate_until succ V_default V_leb (analysis_result:=X) spaced_list_intersect rfuel (W_total - fst entry) (snd entry) p (fst entry)) sched' e1) as [b e2] eqn:Hlmb.
           destruct HIH as (Hok2 & i2 & Hext2 & Hsnd2).
           split; [exact Hok2|]. exists i2.
           split; [eapply map_extends_trans; [exact Hext2 | exact Hext1] | exact Hsnd2].
@@ -158,7 +161,7 @@ Section WithVar.
       (Hsched : forall n rs, In (n, rs) schedule -> rs_saturation_hyps rs)
       (fuel : nat) :
       forall i e, egraph_ok e -> sound i e ->
-      match scheduled_saturate_until V_map_plus succ spaced_list_intersect rfuel schedule p fuel e with
+      match scheduled_saturate_until V_map_plus succ V_leb spaced_list_intersect rfuel schedule p fuel e with
       | (_, e') => egraph_ok e' /\ exists i', map.extends i' i /\ sound i' e'
       end.
     Proof.
@@ -166,13 +169,13 @@ Section WithVar.
       - cbn [scheduled_saturate_until Mret StateMonad.state_monad].
         split; [exact Hok|]. exists i. split; [apply Properties.map.extends_refl | exact Hsnd].
       - cbn [scheduled_saturate_until Mbind Mret StateMonad.state_monad].
-        pose proof (list_Miter_breakable_sound rfuel p HP schedule Hsched i e Hok Hsnd) as Hlmb.
-        destruct (list_Miter_breakable (fun entry => saturate_until succ V_default (analysis_result:=X) spaced_list_intersect rfuel (snd entry) p (fst entry)) schedule e) as [done e1] eqn:Hlmb_eq.
+        pose proof (list_Miter_breakable_sound rfuel (list_sum (map fst schedule)) p HP schedule Hsched i e Hok Hsnd) as Hlmb.
+        destruct (list_Miter_breakable (fun entry => saturate_until succ V_default V_leb (analysis_result:=X) spaced_list_intersect rfuel (list_sum (map fst schedule) - fst entry) (snd entry) p (fst entry)) schedule e) as [done e1] eqn:Hlmb_eq.
         destruct Hlmb as (Hok1 & i1 & Hext1 & Hsnd1).
         destruct done.
         + split; [exact Hok1|]. exists i1. split; [exact Hext1 | exact Hsnd1].
         + pose proof (IH i1 e1 Hok1 Hsnd1) as HIH.
-          destruct (scheduled_saturate_until V_map_plus succ spaced_list_intersect rfuel schedule p fuel e1) as [b e2] eqn:Hss.
+          destruct (scheduled_saturate_until V_map_plus succ V_leb spaced_list_intersect rfuel schedule p fuel e1) as [b e2] eqn:Hss.
           destruct HIH as (Hok2 & i2 & Hext2 & Hsnd2).
           split; [exact Hok2|]. exists i2.
           split; [eapply map_extends_trans; [exact Hext2 | exact Hext1] | exact Hsnd2].

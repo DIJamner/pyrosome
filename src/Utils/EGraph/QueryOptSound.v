@@ -48,6 +48,7 @@ Section WithMap.
       (lt : idx -> idx -> Prop)
       (idx_succ : idx -> idx)
       (idx_zero : WithDefault idx)
+      (idx_leb : idx -> idx -> bool)
     (symbol : Type)
       (Eqb_symbol : Eqb symbol)
       (Eqb_symbol_ok : Eqb_ok Eqb_symbol)
@@ -5113,49 +5114,52 @@ Section WithMap.
     (spaced_list_intersect : forall B, WithDefault B -> (B -> B -> B) ->
           ne_list (idx_trie B * list bool) -> idx_trie B)
     (A : Type) (HA : analysis idx symbol A) :
-    forall (m : model symbol) (Hm : Semantics.model_ok symbol m)
+    forall (window : nat)
+           (m : model symbol) (Hm : Semantics.model_ok symbol m)
            (rf : nat) (rules : list sequent) (er : erule idx symbol)
            (e : Defs.instance idx symbol symbol_map idx_map idx_trie A),
       (forall rule, In rule rules ->
          model_satisfies_rule m (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)) ->
       In er (compiled_rules idx symbol symbol_map idx_map (QueryOpt.build_rule_set idx_succ idx_zero rf rules)) ->
-      (forall frontier_n sigma,
+      (forall frontier_pos sigma,
          In sigma (intersection_keys idx idx_trie spaced_list_intersect
-                     (ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
-                                (query_vars idx symbol er)
-                                (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                                        idx_map idx_map_plus idx_trie A
-                                        (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
-                                frontier_n)
-                             (query_clause_ptrs idx symbol er))) ->
+                     (ne_map_idx (fun pos ptr =>
+                                    trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
+                                      (query_vars idx symbol er)
+                                      (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                                              idx_map idx_map_plus idx_trie A window
+                                              (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
+                                      frontier_pos pos ptr)
+                                 (query_clause_ptrs idx symbol er))) ->
          List.length (query_vars idx symbol er) = List.length sigma) ->
-      (forall frontier_n sigma,
+      (forall frontier_pos sigma,
          In sigma (intersection_keys idx idx_trie spaced_list_intersect
-                     (ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
-                                (query_vars idx symbol er)
-                                (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                                        idx_map idx_map_plus idx_trie A
-                                        (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
-                                frontier_n)
-                             (query_clause_ptrs idx symbol er))) ->
-         forall fsym nptr cvars,
-         In (Build_erule_query_ptr idx symbol fsym nptr cvars)
-            (uncurry cons (query_clause_ptrs idx symbol er)) ->
-         map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                     (ne_map_idx (fun pos ptr =>
+                                    trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
+                                      (query_vars idx symbol er)
+                                      (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                                              idx_map idx_map_plus idx_trie A window
+                                              (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
+                                      frontier_pos pos ptr)
+                                 (query_clause_ptrs idx symbol er))) ->
+         forall pos fsym nptr cvars,
+         nth_error (uncurry cons (query_clause_ptrs idx symbol er)) pos
+           = Some (Build_erule_query_ptr idx symbol fsym nptr cvars) ->
+         map.get (fst (trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
                          (query_vars idx symbol er)
-                         (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                                 idx_map idx_map_plus idx_trie A
+                         (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                                 idx_map idx_map_plus idx_trie A window
                                  (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e))
-                         frontier_n
+                         frontier_pos pos
                          (Build_erule_query_ptr idx symbol fsym nptr cvars)))
                  (map fst (filter snd (combine sigma
                     (variable_flags idx Eqb_idx (query_vars idx symbol er) cvars))))
          = Some tt) ->
-      SemanticsSaturate.run1iter_rule_hyps idx Eqb_idx idx_zero symbol symbol_map symbol_map_plus
+      SemanticsSaturate.run1iter_rule_hyps idx Eqb_idx idx_zero idx_succ idx_leb window symbol symbol_map symbol_map_plus
         idx_map idx_map_plus idx_trie A spaced_list_intersect m
         (QueryOpt.build_rule_set idx_succ idx_zero rf rules) e er.
   Proof.
-    intros m Hm rf rules er e Hmsr Hin H9 H10.
+    intros window m Hm rf rules er e Hmsr Hin H9 H10.
     unfold SemanticsSaturate.run1iter_rule_hyps.
     cbn zeta.
     pose proof (in_compiled_rules_build_rule_set rf rules er Hin) as (rule & st0 & st1 & _ & Hc).

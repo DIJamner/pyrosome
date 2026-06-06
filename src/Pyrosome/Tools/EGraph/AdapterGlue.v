@@ -46,6 +46,7 @@ Section WithVar.
   Notation atom := (atom V V).
 
   Context (succ : V -> V).
+  Context (V_leb : V -> V -> bool).
   Context (sort_of : V).
   Context (lt : V -> V -> Prop).
   Context (lt_asymmetric : Asymmetric lt)
@@ -65,7 +66,7 @@ Section WithVar.
   Proof.
     intros al Hin.
     assert (Hin' : In al (db_to_atoms (db e))).
-    { apply (proj2 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default
+    { apply (proj2 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default V_leb
                       V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok al (db e))).
       exact Hin. }
     pose proof (in_map atom_clause _ _ Hin') as Hin_map.
@@ -487,11 +488,11 @@ Section WithVar.
     Proof.
       intros al Hin.
       assert (Hin' : In al (db_to_atoms (db e))).
-      { apply (proj2 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default
+      { apply (proj2 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default V_leb
                         V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok al (db e))).
         exact Hin. }
       exact (in_all _ _ _
-        (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default
+        (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V_leb
            V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_trie V_trie_ok (lang_model l) i e Hsnd)
         (in_map (@atom_clause V V) _ _ Hin')).
     Qed.
@@ -519,7 +520,7 @@ Section WithVar.
       split; [exact Hsnd_concl|].
       split; [exact Hai2|].
       intros al Hin_al.
-      exact (QueryOptSound.atom_sound_extend V lt succ V_default V V_map (lang_model l)
+      exact (QueryOptSound.atom_sound_extend V lt succ V_default V_leb V V_map (lang_model l)
                i1 i2 al Hext12 (egraph_atoms_sound i1 _ Hsnd_i1 al Hin_al)).
     Qed.
 
@@ -572,7 +573,7 @@ Section WithVar.
            V_map V_map_ok V_map V_trie V_trie_ok) as Hira.
         pose proof (Hira X (db_to_atoms (db e_assum)) e_concl a0 Ha0) as Hin_concl.
         exact (in_all _ _ _
-          (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+          (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V_leb V V_Eqb V_Eqb_ok
              V_map V_map_ok V_map V_trie V_trie_ok (lang_model l) i2 e_concl Hsnd)
           (in_map (@atom_clause V V) _ _ Hin_concl)).
     Qed.
@@ -1140,7 +1141,7 @@ Section WithVar.
       cbn [clause_vars] in Hk_in.
       (* HA_in : In A (db_to_atoms (db e_assum)); convert to atom_in_egraph *)
       assert (HA : @Semantics.atom_in_egraph V V V_map V_map V_trie X A e_assum).
-      { apply (proj1 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default
+      { apply (proj1 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default V_leb
                         V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok A (Defs.db e_assum))).
         exact HA_in. }
       (* Step C: case split on atom_fn A = sort_of *)
@@ -1470,7 +1471,7 @@ Section WithVar.
       split; [exact Hsnd_concl|].
       split; [exact Hai2|].
       intros al Hin_al.
-      exact (QueryOptSound.atom_sound_extend V lt succ V_default V V_map (lang_model l)
+      exact (QueryOptSound.atom_sound_extend V lt succ V_default V_leb V V_map (lang_model l)
                i1 i2 al Hext12 (egraph_atoms_sound i1 _ Hsnd_i1 al Hin_al)).
     Qed.
 
@@ -1520,7 +1521,7 @@ Section WithVar.
            V_map V_map_ok V_map V_trie V_trie_ok) as Hira.
         pose proof (Hira X (db_to_atoms (db e_assum)) e_concl a0 Ha0) as Hin_concl.
         exact (in_all _ _ _
-          (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+          (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V_leb V V_Eqb V_Eqb_ok
              V_map V_map_ok V_map V_trie V_trie_ok (lang_model l) i2 e_concl Hsnd)
           (in_map (@atom_clause V V) _ _ Hin_concl)).
     Qed.
@@ -1588,7 +1589,7 @@ Section WithVar.
       subst cl.
       cbn [clause_vars] in Hk_in.
       assert (HA : @Semantics.atom_in_egraph V V V_map V_map V_trie X A e_assum).
-      { apply (proj1 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default
+      { apply (proj1 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default V_leb
                         V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok A (Defs.db e_assum))).
         exact HA_in. }
       destruct (eqb (Defs.atom_fn A) sort_of) eqn:Heqfn.
@@ -1847,7 +1848,7 @@ Section WithVar.
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
              (rule_to_log_seq name (term_rule c args t)) rf).
     Proof.
-      apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default
+      apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default V_leb
                V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                (rule_to_log_seq name (term_rule c args t)) rf (lang_model l)
                (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
@@ -1871,7 +1872,7 @@ Section WithVar.
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
              (rule_to_log_seq name (sort_rule c args)) rf).
     Proof.
-      apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default
+      apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default V_leb
                V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                (rule_to_log_seq name (sort_rule c args)) rf (lang_model l)
                (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
@@ -2156,7 +2157,7 @@ Section WithVar.
       split; [exact Hsnd_concl|].
       split; [exact Hai2|].
       intros al Hin_al.
-      exact (QueryOptSound.atom_sound_extend V lt succ V_default V V_map (lang_model l)
+      exact (QueryOptSound.atom_sound_extend V lt succ V_default V_leb V V_map (lang_model l)
                i1 i2 al Hext12 (egraph_atoms_sound i1 _ Hsnd_i1 al Hin_al)).
     Qed.
 
@@ -2223,7 +2224,7 @@ Section WithVar.
            V_map V_map_ok V_map V_trie V_trie_ok) as Hira.
         pose proof (Hira X (db_to_atoms (db e_assum_c)) e_concl_c a0 Ha0) as Hin_concl.
         exact (in_all _ _ _
-          (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+          (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V_leb V V_Eqb V_Eqb_ok
              V_map V_map_ok V_map V_trie V_trie_ok (lang_model l) i2 e_concl_c Hsnd)
           (in_map (@atom_clause V V) _ _ Hin_concl)).
     Qed.
@@ -2290,7 +2291,7 @@ Section WithVar.
       rewrite in_map_iff in Hcl_in. destruct Hcl_in as (A & Hcl_eq & HA_in).
       subst cl. cbn [clause_vars] in Hk_in.
       assert (HA : @Semantics.atom_in_egraph V V V_map V_map V_trie X A e_assum_c).
-      { apply (proj1 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default
+      { apply (proj1 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default V_leb
                         V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok A (Defs.db e_assum_c))).
         exact HA_in. }
       assert (HA_uf : @Semantics.atom_in_egraph V V V_map V_map V_trie X A
@@ -2635,7 +2636,7 @@ Section WithVar.
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
              (rule_to_log_seq name (term_eq_rule c e1 e2 t)) rf).
     Proof.
-      apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default
+      apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default V_leb
                V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                (rule_to_log_seq name (term_eq_rule c e1 e2 t)) rf (lang_model l)
                (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
@@ -2950,7 +2951,7 @@ Section WithVar.
       split; [exact Hsnd_concl|].
       split; [exact Hai2|].
       intros al Hin_al.
-      exact (QueryOptSound.atom_sound_extend V lt succ V_default V V_map (lang_model l)
+      exact (QueryOptSound.atom_sound_extend V lt succ V_default V_leb V V_map (lang_model l)
                i1 i2 al Hext12 (egraph_atoms_sound i1 _ Hsnd_i1 al Hin_al)).
     Qed.
 
@@ -3015,7 +3016,7 @@ Section WithVar.
            V_map V_map_ok V_map V_trie V_trie_ok) as Hira.
         pose proof (Hira X (db_to_atoms (db e_assum_c)) e_concl_c a0 Ha0) as Hin_concl.
         exact (in_all _ _ _
-          (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+          (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V_leb V V_Eqb V_Eqb_ok
              V_map V_map_ok V_map V_trie V_trie_ok (lang_model l) i2 e_concl_c Hsnd)
           (in_map (@atom_clause V V) _ _ Hin_concl)).
     Qed.
@@ -3079,7 +3080,7 @@ Section WithVar.
       rewrite in_map_iff in Hcl_in. destruct Hcl_in as (A & Hcl_eq & HA_in).
       subst cl. cbn [clause_vars] in Hk_in.
       assert (HA : @Semantics.atom_in_egraph V V V_map V_map V_trie X A e_assum_c).
-      { apply (proj1 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default
+      { apply (proj1 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default V_leb
                         V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok A (Defs.db e_assum_c))).
         exact HA_in. }
       assert (HA_uf : @Semantics.atom_in_egraph V V V_map V_map V_trie X A
@@ -3411,7 +3412,7 @@ Section WithVar.
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
              (rule_to_log_seq name (sort_eq_rule c t1 t2)) rf).
     Proof.
-      apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default
+      apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default V_leb
                V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                (rule_to_log_seq name (sort_eq_rule c t1 t2)) rf (lang_model l)
                (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
