@@ -130,43 +130,50 @@ whole tower — no separate refactor.
    from `domIH` at the identity sub.  Full detail + the airtight argument in
    `ConvRelPlan.md` STATUS ("CRUX BLOCKER FOUND & VERIFIED").
 
-## HOW THE PAPER RESOLVES IT (logrel-coq lineage, confirmed from source)
+## HOW THE PAPER ACTUALLY RESOLVES IT (read the FSCD2026 code)
 
-The CoqHott logrel-coq generic-typing interface (`GenericTyping.v`, branch
-`coq-8.20`) handles the variable with TWO interface fields:
-- `convneu_var {Γ n A} : [Γ |- tRel n : A] -> [Γ |- tRel n ~ tRel n : A]`
-  — a variable typed at `A` is neutral-convertible to itself AT `A`;
-- `convneu_conv {Γ t u A A'} : [Γ |- t ~ u : A] -> [Γ |- A ≅ A'] ->
-  [Γ |- t ~ u : A']` — neutral conversion is CLOSED UNDER TYPE CONVERSION.
-The off-diagonal fresh variable is `convneu_var` at its CONTEXT type `FA'`, then
-`convneu_conv` (with `FA' ≅ FB'`) transports it to the ambient `FB'`.  The
-variable is NEVER typed at two types directly; the conversion-closure of the
-neutral-conversion judgment does it.  That closure rests on declarative typing
-having a CONVERSION RULE (`Γ |- t : A -> Γ |- A ≅ B -> Γ |- t : B`).  Our
-`has_svalty`/`wf_neutral` omit exactly that rule == the wall.  So the principled
-fix is OPTION (a): add a typed conversion rule.  In our pre-`LR` domain layer the
-only positivity-safe "type conversion" is structural `conv_nf`/`conv_nf_ty`
-(values are already normal codes), so the rule is e.g.
-`n_conv : wf_neutral Ge n A -> conv_nf_ty A B -> wf_neutral Ge n B`
-(and/or `t_conv` on `has_svalty`).  Then `wf_neutral Δ (nVar 0) (dEl FA')`
-(`n_var`) + `conv_nf FA' FB'` (already in hand from the reify-ty domain leaf via
-`conv_ren`) gives `wf_neutral Δ (nVar 0) (dEl FB')`, so the variable's `NeConv`
-at `(dEl FA')(dEl FB')` is buildable and `domIH`'s REFLECT fires.
+Source: Poiret/Maillard/Tabareau `metamltt`, branch `fscd2026`
+(`Neutrals.v`/`LogicalRelation.v`/`Declarative.v`/`FundamentalLemma.v`; PDF
+hal-05495420).  Typed conversion IS required (their `Declarative.v` has
+`WfTmConv : Γ⊢t⦂A → Γ⊢A≡B → Γ⊢t⦂B` + `ConvTmConv`), confirming the diagnosis —
+but the SHAPE is NOT our two-typed-NeConv-plus-n_conv-with-conv_nf:
+1. **Neutrals are SINGLE-TYPED.**  `ConvNe` = `Γ ⊢ n ~ne n' ⦂ R` (ONE result
+   type) with declarative `≡`-premises baked in per rule.  Variable rule
+   `ConvNeRel`: `in_ctx Γ n A` + `decl(Γ⊢R≡A)` (var ~ itself at ANY R convertible
+   to its context type).  App rule `ConvNeAppCong`: annotations only
+   `decl(Γ⊢Dom≡Dom')`/`decl(Γ,,Dom⊢Cod≡Cod')` + `decl(Γ⊢R≡Cod[a])` +
+   `decl(Γ⊢R≡Cod'[a'])`.  The neutral TERM relation `RelAtNe Γ A t u` is
+   single-typed too (both members reduce to neutrals at the SAME A = left whnf;
+   `Rel_tot_Ne` uses the left rep `Ane`).  Two-sidedness is reserved for
+   STRUCTURED types (`RelAtPi Γ Dom Cod Dom' Cod'`).  ⇒ our two-typed
+   `NeConv Ge T S n m` (the `[[ott-logrel2-two-typed-neutral]]` workaround) is the
+   ROOT DIVERGENCE that created the wall.
+2. **Conversion = full DECLARATIVE `≡`** (`ConvTy`/`ConvTm`), not structural
+   `conv_nf`.  Soundness automatic (it's the spec).
+3. **The variable uses a VALID/reducible CONTEXT** `⊨ Γ` (a `TelRed` telescope of
+   per-variable reducibility witnesses).  `varRed : Γ ⊨ tRel n ≡ tRel n ⦂ A`
+   proves the var reducible at its SINGLE context type A, pulled from the context
+   + `irrelevance`.  The var is NEVER typed/reflected at two types; under a binder
+   the fresh var enters the domain relation as a related PAIR from the EXTENDED
+   valid context — not by manufacturing a `(FA',FB')` NeConv on the spot.
 
-SOUNDNESS GATE before doing it: confirm structural `conv_nf`-conversion of TYPE
-CODES is valid in the gluing model (`Norm/Model.v`+`ModelOk.v`) — i.e. conv_nf-
-related codes denote equal types.  RIPPLE: `n_conv`/`t_conv` is a new constructor
-in the `has_svalty`/`wf_neutral` mutual block ⇒ every mutual induction over it
-(`Determinism`, `Preservation`, `Reflect` typing, `RenTyping`, the `LogRel2*`
-escape/sym/trans/ren) gets one more (usually easy, conv-closed) case.  Escape
-`RedTmEq_wf` then upgrades synth-type typing to ambient via `n_conv` — the second
-place the rule is needed (consistent with logrel-coq, where escape lands typing
-at the carried type because typing has conversion).
+PAPER-FAITHFUL FIX (an architectural pivot, bigger than `n_conv`): (i) move the
+neutral conversion to SINGLE-typed (`~ne ⦂ R`) with `≡`-premises + a typing-
+conversion rule (`WfTmConv`/`ConvTmConv` analogues on `has_svalty`); (ii) adopt a
+valid-context telescope (`⊨ Γ`) so variables are reducible at their single type.
+This dissolves BOTH the variable wall AND the escape wall that originally forced
+two-typing (escape then lands typing at the single carried type, conversion
+bridges).  Modules to mirror: their `LogicalRelation/ReifyReflect`, `Irrelevance`,
+`Transport`, `Symmetry`, `Transitivity`, `Telescope` are SEPARATE — our monolithic
+plan should likely split similarly.
 
-## Next move — RESOLVE THE DESIGN FORK (needs Dustin), then finish `RR_pi_at`
+## Next move — RE-PLAN around the single-typed-neutral pivot (needs Dustin)
 
-The wall is a genuine design decision (it changes the core typing judgment or the
-carrier).  Options, in `ConvRelPlan.md` (the paper points at (a)):
+The earlier 3-option fork is SUPERSEDED: the paper neither keeps two-typed
+neutrals nor uses structural conv_nf.  Decision for Dustin: adopt the paper's
+single-typed-neutral + valid-context architecture (a real migration of `NeConv`/
+the base relation + a new `⊨ Γ` telescope), vs a cheaper local patch.  Old
+options retained below for reference (the paper points away from all three):
 - **(a)** add `t_conv`/`n_conv` (typed conversion) to `has_svalty`/`wf_neutral`
   — standard OTT; lets `nVar 0 : dEl FA'` transport to `dEl FB'` via
   `conv_nf FA' FB'`; BIG domain-layer ripple (Apply/Determinism/Preservation/

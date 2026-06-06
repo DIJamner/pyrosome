@@ -391,18 +391,27 @@ Reflect/Typing/EvalRel. Mechanical.
   reason for two-typing); (c) reduce off-diagonal reflect-at-Pi to the diagonal
   via symmetry/transport (both deferred/normalization-strength).  `RR_gen`+`RR0`
   (the engine) stay green with `RR_pi_at`/`RR_piI_at` abstract.
-  PAPER RESOLUTION (confirmed from CoqHott `logrel-coq/theories/GenericTyping.v`,
-  branch `coq-8.20`): the variable is handled by `convneu_var`
-  (`[Γ⊢tRel n:A] → [Γ⊢tRel n ~ tRel n:A]`) + `convneu_conv`
-  (`[Γ⊢t~u:A] → [Γ⊢A≅B] → [Γ⊢t~u:B]`, neutral conversion CLOSED UNDER TYPE
-  CONVERSION).  Off-diagonal var = `convneu_var` at context type `FA'` then
-  `convneu_conv` to `FB'` — never typed at two types.  That closure rests on
-  declarative typing HAVING A CONVERSION RULE, which `has_svalty` omits == the
-  wall.  ⇒ pursue option (a): add `n_conv : wf_neutral Ge n A -> conv_nf_ty A B
-  -> wf_neutral Ge n B` (and/or `t_conv`), conversion = structural `conv_nf` (the
-  only positivity-safe type-conversion below `LR`); GATE on checking conv_nf
-  type-conversion is model-valid (`Norm/Model.v`+`ModelOk.v`).  Detailed plan in
-  `NEXT_SESSION.md`.
+  PAPER RESOLUTION — read the FSCD2026 paper's CODE (Poiret/Maillard/Tabareau
+  `metamltt`, branch `fscd2026`: `Neutrals.v`/`LogicalRelation.v`/`Declarative.v`/
+  `FundamentalLemma.v`).  Typed conversion IS needed (their `Declarative.v` has
+  `WfTmConv : Γ⊢t⦂A → Γ⊢A≡B → Γ⊢t⦂B` + `ConvTmConv`) BUT the shape is NOT
+  "two-typed NeConv + n_conv with structural conv_nf".  Instead:
+  (1) **neutrals are SINGLE-TYPED.**  `ConvNe` is `Γ ⊢ n ~ne n' ⦂ R` (ONE result
+      type) with `≡`-conversion premises per rule — `ConvNeRel` (variable):
+      `in_ctx Γ n A` + `decl(Γ⊢R≡A)`; `ConvNeAppCong`: annotations only
+      `≡`-convertible + `decl(Γ⊢R≡Cod[a])` + `decl(Γ⊢R≡Cod'[a'])`.  The neutral
+      TERM relation `RelAtNe Γ A t u` is single-typed too (both at the left whnf
+      A).  Two-sidedness is reserved for STRUCTURED types (`RelAtPi`: Dom/Dom',
+      Cod/Cod').  ⇒ our two-typed `NeConv Ge T S n m` is the ROOT DIVERGENCE.
+  (2) **conversion = full DECLARATIVE `≡`** (`ConvTy`/`ConvTm`), NOT structural
+      `conv_nf` (soundness automatic).
+  (3) **the variable uses a VALID/reducible CONTEXT** `⊨ Γ` (a `TelRed` telescope
+      of per-variable reducibility): `varRed : Γ ⊨ tRel n ≡ tRel n ⦂ A` at the
+      var's SINGLE context type, via `irrelevance`.  Never typed at two types.
+  PAPER-FAITHFUL FIX (bigger than n_conv): (i) single-typed neutral conversion
+  with `≡`-premises + typing-conversion; (ii) valid-context telescope for vars.
+  Dissolves BOTH the variable wall AND the escape wall that motivated two-typing.
+  Supersedes the "add n_conv / structural conv_nf" recommendation above.
 
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
