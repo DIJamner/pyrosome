@@ -26,7 +26,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
-  Domain Apply Typing Reflect Preservation ApplySubst
+  Domain Apply ApplyLemmas Typing Reflect Preservation ApplySubst
   LogRel2Conv LogRel2 LogRel2Ind LogRel2Lemmas.
 Import Core.Notations.
 
@@ -479,3 +479,416 @@ Definition RR0 (Hpi : RR_pi_step) (HpiI : RR_piI_step) : RecRR1 LR0 :=
 (* there is no separate universe refactor to do.  [RR_gen] + [RR0] are the    *)
 (* green, axiom-free engine that the proven crux plugs straight into.         *)
 (* ===================================================================== *)
+(* Level-generic escape: a [P]-member at ANY [@LR lvl rec0 rec1] node is
+   well-typed at both type indices.  ([RedTmEq_wf] is the [LR2] specialization;
+   the recursive [LRU0]/[LRU1] cases only read typing off the code pair, so the
+   proof is level-uniform.) *)
+Lemma RedTmEq_wf_gen : forall lvl rec0 rec1 Ge A B a b (P : sval -> sval -> Type),
+    @LR lvl rec0 rec1 Ge A B P -> P a b ->
+    (has_svalty Ge a A * has_svalty Ge b B)%type.
+Proof.
+  intros lvl rec0 rec1 Ge A B a b P H Pab; destruct H.
+  - exact (RedNatEq_wf Pab).
+  - exact (RedNeutralEq_wf Pab).
+  - match goal with c : NeConv _ (dU _ _) _ _ |- _ => rename c into cnm end.
+    destruct Pab as [p q [[wp wq] _]]; split.
+    + apply t_ne; exact wp.
+    + apply t_ne. eapply n_conv; [ exact wq | apply cnf_ne; exact (snd cnm) ].
+  - destruct Pab as [Hf Hg]; split; assumption.
+  - destruct Pab as [[Hf Hg] _]; split; assumption.
+  - destruct Pab as [[Hc Hd] _]; split; assumption.
+  - destruct Pab as [[Hc Hd] _]; split; assumption.
+Qed.
+
+(* ===================================================================== *)
+(* CONTEXT CONVERSION: typing is stable under replacing context entries by   *)
+(* [conv_nf]-related ones.  Needed two-sided: the RIGHT eta-body is produced  *)
+(* in the LEFT-domain context [dEl (shift FA) :: ..] but [t_lam_eta] for the  *)
+(* RIGHT Pi types it in [dEl (shift FB) :: ..]; the two differ only at the    *)
+(* (convertible) front domain.                                                *)
+(* ===================================================================== *)
+Inductive conv_ctx : senv -> senv -> Type :=
+| cc_nil : conv_ctx nil nil
+| cc_dEl : forall A A' G G', conv_nf A A' -> conv_ctx G G' ->
+    conv_ctx (dEl A :: G) (dEl A' :: G')
+| cc_dU  : forall r l G G', conv_ctx G G' ->
+    conv_ctx (dU r l :: G) (dU r l :: G').
+
+Lemma conv_ctx_refl : forall G, conv_ctx G G.
+Proof.
+  induction G as [|[r l|A] G IH].
+  - apply cc_nil.
+  - apply cc_dU; exact IH.
+  - apply cc_dEl; [ exact (fst (snd conv_refl) A) | exact IH ].
+Qed.
+
+Lemma conv_ctx_length : forall G G', conv_ctx G G' -> length G = length G'.
+Proof. intros G G' c; induction c; cbn; auto. Qed.
+
+Lemma conv_ctx_map_shift : forall G G', conv_ctx G G' ->
+    conv_ctx (map (shift_ty 0 1) G) (map (shift_ty 0 1) G').
+Proof.
+  intros G G' c; induction c; cbn [map].
+  - apply cc_nil.
+  - apply cc_dEl; [ apply conv_nf_shift; assumption | assumption ].
+  - apply cc_dU; assumption.
+Qed.
+
+Lemma conv_ctx_nth : forall G G' (c : conv_ctx G G') k T,
+    nth_error G k = Some T ->
+    { T' & ((nth_error G' k = Some T')
+            * (forall Gx nn, wf_neutral Gx nn T' -> wf_neutral Gx nn T))%type }.
+Proof.
+  intros G G' c; induction c; intros k T He.
+  - destruct k; cbn in He; discriminate He.
+  - destruct k; cbn in He.
+    + injection He as He; subst T. exists (dEl A'); split; [ reflexivity | ].
+      intros Gx nn h. eapply n_conv; [ exact h | apply conv_nf_sym; assumption ].
+    + destruct (IHc _ _ He) as [T' [He' back]]. exists T'; split; assumption.
+  - destruct k; cbn in He.
+    + injection He as He; subst T. exists (dU r l); split; [ reflexivity | ].
+      intros Gx nn h; exact h.
+    + destruct (IHc _ _ He) as [T' [He' back]]. exists T'; split; assumption.
+Qed.
+
+Lemma typing_ctx_conv :
+  (forall G v T, has_svalty G v T -> forall G', conv_ctx G G' -> has_svalty G' v T)
+  * (forall G n T, wf_neutral G n T -> forall G', conv_ctx G G' -> wf_neutral G' n T).
+Proof.
+  apply (has_neutral_mutind
+    (fun G v T (_ : has_svalty G v T) => forall G', conv_ctx G G' -> has_svalty G' v T)
+    (fun G n T (_ : wf_neutral G n T) => forall G', conv_ctx G G' -> wf_neutral G' n T)).
+  - (* t_ne *) intros Ge n T Hn IH G' c. apply t_ne; apply IH; exact c.
+  - (* t_zero *) intros Ge G' c. apply t_zero.
+  - (* t_suc *) intros Ge v Hv IH G' c. apply t_suc; apply IH; exact c.
+  - (* t_Nat *) intros Ge r l G' c. apply t_Nat.
+  - (* t_Empty *) intros Ge r l G' c. apply t_Empty.
+  - (* t_Pi *) intros Ge F B rF lF rB lB r l HF IHF HB IHB G' c.
+    eapply t_Pi; [ apply IHF; exact c | apply IHB; apply cc_dEl;
+      [ exact (fst (snd conv_refl) (shift_val 0 1 F)) | apply conv_ctx_map_shift; exact c ] ].
+  - (* t_PiI *) intros Ge F B rF lF rB lB r l HF IHF HB IHB G' c.
+    eapply t_PiI; [ apply IHF; exact c | apply IHB; apply cc_dEl;
+      [ exact (fst (snd conv_refl) (shift_val 0 1 F)) | apply conv_ctx_map_shift; exact c ] ].
+  - (* t_lam *) intros Ge F B b rF lF HF IHF Hb IHb G' c.
+    eapply t_lam; [ apply IHF; exact c | apply IHb; apply cc_dEl;
+      [ exact (fst (snd conv_refl) (shift_val 0 1 F)) | apply conv_ctx_map_shift; exact c ] ].
+  - (* t_lamI *) intros Ge F B b rF lF HF IHF Hb IHb G' c.
+    eapply t_lamI; [ apply IHF; exact c | apply IHb; apply cc_dEl;
+      [ exact (fst (snd conv_refl) (shift_val 0 1 F)) | apply conv_ctx_map_shift; exact c ] ].
+  - (* t_lam_eta *) intros Ge F B b ARG B' rF lF HF IHF HR Hap Hb IHb G' c.
+    pose proof (conv_ctx_length c) as HLc.
+    rewrite HLc in HR, Hap.
+    eapply t_lam_eta; [ apply IHF; exact c | exact HR | exact Hap | ].
+    apply IHb. apply cc_dEl;
+      [ exact (fst (snd conv_refl) (shift_val 0 1 F)) | apply conv_ctx_map_shift; exact c ].
+  - (* n_var *) intros Ge k T He G' c.
+    destruct (@conv_ctx_nth Ge G' c k T He) as [T' [He' back]].
+    apply back. apply n_var; exact He'.
+  - (* n_emptyrec *) intros Ge rA lA A scrut r l HA IHA Hs IHs G' c.
+    eapply n_emptyrec; [ apply IHA; exact c | apply IHs; exact c ].
+  - (* n_app *) intros Ge f F B a B' Hf IHf Ha IHa Hap G' c.
+    pose proof (conv_ctx_length c) as HLc. rewrite HLc in Hap.
+    eapply n_app; [ apply IHf; exact c | apply IHa; exact c | exact Hap ].
+  - (* n_appI *) intros Ge f F B a B' Hf IHf Ha IHa Hap G' c.
+    pose proof (conv_ctx_length c) as HLc. rewrite HLc in Hap.
+    eapply n_appI; [ apply IHf; exact c | apply IHa; exact c | exact Hap ].
+  - (* n_conv *) intros Ge n A B Hn IH cAB G' c.
+    eapply n_conv; [ apply IH; exact c | exact cAB ].
+Qed.
+
+(* ===================================================================== *)
+(* DEV: discharging RR_pi_at modulo the reify/reflect adequacy core.       *)
+(* ===================================================================== *)
+Section RRPiDev.
+  Context (lvl : TypeLevel) (rec0 rec1 : RedRel).
+  Context (Ge : senv) (FA BA FB BB : sval) (PA : PolyRedPack Ge FA BA FB BB).
+  Context (wpiA : wf_svalty Ge (dEl (vPi FA BA))).
+  Context (wpiB : wf_svalty Ge (dEl (vPi FB BB))).
+  Context (ad : PolyRedPackAdequate (@LR lvl rec0 rec1) PA).
+  Context (domIH : forall Delta sg FA' FB' (ws : wf_ssub Delta sg Ge)
+            (afA : Apply_val (length Delta) sg FA FA')
+            (afB : Apply_val (length Delta) sg FB FB'),
+        RRCar Delta (dEl FA') (dEl FB') (redTmEq (shpRed PA ws afA afB))).
+  Context (posIH : forall Delta sg a b FA' FB' (ws : wf_ssub Delta sg Ge)
+            (afA : Apply_val (length Delta) sg FA FA')
+            (afB : Apply_val (length Delta) sg FB FB')
+            (rab : redTmEq (shpRed PA ws afA afB) a b),
+        RRCar Delta (dEl (posTyA PA rab)) (dEl (posTyB PA rab))
+          (redTmEq (posPack PA rab))).
+  Context (Hwf : wf_senv Ge).
+
+  (* Domain reify-ty leaf: conv of the (unsubstituted) domain codes via the
+     domain IH at the identity substitution. *)
+  Lemma dom_reify_ty : conv_nf FA FB.
+  Proof.
+    pose proof (@domIH Ge (id_list (length Ge)) FA FB
+       (@wf_ssub_id Ge Hwf) (Apply_val_id FA (length Ge)) (Apply_val_id FB (length Ge))) as H.
+    exact (snd (H Hwf)).
+  Qed.
+
+  (* --- Scoping of the two Pi codes (from wf_svalty). --- *)
+  Lemma sc_A : (ne_below_val (length Ge) FA * ne_below_val (S (length Ge)) BA)%type.
+  Proof.
+    pose proof (wf_svalty_scoped wpiA) as H. cbn [ne_below_ty ne_below_val] in H.
+    destruct H as [HF HB]; split; assumption.
+  Qed.
+  Lemma sc_B : (ne_below_val (length Ge) FB * ne_below_val (S (length Ge)) BB)%type.
+  Proof.
+    pose proof (wf_svalty_scoped wpiB) as H. cbn [ne_below_ty ne_below_val] in H.
+    destruct H as [HF HB]; split; assumption.
+  Qed.
+
+  (* --- The front-extended context and its weakening data.  [Dlt] is a
+     NOTATION (not a Definition) so [length Dlt] is syntactically the unfolded
+     [length (dEl .. :: map .. Ge)] everywhere, and one [HL] rewrite matches
+     uniformly (no fold/unfold split). --- *)
+  Notation Dlt := (dEl (shift_val 0 1 FA) :: map (shift_ty 0 1) Ge).
+
+  Lemma HL : length Dlt = S (length Ge).
+  Proof. cbn [length]; f_equal; apply length_map. Qed.
+
+  Lemma HwfD : wf_senv Dlt.
+  Proof.
+    pose proof (wf_senv_ext Hwf (wf_svalty_pi_dom wpiA)) as H.
+    cbn [shift_ty] in H. exact H.
+  Qed.
+
+  Lemma ws0 : wf_ssub Dlt (wkn_list (length Ge)) Ge.
+  Proof. exact (@wf_ssub_wkn Ge (dEl (shift_val 0 1 FA)) Hwf). Qed.
+
+  Lemma afA0 : Apply_val (length Dlt) (wkn_list (length Ge)) FA (shift_val 0 1 FA).
+  Proof. rewrite HL. apply Apply_val_wkn. exact (fst sc_A). Qed.
+
+  Lemma afB0 : Apply_val (length Dlt) (wkn_list (length Ge)) FB (shift_val 0 1 FB).
+  Proof. rewrite HL. apply Apply_val_wkn. exact (fst sc_B). Qed.
+
+  (* The codomain reify-ty for the RAW codes -- the genuine reify/reflect
+     adequacy residual (the substitution that produced posTyA/posTyB from
+     BA/BB is the bound-var eta-expansion, NOT a renaming, for higher-order
+     domains; see WIP/ReifyDev.v).  Shared by REFLECT and REIFY-ty. *)
+  Context (Hcod : conv_nf BA BB).
+
+  (* Domain typing premises of [t_lam_eta], recovered from the Pi codes. *)
+  Lemma tyFA : exists rF lF, has_svalty Ge FA (dU rF lF).
+  Proof.
+    inversion wpiA; subst.
+    match goal with He : has_svalty Ge (vPi FA BA) _ |- _ => inversion He; subst end.
+    eexists; eexists; eassumption.
+  Qed.
+  Lemma tyFB : exists rF lF, has_svalty Ge FB (dU rF lF).
+  Proof.
+    inversion wpiB; subst.
+    match goal with He : has_svalty Ge (vPi FB BB) _ |- _ => inversion He; subst end.
+    eexists; eexists; eassumption.
+  Qed.
+
+  (* --------------------------------------------------------------------- *)
+  (* The eta-expansion construction: from a [NeConv]-related pair at the     *)
+  (* LEFT Pi, build the two eta-long bodies and the codomain member.         *)
+  (* --------------------------------------------------------------------- *)
+  Lemma eta_bodies :
+    forall n m (wn : wf_neutral Ge n (dEl (vPi FA BA)))
+               (wm : wf_neutral Ge m (dEl (vPi FA BA)))
+               (cnm : conv_ne n m),
+    { ARGn & { ARGm & { body_n & { body_m & { rab : redTmEq (shpRed PA ws0 afA0 afB0) ARGn ARGm &
+      ( Reflect (length Ge) (dEl (vPi FA BA)) n (vLam body_n)
+      * Reflect (length Ge) (dEl (vPi FB BB)) m (vLam body_m)
+      * has_svalty Ge (vLam body_n) (dEl (vPi FA BA))
+      * has_svalty Ge (vLam body_m) (dEl (vPi FB BB))
+      * redTmEq (posPack PA rab) body_n body_m
+      * Reflect (S (length Ge)) (dEl (posTyA PA rab))
+          (nApp (shift_ne 0 1 n) (shift_val 0 1 FA) (shift_val 1 1 BA) ARGn) body_n
+      * Reflect (S (length Ge)) (dEl (posTyB PA rab))
+          (nApp (shift_ne 0 1 m) (shift_val 0 1 FB) (shift_val 1 1 BB) ARGm) body_m )%type } } } } }.
+  Proof.
+    intros n m wn wm cnm.
+    (* bound-variable reflection + domain member *)
+    destruct (pi_bound_var_reflects PA ws0 afA0 afB0 HwfD
+                (@domIH Dlt (wkn_list (length Ge)) (shift_val 0 1 FA) (shift_val 0 1 FB)
+                       ws0 afA0 afB0))
+      as [ARGn [ARGm [[Hargn Hargm] rab]]].
+    (* domain reducibility witnesses, for RedTmEq_wf packaging *)
+    pose proof (shpAd ad ws0 afA0 afB0) as domAd.
+    pose proof (@RedTmEq_wf_gen lvl rec0 rec1 Dlt (dEl (shift_val 0 1 FA))
+                  (dEl (shift_val 0 1 FB)) ARGn ARGm _ domAd rab) as [HtyARGn HtyARGm].
+    (* domain RRCar (for reify-tm of ARGn ~ ARGm) *)
+    pose proof (@domIH Dlt (wkn_list (length Ge)) (shift_val 0 1 FA) (shift_val 0 1 FB)
+                  ws0 afA0 afB0 HwfD) as domRR.
+    (* codomain RRCar at this domain member *)
+    pose proof (@posIH Dlt (wkn_list (length Ge)) ARGn ARGm
+                  (shift_val 0 1 FA) (shift_val 0 1 FB) ws0 afA0 afB0 rab HwfD) as posRR.
+    (* codomain reify-ty: conv_nf (posTyA) (posTyB) *)
+    pose proof (snd posRR) as HcodConv.
+    (* codomain Apply witnesses (cleanly at [S (length Ge)] via pre-rewritten
+       domain-applied witnesses), lifted via [Apply_reflect_cod] *)
+    pose proof (posAppA PA rab) as HAppA; rewrite HL in HAppA.
+    pose proof (posAppB PA rab) as HAppB; rewrite HL in HAppB.
+    pose proof (Apply_reflect_cod (snd sc_A) HAppA) as HcodSA.
+    pose proof (Apply_reflect_cod (snd sc_B) HAppB) as HcodSB.
+    (* LEFT eta-body neutral, typed at dEl (posTyA) *)
+    assert (HnL : wf_neutral Dlt (shift_ne 0 1 n)
+                    (dEl (vPi (shift_val 0 1 FA) (shift_val 1 1 BA)))).
+    { pose proof (snd shift_typing Ge n (dEl (vPi FA BA)) wn (dEl (shift_val 0 1 FA))) as H.
+      cbn [shift_ty shift_val] in H. exact H. }
+    assert (HbL : wf_neutral Dlt
+              (nApp (shift_ne 0 1 n) (shift_val 0 1 FA) (shift_val 1 1 BA) ARGn)
+              (dEl (posTyA PA rab))).
+    { eapply n_app; [ exact HnL | exact HtyARGn | ].
+      rewrite HL. exact HcodSA. }
+    (* RIGHT eta-body neutral: type at dEl (posTyB) then n_conv to dEl (posTyA) *)
+    assert (HnR : wf_neutral Dlt (shift_ne 0 1 m)
+                    (dEl (vPi (shift_val 0 1 FB) (shift_val 1 1 BB)))).
+    { pose proof (snd shift_typing Ge m (dEl (vPi FA BA)) wm (dEl (shift_val 0 1 FA))) as H.
+      cbn [shift_ty shift_val] in H.
+      eapply n_conv; [ exact H | ].
+      apply cnf_pi; apply conv_nf_shift; [ exact dom_reify_ty | exact Hcod ]. }
+    assert (HbR0 : wf_neutral Dlt
+              (nApp (shift_ne 0 1 m) (shift_val 0 1 FB) (shift_val 1 1 BB) ARGm)
+              (dEl (posTyB PA rab))).
+    { eapply n_app; [ exact HnR | exact HtyARGm | ].
+      rewrite HL. exact HcodSB. }
+    assert (HbR : wf_neutral Dlt
+              (nApp (shift_ne 0 1 m) (shift_val 0 1 FB) (shift_val 1 1 BB) ARGm)
+              (dEl (posTyA PA rab))).
+    { eapply n_conv; [ exact HbR0 | apply conv_nf_sym; exact HcodConv ]. }
+    (* conv_ne of the two eta-bodies *)
+    assert (HceB : conv_ne
+              (nApp (shift_ne 0 1 n) (shift_val 0 1 FA) (shift_val 1 1 BA) ARGn)
+              (nApp (shift_ne 0 1 m) (shift_val 0 1 FB) (shift_val 1 1 BB) ARGm)).
+    { apply cne_app.
+      - apply conv_ne_shift; exact cnm.
+      - apply conv_nf_shift; exact dom_reify_ty.
+      - apply conv_nf_shift; exact Hcod.
+      - exact (snd (fst domRR) ARGn ARGm rab). }
+    (* reflect both eta-bodies via the codomain REFLECT *)
+    destruct (fst (fst posRR) _ _ ((HbL, HbR), HceB))
+      as [body_n [body_m [[Hbody_n Hbody_m] rbody]]].
+    (* package the codomain members for t_lam_eta typing *)
+    pose proof (posAd ad ws0 afA0 afB0 rab) as posAdq.
+    pose proof (@RedTmEq_wf_gen lvl rec0 rec1 Dlt (dEl (posTyA PA rab))
+                  (dEl (posTyB PA rab)) body_n body_m _ posAdq rbody) as [Htybn Htybm].
+    (* convert the bound-var / eta-body reflections to [S (length Ge)] *)
+    rewrite HL in Hargn, Hargm, Hbody_n, Hbody_m.
+    exists ARGn, ARGm, body_n, body_m, rab.
+    split; [ split; [ split; [ split; [ split; [ split | ] | ] | ] | ] | ].
+    - (* Reflect n (vLam body_n) at the LEFT Pi *)
+      eapply refl_Pi; [ exact Hargn | exact HAppA | exact Hbody_n ].
+    - (* Reflect m (vLam body_m) at the RIGHT Pi *)
+      eapply refl_Pi; [ exact Hargm | exact HAppB | exact Hbody_m ].
+    - (* has_svalty Ge (vLam body_n) (dEl (vPi FA BA)) via t_lam_eta *)
+      destruct tyFA as [rF [lF HtyF]].
+      eapply t_lam_eta; [ exact HtyF | exact Hargn | exact HcodSA | exact Htybn ].
+    - (* has_svalty Ge (vLam body_m) (dEl (vPi FB BB)) via t_lam_eta.  The body
+         [body_m] was reflected in the LEFT-domain context [dEl (shift FA) :: ..]
+         but [t_lam_eta] for the RIGHT Pi needs it in [dEl (shift FB) :: ..];
+         bridge by context conversion ([conv_nf FA FB] = [dom_reify_ty]). *)
+      destruct tyFB as [rF [lF HtyF]].
+      eapply t_lam_eta; [ exact HtyF | exact Hargm | exact HcodSB | ].
+      eapply (fst typing_ctx_conv _ _ _ Htybm).
+      apply cc_dEl; [ apply conv_nf_shift; exact dom_reify_ty | apply conv_ctx_refl ].
+    - exact rbody.
+    - exact Hbody_n.
+    - exact Hbody_m.
+  Qed.
+
+  (* --------------------------------------------------------------------- *)
+  (* The GENUINE residuals -- the reify/reflect adequacy core (the VR-layer  *)
+  (* effort; see WIP/ReifyDev.v and ConvRelPlan).  Everything ELSE in the    *)
+  (* relevant-Pi case of Theorem 11 is discharged axiom-free above/below.    *)
+  (* --------------------------------------------------------------------- *)
+
+  (* (R2) REIFY-tm: reducibly-convertible function members read back to       *)
+  (* [conv_nf] (needs casing on the members + the codomain reify IH).         *)
+  Context (Hreify_tm : forall a b, PiRedTmEq PA a b -> conv_nf a b).
+
+  (* (R3) The eta-expansion's APPLICATION CLAUSE: for the two eta-long bodies *)
+  (* produced by [eta_bodies], the substituted-and-applied lambdas reduce to  *)
+  (* codomain-convertible values.  This is the two-sided analog of the        *)
+  (* single-sided [reflect_pi_app_step] -- the beta-reduct / RedSub-closure   *)
+  (* adequacy that the single-sided development reduced to and never closed.   *)
+  Definition RR_app2 : Type :=
+    forall n m ARGn ARGm body_n body_m
+      (rab : redTmEq (shpRed PA ws0 afA0 afB0) ARGn ARGm)
+      (Hbn : Reflect (S (length Ge)) (dEl (posTyA PA rab))
+               (nApp (shift_ne 0 1 n) (shift_val 0 1 FA) (shift_val 1 1 BA) ARGn) body_n)
+      (Hbm : Reflect (S (length Ge)) (dEl (posTyB PA rab))
+               (nApp (shift_ne 0 1 m) (shift_val 0 1 FB) (shift_val 1 1 BB) ARGm) body_m)
+      (rbody : redTmEq (posPack PA rab) body_n body_m),
+    forall Delta sg a b FA' FB' BA' BB' fsg gsg
+      (ws : wf_ssub Delta sg Ge) (rn : is_ren sg)
+      (afA : Apply_val (length Delta) sg FA FA')
+      (afB : Apply_val (length Delta) sg FB FB')
+      (afBA : Apply_val (S (length Delta)) (up sg) BA BA')
+      (afBB : Apply_val (S (length Delta)) (up sg) BB BB')
+      (afsf : Apply_val (length Delta) sg (vLam body_n) fsg)
+      (afsg : Apply_val (length Delta) sg (vLam body_m) gsg)
+      (rab' : redTmEq (shpRed PA ws afA afB) a b),
+      { v & { w & ( Vapp (length Delta) FA' BA' fsg a v
+                  * Vapp (length Delta) FB' BB' gsg b w
+                  * redTmEq (posPack PA rab') v w )%type } }.
+  Context (Happ : RR_app2).
+
+  (* The relevant-Pi case of Theorem 11, MODULO the three residuals.  All the
+     eta-expansion construction, both [t_lam_eta] typings, the context-conversion
+     bridge, the domain reify-ty, and the Pi-code reify-ty are discharged. *)
+  Lemma RR_pi_case : RRCar Ge (dEl (vPi FA BA)) (dEl (vPi FB BB)) (PiRedTmEq PA).
+  Proof.
+    intros _. split; [ split | ].
+    - (* REFLECT *)
+      intros n m Hnm. destruct Hnm as [[wn wm] cnm].
+      destruct (eta_bodies wn wm cnm)
+        as [ARGn [ARGm [body_n [body_m [rab
+             [[[[[[Hrefn Hrefm] Htyn] Htym] rbody] Hbn] Hbm]]]]]].
+      exists (vLam body_n), (vLam body_m). split; [ split | ].
+      + exact Hrefn.
+      + exact Hrefm.
+      + split; [ split | ].
+        * exact Htyn.
+        * exact Htym.
+        * exact (@Happ n m ARGn ARGm body_n body_m rab Hbn Hbm rbody).
+    - (* REIFY-tm *) exact Hreify_tm.
+    - (* REIFY-ty *) cbn. apply cnf_pi; [ exact dom_reify_ty | exact Hcod ].
+  Qed.
+
+End RRPiDev.
+
+(* ===================================================================== *)
+(* PACKAGING: [RR_pi_at] (the abstract relevant-Pi premise of [RR_gen])      *)
+(* reduced to the three reify/reflect-adequacy residuals.                    *)
+(* ===================================================================== *)
+
+(* The residual relevant-Pi obligation: at every Pi node, given the two IHs   *)
+(* and [wf_senv], supply (R1) the codomain reify-ty [conv_nf BA BB], (R2) the *)
+(* function reify-tm, and (R3) the eta-expansion application clause.  These   *)
+(* are the genuine VR-layer core (see ReifyDev.v); EVERYTHING else in the     *)
+(* relevant-Pi case is discharged by [RR_pi_case]. *)
+Definition RR_pi_res (lvl : TypeLevel) (rec0 rec1 : RedRel) : Type :=
+  forall Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB)
+    (wpiA : wf_svalty Ge (dEl (vPi FA BA)))
+    (wpiB : wf_svalty Ge (dEl (vPi FB BB)))
+    (ad : PolyRedPackAdequate (@LR lvl rec0 rec1) PA)
+    (domIH : forall Delta sg FA' FB' (ws : wf_ssub Delta sg Ge)
+            (afA : Apply_val (length Delta) sg FA FA')
+            (afB : Apply_val (length Delta) sg FB FB'),
+        RRCar Delta (dEl FA') (dEl FB') (redTmEq (shpRed PA ws afA afB)))
+    (posIH : forall Delta sg a b FA' FB' (ws : wf_ssub Delta sg Ge)
+            (afA : Apply_val (length Delta) sg FA FA')
+            (afB : Apply_val (length Delta) sg FB FB')
+            (rab : redTmEq (shpRed PA ws afA afB) a b),
+        RRCar Delta (dEl (posTyA PA rab)) (dEl (posTyB PA rab))
+          (redTmEq (posPack PA rab)))
+    (Hwf : wf_senv Ge),
+    ( conv_nf BA BB
+    * (forall a b, PiRedTmEq PA a b -> conv_nf a b)
+    * RR_app2 PA wpiA wpiB Hwf )%type.
+
+Lemma RR_pi_at_from_res : forall lvl rec0 rec1,
+    RR_pi_res lvl rec0 rec1 -> RR_pi_at lvl rec0 rec1.
+Proof.
+  intros lvl rec0 rec1 Hres Ge FA BA FB BB PA wpiA wpiB ad domIH posIH Hwf.
+  destruct (Hres Ge FA BA FB BB PA wpiA wpiB ad domIH posIH Hwf)
+    as [[Hcod Hreify] Happ].
+  exact (@RR_pi_case lvl rec0 rec1 Ge FA BA FB BB PA wpiA wpiB ad
+           domIH posIH Hwf Hcod Hreify Happ Hwf).
+Qed.
+
