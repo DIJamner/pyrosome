@@ -83,29 +83,63 @@ Pi members.
   `lvl_of_cases` picks `LR0`/`LR1`) + companion `reflect_neEl_ty` (type-FORMATION
   `RedTyEq Ge (dEl(vNe n))(dEl(vNe m))`).
 
-## Next move — Ph3 PROPER: the relevant-Pi MUTUAL KNOT (Theorem 11 core)
+## DONE THIS SESSION (2026-06-06) — engine + eta design
 
-Reflect-at-`vPi` and reify-at-`vPi` are ONE mutual induction over the `LR`
-derivation (`LogRel2Ind.LR_mut`; domain via `shpAd`, codomain via `posAd` — both
-well-founded sub-derivations).  Read `WIP/ConvRelPlan.md` STATUS "Ph3 PROPER" for
-the full structure mined from the single-sided roadmap
-(`WIP/OTT_LogRel_single_sided/LogRelFund.v` steps (1)–(4) + the session-6
-CORRECTION) and the two findings:
-1. Reflect-at-Pi CALLS reify (the conv-side needs `conv_nf` of the domain
-   types/members to fill `cne_app`'s annotation slots) — hence one mutual proof.
-   The single-sided eta-expansion construction (`shpAd`/`posAd` IHs +
-   `Apply_reflect_cod` + `t_lam_eta`) ports directly; the genuine open core is the
-   application clause's beta-reduct reducibility, now to be closed by the
-   two-sided PER (relate the two reflections DIRECTLY via `posAd`'s reflect IH +
-   genuine `conv_ne`, NOT `Reflect_det`).  `Reflect_ren` + `conv_ren` transport.
-2. **DECISION NEEDED — reify at the irrelevant `vPiI` fragment is not
-   expressible against the current STRUCTURAL `conv_nf` (no proof-irrelevance
-   rule).**  Either add irrelevance to `conv_nf`, or prove Theorem 11 for the
-   RELEVANT fragment only and defer `vPiI`/`vLamI` to Ph6 (full OTT).  Reflect-at-
-   `vPiI` is fine; only reify is gapped.  See ConvRelPlan STATUS for options.
+`LogRel2Reflect.v` now carries the FULL `LR_mut`-driven combined reify/reflect
+induction `RR_gen` (axiom-free, green), with motive `RRCar` =
+  - REFLECT (TYPE-DIRECTED): `NeConv Ge A B n m ⟹ { vn vm & Reflect (length Ge) A
+    n vn * Reflect (length Ge) B m vm * P vn vm }` — identity at base/code/U
+    (`refl_Nat`/`refl_Empty`/`refl_neEl`/`refl_U`), eta-long at relevant Pi
+    (`refl_Pi`);
+  - REIFY-tm: `P a b ⟹ conv_nf a b`;
+  - REIFY-ty: `conv_nf_ty A B` (the codes; `unit` at U).
+All 5 NON-Pi cases discharged; both Pi cases abstracted as `RR_pi_at` /
+`RR_piI_at` (universals `RR_pi_step`/`RR_piI_step`).  Tower kit `RRbot`/
+`NeElBuild_LR`/`NeElBuild_vac` + `RR0 : RecRR1 LR0` (level-0 instance) green.
+
+**ETA QUESTION RESOLVED (paper-faithful).**  The paper does NOT add eta to
+conversion; `conv_nf`/`conv_ne` stay UNTYPED+structural (Def 13 `∼annot`).  Eta is
+BAKED INTO NORMAL FORMS by `Reflect` (relevant-function values are always `vLam`,
+never bare `vNe`) — hence the type-directed REFLECT motive above, and REIFY-tm at
+`vPi` only ever hits `cnf_lam`.
+
+**UNIVERSE FINDING.**  `RR1`/`RR2` + user `reflect_red`/`reify_tm`/`reify_ty`
+CANNOT close from the ABSTRACT `Hpi` premise (a bound hypothesis is monomorphic
+⇒ can't supply the poly tower's per-level `LR0`/`LR1` instances ⇒ rigid universe
+clash; `RR0` dodges via `rec0 = LRbot`).  So discharging `RR_pi_at` as a genuine
+axiom-free POLY LEMMA is BOTH the math crux AND the universe-unblocker for the
+whole tower — no separate refactor.
+
+## Next move — DISCHARGE `RR_pi_at` (the relevant-Pi eta MUTUAL KNOT)
+
+This is THE crux.  `RR_pi_at lvl rec0 rec1` (see `LogRel2Reflect.v`) must be
+proven axiom-free + universe-POLY (so the tower closes).  Decompose like the
+single-sided dev (`reflect_pi_step → _app → _beta`).  Pieces:
+- **REIFY-ty**: `conv_nf FA FB` from `domIH` at the IDENTITY sub
+  (`Preservation.wf_ssub_id` + `ApplyLemmas.Apply_val_id`), `conv_nf BA BB` from
+  `posIH` at the fresh-var/up-identity instance (`ApplyLemmas.up_id_list`,
+  `snoc_wkn_hd_list`).
+- **REFLECT (eta-expand)**: ports `WIP/OTT_LogRel_single_sided/LogRelFund.v`
+  `reflect_pi_step_from_app` (`wf_ssub_wkn`/`Apply_val_wkn`/`Apply_reflect_cod`/
+  `refl_Pi`/`t_lam_eta`), now TWO-SIDED: build `vLam body_n`/`vLam body_m` via the
+  domain/codomain IHs (both REFLECT and REIFY directions of `RRCar`), `conv_ren`+
+  `Reflect_ren` for transport.  Genuine open core = the app-clause beta-reduct
+  reducibility, closed by relating the two `posIH` reflections DIRECTLY via the
+  two-sided PER + `conv_ne` (NOT `Reflect_det`).
+- **REIFY-tm**: case on members; `cnf_lam` (vLam-vLam, apply-to-var + `posIH`
+  reify); mixed `vNe`/`vLam` self-refute via the codomain reify (incompatible
+  base values).
+
+**PLUMBING NEEDED FIRST:** `RR_pi_at`'s proof needs `wf_senv Ge` (for
+`wf_ssub_id`/`wf_ssub_wkn`), which `RRCar`/`RR_gen` currently do NOT thread.
+Decide: add `wf_senv Ge` premise to `RRCar` (thread through `RR_gen`, all cases
+re-greened — base cases ignore it) — mirrors single-sided `reflect_red`'s `wfG`.
+Then prove `RR_pi_at`; the tower (`RR1`/`RR2`) + user `reflect_red`/`reify_tm`/
+`reify_ty` close immediately (re-add them).
 
 Then the fundamental lemma (Ph5) → connect to gluing `Model.v`/`ModelOk.v` ⇒
 `eq_term` decidability.  Transport (Lemma 12) + transitivity stay deferred (Ph5).
+`vPiI`/`vLamI` reify deferred to Ph6.
 
 ## Build (per CLAUDE.md — never run full `make` during dev)
 ```
