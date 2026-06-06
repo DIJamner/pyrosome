@@ -148,6 +148,7 @@ Section BuildTries.
   Context {idx_map : forall A, map.map positive A} {idx_map_plus : map_plus idx_map}
           {idx_map_plus_ok : @map_plus_ok positive idx_map idx_map_plus}.
   Context {analysis_result : Type}.
+  Context (idx_leb : positive -> positive -> bool).
 
   Notation fptm := (@FullPosTrie.full_pos_trie_map).
 
@@ -162,12 +163,12 @@ Section BuildTries.
                  /\ fpt_depth (snd ft) (clen cl).
 
   Lemma build_tries_for_symbol_depth
-    (current_epoch : positive)
+    (current_epoch : positive) (window : nat)
     (q_clauses : idx_map (list nat * nat))
     (tbl : fptm (db_entry positive analysis_result)) :
     bt_inv q_clauses
-      (build_tries_for_symbol positive _ idx_map idx_map_plus
-         (fun A => fptm A) analysis_result current_epoch q_clauses tbl).
+      (build_tries_for_symbol positive _ Pos.succ idx_leb idx_map idx_map_plus
+         (fun A => fptm A) analysis_result current_epoch window q_clauses tbl).
   Proof.
     unfold build_tries_for_symbol.
     eapply (map.fold_spec (fun _ tries => bt_inv q_clauses tries)).
@@ -185,12 +186,14 @@ Section BuildTries.
       eexists. split; [reflexivity|].
       destruct (match_clause positive positive_Eqb (cargs, cv) k v0) as [assignment|] eqn:Hmc.
       { apply match_clause_length in Hmc.
-        destruct (eqb epoch current_epoch); cbn [fst snd].
-        - split; [|split].
+        destruct (idx_leb current_epoch (Nat.iter window Pos.succ epoch)); cbn [fst snd].
+        - (* within window: full put, new put, old unchanged *)
+          split; [|split].
           + apply fpt_put_depth; [exact Hmc | exact Hdf].
           + apply fpt_put_depth; [exact Hmc | exact Hdn].
           + exact Hdo.
-        - split; [|split].
+        - (* outside window: full put, new unchanged, old put *)
+          split; [|split].
           + apply fpt_put_depth; [exact Hmc | exact Hdf].
           + exact Hdn.
           + apply fpt_put_depth; [exact Hmc | exact Hdo]. }

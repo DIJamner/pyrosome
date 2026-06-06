@@ -644,6 +644,12 @@ Section WithMap.
   (* build_tries soundness: no false positives in matching               *)
   (* ------------------------------------------------------------------ *)
 
+  (* idx_leb is scoped tightly: only used by the build_tries block below.
+     Keeping it in a sub-section avoids propagating it to all other section-
+     closed lemmas (alloc_sound, union_sound, etc.) which do not need it. *)
+  Section WithIdxLeb.
+  Context (idx_leb : idx -> idx -> bool).
+
   Context (idx_map_plus_ok : @map_plus_ok _ _ idx_map_plus).
 
   (* Helper: get_put on idx_trie with the get-key first, put-key second *)
@@ -657,15 +663,15 @@ Section WithMap.
   Qed.
 
   Lemma build_tries_for_symbol_sound
-    (current_epoch : idx)
+    (current_epoch : idx) (window : nat)
     (q_clauses : idx_map (list nat * nat))
     (tbl : idx_trie (db_entry idx analysis_result))
     (n : idx) (clause : list nat * nat)
     (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit)
     (assignment : list idx) :
     map.get q_clauses n = Some clause ->
-    map.get (build_tries_for_symbol idx Eqb_idx idx_map idx_map_plus idx_trie
-               analysis_result current_epoch q_clauses tbl) n = Some trie_pair ->
+    map.get (build_tries_for_symbol idx Eqb_idx idx_succ idx_leb idx_map idx_map_plus idx_trie
+               analysis_result current_epoch window q_clauses tbl) n = Some trie_pair ->
     map.get (fst (fst trie_pair)) assignment = Some tt ->
     exists args entry,
       map.get tbl args = Some entry
@@ -707,7 +713,7 @@ Section WithMap.
       cbn [fst] in Hfull.
       destruct (match_clause clause k vv) as [ assignment0 | ] eqn:Hmatch.
       { (* Match succeeded: assignment0 was recorded in full *)
-        destruct (eqb epoch current_epoch) eqn:Hepoch.
+        destruct (idx_leb current_epoch (Nat.iter window idx_succ epoch)) eqn:Hepoch.
         - cbn [fst] in Hfull.
           destruct (eqb (assignment0 : list idx) assignment) eqn:Heqasg.
           + pose proof (@eqb_spec (list idx) (list_eqb (A:=idx))
@@ -764,7 +770,7 @@ Section WithMap.
         - exact Hentry. }
   Qed.
 
-  Lemma build_tries_sound (q : rule_set idx symbol symbol_map idx_map)
+  Lemma build_tries_sound (window : nat) (q : rule_set idx symbol symbol_map idx_map)
     (inst : instance)
     (f : symbol) (n : idx) (clause : list nat * nat)
     (clause_tries : idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
@@ -772,8 +778,8 @@ Section WithMap.
     (q_f : idx_map (list nat * nat)) :
     map.get (q.(query_clauses idx symbol symbol_map idx_map)) f = Some q_f ->
     map.get q_f n = Some clause ->
-    map.get (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-      idx_map idx_map_plus idx_trie analysis_result q inst)) f = Some clause_tries ->
+    map.get (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+      idx_map idx_map_plus idx_trie analysis_result window q inst)) f = Some clause_tries ->
     map.get clause_tries n = Some trie_pair ->
     map.get (fst (fst trie_pair)) assignment = Some tt ->
     exists args v,
@@ -788,7 +794,7 @@ Section WithMap.
     - unfold db_map in Htbl.
       rewrite Htbl in Hbt_f.
       injection Hbt_f; intro; subst clause_tries.
-      pose proof (build_tries_for_symbol_sound (inst.(epoch)) q_f tbl n clause trie_pair assignment
+      pose proof (build_tries_for_symbol_sound (inst.(epoch)) window q_f tbl n clause trie_pair assignment
         Hclause Hct_n Hfull) as [ args [ entry [ Hargs Hentry ] ] ].
       exists args. exists entry.(entry_value idx analysis_result).
       split.
@@ -806,11 +812,11 @@ Section WithMap.
   Qed.
 
   Lemma build_tries_for_symbol_frontier_subset
-    (current_epoch : idx) (q_clauses : idx_map (list nat * nat))
+    (current_epoch : idx) (window : nat) (q_clauses : idx_map (list nat * nat))
     (tbl : idx_trie (db_entry idx analysis_result))
     (n : idx) (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx) :
-    map.get (build_tries_for_symbol idx Eqb_idx idx_map idx_map_plus idx_trie
-               analysis_result current_epoch q_clauses tbl) n = Some trie_pair ->
+    map.get (build_tries_for_symbol idx Eqb_idx idx_succ idx_leb idx_map idx_map_plus idx_trie
+               analysis_result current_epoch window q_clauses tbl) n = Some trie_pair ->
     map.get (snd (fst trie_pair)) assignment = Some tt ->
     map.get (fst (fst trie_pair)) assignment = Some tt.
   Proof.
@@ -846,8 +852,8 @@ Section WithMap.
       injection Htp; intro; subst tp.
       destruct tp_old as [ [ full_old new_old ] old_old ].
       destruct (match_clause cl k vv) as [ assignment0 | ] eqn:Hmatch.
-      { destruct (eqb epoch current_epoch) eqn:Hepoch.
-        - (* epoch matches: new' = put new_old assignment0 tt *)
+      { destruct (idx_leb current_epoch (Nat.iter window idx_succ epoch)) eqn:Hepoch.
+        - (* within window: new' = put new_old assignment0 tt *)
           cbn [fst snd] in *.
           destruct (eqb (assignment0 : list idx) assignment) eqn:Heqasg.
           + pose proof (@eqb_spec (list idx) (list_eqb (A:=idx))
@@ -865,7 +871,7 @@ Section WithMap.
             rewrite (get_put_diff_trie unit full_old assignment assignment0 tt
               (fun H => Hbs (eq_sym H))).
             exact Hfull_old.
-        - (* epoch doesn't match: new' = new_old unchanged *)
+        - (* outside window: new' = new_old unchanged *)
           cbn [fst snd] in *.
           pose proof (IH (full_old, new_old, old_old) eq_refl) as HIH.
           cbn [fst snd] in HIH.
@@ -886,13 +892,13 @@ Section WithMap.
         exact (IH (full_old, new_old, old_old) eq_refl Hfront). }
   Qed.
 
-  Lemma build_tries_frontier_subset (q : rule_set idx symbol symbol_map idx_map)
+  Lemma build_tries_frontier_subset (window : nat) (q : rule_set idx symbol symbol_map idx_map)
     (inst : instance)
     (f : symbol) (n : idx)
     (clause_tries : idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
     (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx) :
-    map.get (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-      idx_map idx_map_plus idx_trie analysis_result q inst)) f = Some clause_tries ->
+    map.get (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+      idx_map idx_map_plus idx_trie analysis_result window q inst)) f = Some clause_tries ->
     map.get clause_tries n = Some trie_pair ->
     map.get (snd (fst trie_pair)) assignment = Some tt ->
     map.get (fst (fst trie_pair)) assignment = Some tt.
@@ -905,7 +911,7 @@ Section WithMap.
       + unfold db_map in Htbl.
         rewrite Htbl in Hbt_f.
         injection Hbt_f; intro; subst clause_tries.
-        apply (build_tries_for_symbol_frontier_subset (inst.(epoch)) q_f tbl n trie_pair assignment
+        apply (build_tries_for_symbol_frontier_subset (inst.(epoch)) window q_f tbl n trie_pair assignment
           Hct_n Hfront).
       + unfold db_map in Htbl.
         rewrite Htbl in Hbt_f.
@@ -914,7 +920,7 @@ Section WithMap.
   Qed.
 
   Lemma clause_ptr_atom_in_db
-    (q : rule_set idx symbol symbol_map idx_map) (inst : instance)
+    (window : nat) (q : rule_set idx symbol symbol_map idx_map) (inst : instance)
     (query_vars : list idx) (frontier_n : idx)
     (f : symbol) (n : idx) (clause_vars : list idx)
     (q_f : idx_map (list nat * nat)) (clause : list nat * nat)
@@ -923,8 +929,8 @@ Section WithMap.
     map.get q_f n = Some clause ->
     map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
                     query_vars
-                    (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                            idx_map idx_map_plus idx_trie analysis_result q inst))
+                    (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result window q inst))
                     frontier_n (Build_erule_query_ptr idx symbol f n clause_vars)))
             (map fst (filter snd (combine sigma
                (variable_flags idx Eqb_idx query_vars clause_vars))))
@@ -939,8 +945,8 @@ Section WithMap.
     unfold trie_of_clause in Hhit.
     cbn [fst snd] in Hhit.
     set (proj := map fst (filter snd (combine sigma (variable_flags idx Eqb_idx query_vars clause_vars)))).
-    set (db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                            idx_map idx_map_plus idx_trie analysis_result q inst)).
+    set (db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result window q inst)).
     destruct (map.get db_tries f) as [ trie_list | ] eqn:Hf.
     - (* Some trie_list case *)
       fold db_tries in Hhit.
@@ -953,17 +959,17 @@ Section WithMap.
         * (* eqb n frontier_n = true, new_ case *)
           fold proj in Hhit.
           assert (Hfull : map.get (fst (fst (total, new_, old_))) proj = Some tt). {
-            apply (build_tries_frontier_subset q inst f n trie_list (total, new_, old_) proj Hf Hn).
+            apply (build_tries_frontier_subset window q inst f n trie_list (total, new_, old_) proj Hf Hn).
             exact Hhit.
           }
           cbn [fst] in Hfull.
-          pose proof (build_tries_sound q inst f n clause trie_list (total, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
+          pose proof (build_tries_sound window q inst f n clause trie_list (total, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
         * (* eqb n frontier_n = false, total case *)
           fold proj in Hhit.
-          pose proof (build_tries_sound q inst f n clause trie_list (total, new_, old_) proj q_f Hqf Hclause Hf Hn Hhit)
+          pose proof (build_tries_sound window q inst f n clause trie_list (total, new_, old_) proj q_f Hqf Hclause Hf Hn Hhit)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
@@ -984,11 +990,11 @@ Section WithMap.
      [old] (= snd) implies a hit in [full] (= fst (fst)).  Needed for the proper
      semi-naive 3-way selection where clauses before the frontier use [old]. *)
   Lemma build_tries_for_symbol_old_subset
-    (current_epoch : idx) (q_clauses : idx_map (list nat * nat))
+    (current_epoch : idx) (window : nat) (q_clauses : idx_map (list nat * nat))
     (tbl : idx_trie (db_entry idx analysis_result))
     (n : idx) (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx) :
-    map.get (build_tries_for_symbol idx Eqb_idx idx_map idx_map_plus idx_trie
-               analysis_result current_epoch q_clauses tbl) n = Some trie_pair ->
+    map.get (build_tries_for_symbol idx Eqb_idx idx_succ idx_leb idx_map idx_map_plus idx_trie
+               analysis_result current_epoch window q_clauses tbl) n = Some trie_pair ->
     map.get (snd trie_pair) assignment = Some tt ->
     map.get (fst (fst trie_pair)) assignment = Some tt.
   Proof.
@@ -1024,8 +1030,8 @@ Section WithMap.
       injection Htp; intro; subst tp.
       destruct tp_old as [ [ full_old new_old ] old_old ].
       destruct (match_clause cl k vv) as [ assignment0 | ] eqn:Hmatch.
-      { destruct (eqb epoch current_epoch) eqn:Hepoch.
-        - (* epoch matches: old' = old_old (unchanged), full' = put full_old asg0 *)
+      { destruct (idx_leb current_epoch (Nat.iter window idx_succ epoch)) eqn:Hepoch.
+        - (* within window: old' = old_old (unchanged), full' = put full_old asg0 *)
           cbn [fst snd] in *.
           (* Hfront : map.get old_old assignment = Some tt *)
           pose proof (IH (full_old, new_old, old_old) eq_refl) as HIH.
@@ -1042,7 +1048,7 @@ Section WithMap.
             rewrite (get_put_diff_trie unit full_old assignment assignment0 tt
               (fun H => Hbs (eq_sym H))).
             exact Hfull_old.
-        - (* epoch doesn't match: old' = put old_old asg0, full' = put full_old asg0 *)
+        - (* outside window: old' = put old_old asg0, full' = put full_old asg0 *)
           cbn [fst snd] in *.
           destruct (eqb (assignment0 : list idx) assignment) eqn:Heqasg.
           + pose proof (@eqb_spec (list idx) (list_eqb (A:=idx))
@@ -1065,13 +1071,13 @@ Section WithMap.
         exact (IH (full_old, new_old, old_old) eq_refl Hfront). }
   Qed.
 
-  Lemma build_tries_old_subset (q : rule_set idx symbol symbol_map idx_map)
+  Lemma build_tries_old_subset (window : nat) (q : rule_set idx symbol symbol_map idx_map)
     (inst : instance)
     (f : symbol) (n : idx)
     (clause_tries : idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
     (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx) :
-    map.get (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-      idx_map idx_map_plus idx_trie analysis_result q inst)) f = Some clause_tries ->
+    map.get (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+      idx_map idx_map_plus idx_trie analysis_result window q inst)) f = Some clause_tries ->
     map.get clause_tries n = Some trie_pair ->
     map.get (snd trie_pair) assignment = Some tt ->
     map.get (fst (fst trie_pair)) assignment = Some tt.
@@ -1084,7 +1090,7 @@ Section WithMap.
       + unfold db_map in Htbl.
         rewrite Htbl in Hbt_f.
         injection Hbt_f; intro; subst clause_tries.
-        apply (build_tries_for_symbol_old_subset (inst.(epoch)) q_f tbl n trie_pair assignment
+        apply (build_tries_for_symbol_old_subset (inst.(epoch)) window q_f tbl n trie_pair assignment
           Hct_n Hfront).
       + unfold db_map in Htbl.
         rewrite Htbl in Hbt_f.
@@ -1097,7 +1103,7 @@ Section WithMap.
      (old if pos<frontier_pos, new if =, full if >) reduces to a db atom via the
      subset lemmas + build_tries_sound. *)
   Lemma clause_ptr_atom_in_db_sn
-    (q : rule_set idx symbol symbol_map idx_map) (inst : instance)
+    (window : nat) (q : rule_set idx symbol symbol_map idx_map) (inst : instance)
     (query_vars : list idx) (frontier_pos pos : nat)
     (f : symbol) (n : idx) (clause_vars : list idx)
     (q_f : idx_map (list nat * nat)) (clause : list nat * nat)
@@ -1106,8 +1112,8 @@ Section WithMap.
     map.get q_f n = Some clause ->
     map.get (fst (trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
                     query_vars
-                    (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                            idx_map idx_map_plus idx_trie analysis_result q inst))
+                    (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result window q inst))
                     frontier_pos pos (Build_erule_query_ptr idx symbol f n clause_vars)))
             (map fst (filter snd (combine sigma
                (variable_flags idx Eqb_idx query_vars clause_vars))))
@@ -1122,8 +1128,8 @@ Section WithMap.
     unfold trie_of_clause_sn in Hhit.
     cbn [fst snd] in Hhit.
     set (proj := map fst (filter snd (combine sigma (variable_flags idx Eqb_idx query_vars clause_vars)))).
-    set (db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                            idx_map idx_map_plus idx_trie analysis_result q inst)).
+    set (db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result window q inst)).
     destruct (map.get db_tries f) as [ trie_list | ] eqn:Hf.
     - (* Some trie_list case *)
       fold db_tries in Hhit.
@@ -1139,11 +1145,11 @@ Section WithMap.
             cbn [fst snd]. exact Hhit.
           }
           assert (Hfull : map.get (fst (fst (full, new_, old_))) proj = Some tt). {
-            apply (build_tries_frontier_subset q inst f n trie_list (full, new_, old_) proj Hf Hn).
+            apply (build_tries_frontier_subset window q inst f n trie_list (full, new_, old_) proj Hf Hn).
             exact Hhit'.
           }
           cbn [fst] in Hfull.
-          pose proof (build_tries_sound q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
+          pose proof (build_tries_sound window q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
@@ -1153,11 +1159,11 @@ Section WithMap.
             cbn [fst snd]. exact Hhit.
           }
           assert (Hfull : map.get (fst (fst (full, new_, old_))) proj = Some tt). {
-            apply (build_tries_old_subset q inst f n trie_list (full, new_, old_) proj Hf Hn).
+            apply (build_tries_old_subset window q inst f n trie_list (full, new_, old_) proj Hf Hn).
             exact Hhit_old.
           }
           cbn [fst] in Hfull.
-          pose proof (build_tries_sound q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
+          pose proof (build_tries_sound window q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
@@ -1166,7 +1172,7 @@ Section WithMap.
           assert (Hhit_full : map.get (fst (fst (full, new_, old_))) proj = Some tt). {
             cbn [fst snd]. exact Hhit.
           }
-          pose proof (build_tries_sound q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hhit_full)
+          pose proof (build_tries_sound window q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hhit_full)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
@@ -1182,6 +1188,8 @@ Section WithMap.
       rewrite (@map.get_empty _ _ _ (idx_trie_ok unit)) in Hhit.
       discriminate.
   Qed.
+
+  End WithIdxLeb.
 
   Lemma project_filter_variable_flags (P : idx -> bool) (query_vars sigma : list idx) (d : idx) :
     List.NoDup query_vars ->
@@ -1461,12 +1469,6 @@ Section WithMap.
     split; [exact Hok | exists map.empty; exact Hsound].
   Qed.
   
-  Notation saturate_until' := (saturate_until' idx_succ idx_zero (spaced_list_intersect)).
-  Notation saturate_until := (saturate_until idx_succ idx_zero spaced_list_intersect).
-
-  Notation run1iter :=
-    (run1iter idx Eqb_idx idx_succ idx_zero symbol Eqb_symbol symbol_map symbol_map_plus
-       idx_map idx_map_plus idx_trie spaced_list_intersect).
   (*
   Notation rebuild := (rebuild idx Eqb_idx symbol Eqb_symbol symbol_map idx_map idx_trie).
   *)
@@ -1660,7 +1662,7 @@ Section WithMap.
     1:eapply all2_refl.
     all: apply reachable_rel_Reflexive.
   Qed.
-  
+
   Lemma atom_rel_sym equiv : Symmetric (atom_rel equiv).
   Proof using.
     clear lt idx_succ idx_zero.
@@ -1988,7 +1990,7 @@ Section WithMap.
       eq_sound_for_model m i y z ->
       eq_sound_for_model m i x z.
   Proof using H0.
-    clear lt idx_succ.
+    clear lt idx_succ idx_zero.
     unfold  eq_sound_for_model, Is_Some_satisfying.
     repeat case_match; basic_goal_prep; auto.
     all: try tauto.

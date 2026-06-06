@@ -13,6 +13,7 @@ Section Slice.
   Context
     {idx : Type} {Eqb_idx : Eqb idx} {Eqb_idx_ok : Eqb_ok Eqb_idx}
     {lt : idx -> idx -> Prop} {idx_succ : idx -> idx} {idx_zero : WithDefault idx}
+    {idx_leb : idx -> idx -> bool}
     {symbol : Type} {Eqb_symbol : Eqb symbol} {Eqb_symbol_ok : Eqb_ok Eqb_symbol}
     {symbol_map : forall A, map.map symbol A} {symbol_map_plus : map_plus symbol_map}
     {symbol_map_plus_ok : @map_plus_ok _ _ symbol_map_plus} {symbol_map_ok : forall A, map.ok (symbol_map A)}
@@ -21,7 +22,8 @@ Section Slice.
     {analysis_result : Type} {idx_map_plus_ok : @map_plus_ok _ _ idx_map_plus}
     {spaced_list_intersect
       : forall B, WithDefault B -> (B -> B -> B) -> ne_list (map.rep (map:=idx_trie B) * list bool) -> map.rep (map:=idx_trie B)}
-    {H : analysis idx symbol analysis_result} {m : model symbol} {Hm : model_ok symbol m}.
+    {H : analysis idx symbol analysis_result} {m : model symbol} {Hm : model_ok symbol m}
+    (window : nat).
   Existing Instance idx_zero.
   Notation instance := (instance idx symbol symbol_map idx_map idx_trie analysis_result).
   Notation egraph_ok := (egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result).
@@ -30,8 +32,8 @@ Section Slice.
   Notation atom_interpretation := (atom_interpretation idx symbol symbol_map idx_map idx_trie analysis_result).
   Notation idx_interpretation_wf := (idx_interpretation_wf idx symbol symbol_map idx_map idx_trie analysis_result).
   Notation interpretation_exact := (interpretation_exact idx symbol symbol_map idx_map idx_trie analysis_result).
-  Notation clause_ptr_atom_in_db := (clause_ptr_atom_in_db idx Eqb_idx Eqb_idx_ok symbol symbol_map symbol_map_plus symbol_map_plus_ok idx_map idx_map_plus idx_trie idx_trie_ok analysis_result idx_map_plus_ok).
-  Notation clause_ptr_atom_in_db_sn := (clause_ptr_atom_in_db_sn idx Eqb_idx Eqb_idx_ok symbol symbol_map symbol_map_plus symbol_map_plus_ok idx_map idx_map_plus idx_trie idx_trie_ok analysis_result idx_map_plus_ok).
+  Notation clause_ptr_atom_in_db := (clause_ptr_atom_in_db idx Eqb_idx Eqb_idx_ok idx_succ symbol symbol_map symbol_map_plus symbol_map_plus_ok idx_map idx_map_plus idx_trie idx_trie_ok analysis_result idx_leb idx_map_plus_ok window).
+  Notation clause_ptr_atom_in_db_sn := (clause_ptr_atom_in_db_sn idx Eqb_idx Eqb_idx_ok idx_succ symbol symbol_map symbol_map_plus symbol_map_plus_ok idx_map idx_map_plus idx_trie idx_trie_ok analysis_result idx_leb idx_map_plus_ok window).
   Notation match_clause_correct := (match_clause_correct idx Eqb_idx Eqb_idx_ok).
   Notation project_filter_variable_flags := (project_filter_variable_flags idx Eqb_idx Eqb_idx_ok).
   Notation get_of_list_combine := (get_of_list_combine idx Eqb_idx Eqb_idx_ok idx_map idx_map_ok).
@@ -72,8 +74,8 @@ Section Slice.
     cv < List.length clause_vars ->
     map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
                     query_vars
-                    (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                            idx_map idx_map_plus idx_trie analysis_result q inst))
+                    (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result window q inst))
                     frontier_n (Build_erule_query_ptr idx symbol f n clause_vars)))
             (map fst (filter snd (combine sigma
                (variable_flags idx Eqb_idx query_vars clause_vars))))
@@ -158,8 +160,8 @@ Section Slice.
     cv < List.length clause_vars ->
     map.get (fst (trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
                     query_vars
-                    (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                            idx_map idx_map_plus idx_trie analysis_result q inst))
+                    (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result window q inst))
                     frontier_pos pos (Build_erule_query_ptr idx symbol f n clause_vars)))
             (map fst (filter snd (combine sigma
                (variable_flags idx Eqb_idx query_vars clause_vars))))
@@ -251,8 +253,8 @@ Section Slice.
           (uncurry cons (query_clause_ptrs idx symbol r)) ->
        map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
                        (query_vars idx symbol r)
-                       (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                               idx_map idx_map_plus idx_trie analysis_result q inst))
+                       (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                               idx_map idx_map_plus idx_trie analysis_result window q inst))
                        frontier_n (Build_erule_query_ptr idx symbol fsym nptr cvars)))
                (map fst (filter snd (combine sigma
                   (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))
@@ -303,8 +305,8 @@ Section Slice.
          = Some (Build_erule_query_ptr idx symbol fsym nptr cvars) ->
        map.get (fst (trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
                        (query_vars idx symbol r)
-                       (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                               idx_map idx_map_plus idx_trie analysis_result q inst))
+                       (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                               idx_map idx_map_plus idx_trie analysis_result window q inst))
                        frontier_pos pos (Build_erule_query_ptr idx symbol fsym nptr cvars)))
                (map fst (filter snd (combine sigma
                   (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))
@@ -408,8 +410,8 @@ Section Slice.
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
     (i_snap : idx_map (domain symbol m)) (inst : instance)
     (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol) :
-    let db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                           idx_map idx_map_plus idx_trie analysis_result q inst) in
+    let db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                           idx_map idx_map_plus idx_trie analysis_result window q inst) in
     egraph_sound_for_interpretation i_snap inst ->
     List.NoDup (query_vars idx symbol r) ->
     List.NoDup (write_vars idx symbol r) ->
@@ -533,8 +535,8 @@ Section Slice.
     (i_snap i_start : idx_map (domain symbol m)) (inst : instance)
     (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol)
     (frontier_n : idx) (e_start : instance) :
-    let db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                           idx_map idx_map_plus idx_trie analysis_result q inst) in
+    let db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                           idx_map idx_map_plus idx_trie analysis_result window q inst) in
     let tries := ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
                            (query_vars idx symbol r) db_tries frontier_n)
                         (query_clause_ptrs idx symbol r) in
@@ -675,8 +677,8 @@ Section Slice.
     (i_snap i_start : idx_map (domain symbol m)) (inst : instance)
     (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol)
     (frontier_pos : nat) (e_start : instance) :
-    let db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                           idx_map idx_map_plus idx_trie analysis_result q inst) in
+    let db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                           idx_map idx_map_plus idx_trie analysis_result window q inst) in
     let tries := ne_map_idx (fun pos ptr =>
                                trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
                                  (query_vars idx symbol r) db_tries frontier_pos pos ptr)
@@ -820,6 +822,7 @@ End Slice.
 Lemma process_erule_sound
   (idx : Type) (Eqb_idx : Eqb idx) (Eqb_idx_ok : Eqb_ok Eqb_idx)
   (lt : idx -> idx -> Prop) (idx_succ : idx -> idx) (idx_zero : WithDefault idx)
+  (idx_leb : idx -> idx -> bool)
   (symbol : Type) (Eqb_symbol : Eqb symbol) (Eqb_symbol_ok : Eqb_ok Eqb_symbol)
   (symbol_map : forall A, map.map symbol A) (symbol_map_plus : map_plus symbol_map)
   (symbol_map_plus_ok : @map_plus_ok _ _ symbol_map_plus) (symbol_map_ok : forall A, map.ok (symbol_map A))
@@ -830,12 +833,13 @@ Lemma process_erule_sound
     : forall B, WithDefault B -> (B -> B -> B) -> ne_list (map.rep (map:=idx_trie B) * list bool) -> map.rep (map:=idx_trie B))
   (H : analysis idx symbol analysis_result) (m : model symbol) (Hm : model_ok symbol m)
   (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+  (window : nat)
   (i_snap i_start : idx_map (domain symbol m))
   (inst : instance idx symbol symbol_map idx_map idx_trie analysis_result)
   (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol)
   (e_start : instance idx symbol symbol_map idx_map idx_trie analysis_result) :
-  let db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
-                         idx_map idx_map_plus idx_trie analysis_result q inst) in
+  let db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                         idx_map idx_map_plus idx_trie analysis_result window q inst) in
   egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i_snap inst ->
   egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e_start ->
   egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i_start e_start ->
@@ -915,7 +919,7 @@ Proof.
     - cbn [list_Miter]. split; [exact Hok_cur|].
       exists icur. split; [exact Hext_cur | exact Hsnd_cur].
     - cbn [list_Miter].
-      pose proof (process_erule'_sn_sound Hlti Hlts Hltt i_snap icur inst q r p e_cur
+      pose proof (process_erule'_sn_sound window Hlti Hlts Hltt i_snap icur inst q r p e_cur
                     Hsnd_inst Hok_cur Hsnd_cur Hext_cur Hnd_qv Hnd_wv Hrule
                     Hwf Hcov Hdisj HcovC HcovU (Hlen_sig p) (Hsli p)) as Hstep.
       cbv zeta in Hstep.

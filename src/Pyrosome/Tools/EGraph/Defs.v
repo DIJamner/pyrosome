@@ -87,7 +87,11 @@ Section WithVar.
   Notation atom := (atom V V).
 
   Context (succ : V -> V).
-  
+
+  (* epoch order for the semi-naive "new" window (passed to Utils.saturate_until);
+     all instantiations provide a real <= (e.g. Pos.leb). *)
+  Context (V_leb : V -> V -> bool).
+
   (* Include sort_of as special symbol/fn in db. *)
   Context (sort_of : V).
 
@@ -659,15 +663,21 @@ Section WithVar.
     
     (*TODO: move to Utils.EGraph.Defs *)
     Fixpoint scheduled_saturate_until rfuel
-      {X} `{analysis V V X} 
+      {X} `{analysis V V X}
        schedule p fuel
       : state (Defs.instance V V _ _ _ X) bool :=
+      (* Total schedule weight = max epoch ticks in one outer pass.  When row [e]
+         fires, every OTHER row fired since [e] last ran, advancing the epoch by at
+         most [W_total - fst e] ticks; so its catch-up "new" window is exactly that.
+         This makes a phase re-match every fact added since it last fired, fixing
+         the cross-phase incompleteness of plain semi-naive. *)
+      let W_total := list_sum (map fst schedule) in
       match fuel with
       | 0 => Mret false
       | S fuel =>
           let process e : state (Defs.instance V V _ _ _ X) bool :=
-            saturate_until succ V_default (analysis_result:= X)
-              spaced_list_intersect rfuel (snd e) p (fst e) in
+            saturate_until succ V_default V_leb (analysis_result:= X)
+              spaced_list_intersect rfuel (W_total - fst e) (snd e) p (fst e) in
           @! let (done : bool) <- list_Miter_breakable process schedule in
             if done then ret true
             else (scheduled_saturate_until rfuel schedule p fuel)
@@ -709,9 +719,9 @@ Section WithVar.
         @!let {state instance} x <- add_open_term l true false [] e in
           let w <- get_analysis x in
           let {state instance} _ <- rebuild rfuel in
-          let {state instance} _ <- saturate_until succ V_default
+          let {state instance} _ <- saturate_until succ V_default V_leb
                                       (*TODO: short-circuit as soon as the subject weight decreases*)
-        spaced_list_intersect rfuel rws (weight_less_than x w) fuel in
+        spaced_list_intersect rfuel 0 rws (weight_less_than x w) fuel in
           ret {state instance} x
       in
       let (x,g) := comp (empty_egraph default _) in
@@ -856,11 +866,11 @@ Section WithVar.
         rfuel sat_fuel efuel red_fuel inj_list [(e1,e2)].
 
     (*TODO: move to defining file*)
-    Arguments run1iter {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope 
-      idx_zero {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
-      {idx_map}%_function_scope {idx_map_plus} {idx_trie}%_function_scope 
+    Arguments run1iter {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope
+      idx_zero idx_leb%_function_scope {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
+      {idx_map}%_function_scope {idx_map_plus} {idx_trie}%_function_scope
       {analysis_result}%_type_scope {H} spaced_list_intersect%_function_scope
-      rebuild_fuel%_nat_scope rs _.
+      rebuild_fuel%_nat_scope window%_nat_scope rs _.
 
     (*
     Fixpoint egraph_simpl_capped'
@@ -885,7 +895,7 @@ Section WithVar.
       match cap with
       | O => Mret error:("Terms not reduced within" cap "iterations")
       | S cap =>
-          @! let _ <- lift (run1iter succ _ spaced_list_intersect rn rws) in
+          @! let _ <- lift (run1iter succ _ V_leb spaced_list_intersect rn 0 rws) in
             let e1' <- get_extract en x1 in
             let _ <- lift (log_event cap) in
             let _ <- lift (log_event "extracted e1 and e2. cap is") in
@@ -935,17 +945,17 @@ Module PositiveInstantiation.
   Definition egraph_equal
     : lang positive -> _ -> nat ->
       nat -> Term.term positive -> Term.term positive -> Term.sort positive -> _ :=
-    (egraph_equal ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ sort_of (@fpt_spaced_intersect)).
+    (egraph_equal ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ Pos.leb sort_of (@fpt_spaced_intersect)).
 
   Definition egraph_simpl
     : lang positive -> _ -> nat -> nat ->
       nat -> Term.term positive -> _ :=
-    (egraph_simpl ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ sort_of (@fpt_spaced_intersect)).
+    (egraph_simpl ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ Pos.leb sort_of (@fpt_spaced_intersect)).
 
   Definition egraph_reducing_equal
     : lang positive -> _ -> _ -> nat ->
       nat -> nat -> nat -> Term.term positive -> Term.term positive -> _ :=
-    (egraph_reducing_equal ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ sort_of (@fpt_spaced_intersect)).
+    (egraph_reducing_equal ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ Pos.leb sort_of (@fpt_spaced_intersect)).
 
   (*TODO: move somewhere?*)
   Definition filter_eqn_rules {V} : lang V -> lang V :=
@@ -1097,7 +1107,10 @@ Module StringInstantiation.
     fun l rw rn n en c e1 e2 t =>
     let l' := ctx_to_rules c ++ l in
     egraph_equal string_ptree_map_plus (@string_list_trie_map)
-      string_succ sort_of
+      string_succ (* epoch leb: the string reference engine runs naive
+        (every row "new") since a precise order on string_succ's little-endian
+        numeric suffix isn't worth implementing here; naive is complete+sound. *)
+      (fun _ _ => true) sort_of
       (@PosListMap.compat_intersect) l' [(n,rw)] rn 1
       (var_to_con e1) (var_to_con e2) (sort_var_to_con t).
   

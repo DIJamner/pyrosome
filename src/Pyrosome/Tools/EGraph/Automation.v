@@ -104,10 +104,10 @@ Section ReducingSkeleton.
     (list (nat * rule_set positive positive TrieMap.trie_map TrieMap.trie_map)).
   Local Notation red_cong :=
     (Defs.egraph_reducing_cong TrieMap.ptree_map_plus (@FullPosTrie.full_pos_trie_map)
-       Pos.succ PosListMap.sort_of (@fpt_spaced_intersect)).
+       Pos.succ Pos.leb PosListMap.sort_of (@fpt_spaced_intersect)).
   Local Notation red_eq_step :=
     (Defs.egraph_reducing_equal_step TrieMap.ptree_map_plus (@FullPosTrie.full_pos_trie_map)
-       Pos.succ PosListMap.sort_of (@fpt_spaced_intersect)).
+       Pos.succ Pos.leb PosListMap.sort_of (@fpt_spaced_intersect)).
 
   (* The real Phase-3/6 interface (no longer a placeholder): [sort_of] is
      fresh in [l'] (guaranteed by the renaming, which reserves position 1),
@@ -119,7 +119,7 @@ Section ReducingSkeleton.
   Definition schedule_sound (l' : lang positive) (sched : pos_schedule) : Prop :=
     fresh PosListMap.sort_of l' /\
     @ReducingCong.schedule_sound_real positive positive_Eqb positive_default
-      TrieMap.trie_map TrieMap.ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ
+      TrieMap.trie_map TrieMap.ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ Pos.leb
       PosListMap.sort_of Pos.lt (@fpt_spaced_intersect) l' sched.
 
   (* The egraph-soundness lemmas require [map.ok] of the egraph's maps.  For
@@ -193,7 +193,7 @@ Section ReducingSkeleton.
     pose proof (@ReducingCong.egraph_reducing_cong_sound positive positive_Eqb positive_Eqb_ok
                   positive_default TrieMap.trie_map TrieMap.ptree_map_plus (@TrieMapFold.trie_map_ok)
                   TrieMap.ptree_map_plus_ok (@FullPosTrie.full_pos_trie_map) (@FullPosTrie.full_pos_trie_map_ok)
-                  Pos.succ PosListMap.sort_of Pos.lt
+                  Pos.succ Pos.leb PosListMap.sort_of Pos.lt
                   pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
                   (@fpt_spaced_intersect) l' Hwf Hfresh sched rfuel sat_fuel efuel Hsched
                   red_fuel inj goals Hwfgoals Hsucc) as Hconc.
@@ -373,7 +373,7 @@ Section ReducingSkeleton.
                   positive positive_Eqb positive_Eqb_ok positive_default
                   TrieMap.trie_map TrieMap.ptree_map_plus (fun A => @TrieMapFold.trie_map_ok A)
                   (@FullPosTrie.full_pos_trie_map) (fun A => @FullPosTrie.full_pos_trie_map_ok A)
-                  Pos.succ PosListMap.sort_of Pos.lt pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+                  Pos.succ Pos.leb PosListMap.sort_of Pos.lt pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
                   Lp HwfLp Hsof rebuild_fuel posR rsR Hincl_R Hbrs1)
         as (seqsR & HrsR_eq & HmsrR).
       (* Get seqsRR and HmsrRR *)
@@ -381,7 +381,7 @@ Section ReducingSkeleton.
                   positive positive_Eqb positive_Eqb_ok positive_default
                   TrieMap.trie_map TrieMap.ptree_map_plus (fun A => @TrieMapFold.trie_map_ok A)
                   (@FullPosTrie.full_pos_trie_map) (fun A => @FullPosTrie.full_pos_trie_map_ok A)
-                  Pos.succ PosListMap.sort_of Pos.lt pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+                  Pos.succ Pos.leb PosListMap.sort_of Pos.lt pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
                   Lp HwfLp Hsof rebuild_fuel posRR rsRR Hrev_RR Hbrs2)
         as (seqsRR & HrsRR_eq & HmsrRR).
       (* Now prove schedule_sound *)
@@ -403,7 +403,7 @@ Section ReducingSkeleton.
           - (* const conjunct *)
             intros e i Hok Hsnd.
             exact (@QueryOptSound.rs_saturation_const_conjunct
-                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default
+                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default Pos.leb
                      positive positive_Eqb positive_Eqb_ok
                      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
                      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A)
@@ -413,9 +413,9 @@ Section ReducingSkeleton.
                      Hmok pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
                      rebuild_fuel seqsR HmsrR i e Hok Hsnd).
           - (* per-rule conjunct *)
-            intros e er Hin_er.
+            intros w e er Hin_er.
             apply (@QueryOptSound.compiled_rules_run1iter_rule_hyps
-                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default
+                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default Pos.leb
                      positive positive_Eqb positive_Eqb_ok
                      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
                      TrieMap.trie_map TrieMap.ptree_map_plus
@@ -425,10 +425,11 @@ Section ReducingSkeleton.
                      TrieMap.ptree_map_plus_ok
                      (@fpt_spaced_intersect)
                      (option positive) (@Defs.depth positive)
+                     w
                      (Theorems.lang_model positive PosListMap.sort_of Lp)
                      Hmok rebuild_fuel seqsR er e HmsrR Hin_er).
-            + exact (QcAlignment.trie_join_H9_sn rebuild_fuel seqsR er Hin_er e).
-            + exact (QcAlignment.trie_join_H10_sn rebuild_fuel seqsR er Hin_er e).
+            + exact (QcAlignment.trie_join_H9_sn rebuild_fuel seqsR er Hin_er e w).
+            + exact (QcAlignment.trie_join_H10_sn rebuild_fuel seqsR er Hin_er e w).
         }
         destruct HIn' as [E | HEmpty].
         { (* n=1, rs=rsRR *)
@@ -439,7 +440,7 @@ Section ReducingSkeleton.
           - (* const conjunct *)
             intros e i Hok Hsnd.
             exact (@QueryOptSound.rs_saturation_const_conjunct
-                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default
+                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default Pos.leb
                      positive positive_Eqb positive_Eqb_ok
                      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
                      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A)
@@ -449,9 +450,9 @@ Section ReducingSkeleton.
                      Hmok pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
                      rebuild_fuel seqsRR HmsrRR i e Hok Hsnd).
           - (* per-rule conjunct *)
-            intros e er Hin_er.
+            intros w e er Hin_er.
             apply (@QueryOptSound.compiled_rules_run1iter_rule_hyps
-                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default
+                     positive positive_Eqb positive_Eqb_ok Pos.lt Pos.succ positive_default Pos.leb
                      positive positive_Eqb positive_Eqb_ok
                      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
                      TrieMap.trie_map TrieMap.ptree_map_plus
@@ -461,10 +462,11 @@ Section ReducingSkeleton.
                      TrieMap.ptree_map_plus_ok
                      (@fpt_spaced_intersect)
                      (option positive) (@Defs.depth positive)
+                     w
                      (Theorems.lang_model positive PosListMap.sort_of Lp)
                      Hmok rebuild_fuel seqsRR er e HmsrRR Hin_er).
-            + exact (QcAlignment.trie_join_H9_sn rebuild_fuel seqsRR er Hin_er e).
-            + exact (QcAlignment.trie_join_H10_sn rebuild_fuel seqsRR er Hin_er e).
+            + exact (QcAlignment.trie_join_H9_sn rebuild_fuel seqsRR er Hin_er e w).
+            + exact (QcAlignment.trie_join_H10_sn rebuild_fuel seqsRR er Hin_er e w).
         }
         destruct HEmpty.
     }

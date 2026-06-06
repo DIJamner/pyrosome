@@ -321,11 +321,13 @@ Definition const_rules (l: lang) :=
 Definition state_operation (L: lang) (inj_rules: list (string * list string)) :=
   @saturate_until string String.eqb string_succ
     (default (A:= string))
+    (fun _ _ => true) (* epoch leb: string path runs naive (complete) *)
     string
     string_trie_map
     string_ptree_map_plus string_trie_map string_ptree_map_plus
     string_list_trie_map (option positive) (weighted_depth_analysis weight) (@PosListMap.compat_intersect)
     1000
+    0 (* window *)
     (
     @QueryOpt.build_rule_set string String.eqb string_succ (default (A:= string))
       string  string_trie_map string_ptree_map_plus string_trie_map
@@ -337,11 +339,13 @@ Definition state_operation (L: lang) (inj_rules: list (string * list string)) :=
 Definition state_operation_testing (L: lang) (inj_rules: list (string * list string)) f1 f2 :=
   @saturate_until string String.eqb string_succ
     (default (A:= string))
+    (fun _ _ => true) (* epoch leb: string path runs naive (complete) *)
     string
     string_trie_map
     string_ptree_map_plus string_trie_map string_ptree_map_plus
     string_list_trie_map (option positive) (weighted_depth_analysis weight) (@PosListMap.compat_intersect)
     f1
+    0 (* window *)
     (
     @QueryOpt.build_rule_set string String.eqb string_succ (default (A:= string))
       string  string_trie_map string_ptree_map_plus string_trie_map

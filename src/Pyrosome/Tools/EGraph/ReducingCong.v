@@ -30,7 +30,7 @@ Section ReducingStep.
     (V_map_plus_ok : ExtraMaps.map_plus_ok V_map)
     (V_trie : forall A, map.map (list V) A)
     (V_trie_ok : forall A, map.ok (V_trie A)).
-  Context (succ : V -> V) (sort_of : V) (lt : V -> V -> Prop).
+  Context (succ : V -> V) (V_leb : V -> V -> bool) (sort_of : V) (lt : V -> V -> Prop).
   Context (lt_asymmetric : Asymmetric lt)
     (lt_succ : forall x, lt x (succ x))
     (lt_trans : Transitive lt).
@@ -344,7 +344,7 @@ Section ReducingStep.
     Definition schedule_sound_real
       (schedule : list (nat * rule_set V V V_map V_map)) : Prop :=
       forall n rs, In (n, rs) schedule ->
-        @rs_saturation_hyps V V_Eqb V_default V_map V_map_plus V_trie succ lt
+        @rs_saturation_hyps V V_Eqb V_default V_map V_map_plus V_trie succ V_leb lt
           (option positive) (depth V) spaced_list_intersect lang_model rs.
 
     (* Stronger form, exposing the resulting egraph's soundness and the input
@@ -362,7 +362,7 @@ Section ReducingStep.
       wf_term l [] a ta -> wf_term l [] b tb ->
       schedule_sound_real schedule ->
       let '(res, x1, x2, g) :=
-        egraph_reducing_equal_step V_map_plus V_trie succ sort_of spaced_list_intersect
+        egraph_reducing_equal_step V_map_plus V_trie succ V_leb sort_of spaced_list_intersect
           l schedule rfuel sat_fuel a b in
       exists i,
         egraph_ok g /\ sound i g
@@ -378,8 +378,8 @@ Section ReducingStep.
       destruct (get_analysis V V V_map V_map V_trie (option positive) x2 e1) as [w2 e2] eqn:Hga2.
       destruct (rebuild rfuel e2) as [u e3] eqn:Hrb.
       match goal with
-      | |- context [scheduled_saturate_until ?vmp ?sc ?sli ?rf ?sch ?p ?sf ?e] =>
-          destruct (scheduled_saturate_until vmp sc sli rf sch p sf e) as [res g] eqn:Hsat
+      | |- context [scheduled_saturate_until ?vmp ?sc ?vleb ?sli ?rf ?sch ?p ?sf ?e] =>
+          destruct (scheduled_saturate_until vmp sc vleb sli rf sch p sf e) as [res g] eqn:Hsat
       end.
       cbn [fst snd].
       pose proof (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok V_map V_map_ok V_trie (option positive) lang_model) as Hempty.
@@ -423,7 +423,7 @@ Section ReducingStep.
       rewrite Hrb in Hrbs; cbn [snd] in Hrbs; destruct Hrbs as [Hok_e3 Hiff3].
       assert (Hsnd_e3 : sound i2 e3) by (apply (Hiff3 i2); exact Hsnd_e2).
       match type of Hsat with
-      | scheduled_saturate_until _ _ _ _ _ ?p _ _ = _ => set (pred := p) in *
+      | scheduled_saturate_until _ _ _ _ _ _ ?p _ _ = _ => set (pred := p) in *
       end.
       assert (HP : forall ee ii, egraph_ok ee -> sound ii ee -> egraph_ok (snd (pred ee)) /\ sound ii (snd (pred ee)))
         by (intros ee ii Hoke Hsnde; subst pred; unfold weight_less_than;
@@ -441,7 +441,7 @@ Section ReducingStep.
             [ cbn [snd]; split; assumption | ];
             pose proof (@are_unified_preserves_ok_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie (option positive) lang_model x1 x2 e2' ii Hok2 Hsnd2) as Hau;
             destruct Hau as [ Hoku Hsndu ]; split; assumption).
-      pose proof (@scheduled_saturate_until_sound V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok succ lt lt_asymmetric lt_succ lt_trans V_map_plus_ok (option positive) (depth V) spaced_list_intersect lang_model Hmok rfuel pred HP schedule Hsched sat_fuel i2 e3 Hok_e3 Hsnd_e3) as Hss.
+      pose proof (@scheduled_saturate_until_sound V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok succ V_leb lt lt_asymmetric lt_succ lt_trans V_map_plus_ok (option positive) (depth V) spaced_list_intersect lang_model Hmok rfuel pred HP schedule Hsched sat_fuel i2 e3 Hok_e3 Hsnd_e3) as Hss.
       rewrite Hsat in Hss.
       destruct Hss as [ Hok_g [ i3 [ Hext3 Hsnd_g ] ] ].
       pose proof (Hlift i2 i3 x1 (inl a) Hext3 (Hlift i1 i2 x1 (inl a) Hextmap2 Hrel1)) as Hr1g.
@@ -653,7 +653,7 @@ Section CongMain.
     (V_map_plus_ok : ExtraMaps.map_plus_ok V_map)
     (V_trie : forall A, map.map (list V) A)
     (V_trie_ok : forall A, map.ok (V_trie A)).
-  Context (succ : V -> V) (sort_of : V) (lt : V -> V -> Prop).
+  Context (succ : V -> V) (V_leb : V -> V -> bool) (sort_of : V) (lt : V -> V -> Prop).
   Context (lt_asymmetric : Asymmetric lt)
     (lt_succ : forall x, lt x (succ x))
     (lt_trans : Transitive lt).
@@ -749,10 +749,10 @@ Section CongMain.
   Lemma egraph_reducing_cong_sound
     (schedule : list (nat * rule_set V V V_map V_map))
     (rfuel sat_fuel efuel : nat) :
-    schedule_sound_real V V_map V_map_plus V_trie succ sort_of lt spaced_list_intersect l schedule ->
+    schedule_sound_real V V_map V_map_plus V_trie succ V_leb sort_of lt spaced_list_intersect l schedule ->
     forall red_fuel inj goals,
       (forall a b, In (a,b) goals -> (exists ta, wf_term l [] a ta) /\ (exists tb, wf_term l [] b tb)) ->
-      egraph_reducing_cong V_map_plus V_trie succ sort_of spaced_list_intersect l schedule rfuel sat_fuel efuel red_fuel inj goals = Result.Success tt ->
+      egraph_reducing_cong V_map_plus V_trie succ V_leb sort_of spaced_list_intersect l schedule rfuel sat_fuel efuel red_fuel inj goals = Result.Success tt ->
       forall a b, In (a,b) goals -> exists s, eq_term l [] s a b.
   Proof.
     intros Hsched red_fuel.
@@ -768,9 +768,9 @@ Section CongMain.
         pose proof (in_all _ _ _ Hwfsub Hinsub) as Hwfp.
         cbn [fst snd] in Hwfp. destruct Hwfp as [ [se1 Hwfe1] [se2 Hwfe2] ].
         cbn beta iota in Hproc.
-        pose proof (egraph_reducing_equal_step_sound_strong V V_map V_map_plus V_map_ok V_map_plus_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans spaced_list_intersect l wfl sort_of_fresh schedule rfuel sat_fuel e1 e2 se1 se2 Hwfe1 Hwfe2 Hsched) as Hstrong.
+        pose proof (egraph_reducing_equal_step_sound_strong V V_map V_map_plus V_map_ok V_map_plus_ok V_trie V_trie_ok succ V_leb sort_of lt lt_asymmetric lt_succ lt_trans spaced_list_intersect l wfl sort_of_fresh schedule rfuel sat_fuel e1 e2 se1 se2 Hwfe1 Hwfe2 Hsched) as Hstrong.
         revert Hproc Hstrong.
-        destruct (egraph_reducing_equal_step V_map_plus V_trie succ sort_of spaced_list_intersect l schedule rfuel sat_fuel e1 e2) as [ [ [res x] y] g].
+        destruct (egraph_reducing_equal_step V_map_plus V_trie succ V_leb sort_of spaced_list_intersect l schedule rfuel sat_fuel e1 e2) as [ [ [res x] y] g].
         intros Hproc [i [Hokg [Hsndg [Hr1 Hr2] ] ] ].
         destruct res; [ | discriminate Hproc ].
         assert (Hisx : Is_Some (map.get i x)) by (unfold option_relation in Hr1; destruct (map.get i x); [ exact I | discriminate Hr1 ]).

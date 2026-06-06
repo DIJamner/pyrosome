@@ -37,6 +37,10 @@ Section WithMap.
       (*TODO: just extend to Natlike?*)
       (idx_succ : idx -> idx)
       (idx_zero : WithDefault idx)
+      (* epoch order, used for the semi-naive "new" window; all instantiations
+         provide a real <= (e.g. Pos.leb).  Needs no correctness spec: the
+         soundness proofs only rely on new <= full, for any boolean split. *)
+      (idx_leb : idx -> idx -> bool)
       (*TODO: any reason to have separate from idx?*)
     (symbol : Type)
       (Eqb_symbol : Eqb symbol)
@@ -524,8 +528,17 @@ Section WithMap.
      Since each (symbol,args) has exactly one entry/epoch, full partitions
      into new (epoch = current) and old (epoch <> current).  The proper
      semi-naive frontier selection picks one of the three by clause position. *)
+  (* [window] is the semi-naive look-back: a db row is "new" iff its [epoch] is
+     within [window] ticks of [current_epoch], i.e. epoch + window >= current_epoch
+     (tested by [idx_leb current_epoch (epoch+window)] since epochs only grow by
+     idx_succ).  [window = 0] gives exactly the single-epoch delta [epoch =
+     current_epoch] (current_epoch is the max present).  The schedule driver passes
+     [window = W_total - w_i] on the FIRST iteration of each phase so it re-matches
+     every fact added since that phase last fired (fixing the cross-phase
+     incompleteness of plain semi-naive); subsequent iterations use [window = 0]. *)
   Definition build_tries_for_symbol
     (current_epoch : idx)
+    (window : nat)
     (q_clauses : idx_map (list nat * nat))
     (tbl : idx_trie db_entry)
     : idx_map (idx_trie unit * idx_trie unit * idx_trie unit) (* full * new * old *)
@@ -537,7 +550,7 @@ Section WithMap.
              TODO: test match_clause
            *)
           let full' : idx_trie unit := map.put full assignment tt in
-          if eqb epoch current_epoch
+          if idx_leb current_epoch (Nat.iter window idx_succ epoch)
           then (full', map.put new assignment tt, old)
           else (full', new, map.put old assignment tt)
       | None => (full, new, old)
@@ -546,9 +559,9 @@ Section WithMap.
     map.fold (fun tries args vp => map_intersect (upd_trie_pair args vp) tries q_clauses)
       (map_map (fun _ => (map.empty, map.empty, map.empty : idx_trie unit)) q_clauses) tbl.
 
-  Definition build_tries (q : rule_set)
+  Definition build_tries (window : nat) (q : rule_set)
     : ST (symbol_map (idx_map (idx_trie unit * idx_trie unit * idx_trie unit))) :=
-    fun i => (map_intersect (build_tries_for_symbol i.(epoch)) q.(query_clauses) i.(db), i).
+    fun i => (map_intersect (build_tries_for_symbol i.(epoch) window) q.(query_clauses) i.(db), i).
 
   Context (spaced_list_intersect
              (*TODO: nary merge?*)
@@ -803,8 +816,8 @@ Section WithMap.
   Definition worklist_empty : ST bool :=
     fun i => (if i.(worklist) then true else false, i).
 
-  Definition run1iter (rs : rule_set) : ST bool :=
-    @!let tries <- build_tries rs in
+  Definition run1iter (window : nat) (rs : rule_set) : ST bool :=
+    @!let tries <- build_tries window rs in
       let old_max <- max_id in
       increment_epoch;
       (list_Miter (process_erule tries) rs.(compiled_rules));
@@ -813,25 +826,28 @@ Section WithMap.
       (* TODO: compute an adequate upper bound for fuel *)
       (rebuild rebuild_fuel);
       ret (andb (eqb new_max old_max) is_empty).
-  
-  Fixpoint saturate_until' rs (P : ST bool) fuel : ST bool :=
+
+  (* [window] is used only by the FIRST iteration (the cross-phase catch-up);
+     every subsequent iteration uses [window = 0] = the ordinary single-epoch
+     delta, since the previous iteration's writes already advanced the epoch. *)
+  Fixpoint saturate_until' window rs (P : ST bool) fuel : ST bool :=
     match fuel with
     | 0 => Mret false
     | S fuel =>
         @!let done <- P in
           if (done : bool) then ret true
           else
-            let no_changes <- run1iter rs in
+            let no_changes <- run1iter window rs in
             (* Short circuit if no new facts were added *)
             if (no_changes : bool) then ret false
-            else (saturate_until' rs P fuel)
+            else (saturate_until' 0 rs P fuel)
     end.
 
   (* run the const rules once before the saturation loop *)
-  Definition saturate_until rs (P : ST bool) fuel : ST bool :=
+  Definition saturate_until window rs (P : ST bool) fuel : ST bool :=
     @! (process_const_rules rs);
        (rebuild rebuild_fuel);
-       (saturate_until' rs P fuel).
+       (saturate_until' window rs P fuel).
     
   
   Definition are_unified (x1 x2 : idx) : state instance bool :=
@@ -861,7 +877,7 @@ Section WithMap.
   Definition run_query (rs : rule_set) n : ST _ :=
     match nth_error rs.(compiled_rules) n with
     | Some r =>
-        @! let db_tries <- build_tries rs in
+        @! let db_tries <- build_tries 0 rs in
           (*TODO: frontier_n a hack*)
           let tries : ne_list _ := ne_map (trie_of_clause' r.(query_vars) db_tries)
                                      r.(query_clause_ptrs) in
@@ -875,7 +891,7 @@ Section WithMap.
   Definition run_query' (rs : rule_set) n : ST _ :=
     match nth_error rs.(compiled_rules) n with
     | Some r =>
-        @! let db_tries <- build_tries rs in
+        @! let db_tries <- build_tries 0 rs in
           (*TODO: frontier_n a hack*)
           let tries : ne_list _ := ne_map (trie_of_clause' r.(query_vars) db_tries)
                                      r.(query_clause_ptrs) in
@@ -960,19 +976,19 @@ Arguments rebuild {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
   fuel%_nat_scope _.
 
 
-Arguments saturate_until' {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope 
-  idx_zero {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
+Arguments saturate_until' {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope
+  idx_zero idx_leb%_function_scope {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
   {idx_map}%_function_scope {idx_map_plus} {idx_trie}%_function_scope
   {analysis_result}%_type_scope {H}
-  spaced_list_intersect%_function_scope 
-  _ rs P fuel%_nat_scope.
+  spaced_list_intersect%_function_scope
+  _ window%_nat_scope rs P fuel%_nat_scope.
 
-Arguments saturate_until {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope 
-  idx_zero {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
+Arguments saturate_until {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope
+  idx_zero idx_leb%_function_scope {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
   {idx_map}%_function_scope {idx_map_plus} {idx_trie}%_function_scope
   {analysis_result}%_type_scope {H}
   spaced_list_intersect%_function_scope rebuild_fuel
-  rs P fuel%_nat_scope _.
+  window%_nat_scope rs P fuel%_nat_scope _.
 
 Arguments are_unified {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
   {symbol_map idx_map idx_trie}%_function_scope
