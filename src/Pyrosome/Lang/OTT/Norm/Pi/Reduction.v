@@ -76,6 +76,40 @@ Section WithVar.
     Lemma star_step_sound : rel_sound V l (fun t => star (step t)).
     Proof. eapply OperationalBridge.star_step_sound; eauto using step_sound. Qed.
 
+    (* ------------------------------------------------------------------ *)
+    (* Sort-ERASED redex relation.  This is the substrate for the         *)
+    (* weak-head reduction whose head-congruence cases reduce a sub-term   *)
+    (* at a DIFFERENT sort than the whole term — so the relation cannot    *)
+    (* carry the sort.  Soundness recovers it from `wf_term` via the       *)
+    (* sort-uniqueness theorem `term_sorts_eq` (Dustin's call).           *)
+    (* ------------------------------------------------------------------ *)
+    Definition redex (a b : term) : Prop :=
+      exists name c e1 e2 t s,
+        In (name, term_eq_rule c e1 e2 t) l /\
+        wf_subst l [] s c /\
+        a = e1[/s/] /\ b = e2[/s/].
+
+    Lemma redex_sound a b t
+      : wf_term l [] a t -> redex a b -> eq_term l [] t a b.
+    Proof.
+      intros Hwf (name & c & e1 & e2 & t0 & s & Hin & Hs & -> & ->).
+      assert (wf_ctx l c) as Hc by with_rule_in_wf_crush.
+      assert (wf_term l c e1 t0) as He1 by with_rule_in_wf_crush.
+      (* the equality at the rule's (instantiated) sort *)
+      assert (eq_term l [] t0[/s/] e1[/s/] e2[/s/]) as Heq.
+      {
+        eapply eq_term_subst.
+        - eapply eq_term_by; eauto.
+        - eapply eq_subst_refl; eauto.
+        - assumption.
+      }
+      (* realign to the sort `t` at which `e1[/s/]` is actually well-typed *)
+      assert (wf_term l [] e1[/s/] t0[/s/]) as Hwf0
+          by (eapply wf_term_subst_monotonicity; eauto).
+      eapply eq_term_conv; [ exact Heq | ].
+      eapply term_sorts_eq with (e := e1[/s/]); eauto with lang_core.
+    Qed.
+
   End WithLang.
 
 End WithVar.
