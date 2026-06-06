@@ -128,15 +128,15 @@ Section SymGen.
       match goal with c : NeConv _ _ _ _ |- _ => destruct c as [[wn wm] cnm] end.
       exists (RedNeutralEq Ge (dEl (vNe m))).
       split; [ split | ].
-      + eapply LRne; repeat split; [ exact wm | exact wn | exact (conv_ne_sym cnm) ].
+      + eapply LRne; repeat split; [ exact wm | exact wn | exact (cne_sym cnm) ].
       + intros a b H. destruct H as [p q [[wp wq] cpq]]. apply rneT. repeat split.
-        * eapply n_conv; [ exact wq | apply cnf_ne; exact cnm ].
-        * eapply n_conv; [ exact wp | apply cnf_ne; exact cnm ].
-        * exact (conv_ne_sym cpq).
+        * eapply n_conv; [ exact wq | eapply cte_ne; exact cnm ].
+        * eapply n_conv; [ exact wp | eapply cte_ne; exact cnm ].
+        * eapply cne_conv; [ exact (cne_sym cpq) | eapply cte_ne; exact cnm ].
       + intros a b H. destruct H as [p q [[wp wq] cpq]]. apply rneT. repeat split.
-        * eapply n_conv; [ exact wq | apply cnf_ne; exact (conv_ne_sym cnm) ].
-        * eapply n_conv; [ exact wp | apply cnf_ne; exact (conv_ne_sym cnm) ].
-        * exact (conv_ne_sym cpq).
+        * eapply n_conv; [ exact wq | eapply cte_ne; exact (cne_sym cnm) ].
+        * eapply n_conv; [ exact wp | eapply cte_ne; exact (cne_sym cnm) ].
+        * eapply cne_conv; [ exact (cne_sym cpq) | eapply cte_ne; exact (cne_sym cnm) ].
     - (* LRpiI *)
       eexists; split; [ split | ].
       + apply LRpiI; assumption.

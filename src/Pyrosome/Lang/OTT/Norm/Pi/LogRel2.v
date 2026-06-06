@@ -84,8 +84,12 @@ Definition lvl_of (l : term) : TypeLevel :=
 (* DISTINCT convertible type) is now recovered, where needed, by the neutral   *)
 (* typing-conversion rule [n_conv] (Typing.v; the value-world [WfTmConv]) --   *)
 (* this is what dissolves the eta-variable typing wall.                        *)
+(* The LR carries the DECLARATIVE neutral conversion [conv_ne_eta] (paper's
+   [~ne], single-typed) -- now a genuine PER via the cne_refl/sym/trans
+   constructors -- NOT the structural [conv_ne].  [n_conv] consumes [conv_ty_eta]
+   directly (e.g. via [cte_ne] from this field). *)
 Definition NeConv (Ge : senv) (T : svalty) (n m : neutral) : Type :=
-  (wf_neutral Ge n T * wf_neutral Ge m T * conv_ne n m)%type.
+  (wf_neutral Ge n T * wf_neutral Ge m T * conv_ne_eta Ge T n m)%type.
 
 (* Base relations.  [RedNatEq] is the PER of convertible naturals;
    [RedNeutralEq] the PER of convertible neutrals at a fixed (single) type. *)

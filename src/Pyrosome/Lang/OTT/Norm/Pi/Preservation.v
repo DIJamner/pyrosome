@@ -749,6 +749,8 @@ Proof.
   - (* cne_sym *) intros Ge T n m _ IH c T0 Hc. apply cne_sym. exact (IH c T0 Hc).
   - (* cne_trans *) intros Ge T n m p _ IH1 _ IH2 c T0 Hc.
     eapply cne_trans; [ exact (IH1 c T0 Hc) | exact (IH2 c T0 Hc) ].
+  - (* cne_conv *) intros Ge A B n m _ IHne _ IHty c T0 Hc. cbn [shift_ty] in *.
+    eapply cne_conv; [ exact (IHne c T0 Hc) | exact (IHty c T0 Hc) ].
 Qed.
 
 Definition conv_ty_eta_shift : forall Ge A B, conv_ty_eta Ge A B ->

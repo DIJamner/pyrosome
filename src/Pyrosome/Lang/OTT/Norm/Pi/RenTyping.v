@@ -530,6 +530,13 @@ Proof.
     + exact (IH1 HT Hn Hctx Ge' rho Hren Hok).
     + exact (IH2 HT (proj1 (proj2 (proj2 conv_eta_ne_below_iff) Ge T n m dAB HT) Hn)
                 Hctx Ge' rho Hren Hok).
+  - (* cne_conv *) intros Ge A B n m dne IHne dty IHty HT Hn Hctx Ge' rho Hren Hok.
+    cbn [ren_ty] in *.
+    assert (HnA : ne_below_val (length Ge) A)
+      by (exact (proj2 (proj1 conv_eta_ne_below_iff Ge A B dty) HT)).
+    eapply cne_conv.
+    + exact (IHne HnA Hn Hctx Ge' rho Hren Hok).
+    + exact (IHty HnA Hctx Ge' rho Hren Hok).
 Qed.
 
 Definition conv_ty_eta_ren : forall Ge A B, conv_ty_eta Ge A B ->
@@ -537,6 +544,12 @@ Definition conv_ty_eta_ren : forall Ge A B, conv_ty_eta Ge A B ->
     forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
       conv_ty_eta Ge' (ren_val rho A) (ren_val rho B) :=
   proj1 conv_eta_ren.
+
+Definition conv_ne_eta_ren : forall Ge T n m, conv_ne_eta Ge T n m ->
+    ne_below_ty (length Ge) T -> ne_below_ne (length Ge) n -> ne_below_ctx Ge ->
+    forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
+      conv_ne_eta Ge' (ren_ty rho T) (ren_ne rho n) (ren_ne rho m) :=
+  proj2 (proj2 conv_eta_ren).
 
 Lemma ren_typing :
   (forall Ge v T, has_svalty Ge v T ->
