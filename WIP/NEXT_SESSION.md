@@ -79,25 +79,45 @@ positivity OK with the equivalence constructors; (ii) `ne_below` transport must
 become BIDIRECTIONAL (an `iff`) once `sym` is a constructor — and still goes through
 (app cases = per-direction gate-threading, the union of the old fwd+bwd proofs).
 
-**PORT PLAN (next):**
-1. Typing.v: add `cte_refl/sym/trans`, `ctm_refl/sym/trans/conv`, `cne_refl/sym/
-   trans` to the inductive; replace `conv_eta_ne_below`(+`_rev`) with ONE
-   `conv_eta_ne_below_iff`; redefine both projections from it (consumers
-   `typing_ne_below`=fwd, `ren_typing`=bwd unchanged).
-2. Preservation `conv_eta_shift` / RenTyping `conv_eta_ren`: add the new
-   constructor cases (trivial closure — sym/trans/refl re-apply the constructor to
-   shifted/renamed sub-derivations; conv shifts/renames both halves).
-3. Switch `NeConv` (LogRel2.v:87) + `RedNatEq`/`RedNeutralEq` base PERs to carry
-   `conv_ne_eta` instead of `conv_ne`.  PER laws now: sym/trans = constructors.
-4. Fix construction sites — most become FREE (destructure conv_ne_eta from NeConv;
-   `cte_ne` for the type-code n_conv).  `typing_ctx_conv`(Reflect:609) needs a
-   `conv_ty_eta_ctx_conv` (cte_var changes under conv_ctx — add a `cne` ctx-conv
-   lemma or carry it).
-5. LogRel2Reflect Pi sites (757/767) = the RR_pi_at work: PRODUCE conv_ty_eta from
-   the reflect IH (cte_pi from domain reify-ty + codomain posIH) — now with
-   sym/trans available.  This is the residual research core.
-6. Model/ModelOk soundness: eta-conv (now incl refl/sym/trans/conv) types denote
-   the same type (sym/trans/refl obviously sound).
+**PORT PLAN:**
+1. [DONE, committed] Typing.v: `cte_refl/sym/trans`, `ctm_refl/sym/trans/conv`,
+   `cne_refl/sym/trans` added to the inductive; `conv_eta_ne_below`(+`_rev`)
+   replaced by the single BIDIRECTIONAL `conv_eta_ne_below_iff`; both projections
+   (`conv_ty_eta_ne_below`/`_rev`) derived from it (consumers unchanged).
+2. [DONE, committed] Preservation `conv_eta_shift` / RenTyping `conv_eta_ren`:
+   new constructor cases added (trivial closure; sym/trans/conv use the iff to
+   recover ne_below of swapped sub-derivations).  GREEN+axiom-free through
+   LogRel2Red.
+3. [NEXT] Switch `NeConv` (LogRel2.v:87-88) `conv_ne n m` → `conv_ne_eta Ge T n m`
+   + `RedNatEq`/`RedNeutralEq` base PERs (they carry NeConv, so automatic).  PER
+   laws `NeConv_sym`/`_trans` (LogRel2Lemmas:90-97) become trivial: `cne_sym`/
+   `cne_trans` constructors (drop `conv_ne_sym`/`conv_ne_trans`).
+4. [NEXT] Fix the CONSUMER sites (cascade found by `grep conv_ne|cnf_ne|NeConv`):
+   - LogRel2Lemmas:79 → `eapply cte_ne; exact (snd cnm)` (was `apply cnf_ne`).
+   - LogRel2Sym:131-139 → `cne_sym` for the conv field; `eapply cte_ne` for the
+     n_conv conversions (was `apply cnf_ne; exact [conv_ne_sym] cnm`).
+   - LogRel2Ren:37-43 `NeConv_ren` → needs the `cne`-projection of `conv_eta_ren`
+     (EXPOSE it: currently only `conv_ty_eta_ren`=proj1 is exported; add the
+     conv_ne_eta ren projection).  ne_below precond comes from the carried
+     `wf_neutral` via `typing_ne_below`.
+   - `typing_ctx_conv`(Reflect:609) `exact cAB` → needs `conv_ty_eta_ctx_conv`
+     (cte_var's `nth_error Ge k` changes under conv_ctx; add a ctx-conv transport
+     for conv_*_eta, OR carry it — the conv_ctx relates types up to conv so this is
+     a real but tractable transport lemma).
+5. [NEXT — RR_pi_at, the research core] LogRel2Reflect CONSTRUCTS NeConv from raw
+   `conv_ne` in many places (reflect_nat/empty/neEl/U/El @61-124, `Hvar`@329,
+   the eta-body construction @700-769, sites @395-396/510).  With NeConv carrying
+   `conv_ne_eta` these must PRODUCE `conv_ne_eta` from sub-parts — `cne_app`/`cne_eta_*`
+   with the Apply premises + the reflect IH (posIH).  757/767 = cte_pi from domain
+   reify-ty + codomain posIH; now sym/trans/ctm_conv are available to glue.  This
+   is metamltt's Theorem 11 (Reflect) adequacy.
+6. [NEXT] Model/ModelOk soundness: eta-conv (incl refl/sym/trans/conv) types
+   denote the same type (sym/trans/refl obviously sound; the eta rule = the
+   gluing-model eta law).
+
+GREEN FRONTIER right now: Typing, Preservation, ApplySubst, RenSubst, RenTyping,
+LogRel2, LogRel2Ind, LogRel2Red (all axiom-free).  First break still LogRel2Lemmas:79
+(step 4).  Build single files with `scripts/vbuild.sh`.
 
 ## UPDATE 2026-06-06k — conv_ty_eta METATHEORY DE-RISKED in WIP (ne_below side-conds ⇒ STANDALONE, no fusion)
 
