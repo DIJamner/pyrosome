@@ -1,5 +1,32 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06o — PIVOT FILE 1/5 LANDED: `Reduction.v` GREEN + axiom-free.
+
+`src/Pyrosome/Lang/OTT/Norm/Pi/Reduction.v` (committed).  Generic over any
+`wf_lang l` (Pyrosome ctx = `[]`):
+- `step : sort -> term -> term -> Prop` with one constructor `step_redex`: the
+  redex is the LHS of a computation `term_eq_rule` instantiated by a CLOSED
+  `wf_subst l [] s c`; it rewrites `e1[/s/] ↝ e2[/s/]` at type `t[/s/]`.
+- `step_sound : rel_sound V l step` — proven via `eq_term_by` + `eq_term_subst`
+  (s1=s2=s, `eq_subst_refl`, `wf_ctx` from `with_rule_in_wf_crush`).  Axiom-free.
+- `step_wf` / `star_step_wf` / `star_step_sound` — specialised straight from
+  `Compilers/OperationalBridge.v` (subject reduction + `↝* ⊆ eq_term` for free).
+
+GOTCHAS for the next files: (a) the parametrized `Notation wf_subst l`/`wf_ctx l`
+are NOT exported from Core — REDECLARE them locally (every consumer does, cf.
+PartialEval.v).  (b) `OperationalBridge.rel_sound`/`star` take `V` POSITIONALLY
+(`rel_sound V l step`), not `(V:=V)`.
+
+DESIGN NOTE (Q1 resolved): `step` is the TOP-LEVEL oriented rule rewrite only — no
+evaluation-context congruence yet.  Weak-head congruence (reduce the head of an
+`app_rel`/`app_irr` spine) is DEFERRED to `Neutral.v`, where the OTT eliminator
+spine structure is in scope; soundness there will go through `term_con_congruence`
+(needs `eq_args` "one position steps, rest refl" — a reusable helper to write).
+
+NEXT = file 2/5 `Neutral.v`: neutral & whnf predicates on `term` (head = var or
+blocked elim), the head-congruence extension of `step`, determinism of weak-head
+`step`.  Then LogicalRelation (3/5), FundamentalLemma (4/5), Decidable (5/5).
+
 ## UPDATE 2026-06-06n — PIVOT SUBSTRATE CORRECTED (Dustin): EVERYTHING over PYROSOME TERMS (`term`/`sort`/`eq_term`), NOT a de Bruijn `tm`. Remove value domain; rip out in place; target Pi.
 
 **SUPERSEDES UPDATE-m's `tm` plan — that was WRONG.** Do NOT introduce a separate de
