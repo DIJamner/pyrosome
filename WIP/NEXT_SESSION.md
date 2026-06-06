@@ -54,20 +54,50 @@ NOT go through as a standalone induction:
   — now NEEDS a `conv_ty_eta_ctx_conv` (cne_eta_var's `nth_error` changes under
   conv_ctx).  Minor but real.
 
-**FORK FOR DUSTIN (construction side):**
-1. **NeConv carries `conv_ne_eta`** (annotate neutrals).  Cleanest for the no-IH
-   sites; COST = prove the conv_ne_eta PER laws used (sym is the risk — needs the
-   `Bres` issue resolved, maybe via a symmetric-up-to-conv formulation or a
-   two-field record).  Pairs with redoing RedNeutralEq/RedNatEq base PERs.
-2. **Keep NeConv = conv_ne; produce `conv_ne_eta` per-site from the LR fundamental
-   lemma** (reflect adequacy gives it where the IH is available; for the no-IH
-   library lemmas, restate them to take/return the LR witness rather than raw
-   conv_ne).  More surgical but spreads the adequacy obligation.
-3. **Hybrid**: NeConv keeps `conv_ne` (for the cheap PER laws) AND adds a lazy
-   `conv_ne_eta` field guarded by the LR; populate it only in reflect.
-RECOMMENDED: settle the `conv_ne_eta` symmetry question FIRST (prototype
-`conv_ne_eta_sym` in WIP) — it gates option 1 and clarifies whether the base PERs
-can carry it.  This is the real Ph5 (Theorem-11 / RR_pi_at adequacy) work.
+**DECISION (Dustin, 2026-06-06l): "which one follows the paper" → OPTION 1, paper-
+faithful.**  Cross-checked metamltt (`/tmp/metamltt`):
+- `Declarative.v:166-203` — the declarative conv `≡` is a genuine EQUIVALENCE:
+  `ConvTyRefl/Sym/Trans`, `ConvTmRefl/Sym/Trans`, and `ConvTmConv` (type conv) +
+  `WfTmConv` are all CONSTRUCTORS of the one big `derivation` inductive.
+- `Neutrals.v` — the LR carries the DECLARATIVE neutral conv `~ne` (`ConvNe`,
+  single-typed).  `~ne` is congruence-only; `NeConvSym/Trans/ChChk/Correct` are
+  LEMMAS.  KEY trick that makes Sym work past the computed result type:
+  `ConvNeAppCong` concludes at a FREE `R` carrying BOTH `R ≡ Cod[a]` and
+  `R ≡ Cod'[a']` (dual witness) — so symmetry just swaps them.
+- `UpToAnnot.v:31` — `~annot` (= our conv_nf/conv_ne) → `≡` bridge `CorrectTm` is a
+  TRIVIAL congruence induction (ConvTmAppCong + ConvTmConv), NO eta, NO termination
+  problem (annot only changes annotations; same term structure).  The eta rule
+  lives in the fundamental lemma, not the bridge.  **This demolishes the earlier
+  "bridge needs normalization" worry.**
+
+**KEYSTONE VALIDATED axiom-free in `WIP/ConvEtaPaper.v`** (committed): the minimally-
+invasive port of the above to our value domain = ADD `refl`/`sym`/`trans` (+ a term
+type-conversion `ctm_conv`) as CONSTRUCTORS to the committed conv_*_eta, keeping
+`cne_eta_app`'s pinned `Bres` (symmetry now from the `cne_sym` CONSTRUCTOR, not from
+inverting Bres — simpler than the paper's dual-witness `R`).  Validated: (i)
+positivity OK with the equivalence constructors; (ii) `ne_below` transport must
+become BIDIRECTIONAL (an `iff`) once `sym` is a constructor — and still goes through
+(app cases = per-direction gate-threading, the union of the old fwd+bwd proofs).
+
+**PORT PLAN (next):**
+1. Typing.v: add `cte_refl/sym/trans`, `ctm_refl/sym/trans/conv`, `cne_refl/sym/
+   trans` to the inductive; replace `conv_eta_ne_below`(+`_rev`) with ONE
+   `conv_eta_ne_below_iff`; redefine both projections from it (consumers
+   `typing_ne_below`=fwd, `ren_typing`=bwd unchanged).
+2. Preservation `conv_eta_shift` / RenTyping `conv_eta_ren`: add the new
+   constructor cases (trivial closure — sym/trans/refl re-apply the constructor to
+   shifted/renamed sub-derivations; conv shifts/renames both halves).
+3. Switch `NeConv` (LogRel2.v:87) + `RedNatEq`/`RedNeutralEq` base PERs to carry
+   `conv_ne_eta` instead of `conv_ne`.  PER laws now: sym/trans = constructors.
+4. Fix construction sites — most become FREE (destructure conv_ne_eta from NeConv;
+   `cte_ne` for the type-code n_conv).  `typing_ctx_conv`(Reflect:609) needs a
+   `conv_ty_eta_ctx_conv` (cte_var changes under conv_ctx — add a `cne` ctx-conv
+   lemma or carry it).
+5. LogRel2Reflect Pi sites (757/767) = the RR_pi_at work: PRODUCE conv_ty_eta from
+   the reflect IH (cte_pi from domain reify-ty + codomain posIH) — now with
+   sym/trans available.  This is the residual research core.
+6. Model/ModelOk soundness: eta-conv (now incl refl/sym/trans/conv) types denote
+   the same type (sym/trans/refl obviously sound).
 
 ## UPDATE 2026-06-06k — conv_ty_eta METATHEORY DE-RISKED in WIP (ne_below side-conds ⇒ STANDALONE, no fusion)
 

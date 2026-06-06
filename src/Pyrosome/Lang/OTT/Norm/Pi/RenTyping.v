@@ -342,6 +342,14 @@ Proof.
   - (* cte_ne *) intros Ge n n' r l _ IH HA Hctx Ge' rho Hren Hok.
     cbn [ren_val] in *. eapply cte_ne.
     pose proof (IH I HA Hctx Ge' rho Hren Hok) as IH'. cbn [ren_ty] in IH'. exact IH'.
+  - (* cte_refl *) intros Ge A HA Hctx Ge' rho Hren Hok. apply cte_refl.
+  - (* cte_sym *) intros Ge A B d IH HA Hctx Ge' rho Hren Hok.
+    apply cte_sym.
+    exact (IH (proj2 (proj1 conv_eta_ne_below_iff Ge B A d) HA) Hctx Ge' rho Hren Hok).
+  - (* cte_trans *) intros Ge A B C dAB IH1 dBC IH2 HA Hctx Ge' rho Hren Hok.
+    eapply cte_trans.
+    + exact (IH1 HA Hctx Ge' rho Hren Hok).
+    + exact (IH2 (proj1 (proj1 conv_eta_ne_below_iff Ge A B dAB) HA) Hctx Ge' rho Hren Hok).
   - (* ctm_ne_nat *) intros Ge n n' _ IH HT Ha Hctx Ge' rho Hren Hok.
     cbn [ren_val ren_ty] in *. apply ctm_ne_nat.
     pose proof (IH I Ha Hctx Ge' rho Hren Hok) as IH'. cbn [ren_ty ren_val] in IH'. exact IH'.
@@ -435,6 +443,23 @@ Proof.
       | apply ne_below_ctx_up_dEl; [ exact Hctx | exact HFt ]
       | apply ren_ctx_up_dEl; exact Hren
       | cbn [length]; rewrite !length_map; apply ren_ok_up; exact Hok ].
+  - (* ctm_refl *) intros Ge T a HT Ha Hctx Ge' rho Hren Hok. apply ctm_refl.
+  - (* ctm_sym *) intros Ge T a b d IH HT Ha Hctx Ge' rho Hren Hok.
+    apply ctm_sym.
+    exact (IH HT (proj2 (proj1 (proj2 conv_eta_ne_below_iff) Ge T b a d HT) Ha)
+              Hctx Ge' rho Hren Hok).
+  - (* ctm_trans *) intros Ge T a b cc dAB IH1 dBC IH2 HT Ha Hctx Ge' rho Hren Hok.
+    eapply ctm_trans.
+    + exact (IH1 HT Ha Hctx Ge' rho Hren Hok).
+    + exact (IH2 HT (proj1 (proj1 (proj2 conv_eta_ne_below_iff) Ge T a b dAB HT) Ha)
+                Hctx Ge' rho Hren Hok).
+  - (* ctm_conv *) intros Ge A B a b dtm IHtm dty IHty HT Ha Hctx Ge' rho Hren Hok.
+    cbn [ren_ty] in *.
+    assert (HnA : ne_below_val (length Ge) A)
+      by (exact (proj2 (proj1 conv_eta_ne_below_iff Ge A B dty) HT)).
+    eapply ctm_conv.
+    + exact (IHtm HnA Ha Hctx Ge' rho Hren Hok).
+    + exact (IHty HnA Hctx Ge' rho Hren Hok).
   - (* cne_eta_var *) intros Ge k T He HT Hn Hctx Ge' rho Hren Hok.
     cbn [ren_ne]. apply cne_eta_var. exact (Hren k T He).
   - (* cne_eta_emptyrec *) intros Ge rA lA A A' s s' _ IHA _ IHs HT Hn Hctx Ge' rho Hren Hok.
@@ -495,6 +520,16 @@ Proof.
                     ltac:(eapply RenShSc_beta;
                             [ Lia.lia | apply ren_ok_le with (N := S (length Ge)); [ exact Hok | Lia.lia ]
                             | apply ren_is_Apply_val ])) as Hapr. exact Hapr.
+  - (* cne_refl *) intros Ge T n HT Hn Hctx Ge' rho Hren Hok. apply cne_refl.
+  - (* cne_sym *) intros Ge T n m d IH HT Hn Hctx Ge' rho Hren Hok.
+    apply cne_sym.
+    exact (IH HT (proj2 (proj2 (proj2 conv_eta_ne_below_iff) Ge T m n d HT) Hn)
+              Hctx Ge' rho Hren Hok).
+  - (* cne_trans *) intros Ge T n m p dAB IH1 dBC IH2 HT Hn Hctx Ge' rho Hren Hok.
+    eapply cne_trans.
+    + exact (IH1 HT Hn Hctx Ge' rho Hren Hok).
+    + exact (IH2 HT (proj1 (proj2 (proj2 conv_eta_ne_below_iff) Ge T n m dAB HT) Hn)
+                Hctx Ge' rho Hren Hok).
 Qed.
 
 Definition conv_ty_eta_ren : forall Ge A B, conv_ty_eta Ge A B ->
