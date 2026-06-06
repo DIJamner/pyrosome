@@ -167,7 +167,28 @@ bridges).  Modules to mirror: their `LogicalRelation/ReifyReflect`, `Irrelevance
 `Transport`, `Symmetry`, `Transitivity`, `Telescope` are SEPARATE — our monolithic
 plan should likely split similarly.
 
-## Next move — RE-PLAN around the single-typed-neutral pivot (needs Dustin)
+## DONE (2026-06-06) — PAPER-FAITHFUL SINGLE-TYPED MIGRATION; WALL DISSOLVED
+
+Dustin chose the paper's single-typed-neutral + typed-conversion architecture
+(not the cheap patch).  Landed, axiom-free, whole `LogRel2*` chain + domain layer
++ `Glue` green:
+- `n_conv` added to `wf_neutral` (Typing.v) = value-world `WfTmConv`; domain layer
+  re-greened with conv-stability helpers `conv_shift`/`conv_ne_below`/`conv_ren`.
+- `NeConv`/`RedNeutralEq` made SINGLE-typed (LEFT type; paper `RelAtNe`); `LRne`
+  relation single-typed; escape (`RedTmEq_wf`) + symmetry (`LR_sym_gen`) bridge to
+  the right type via `n_conv` + `conv_ne`.
+- `RRCar` REFLECT premise single-typed at LEFT type.
+- **`pi_bound_var_reflects`** (axiom-free) demonstrates the wall is GONE: the eta
+  bound variable reflects from a SINGLE left typing, the domain IH returns both
+  reflections + the domain member.
+
+**NEXT = the genuine Theorem-11 adequacy core (Ph5), `RR_pi_at` still abstract.**
+Assemble `vLam ARGn`/`vLam ARGm` via `refl_Pi`/`t_lam_eta` (port single-sided
+`reflect_pi_step_from_app`, now two-sided & UNBLOCKED), then discharge
+`PiRedTmEq`'s application clause = the reflect/reify adequacy never closed even
+single-sided.  Full detail in `WIP/ConvRelPlan.md` STATUS (top entry).
+
+## Superseded fork — RE-PLAN around the single-typed-neutral pivot (RESOLVED above)
 
 The earlier 3-option fork is SUPERSEDED: the paper neither keeps two-typed
 neutrals nor uses structural conv_nf.  Decision for Dustin: adopt the paper's

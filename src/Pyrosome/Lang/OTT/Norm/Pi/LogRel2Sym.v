@@ -118,13 +118,25 @@ Section SymGen.
     - (* LRempty *)
       eexists; repeat split;
         [ apply LRempty | apply RedNeutralEq_sym | apply RedNeutralEq_sym ].
-    - (* LRne -- genuine [conv_ne]: build the SWAPPED neutral pair via
-         [conv_ne_sym] (no longer a syntactic [subst] on [n = m]). *)
-      match goal with c : NeConv _ _ _ _ _ |- _ => destruct c as [[wn wm] cnm] end.
-      eexists; repeat split.
+    - (* LRne -- SINGLE-typed neutral relation.  The swapped node is
+         [(dEl (vNe m), dEl (vNe n))] with relation [RedNeutralEq Ge (dEl (vNe
+         m))] (left = the swapped left type), so the fwd/bwd maps must RE-TYPE the
+         members across the convertible codes [vNe n ∼ vNe m] -- exactly the
+         paper's [WfTmConv]-bridge, here [n_conv] + [conv_ne n m] (the [LRne]
+         premise [cnm]).  This is what symmetry costs once neutrals are
+         single-typed (the old two-typed encoding hid it inside the type pair). *)
+      match goal with c : NeConv _ _ _ _ |- _ => destruct c as [[wn wm] cnm] end.
+      exists (RedNeutralEq Ge (dEl (vNe m))).
+      split; [ split | ].
       + eapply LRne; repeat split; [ exact wm | exact wn | exact (conv_ne_sym cnm) ].
-      + apply RedNeutralEq_sym.
-      + apply RedNeutralEq_sym.
+      + intros a b H. destruct H as [p q [[wp wq] cpq]]. apply rneT. repeat split.
+        * eapply n_conv; [ exact wq | apply cnf_ne; exact cnm ].
+        * eapply n_conv; [ exact wp | apply cnf_ne; exact cnm ].
+        * exact (conv_ne_sym cpq).
+      + intros a b H. destruct H as [p q [[wp wq] cpq]]. apply rneT. repeat split.
+        * eapply n_conv; [ exact wq | apply cnf_ne; exact (conv_ne_sym cnm) ].
+        * eapply n_conv; [ exact wp | apply cnf_ne; exact (conv_ne_sym cnm) ].
+        * exact (conv_ne_sym cpq).
     - (* LRpiI *)
       eexists; split; [ split | ].
       + apply LRpiI; assumption.

@@ -51,7 +51,7 @@ Proof.
   refine (has_neutral_mutind
     (fun Ge v T _ => forall r l, T = dU r l -> ne_below_val (length Ge) v)
     (fun Ge n T _ => forall r l, T = dU r l -> ne_below_ne (length Ge) n)
-    _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
   - (* t_ne *) intros Ge n T hn IHn r l Heq. exact (IHn r l Heq).
   - (* t_zero *) intros Ge r l Heq. discriminate Heq.
   - (* t_suc *) intros Ge v hv IHv r l Heq. discriminate Heq.
@@ -76,6 +76,7 @@ Proof.
     discriminate Heq.
   - (* n_app *) intros Ge f F B a B' hf IHf ha IHa Hap r l Heq. discriminate Heq.
   - (* n_appI *) intros Ge f F B a B' hf IHf ha IHa Hap r l Heq. discriminate Heq.
+  - (* n_conv *) intros Ge n A B w IH cAB r l Heq. discriminate Heq.
 Qed.
 
 Definition has_svalty_scoped Ge v r l (H : has_svalty Ge v (dU r l)) :

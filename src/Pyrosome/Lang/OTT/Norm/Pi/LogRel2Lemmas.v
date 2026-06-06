@@ -38,10 +38,10 @@ Proof.
   - destruct n0 as [[wn wm] _]; split; apply t_ne; assumption.
 Qed.
 
-Lemma RedNeutralEq_wf : forall Ge T S a b,
-    RedNeutralEq Ge T S a b -> (has_svalty Ge a T * has_svalty Ge b S)%type.
+Lemma RedNeutralEq_wf : forall Ge T a b,
+    RedNeutralEq Ge T a b -> (has_svalty Ge a T * has_svalty Ge b T)%type.
 Proof.
-  intros Ge T S a b H; destruct H as [n m [[wn wm] _]].
+  intros Ge T a b H; destruct H as [n m [[wn wm] _]].
   split; apply t_ne; assumption.
 Qed.
 
@@ -69,7 +69,14 @@ Proof.
   intros Ge A B a b [P [H Pab]]; destruct H.
   - (* LRnat *)   exact (RedNatEq_wf Pab).
   - (* LRempty *) exact (RedNeutralEq_wf Pab).
-  - (* LRne *)    exact (RedNeutralEq_wf Pab).
+  - (* LRne : the neutral relation is SINGLE-typed at the LEFT type
+       [dEl (vNe n)]; the right member is re-typed at the node's RIGHT type
+       [dEl (vNe m)] by [n_conv] + [conv_ne n m] (the [LRne] premise).  This
+       is exactly the paper's [WfTmConv]-bridge dissolving the typing wall. *)
+    match goal with c : NeConv _ (dU _ _) _ _ |- _ => rename c into cnm end.
+    destruct Pab as [p q [[wp wq] _]]; split.
+    + apply t_ne; exact wp.
+    + apply t_ne. eapply n_conv; [ exact wq | apply cnf_ne; exact (snd cnm) ].
   - (* LRpiI *)   destruct Pab as [Hf Hg]; split; assumption.
   - (* LRpi *)    destruct Pab as [[Hf Hg] _]; split; assumption.
   - (* LRU0 *)    destruct Pab as [[Hc Hd] _]; split; assumption.
@@ -80,13 +87,13 @@ Qed.
 (* Base-case PER laws (provisional [NeConv] is already a PER).            *)
 (* ===================================================================== *)
 
-Lemma NeConv_sym : forall Ge T S n m, NeConv Ge T S n m -> NeConv Ge S T m n.
-Proof. intros Ge T S n m [[wn wm] e]; repeat split; [exact wm | exact wn | exact (conv_ne_sym e)]. Qed.
+Lemma NeConv_sym : forall Ge T n m, NeConv Ge T n m -> NeConv Ge T m n.
+Proof. intros Ge T n m [[wn wm] e]; repeat split; [exact wm | exact wn | exact (conv_ne_sym e)]. Qed.
 
-Lemma NeConv_trans : forall Ge T S R n m p,
-    NeConv Ge T S n m -> NeConv Ge S R m p -> NeConv Ge T R n p.
+Lemma NeConv_trans : forall Ge T n m p,
+    NeConv Ge T n m -> NeConv Ge T m p -> NeConv Ge T n p.
 Proof.
-  intros Ge T S R n m p [[wn wm] e1] [[wm' wp] e2];
+  intros Ge T n m p [[wn wm] e1] [[wm' wp] e2];
     repeat split; [exact wn | exact wp | exact (conv_ne_trans e1 e2)].
 Qed.
 
@@ -98,6 +105,9 @@ Proof.
   - apply rne_ne; apply NeConv_sym; assumption.
 Qed.
 
+(* RedNatEq's [rne_ne] now carries a SINGLE-typed [NeConv Ge (dEl vNat) n m];
+   NeConv_trans below threads the single type. *)
+
 Lemma RedNatEq_trans : forall Ge a b c,
     RedNatEq Ge a b -> RedNatEq Ge b c -> RedNatEq Ge a c.
 Proof.
@@ -107,13 +117,13 @@ Proof.
   - inversion Hbc; subst. apply rne_ne; eapply NeConv_trans; eassumption.
 Qed.
 
-Lemma RedNeutralEq_sym : forall Ge T S a b,
-    RedNeutralEq Ge T S a b -> RedNeutralEq Ge S T b a.
-Proof. intros Ge T S a b [n m c]; apply rneT; apply NeConv_sym; assumption. Qed.
+Lemma RedNeutralEq_sym : forall Ge T a b,
+    RedNeutralEq Ge T a b -> RedNeutralEq Ge T b a.
+Proof. intros Ge T a b [n m c]; apply rneT; apply NeConv_sym; assumption. Qed.
 
-Lemma RedNeutralEq_trans : forall Ge T S R a b c,
-    RedNeutralEq Ge T S a b -> RedNeutralEq Ge S R b c -> RedNeutralEq Ge T R a c.
+Lemma RedNeutralEq_trans : forall Ge T a b c,
+    RedNeutralEq Ge T a b -> RedNeutralEq Ge T b c -> RedNeutralEq Ge T a c.
 Proof.
-  intros Ge T S R a b c Hab Hbc; destruct Hab as [n m cab]; inversion Hbc; subst.
+  intros Ge T a b c Hab Hbc; destruct Hab as [n m cab]; inversion Hbc; subst.
   apply rneT; eapply NeConv_trans; eassumption.
 Qed.

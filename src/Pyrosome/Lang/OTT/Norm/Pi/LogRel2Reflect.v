@@ -26,7 +26,8 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
-  Domain Apply Typing Reflect Preservation LogRel2Conv LogRel2 LogRel2Ind LogRel2Lemmas.
+  Domain Apply Typing Reflect Preservation ApplySubst
+  LogRel2Conv LogRel2 LogRel2Ind LogRel2Lemmas.
 Import Core.Notations.
 
 (* ===================================================================== *)
@@ -42,9 +43,9 @@ Proof.
   - apply cnf_ne. destruct n0 as [_ c]. exact c.
 Qed.
 
-Lemma reify_neutral : forall Ge T S a b, RedNeutralEq Ge T S a b -> conv_nf a b.
+Lemma reify_neutral : forall Ge T a b, RedNeutralEq Ge T a b -> conv_nf a b.
 Proof.
-  intros Ge T S a b H; destruct H as [n m [_ c]].
+  intros Ge T a b H; destruct H as [n m [_ c]].
   apply cnf_ne; exact c.
 Qed.
 
@@ -56,7 +57,7 @@ Qed.
 (* ===================================================================== *)
 
 Lemma reflect_nat : forall Ge n m,
-    NeConv Ge (dEl vNat) (dEl vNat) n m ->
+    NeConv Ge (dEl vNat) n m ->
     RedTmEq Ge (dEl vNat) (dEl vNat) (vNe n) (vNe m).
 Proof.
   intros Ge n m c.
@@ -66,22 +67,24 @@ Proof.
 Qed.
 
 Lemma reflect_empty : forall Ge n m,
-    NeConv Ge (dEl vEmpty) (dEl vEmpty) n m ->
+    NeConv Ge (dEl vEmpty) n m ->
     RedTmEq Ge (dEl vEmpty) (dEl vEmpty) (vNe n) (vNe m).
 Proof.
   intros Ge n m c.
-  exists (RedNeutralEq Ge (dEl vEmpty) (dEl vEmpty)); split.
+  exists (RedNeutralEq Ge (dEl vEmpty)); split.
   - apply LRempty.
   - apply rneT; exact c.
 Qed.
 
+(* SINGLE-typed: the neutral term relation lives at the LEFT code [dEl (vNe p)];
+   the members [n], [m] are conv-related and typed there. *)
 Lemma reflect_neEl : forall Ge n m p q r l,
-    NeConv Ge (dU r l) (dU r l) p q ->
-    NeConv Ge (dEl (vNe p)) (dEl (vNe q)) n m ->
+    NeConv Ge (dU r l) p q ->
+    NeConv Ge (dEl (vNe p)) n m ->
     RedTmEq Ge (dEl (vNe p)) (dEl (vNe q)) (vNe n) (vNe m).
 Proof.
   intros Ge n m p q r l cpq cnm.
-  exists (RedNeutralEq Ge (dEl (vNe p)) (dEl (vNe q))); split.
+  exists (RedNeutralEq Ge (dEl (vNe p))); split.
   - apply LRne with (r:=r) (l:=l); exact cpq.
   - apply rneT; exact cnm.
 Qed.
@@ -108,16 +111,16 @@ Qed.
    at the top level [LR2] via [LRne]).  This is what lets the fundamental lemma
    FORM the reducible type [El n] from a neutral code [n]. *)
 Lemma reflect_neEl_ty : forall Ge r l n m,
-    NeConv Ge (dU r l) (dU r l) n m ->
+    NeConv Ge (dU r l) n m ->
     RedTyEq Ge (dEl (vNe n)) (dEl (vNe m)).
 Proof.
   intros Ge r l n m c.
-  exists (RedNeutralEq Ge (dEl (vNe n)) (dEl (vNe m))).
+  exists (RedNeutralEq Ge (dEl (vNe n))).
   apply LRne with (r:=r) (l:=l); exact c.
 Qed.
 
 Lemma reflect_U : forall Ge r l n m,
-    NeConv Ge (dU r l) (dU r l) n m ->
+    NeConv Ge (dU r l) n m ->
     RedTmEq Ge (dU r l) (dU r l) (vNe n) (vNe m).
 Proof.
   intros Ge r l n m c.
@@ -129,7 +132,7 @@ Proof.
     + cbn. split; [ split | ].
       * apply t_ne; exact wn.
       * apply t_ne; exact wm.
-      * exists (RedNeutralEq Ge (dEl (vNe n)) (dEl (vNe m))).
+      * exists (RedNeutralEq Ge (dEl (vNe n))).
         change LR0 with (@LR tl0 LRbot LRbot).
         apply (@LRne tl0 LRbot LRbot Ge n m r l).
         repeat split; assumption.
@@ -139,7 +142,7 @@ Proof.
     + cbn. split; [ split | ].
       * apply t_ne; exact wn.
       * apply t_ne; exact wm.
-      * exists (RedNeutralEq Ge (dEl (vNe n)) (dEl (vNe m))).
+      * exists (RedNeutralEq Ge (dEl (vNe n))).
         change LR1 with (@LR tl1 LR0 LRbot).
         apply (@LRne tl1 LR0 LRbot Ge n m r l).
         repeat split; assumption.
@@ -205,9 +208,17 @@ Definition conv_nf_ty (A B : svalty) : Type :=
    relevant-Pi case, which needs [wf_ssub_id]/[wf_ssub_wkn] to eta-expand; the
    base/universe cases ignore it).  Mirrors the single-sided [reflect_motive]'s
    leading [wf_senv Ge ->]. *)
+(* REFLECT now takes a SINGLE-typed [NeConv Ge A n m] (both neutrals typed at
+   the LEFT type [A], paper's [RelAtNe]/[~ne ⦂ A]) and produces the two
+   type-directed reflections (left at [A], right at [B]) [P]-related.  The
+   right-at-[B] reflection is structural ([Reflect] is type-directed and needs
+   no typing premise); membership [P] is single-typed at [A], so the base cases
+   close with NO conversion.  This is the formulation that dissolves the
+   eta-variable typing wall: in [RR_pi_at] the bound var is reflected at the
+   LEFT domain only ([n_var]), never manufactured at both domains. *)
 Definition RRCar (Ge : senv) (A B : svalty) (P : sval -> sval -> Type) : Type :=
   wf_senv Ge ->
-  ( (forall n m, NeConv Ge A B n m ->
+  ( (forall n m, NeConv Ge A n m ->
        { vn & { vm & (Reflect (length Ge) A n vn
                     * Reflect (length Ge) B m vm
                     * P vn vm)%type } })
@@ -225,7 +236,7 @@ Definition RecRR1 (rec : RedRel) : Type :=
    dischargeable vacuously. *)
 Definition NeElBuild (lvl lt : TypeLevel) (rec : RedRel) : Type :=
   forall Ge n m r l, TLlt lt lvl ->
-    NeConv Ge (dU r l) (dU r l) n m ->
+    NeConv Ge (dU r l) n m ->
     { P0 : sval -> sval -> Type & rec Ge (dEl (vNe n)) (dEl (vNe m)) P0 }.
 
 (* The relevant-Pi case (the mutual knot), abstracted at one tower level. *)
@@ -245,6 +256,77 @@ Definition RR_pi_at (lvl : TypeLevel) (rec0 rec1 : RedRel) : Type :=
         RRCar Delta (dEl (posTyA PA rab)) (dEl (posTyB PA rab))
           (redTmEq (posPack PA rab))) ->
     RRCar Ge (dEl (vPi FA BA)) (dEl (vPi FB BB)) (PiRedTmEq PA).
+
+(* ===================================================================== *)
+(* WALL DISSOLVED -- the keystone setup step for [RR_pi_at].                 *)
+(*                                                                         *)
+(* This is the EXACT step the two-typed [NeConv] could not perform (the      *)
+(* "[has_svalty] typing-conversion wall"): reflecting the eta bound variable *)
+(* [nVar 0] into the DOMAIN pack of a relevant Pi.  Under the two-typed      *)
+(* encoding the domain reflect IH demanded [NeConv Delta (dEl FA') (dEl FB') *)
+(* (nVar 0) (nVar 0)], i.e. [wf_neutral Delta (nVar 0)] at BOTH [dEl FA']    *)
+(* AND [dEl FB'] -- impossible off-diagonal because [n_var] pins ONE context *)
+(* type.  With the paper-faithful SINGLE-typed [NeConv] the premise is       *)
+(* [NeConv Delta (dEl FA') (nVar 0) (nVar 0)] -- typing at the LEFT domain   *)
+(* only ([n_var]) -- yet the IH still delivers BOTH eta reflections          *)
+(* ([ARGn] at [dEl FA'], [ARGm] at [dEl FB']) and the domain MEMBER relating *)
+(* them, which is precisely what the two-sided eta-expansion construction     *)
+(* feeds to [posRed]/[posAd].  No [n_conv] is needed AT THIS STEP; the        *)
+(* typing-conversion rule services escape/symmetry, not the variable.        *)
+(*                                                                         *)
+(* What remains of [RR_pi_at] AFTER this step is the SAME reflect/reify       *)
+(* adequacy core the single-sided development reduced to and never closed     *)
+(* (port of [reflect_pi_step_from_app] -> [..._beta_step] -> [..._reify_      *)
+(* step]): assemble [vLam ARGn]/[vLam ARGm] ([refl_Pi], [t_lam_eta]), then    *)
+(* discharge [PiRedTmEq]'s application clause by relating the beta-reduct      *)
+(* [body[a::sg]] to the [posAd]-reflection of [nApp (n[sg]) (reify a)] via    *)
+(* [Reflect] naturality + [conv_ne] -- the paper's Theorem 11 core (Ph5).     *)
+(* That residual is what stays abstract in [RR_pi_at]; the wall that blocked  *)
+(* even reaching it is gone. *)
+Lemma wf_svalty_pi_dom : forall Ge F B,
+    wf_svalty Ge (dEl (vPi F B)) -> wf_svalty Ge (dEl F).
+Proof.
+  intros Ge F B H. inversion H; subst.
+  match goal with He : has_svalty Ge (vPi F B) _ |- _ => inversion He; subst end.
+  eapply wf_dEl; eassumption.
+Qed.
+
+(* The weakening witnesses [ws0]/[afA0]/[afB0]/[HwfD] are exactly what the
+   eta-expansion construction builds at the front-extended context (via
+   [wf_ssub_wkn]/[Apply_val_wkn]/[wf_senv_ext], cf. single-sided
+   [reflect_pi_step_from_app]); here they are taken as hypotheses so the lemma
+   isolates the genuine content -- that the domain IH reflects the bound
+   variable from a SINGLE LEFT typing yet returns BOTH eta reflections. *)
+Lemma pi_bound_var_reflects :
+  forall Ge FA BA FB BB (PA : PolyRedPack Ge FA BA FB BB)
+    (ws0 : wf_ssub (dEl (shift_val 0 1 FA) :: map (shift_ty 0 1) Ge)
+                   (wkn_list (length Ge)) Ge)
+    (afA0 : Apply_val (length (dEl (shift_val 0 1 FA) :: map (shift_ty 0 1) Ge))
+                      (wkn_list (length Ge)) FA (shift_val 0 1 FA))
+    (afB0 : Apply_val (length (dEl (shift_val 0 1 FA) :: map (shift_ty 0 1) Ge))
+                      (wkn_list (length Ge)) FB (shift_val 0 1 FB))
+    (HwfD : wf_senv (dEl (shift_val 0 1 FA) :: map (shift_ty 0 1) Ge))
+    (IHsh : RRCar (dEl (shift_val 0 1 FA) :: map (shift_ty 0 1) Ge)
+              (dEl (shift_val 0 1 FA)) (dEl (shift_val 0 1 FB))
+              (redTmEq (shpRed PA ws0 afA0 afB0))),
+    { ARGn & { ARGm &
+      ( Reflect (length (dEl (shift_val 0 1 FA) :: map (shift_ty 0 1) Ge))
+                (dEl (shift_val 0 1 FA)) (nVar 0) ARGn
+      * Reflect (length (dEl (shift_val 0 1 FA) :: map (shift_ty 0 1) Ge))
+                (dEl (shift_val 0 1 FB)) (nVar 0) ARGm
+      * redTmEq (shpRed PA ws0 afA0 afB0) ARGn ARGm )%type } }.
+Proof.
+  intros Ge FA BA FB BB PA ws0 afA0 afB0 HwfD IHsh.
+  (* reflect the bound variable -- typed at the LEFT domain ONLY (the wall step:
+     under two-typed [NeConv] this also demanded [nVar 0 : dEl (shift FB)],
+     which [n_var] cannot give off-diagonal). *)
+  assert (Hvar : NeConv (dEl (shift_val 0 1 FA) :: map (shift_ty 0 1) Ge)
+                   (dEl (shift_val 0 1 FA)) (nVar 0) (nVar 0)).
+  { repeat split; [ apply n_var; reflexivity | apply n_var; reflexivity | apply cne_var ]. }
+  destruct (fst (fst (IHsh HwfD)) (nVar 0) (nVar 0) Hvar)
+    as [ARGn [ARGm [[Hrn Hrm] rab]]].
+  exists ARGn, ARGm. exact ((Hrn, Hrm), rab).
+Qed.
 
 (* The irrelevant-Pi case, abstracted: DEFERRED to Ph6 (full OTT).  REFLECT-at-
    [vPiI] is doable (members are just typings, [refl_PiI] identity) but REIFY
@@ -292,7 +374,7 @@ Section RRGen.
       + intros a b r. exact (reify_neutral r).
       + exact cnf_empty.
     - (* LRne : base neutral element type (refl_neEl identity) *)
-      match goal with H : NeConv _ _ _ _ _ |- _ => rename H into cne end.
+      match goal with H : NeConv _ _ _ _ |- _ => rename H into cne end.
       intros Hwf. split; [ split | ].
       + intros p q c. exists (vNe p), (vNe q). split; [ split | ].
         * apply refl_neEl.
@@ -345,7 +427,7 @@ Proof. intros Ge A B P H; destruct H. Qed.
 Definition NeElBuild_LR (lvlg lt lvl : TypeLevel) (rec0 rec1 : RedRel)
   : NeElBuild lvlg lt (@LR lvl rec0 rec1) :=
   fun Ge n m r l _ c =>
-    existT _ (RedNeutralEq Ge (dEl (vNe n)) (dEl (vNe m)))
+    existT _ (RedNeutralEq Ge (dEl (vNe n)))
            (@LRne lvl rec0 rec1 Ge n m r l c).
 
 (* Vacuous builder for the OFF tower slots: the level guard is uninhabited. *)

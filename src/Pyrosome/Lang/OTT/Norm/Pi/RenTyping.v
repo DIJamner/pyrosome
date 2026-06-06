@@ -9,10 +9,43 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
-  Domain Apply Typing Preservation ApplySubst RenSubst.
+  Domain Apply Typing Preservation ApplySubst RenSubst LogRel2Conv.
 Import Core.Notations.
 
 Notation term := (@term string).
+
+(* Stability of structural conversion under a general renaming [ren_val]/
+   [ren_ne] (the variable case maps [nVar k] to [nVar (renm rho k)] on both
+   sides).  Needed by the [n_conv] case of [ren_typing]. *)
+Lemma conv_ren :
+  (forall a b, conv_nf a b -> forall rho, conv_nf (ren_val rho a) (ren_val rho b))
+  * (forall n m, conv_ne n m -> forall rho, conv_ne (ren_ne rho n) (ren_ne rho m)).
+Proof.
+  apply (conv_mutind
+    (fun a b (_ : conv_nf a b) => forall rho, conv_nf (ren_val rho a) (ren_val rho b))
+    (fun n m (_ : conv_ne n m) => forall rho, conv_ne (ren_ne rho n) (ren_ne rho m))).
+  - intros n m _ IH rho. cbn [ren_val]. apply cnf_ne. apply IH.
+  - intros rho. apply cnf_zero.
+  - intros v w _ IH rho. cbn [ren_val]. apply cnf_suc. apply IH.
+  - intros rho. apply cnf_nat.
+  - intros rho. apply cnf_empty.
+  - intros F B F' B' _ IHF _ IHB rho. cbn [ren_val]. apply cnf_pi; [ apply IHF | apply IHB ].
+  - intros F B F' B' _ IHF _ IHB rho. cbn [ren_val]. apply cnf_piI; [ apply IHF | apply IHB ].
+  - intros b b' _ IH rho. cbn [ren_val]. apply cnf_lam. apply IH.
+  - intros b b' _ IH rho. cbn [ren_val]. apply cnf_lamI. apply IH.
+  - intros k rho. cbn [ren_ne]. apply cne_var.
+  - intros rA lA A scrut A' scrut' _ IHA _ IHs rho. cbn [ren_ne].
+    apply cne_emptyrec; [ apply IHA | apply IHs ].
+  - intros f F B a f' F' B' a' _ IHf _ IHF _ IHB _ IHa rho. cbn [ren_ne].
+    apply cne_app; [ apply IHf | apply IHF | apply IHB | apply IHa ].
+  - intros f F B a f' F' B' a' _ IHf _ IHF _ IHB _ IHa rho. cbn [ren_ne].
+    apply cne_appI; [ apply IHf | apply IHF | apply IHB | apply IHa ].
+Qed.
+
+Definition conv_nf_ren : forall a b, conv_nf a b -> forall rho,
+    conv_nf (ren_val rho a) (ren_val rho b) := fst conv_ren.
+Definition conv_ne_ren : forall n m, conv_ne n m -> forall rho,
+    conv_ne (ren_ne rho n) (ren_ne rho m) := snd conv_ren.
 
 (* ===================================================================== *)
 (* TYPING PRESERVATION UNDER A RENAMING (the universe-typed fragment).      *)
@@ -84,7 +117,7 @@ Proof.
        forall Ge' rho, ren_ctx rho Ge Ge' -> has_svalty Ge' (ren_val rho v) (dU r l))
     (fun Ge n T _ => forall r l, T = dU r l ->
        forall Ge' rho, ren_ctx rho Ge Ge' -> wf_neutral Ge' (ren_ne rho n) (dU r l))
-    _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
   - (* t_ne *) intros Ge n T hn IHn r l Heq Ge' rho Hctx.
     cbn [ren_val]. apply t_ne. exact (IHn r l Heq Ge' rho Hctx).
   - (* t_zero *) intros Ge r l Heq Ge' rho Hctx. discriminate Heq.
@@ -111,6 +144,7 @@ Proof.
     discriminate Heq.
   - (* n_appI *) intros Ge f F B a B' hf IHf ha IHa Hap r l Heq Ge' rho Hctx.
     discriminate Heq.
+  - (* n_conv *) intros Ge n A B w IH cAB r l Heq Ge' rho Hctx. discriminate Heq.
 Qed.
 
 Definition has_svalty_dU_ren {Ge v r l} (H : has_svalty Ge v (dU r l)) :=
@@ -175,7 +209,7 @@ Proof.
     (fun Ge v T _ => ne_below_ctx Ge -> ne_below_val (length Ge) v)
     (fun Ge n T _ => ne_below_ctx Ge ->
        ne_below_ne (length Ge) n /\ ne_below_ty (length Ge) T)
-    _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
   - (* t_ne *) intros Ge n T hn IHn Hctx. cbn [ne_below_val]. exact (proj1 (IHn Hctx)).
   - (* t_zero *) intros Ge Hctx. exact I.
   - (* t_suc *) intros Ge v hv IHv Hctx. cbn [ne_below_val]. exact (IHv Hctx).
@@ -223,6 +257,10 @@ Proof.
         [ exact Hnef | exact HneF | exact HneB | exact (IHa Hctx) ].
     + cbn [ne_below_ty]. eapply Apply_val_ne_below;
         [ exact Hap | exact HneB | apply sub_below_beta; [ Lia.lia | exact (IHa Hctx) ] ].
+  - (* n_conv *) intros Ge n A B w IH cAB Hctx. split.
+    + exact (proj1 (IH Hctx)).
+    + cbn [ne_below_ty] in *.
+      exact (conv_nf_ne_below cAB (length Ge) (proj2 (IH Hctx))).
 Qed.
 
 (* Convenience projections (the [dU]-restricted [has_svalty_scoped]/
@@ -262,7 +300,7 @@ Proof.
     (fun Ge n T _ => ne_below_ty (length Ge) T -> ne_below_ctx Ge ->
        forall Ge' rho, ren_ctx rho Ge Ge' -> ren_ok rho (S (length Ge)) (length Ge') ->
          wf_neutral Ge' (ren_ne rho n) (ren_ty rho T))
-    _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
   - (* t_ne *) intros Ge n T hn IHn Hty Hctx Ge' rho Hren Hok.
     cbn [ren_val]. apply t_ne. exact (IHn Hty Hctx Ge' rho Hren Hok).
   - (* t_zero *) intros Ge Hty Hctx Ge' rho Hren Hok.
@@ -382,4 +420,10 @@ Proof.
                ltac:(eapply RenShSc_beta;
                        [ Lia.lia | apply ren_ok_le with (N := S (length Ge)); [ exact Hok | Lia.lia ]
                        | apply ren_is_Apply_val ])).
+  - (* n_conv *) intros Ge n A B w IH cAB HtyB Hctx Ge' rho Hren Hok.
+    assert (HtyA : ne_below_ty (length Ge) (dEl A)).
+    { cbn [ne_below_ty] in *. exact (conv_nf_ne_below (conv_nf_sym cAB) (length Ge) HtyB). }
+    cbn [ren_ty]. eapply n_conv.
+    + exact (IH HtyA Hctx Ge' rho Hren Hok).
+    + exact (conv_nf_ren cAB rho).
 Qed.

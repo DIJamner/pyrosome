@@ -169,3 +169,40 @@ Definition conv_nf_trans : forall a b c, conv_nf a b -> conv_nf b c -> conv_nf a
   fun a b c H => fst conv_trans a b H c.
 Definition conv_ne_trans : forall n m p, conv_ne n m -> conv_ne m p -> conv_ne n p :=
   fun n m p H => snd conv_trans n m H p.
+
+(* ===================================================================== *)
+(* Stability of structural conversion under SHIFT.  [shift_val]/[shift_ne] *)
+(* apply the SAME index map to both members (the variable case stays       *)
+(* [nVar k] on both sides), so structure -- and hence [conv_nf]/[conv_ne]  *)
+(* -- is preserved.  Needed by the [n_conv] case of [weaken_typing]        *)
+(* (Preservation.v).                                                        *)
+(* ===================================================================== *)
+Lemma conv_shift :
+  (forall a b, conv_nf a b -> forall c d, conv_nf (shift_val c d a) (shift_val c d b))
+  * (forall n m, conv_ne n m -> forall c d, conv_ne (shift_ne c d n) (shift_ne c d m)).
+Proof.
+  apply (conv_mutind
+    (fun a b (_ : conv_nf a b) => forall c d, conv_nf (shift_val c d a) (shift_val c d b))
+    (fun n m (_ : conv_ne n m) => forall c d, conv_ne (shift_ne c d n) (shift_ne c d m))).
+  - intros n m _ IH c d. cbn [shift_val]. apply cnf_ne. apply IH.
+  - intros c d. apply cnf_zero.
+  - intros v w _ IH c d. cbn [shift_val]. apply cnf_suc. apply IH.
+  - intros c d. apply cnf_nat.
+  - intros c d. apply cnf_empty.
+  - intros F B F' B' _ IHF _ IHB c d. cbn [shift_val]. apply cnf_pi; [ apply IHF | apply IHB ].
+  - intros F B F' B' _ IHF _ IHB c d. cbn [shift_val]. apply cnf_piI; [ apply IHF | apply IHB ].
+  - intros b b' _ IH c d. cbn [shift_val]. apply cnf_lam. apply IH.
+  - intros b b' _ IH c d. cbn [shift_val]. apply cnf_lamI. apply IH.
+  - intros k c d. cbn [shift_ne]. apply cne_var.
+  - intros rA lA A scrut A' scrut' _ IHA _ IHs c d. cbn [shift_ne].
+    apply cne_emptyrec; [ apply IHA | apply IHs ].
+  - intros f F B a f' F' B' a' _ IHf _ IHF _ IHB _ IHa c d. cbn [shift_ne].
+    apply cne_app; [ apply IHf | apply IHF | apply IHB | apply IHa ].
+  - intros f F B a f' F' B' a' _ IHf _ IHF _ IHB _ IHa c d. cbn [shift_ne].
+    apply cne_appI; [ apply IHf | apply IHF | apply IHB | apply IHa ].
+Qed.
+
+Definition conv_nf_shift : forall a b, conv_nf a b -> forall c d,
+    conv_nf (shift_val c d a) (shift_val c d b) := fst conv_shift.
+Definition conv_ne_shift : forall n m, conv_ne n m -> forall c d,
+    conv_ne (shift_ne c d n) (shift_ne c d m) := snd conv_shift.
