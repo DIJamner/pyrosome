@@ -26,7 +26,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import
-  Domain Apply Typing Preservation LogRel2Conv LogRel2 LogRel2Ind LogRel2Lemmas.
+  Domain Apply Typing Reflect Preservation LogRel2Conv LogRel2 LogRel2Ind LogRel2Lemmas.
 Import Core.Notations.
 
 (* ===================================================================== *)
@@ -168,14 +168,17 @@ Qed.
 (* REIFY-ty feeds reflect-at-Pi's annotation slots and REFLECT feeds         *)
 (* reify-at-Pi's eta variable -- hence ONE induction, not three.            *)
 (*                                                                         *)
-(* NOTE (design, for Dustin): the eta-baked [PiRedTmEq] would also admit a   *)
-(* BARE neutral [vNe n] as a relevant-Pi member, which would make REIFY-tm   *)
-(* at [vPi] compare a [vNe] against an eta-long [vLam] -- not derivable in    *)
-(* the purely-structural [conv_nf].  So reflect-at-[vPi] MUST eta-expand      *)
-(* (produce [vLam] members, as single-sided), keeping all relevant-Pi        *)
-(* members eta-long so REIFY-tm only ever hits [cnf_lam].  This is why the    *)
-(* relevant-Pi case stays the genuine crux (it ports the single-sided        *)
-(* eta-expansion construction), NOT a trivial bare-neutral membership.       *)
+(* DESIGN (paper-faithful, RESOLVED 2026-06-06).  The conversion [conv_nf] is   *)
+(* UNTYPED + purely structural (paper Def 13 [∼annot]); eta is NOT a            *)
+(* conversion rule.  Instead it is BAKED INTO NORMAL FORMS by [Reflect]: a      *)
+(* neutral at a relevant Pi reflects to its eta-expansion [vLam], so every       *)
+(* relevant-function value is a [vLam], never a bare [vNe].  Hence REFLECT is    *)
+(* stated TYPE-DIRECTED (it produces the [Reflect]-value [vn]/[vm], identity at  *)
+(* base/code/universe, eta-long at relevant Pi), and REIFY-tm at [vPi] only ever *)
+(* compares [vLam] vs [vLam] ([cnf_lam]) -- the [vNe]-vs-[vLam] mismatch never   *)
+(* arises.  This makes the relevant-Pi REFLECT case the genuine crux (it ports   *)
+(* the single-sided eta-expansion construction via [refl_Pi]/[t_lam_eta]/        *)
+(* [Apply_reflect_cod]); it is NOT a trivial bare-neutral membership.            *)
 (* ===================================================================== *)
 
 (* Reify-type target: at an [El] the underlying codes are [conv_nf]; at the
@@ -189,9 +192,20 @@ Definition conv_nf_ty (A B : svalty) : Type :=
   end.
 
 (* The combined reify/reflect carrier (level-independent: no [LR] inside, so
-   it survives unchanged through the finite tower). *)
+   it survives unchanged through the finite tower).
+
+   REFLECT is TYPE-DIRECTED: a [conv_ne]-related neutral pair reflects to the
+   [Reflect]-normal values [vn]/[vm] (paper "Reflect bakes eta into normal
+   forms"), which are then [P]-related.  At base/code/universe types [Reflect]
+   is the identity ([refl_Nat]/[refl_U]/...), so [vn = vNe n]; at a relevant Pi
+   it eta-EXPANDS ([refl_Pi] -> [vLam ...]).  This keeps every relevant-function
+   value a [vLam], so REIFY-tm never faces a structural [vNe]-vs-[vLam]
+   mismatch the untyped [conv_nf] cannot express. *)
 Definition RRCar (Ge : senv) (A B : svalty) (P : sval -> sval -> Type) : Type :=
-  ( (forall n m, NeConv Ge A B n m -> P (vNe n) (vNe m))
+  ( (forall n m, NeConv Ge A B n m ->
+       { vn & { vm & (Reflect (length Ge) A n vn
+                    * Reflect (length Ge) B m vm
+                    * P vn vm)%type } })
   * (forall a b, P a b -> conv_nf a b)
   * conv_nf_ty A B )%type.
 
@@ -256,41 +270,56 @@ Section RRGen.
   Proof.
     intros Ge A B P H.
     induction H using LR_mut.
-    - (* LRnat *)
+    - (* LRnat : reflection is the identity (refl_Nat) *)
       split; [ split | ].
-      + intros n m c. apply rne_ne; exact c.
+      + intros n m c. exists (vNe n), (vNe m). split; [ split | ].
+        * apply refl_Nat.
+        * apply refl_Nat.
+        * apply rne_ne; exact c.
       + intros a b r. exact (reify_nat r).
       + exact cnf_nat.
-    - (* LRempty *)
+    - (* LRempty : reflection is the identity (refl_Empty) *)
       split; [ split | ].
-      + intros n m c. apply rneT; exact c.
+      + intros n m c. exists (vNe n), (vNe m). split; [ split | ].
+        * apply refl_Empty.
+        * apply refl_Empty.
+        * apply rneT; exact c.
       + intros a b r. exact (reify_neutral r).
       + exact cnf_empty.
-    - (* LRne : base neutral element type *)
+    - (* LRne : base neutral element type (refl_neEl identity) *)
       match goal with H : NeConv _ _ _ _ _ |- _ => rename H into cne end.
       split; [ split | ].
-      + intros p q c. apply rneT; exact c.
+      + intros p q c. exists (vNe p), (vNe q). split; [ split | ].
+        * apply refl_neEl.
+        * apply refl_neEl.
+        * apply rneT; exact c.
       + intros a b r0. exact (reify_neutral r0).
       + cbn. apply cnf_ne. exact (snd cne).
     - (* LRpiI : DEFERRED (irrelevant fragment) *)
       apply HpiI; assumption.
     - (* LRpi : the relevant-Pi mutual KNOT *)
       apply Hpi; assumption.
-    - (* LRU0 : codes at a level-0 universe *)
+    - (* LRU0 : codes at a level-0 universe (refl_U identity) *)
       split; [ split | ].
-      + intros n m c. repeat split.
-        * apply t_ne. exact (fst (fst c)).
-        * apply t_ne. exact (snd (fst c)).
-        * exact (HNe0 h c).
+      + intros n m c. exists (vNe n), (vNe m). split; [ split | ].
+        * apply refl_U.
+        * apply refl_U.
+        * repeat split.
+          -- apply t_ne. exact (fst (fst c)).
+          -- apply t_ne. exact (snd (fst c)).
+          -- exact (HNe0 h c).
       + intros c d Hcd. destruct Hcd as [_ [P0 Hrec]].
         exact (snd (HR0 Hrec)).
       + exact tt.
-    - (* LRU1 : codes at a level-1 universe *)
+    - (* LRU1 : codes at a level-1 universe (refl_U identity) *)
       split; [ split | ].
-      + intros n m c. repeat split.
-        * apply t_ne. exact (fst (fst c)).
-        * apply t_ne. exact (snd (fst c)).
-        * exact (HNe1 h c).
+      + intros n m c. exists (vNe n), (vNe m). split; [ split | ].
+        * apply refl_U.
+        * apply refl_U.
+        * repeat split.
+          -- apply t_ne. exact (fst (fst c)).
+          -- apply t_ne. exact (snd (fst c)).
+          -- exact (HNe1 h c).
       + intros c d Hcd. destruct Hcd as [_ [P0 Hrec]].
         exact (snd (HR1 Hrec)).
       + exact tt.
