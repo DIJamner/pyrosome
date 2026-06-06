@@ -32,12 +32,30 @@ counterexample; see [[ott-r2-hereditary-eta]]).
 
 **NEXT = discharge the 3 residuals `RR_pi_res` (now all provable), in
 `LogRel2Reflect.v`'s `RRPiDev` section (all IHs `domIH`/`posIH` in scope):**
-- (R2) read-back reify-tm at Pi: members `vLam ba`/`vLam bb` (is_lam); invert both
-  `Reify` (→ `rfy_Pi`, bodies = reify of the members applied to the reflected
-  bound vars `ARGn`/`ARGm`); the two applications are codomain-`redTmEq`-related via
-  the `PiRedTmEq` app clause at the bound-var domain member (`pi_bound_var_reflects`/
-  `domIH`); `posIH`'s read-back reify-tm gives `conv_nf` of the bodies.  This is
-  the eta_bodies machinery in the REIFY direction.
+- (R2) read-back reify-tm at Pi — VALIDATED INTERACTIVELY, recipe (mirrors
+  eta_bodies, REIFY direction):
+  ```
+  intros a b na nb Hab Hra Hrb.
+  destruct Hab as [[[Hta Htb] [[ba Ea] [bb Eb]]] Happm]. subst a b.
+  inversion Hra as [...rfy_Pi: ARGa B'a faa bodya HARa HAPa HVAa HBDa]; subst.
+  inversion Hrb as [...rfy_Pi: ARGb B'b fbb bodyb HARb HAPb HVAb HBDb]; subst.
+  apply cnf_lam.   (* goal: conv_nf bodya bodyb *)
+  destruct (pi_bound_var_reflects PA ws0 afA0 afB0 HwfD (domIH ...))
+    as [ARGn [ARGm [[Hargn Hargm] rab]]]. rewrite HL in Hargn,Hargm.
+  pose proof (Reflect_det Hargn HARa); subst ARGn.   (* ARGn = ARGa *)
+  pose proof (Reflect_det Hargm HARb); subst ARGm.   (* ARGm = ARGb *)
+  (* rab : redTmEq (shpRed PA ws0 afA0 afB0) ARGa ARGb -- DONE up to here *)
+  ```
+  **CRUCIAL: do NOT use Apply_conv on the bodies** — the members `vLam ba`/
+  `vLam bb` are NOT conv-related (eta-short vs eta-long), so `conv_nf faa fbb`
+  via Apply_conv is FALSE.  Instead get `faa`/`fbb` REDUCIBLY related via the app
+  clause `Happm` instantiated at `Delta=Dlt`, `sg=wkn`, args `ARGa`/`ARGb`, witnesses
+  `FA':=shift FA` (afA0), `BA':=shift_1 BA`, `fsg:=shift(vLam ba)` (Apply_val_wkn,
+  scopedness via `has_svalty_ne_below` Hta + `ne_below_ctx` from Hwf), `rab`; then
+  `Vapp_det` aligns its `v`/`w` with `faa`/`fbb` (HVAa/HVAb); then `posIH ... rab Hwf`'s
+  read-back reify-tm with HBDa/HBDb (after aligning `B'a = posTyA PA rab` via
+  `Apply_val_det` on HAPa vs `posAppA`) gives `conv_nf bodya bodyb`.
+  Then drop the `Hreify_tm` Context (prove R2 as a Lemma in RRPiDev after Hcod).
 - (R1) `conv_nf BA BB`: already proved as `dom_reify_ty`/`Hcod` analog — actually
   R1 is the codomain `conv_nf BA BB`; revisit whether `posIH` reify-ty at the
   bound var gives it (was the entangled one).
