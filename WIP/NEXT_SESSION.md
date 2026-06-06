@@ -1,5 +1,74 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-06l — conv_ty_eta CORE PORT LANDED + green; construction-side = reflect-adequacy (NOT a separable bridge)
+
+**CORE PORT DONE & COMMITTED (commit on `gluing-nbe`).**  The four WIP metatheory
+lemmas are migrated into the real layering and the low stack is GREEN + axiom-free:
+- `Typing.v`: `conv_ty_eta`/`conv_tm_eta`/`conv_ne_eta` standalone mutual inductive
+  (after the `ne_below_*` defs, inside `Section Typing`) + Combined Scheme
+  `conv_eta_mutind`; `n_conv` now consumes `conv_ty_eta Ge A B` (was `conv_nf A B`);
+  `conv_eta_ne_below`/`_rev` (structural, axiom-free).
+- `Preservation.v`: `conv_eta_shift` proven before `weaken_typing`; `ne_below_shift`
+  + projections MOVED here from `RenSubst.v` (purely structural `sval_mutind`, needed
+  low); `weaken_typing` n_conv shift case migrated.  NOTE: `conv_ty_eta_shift` has
+  `c` IMPLICIT (Set Implicit Arguments) — call it `@conv_ty_eta_shift Ge A B cAB c T0 Hc`.
+- `RenTyping.v`: `conv_eta_ren` (+ helper `ne_below_ren_val`) before `ren_typing`;
+  `typing_ne_below` + `ren_typing` n_conv transport cases migrated.
+GREEN through: Typing, Preservation, ApplySubst, RenSubst, RenTyping, LogRel2,
+LogRel2Ind, LogRel2Red.  Build with `scripts/vbuild.sh <file.v>` (make is stale).
+
+**FIRST BREAK = LogRel2Lemmas:79** (then LogRel2Sym:133-138, LogRel2Reflect:510/
+560/757/767).  These FRESH `n_conv` constructions need `conv_ty_eta`/`conv_ne_eta`
+where they previously built `conv_nf` via `cnf_ne`/`cnf_pi`.
+
+**KEY FINDING — the construction-side is NOT a separable mechanical bridge; it IS
+the reflect-adequacy core (RR_pi_at / Thm-11).**  Tried to scope a generic bridge
+`conv_ne n m -> wf n T -> wf m T -> conv_ne_eta Ge T n m` (mutual TM/TY).  It does
+NOT go through as a standalone induction:
+- The hard case is `conv_tm_eta` at a RELEVANT Pi type.  The ONLY constructor there
+  is `ctm_eta` (eta-expand).  So even a NEUTRAL argument at a Pi-typed position
+  ([cne_eta_app]'s `a` at `dEl F` with `F = vPi…`) must eta-expand — reflexivity is
+  not structural.
+- The eta recursion is TYPE-DIRECTED: `ctm_eta`'s sub-goal is at the instantiated
+  codomain `B' = B[ARG]`, which is NOT a structural subterm of `vPi F B` (subst can
+  grow).  conv_nf-stability under Apply EXISTS (`ApplyConv.v`: Apply preserves
+  conv_nf under conv_sub) so the *bodies* relate, but TERMINATION needs the LR's
+  well-foundedness — i.e. this is exactly NbE reflect-adequacy, the circular-with-
+  normalization thing the declarative-inductive choice was supposed to sidestep.
+  The sidestep works for SHIFT/REN/ne_below (proven on the conversion's own
+  derivation) but NOT for PRODUCING the conversion from raw `conv_ne`.
+- Consequence: the sites split TWO ways.
+  (i) **LogRel2Reflect:757/767** are INSIDE the reflect proof where the reflect IH
+      (posIH) is in scope → they should PRODUCE `conv_ty_eta` from the recursive
+      reflect results (cte_pi from domain reify-ty + codomain posIH; the eta-body
+      n_conv from the IH).  This IS the RR_pi_at work — do it here, not via a bridge.
+  (ii) **LogRel2Lemmas:79, LogRel2Sym:133-138, LogRel2Reflect:510** have NO reflect
+      IH; they consume `NeConv` (= `conv_ne` + same-type typing).  To get
+      `conv_ne_eta` here, `NeConv` ITSELF must carry the eta-conversion (the
+      "annotate neutrals" item).  BLOCKER: `conv_ne_eta` is likely NOT symmetric
+      (`cne_eta_app`'s result `Bres = Apply B [a]` is computed from the LEFT arg),
+      and `NeConv` must be a PER (NeConv_sym).  So either prove a restricted
+      symmetry / store both directions, or keep `conv_ne` in NeConv and supply the
+      `conv_ne_eta` for `n_conv` from a per-site argument.
+- Also surfaced: `typing_ctx_conv` (LogRel2Reflect:609) n_conv case did `exact cAB`
+  — now NEEDS a `conv_ty_eta_ctx_conv` (cne_eta_var's `nth_error` changes under
+  conv_ctx).  Minor but real.
+
+**FORK FOR DUSTIN (construction side):**
+1. **NeConv carries `conv_ne_eta`** (annotate neutrals).  Cleanest for the no-IH
+   sites; COST = prove the conv_ne_eta PER laws used (sym is the risk — needs the
+   `Bres` issue resolved, maybe via a symmetric-up-to-conv formulation or a
+   two-field record).  Pairs with redoing RedNeutralEq/RedNatEq base PERs.
+2. **Keep NeConv = conv_ne; produce `conv_ne_eta` per-site from the LR fundamental
+   lemma** (reflect adequacy gives it where the IH is available; for the no-IH
+   library lemmas, restate them to take/return the LR witness rather than raw
+   conv_ne).  More surgical but spreads the adequacy obligation.
+3. **Hybrid**: NeConv keeps `conv_ne` (for the cheap PER laws) AND adds a lazy
+   `conv_ne_eta` field guarded by the LR; populate it only in reflect.
+RECOMMENDED: settle the `conv_ne_eta` symmetry question FIRST (prototype
+`conv_ne_eta_sym` in WIP) — it gates option 1 and clarifies whether the base PERs
+can carry it.  This is the real Ph5 (Theorem-11 / RR_pi_at adequacy) work.
+
 ## UPDATE 2026-06-06k — conv_ty_eta METATHEORY DE-RISKED in WIP (ne_below side-conds ⇒ STANDALONE, no fusion)
 
 **Refined the UPDATE-j plan and validated it in `WIP/ConvEtaProto.v` (compiles,
