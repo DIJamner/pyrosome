@@ -223,7 +223,12 @@ Definition RRCar (Ge : senv) (A B : svalty) (P : sval -> sval -> Type) : Type :=
        { vn & { vm & (Reflect (length Ge) A n vn
                     * Reflect (length Ge) B m vm
                     * P vn vm)%type } })
-  * (forall a b, P a b -> conv_nf a b)
+  (* REIFY-tm (option A, NbE read-back): reducibly-convertible members read back
+     (Reify, eta-long) to conv_nf-related normal forms.  UNIVERSAL form (no
+     totality needed here); the eta-short-vs-eta-long mismatch that made the raw
+     [conv_nf a b] FALSE is dissolved because [Reify] eta-expands at Pi. *)
+  * (forall a b na nb, P a b ->
+       Reify (length Ge) A a na -> Reify (length Ge) B b nb -> conv_nf na nb)
   * conv_nf_ty A B )%type.
 
 (* Lower-tower recursion: reify/reflect already hold for a delegate relation
@@ -364,7 +369,9 @@ Section RRGen.
         * apply refl_Nat.
         * apply refl_Nat.
         * apply rne_ne; exact c.
-      + intros a b r. exact (reify_nat r).
+      + intros a b na nb r Hra Hrb.
+        eapply Reify_conv_val; [ exact Hra | | exact (reify_nat r) | exact Hrb ].
+        cbn; apply cnf_nat.
       + exact cnf_nat.
     - (* LRempty : reflection is the identity (refl_Empty) *)
       intros Hwf. split; [ split | ].
@@ -372,7 +379,9 @@ Section RRGen.
         * apply refl_Empty.
         * apply refl_Empty.
         * apply rneT; exact c.
-      + intros a b r. exact (reify_neutral r).
+      + intros a b na nb r Hra Hrb.
+        eapply Reify_conv_val; [ exact Hra | | exact (reify_neutral r) | exact Hrb ].
+        cbn; apply cnf_empty.
       + exact cnf_empty.
     - (* LRne : base neutral element type (refl_neEl identity) *)
       match goal with H : NeConv _ _ _ _ |- _ => rename H into cne end.
@@ -381,7 +390,9 @@ Section RRGen.
         * apply refl_neEl.
         * apply refl_neEl.
         * apply rneT; exact c.
-      + intros a b r0. exact (reify_neutral r0).
+      + intros a b na nb r0 Hra Hrb.
+        eapply Reify_conv_val; [ exact Hra | | exact (reify_neutral r0) | exact Hrb ].
+        cbn. apply cnf_ne. exact (snd cne).
       + cbn. apply cnf_ne. exact (snd cne).
     - (* LRpiI : DEFERRED (irrelevant fragment) *)
       apply HpiI; assumption.
@@ -396,8 +407,9 @@ Section RRGen.
           -- apply t_ne. exact (fst (fst c)).
           -- apply t_ne. exact (snd (fst c)).
           -- exact (HNe0 h c).
-      + intros c d Hcd. destruct Hcd as [_ [P0 Hrec]].
-        exact (snd (HR0 Hrec Hwf)).
+      + intros c d nc nd Hcd Hrc Hrd. destruct Hcd as [_ [P0 Hrec]].
+        inversion Hrc; subst. inversion Hrd; subst.
+        eapply ReifyTy_conv; [ eassumption | exact (snd (HR0 Hrec Hwf)) | eassumption ].
       + exact tt.
     - (* LRU1 : codes at a level-1 universe (refl_U identity) *)
       intros Hwf. split; [ split | ].
@@ -408,8 +420,9 @@ Section RRGen.
           -- apply t_ne. exact (fst (fst c)).
           -- apply t_ne. exact (snd (fst c)).
           -- exact (HNe1 h c).
-      + intros c d Hcd. destruct Hcd as [_ [P0 Hrec]].
-        exact (snd (HR1 Hrec Hwf)).
+      + intros c d nc nd Hcd Hrc Hrd. destruct Hcd as [_ [P0 Hrec]].
+        inversion Hrc; subst. inversion Hrd; subst.
+        eapply ReifyTy_conv; [ eassumption | exact (snd (HR1 Hrec Hwf)) | eassumption ].
       + exact tt.
   Qed.
 
@@ -760,7 +773,9 @@ Section RRPiDev.
       - apply conv_ne_shift; exact cnm.
       - apply conv_nf_shift; exact dom_reify_ty.
       - apply conv_nf_shift; exact Hcod.
-      - exact (snd (fst domRR) ARGn ARGm rab). }
+      - eapply Reflect_conv with (TB := dEl (shift_val 0 1 FB));
+          [ exact Hargn | cbn; apply conv_nf_shift; exact dom_reify_ty
+          | apply cne_var | exact Hargm ]. }
     (* reflect both eta-bodies via the codomain REFLECT *)
     destruct (fst (fst posRR) _ _ ((HbL, HbR), HceB))
       as [body_n [body_m [[Hbody_n Hbody_m] rbody]]].
@@ -800,7 +815,9 @@ Section RRPiDev.
 
   (* (R2) REIFY-tm: reducibly-convertible function members read back to       *)
   (* [conv_nf] (needs casing on the members + the codomain reify IH).         *)
-  Context (Hreify_tm : forall a b, PiRedTmEq PA a b -> conv_nf a b).
+  Context (Hreify_tm : forall a b na nb, PiRedTmEq PA a b ->
+              Reify (length Ge) (dEl (vPi FA BA)) a na ->
+              Reify (length Ge) (dEl (vPi FB BB)) b nb -> conv_nf na nb).
 
   (* (R3) The eta-expansion's APPLICATION CLAUSE: for the two eta-long bodies *)
   (* produced by [eta_bodies], the substituted-and-applied lambdas reduce to  *)
@@ -884,7 +901,9 @@ Definition RR_pi_res (lvl : TypeLevel) (rec0 rec1 : RedRel) : Type :=
           (redTmEq (posPack PA rab)))
     (Hwf : wf_senv Ge),
     ( conv_nf BA BB
-    * (forall a b, PiRedTmEq PA a b -> conv_nf a b)
+    * (forall a b na nb, PiRedTmEq PA a b ->
+         Reify (length Ge) (dEl (vPi FA BA)) a na ->
+         Reify (length Ge) (dEl (vPi FB BB)) b nb -> conv_nf na nb)
     * RR_app2 PA wpiA wpiB Hwf )%type.
 
 Lemma RR_pi_at_from_res : forall lvl rec0 rec1,
