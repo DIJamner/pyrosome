@@ -391,6 +391,18 @@ Reflect/Typing/EvalRel. Mechanical.
   reason for two-typing); (c) reduce off-diagonal reflect-at-Pi to the diagonal
   via symmetry/transport (both deferred/normalization-strength).  `RR_gen`+`RR0`
   (the engine) stay green with `RR_pi_at`/`RR_piI_at` abstract.
+  PAPER RESOLUTION (confirmed from CoqHott `logrel-coq/theories/GenericTyping.v`,
+  branch `coq-8.20`): the variable is handled by `convneu_var`
+  (`[Γ⊢tRel n:A] → [Γ⊢tRel n ~ tRel n:A]`) + `convneu_conv`
+  (`[Γ⊢t~u:A] → [Γ⊢A≅B] → [Γ⊢t~u:B]`, neutral conversion CLOSED UNDER TYPE
+  CONVERSION).  Off-diagonal var = `convneu_var` at context type `FA'` then
+  `convneu_conv` to `FB'` — never typed at two types.  That closure rests on
+  declarative typing HAVING A CONVERSION RULE, which `has_svalty` omits == the
+  wall.  ⇒ pursue option (a): add `n_conv : wf_neutral Ge n A -> conv_nf_ty A B
+  -> wf_neutral Ge n B` (and/or `t_conv`), conversion = structural `conv_nf` (the
+  only positivity-safe type-conversion below `LR`); GATE on checking conv_nf
+  type-conversion is model-valid (`Norm/Model.v`+`ModelOk.v`).  Detailed plan in
+  `NEXT_SESSION.md`.
 
 - **Ph0 RE-SCOPED then DE-RISKED.** Annotating `nApp`/`nAppI` is NOT a mechanical
   local change: `vapp_ne` constructs `nApp` with no type to draw annotations from,
