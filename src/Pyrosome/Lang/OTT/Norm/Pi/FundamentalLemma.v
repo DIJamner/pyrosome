@@ -937,6 +937,38 @@ Proof.
     apply El_act_cod_subst_eq; assumption.
 Qed.
 
+(* The reflect-at-Pi bridge: a NEUTRAL function `n` (well typed at the Π type)
+   sends a declaratively-equal pair of domain arguments `a ~ a'` to a pair of
+   member applications that are `ne_eq` at the instantiated codomain type --
+   i.e. both are neutral (`mapp_neutral`, since `n` is) and declaratively equal
+   (`mapp_cong`).  This is exactly the input the recursive (codomain) reflect
+   call consumes, so it is the key combinator for discharging the eta crux's
+   member-relation obligation. *)
+Lemma mapp_ne_eq rF lF lG g G D F C n a a'
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (Hn : wf_term ott [] n (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  (Hnn : neutral ott_pa n)
+  (Ha : wf_term ott [] a (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  (Ha' : wf_term ott [] a' (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  (Heqa : eq_term ott [] (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))) a a')
+  : ne_eq string ott ott_pa
+      (s_exp D (term_info orel lG) (oEl orel lG D (cod_at rF lF lG g G D F C a')))
+      (mapp rF lF lG g G D F C n a) (mapp rF lF lG g G D F C n a').
+Proof.
+  unfold ne_eq; repeat split.
+  - apply mapp_neutral; exact Hnn.
+  - apply mapp_neutral; exact Hnn.
+  - apply mapp_cong; eassumption.
+Qed.
+
 (* ====================================================================== *)
 (* LR ESCAPE (soundness) at the CONCRETE language `l := ott`.               *)
 (*                                                                        *)
