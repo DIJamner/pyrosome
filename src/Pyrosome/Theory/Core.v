@@ -1748,6 +1748,42 @@ Proof.
 Qed.
 
 
+(* ===================================================================== *)
+(* USE-SORT -> DECLARED-SORT transport, the restriction-substitution      *)
+(* step (min-sorts-query discharge, step 2).                              *)
+(*                                                                        *)
+(* The minimized-query engine ([Theorems.add_open_use_sort_wf]) produces, *)
+(* for an occurring (skipped) ctx var [x], well-formedness of its image   *)
+(* [e := sg x] at the OPERATOR USE-sort [T_use[/r/]], not at the          *)
+(* DECLARED sort [t_decl[/r/]] that [wf_subst] requires.  The source rule *)
+(* gives [eq_sort l c' T_use t_decl] (the two sorts of [var x] in the     *)
+(* rule context, via [term_sorts_eq]).  This lemma performs the transport *)
+(* by an explicit substitution [r] (the "restriction / identity sub" of   *)
+(* the user's resolution): substituting the source sort equation by [r]   *)
+(* and converting.  It is the EXISTING [eq_sort_subst] specialised to the *)
+(* conversion shape, with NO new context-strengthening axiom.             *)
+(*                                                                        *)
+(* The remaining (non-circular here, but still open) obligation for the   *)
+(* full discharge is to CONSTRUCT the [eq_subst l c c' r r] for the       *)
+(* prefix [r] -- the restriction substitution -- at each variable, in an  *)
+(* order where the relevant prefix is already well-formed.  That          *)
+(* construction is the genuine remaining content (see [wf_args_covers_fv]  *)
+(* and the [min_sorts_query] memory); this lemma isolates the transport   *)
+(* step so that construction can consume it cleanly. *)
+Lemma use_sort_to_decl_sort (l : lang) c c' r e T_use t_decl
+  : wf_lang l ->
+    wf_ctx l c' ->
+    eq_sort l c' T_use t_decl ->
+    eq_subst l c c' r r ->
+    wf_term l c e (T_use[/r/]) ->
+    wf_term l c e (t_decl[/r/]).
+Proof.
+  intros wfl Hwfc Heqs Heqsub Hwf.
+  eapply wf_term_conv; [exact Hwf|].
+  eapply eq_sort_subst; eauto.
+Qed.
+
+
 (* Dropping a fresh leading binding from a substitution does not change the
    action on a sort well-formed in the (unextended) context. *)
 Lemma wf_sort_strengthen_cons (l : lang) c' n e s t'
