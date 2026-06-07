@@ -47,6 +47,14 @@ From Pyrosome.Compilers Require Import OperationalBridge.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import Reduction Neutral.
 Import Core.Notations.
 
+(* Transitivity of the reflexive-transitive closure (OperationalBridge's `star`
+   is right-recursive, so this is by induction on the SECOND reduction). *)
+Lemma star_trans {A} (R : A -> A -> Prop) a b c
+  : star R a b -> star R b c -> star R a c.
+Proof.
+  induction 2; eauto using star_step.
+Qed.
+
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
@@ -153,6 +161,15 @@ Section WithVar.
     Lemma ne_eq_refl t a : neutral a -> wf_term l [] a t -> ne_eq t a a.
     Proof.
       intros Hn Hwf; repeat split; eauto using eq_term_refl with lang_core.
+    Qed.
+
+    (* Backward (anti-) reduction at the level of `reds`: prepending a
+       weak-head reduction prefix `a ↝* b` to a reduction-to-whnf `b ↝* c`
+       (with `c` a whnf) yields a reduction-to-whnf `a ↝* c`.  This is the
+       reduction-side ingredient of the LR's anti-reduction closure. *)
+    Lemma reds_back a b c : star whstep a b -> reds b c -> reds a c.
+    Proof.
+      intros Hab [Hbc Hc]; split; [ eapply star_trans; eassumption | exact Hc ].
     Qed.
 
   End WithLang.
@@ -419,5 +436,40 @@ Section RedTyConcrete.
       + intros D g os. exact (IHDom D g os).
       + intros D g os a a' raa'. exact (IHCod D g os a a' raa').
   Defined.
+
+  (* ---- anti-reduction (backward) closure of the type LR ---- *)
+  (* The member relation `R` is determined by the env/Pi data, not by the
+     codes `A`/`B`, so weak-head-reducing either code leaves `R` unchanged.
+     These lemmas let the fundamental lemma's conversion/β cases replace a
+     code by any term that weak-head reduces to it. *)
+  Notation whstep := (whstep string l ott_pa).
+
+  Lemma RedTy_tot_anti_l G A A' B R
+    : star whstep A A' -> RedTy_tot G A' B R -> RedTy_tot G A B R.
+  Proof.
+    intros Hred Hr; destruct Hr.
+    - apply rtt_nat; [ eapply reds_back; eassumption | assumption ].
+    - eapply rtt_ne; [ eapply reds_back; eassumption | eassumption | eassumption ].
+    - eapply rtt_pi; [ eapply reds_back; eassumption | eassumption
+                     | eassumption | eassumption ].
+  Qed.
+
+  Lemma RedTy_tot_anti_r G A B B' R
+    : star whstep B B' -> RedTy_tot G A B' R -> RedTy_tot G A B R.
+  Proof.
+    intros Hred Hr; destruct Hr.
+    - apply rtt_nat; [ assumption | eapply reds_back; eassumption ].
+    - eapply rtt_ne; [ eassumption | eapply reds_back; eassumption | eassumption ].
+    - eapply rtt_pi; [ eassumption | eapply reds_back; eassumption
+                     | eassumption | eassumption ].
+  Qed.
+
+  Lemma RedTy_anti_l G A A' B
+    : star whstep A A' -> RedTy G A' B -> RedTy G A B.
+  Proof. intros H [R r]; exists R; eapply RedTy_tot_anti_l; eassumption. Qed.
+
+  Lemma RedTy_anti_r G A B B'
+    : star whstep B B' -> RedTy G A B' -> RedTy G A B.
+  Proof. intros H [R r]; exists R; eapply RedTy_tot_anti_r; eassumption. Qed.
 
 End RedTyConcrete.
