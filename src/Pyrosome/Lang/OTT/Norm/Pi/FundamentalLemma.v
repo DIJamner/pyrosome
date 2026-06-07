@@ -2524,6 +2524,63 @@ Proof.
            (eq_term_trans HMach HR)).
 Qed.
 
+(* ====================================================================== *)
+(* RedTy_Pi_sound -- escape_ty at Pi.  Given the domain code equality       *)
+(* HFF' (F~F') and the codomain code equality HCC' (C~C', from             *)
+(* cod_collapse_both), plus both type-codes A,B reducing to the respective  *)
+(* Pi codes and well typed at a common sort S, escape to eq_term S A B.     *)
+(* A reds Pi F C G ~ Pi F' C' G reds B: the middle step is the Pi_rel       *)
+(* con-congruence (eq_args = HCC' for C, HFF' for F, refl elsewhere) at the *)
+(* natural Pi code sort Snat, transported to S via term_sorts_eq (Pi F C G  *)
+(* is well typed at both Snat and S = subject reduction from A).            *)
+(* ====================================================================== *)
+Lemma RedTy_Pi_sound rF lF lG G F C F' C' A B S
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (HC' : wf_term ott [] C' (s_exp (oext (oEl rF lF G F') (term_info rF lF) G) (code_info lG)
+                                  (oU orel lG (oext (oEl rF lF G F') (term_info rF lF) G))))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  (HCC' : eq_term ott []
+            (s_exp (oext (oEl rF lF G F') (term_info rF lF) G) (code_info lG)
+                   (oU orel lG (oext (oEl rF lF G F') (term_info rF lF) G)))
+            C C')
+  (HrdA : reds string ott ott_pa A (oPi_rel rF lF lG F C G))
+  (HrdB : reds string ott ott_pa B (oPi_rel rF lF lG F' C' G))
+  (HA : wf_term ott [] A S)
+  (HB : wf_term ott [] B S)
+  : eq_term ott [] S A B.
+Proof.
+  pose proof ott_wf as Hwf.
+  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HA HrdA) as HrA.
+  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HB HrdB) as HrB.
+  pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HA HrdA) as HPiS.
+  assert (HPiCong : eq_term ott [] (s_exp G (code_info lG) (oU orel lG G))
+            (oPi_rel rF lF lG F C G) (oPi_rel rF lF lG F' C' G)).
+  { unfold oPi_rel, s_exp.
+    eapply term_con_congruence.
+    - apply named_list_lookup_err_in; compute; reflexivity.
+    - right; cbn [with_names_from]; reflexivity.
+    - exact ott_wf.
+    - cbn [with_names_from].
+      eapply eq_args_cons. 2:{ exact HCC'. }
+      eapply eq_args_cons. 2:{ exact HFF'. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_nil. }
+  pose proof (eq_term_wf_l ott_wf wf_ctx_ott_nil HPiCong) as HPiSnat.
+  pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HPiSnat HPiS) as Hss.
+  pose proof (eq_term_conv HPiCong Hss) as HPiCong_S.
+  exact (eq_term_trans HrA (eq_term_trans HPiCong_S (eq_term_sym HrB))).
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
