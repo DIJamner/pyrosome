@@ -1194,6 +1194,58 @@ Section WithVar.
                eF a Hsound c sub Hwfc (eq_sym Hmapfst) Hrbef).
     Qed.
 
+    (* ============================================================ *)
+    (* MINIMIZED-QUERY substitution inversion (the SINGLE confined    *)
+    (* admit for the skip-sorts feature).                             *)
+    (*                                                                *)
+    (* Same conclusion as [eq_ctx_inversion] but over the minimized   *)
+    (* context egraph [add_ctx_gen ... no_sort c]: context variables  *)
+    (* [x] with [no_sort x = true] carry NO [sort_of] atom (their     *)
+    (* sort requirement is dropped from the query).  [Hskip] records  *)
+    (* the soundness side condition the caller establishes: a skipped  *)
+    (* var occurs in the LHS [e1], so its node is bound by the LHS     *)
+    (* atoms.                                                          *)
+    (*                                                                 *)
+    (* WHY ADMITTED: recovering [wf_subst l [] sg c] needs each var    *)
+    (* well-formed at its DECLARED (substituted) sort.  Skipped vars   *)
+    (* have no [sort_of] atom, so their declared-sort wf must come     *)
+    (* from the LHS image; but the e-graph model interprets atoms only *)
+    (* up to [eq_term]/[eq_sort] (see [lang_model_interprets_to]:      *)
+    (* [interprets_to_term] yields an output merely [eq_term] to       *)
+    (* [con f args], never syntactically equal), so the syntactic      *)
+    (* image needed by [Core.wf_subst_from_image] / the declared-sort  *)
+    (* conversion both route through [add_open_faithful_rep], which     *)
+    (* itself needs [wf_subst].  Closing this is the research-grade    *)
+    (* "minimized substitution inversion": a simultaneous wf_subst +   *)
+    (* per-var covering by a well-founded order over the ctx-telescope  *)
+    (* and the LHS argument order.  The value map + leaf               *)
+    (* correspondence ([CtxReadback.ctx_readback_vals_gen]) and the    *)
+    (* covering entry points ([Core.wf_subst_from_image]) are proved;  *)
+    (* the combined construction is the gap.  See memory               *)
+    (* min_sorts_query for the full analysis. *)
+    Lemma eq_ctx_inversion_gen (no_sort : V -> bool) (rf : nat) (a : interp) c e1 t
+        (Hwfc : wf_ctx l c) (Hwfe1 : wf_term l c e1 t)
+        (Hskip : forall x, no_sort x = true -> In x (fv e1))
+      : fst (rebuild rf (snd (add_open_term succ sort_of l false false
+                (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                e1
+                (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X))))))
+          = Result.Success tt ->
+        (forall al, @Semantics.atom_in_egraph V V V_map V_map V_trie X al
+                (snd (rebuild rf (snd (add_open_term succ sort_of l false false
+                  (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                  e1
+                  (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))))))
+              -> @Semantics.atom_sound_for_model V V V_map lang_model a al) ->
+        exists sg, wf_subst l [] sg c
+                /\ map fst sg = map fst c
+                /\ (forall x, In x (map fst (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))) ->
+                      map.get a (named_list_lookup default
+                                  (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X))) x)
+                        = Some (inl (named_list_lookup default sg x))).
+    Proof.
+    Admitted.
+
     Lemma eq_assumption_inversion (rf : nat) (a : interp) c e1 t
         (Hwfc : wf_ctx l c) (Hwfe1 : wf_term l c e1 t)
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
@@ -2138,6 +2190,34 @@ Section WithVar.
       exact (@CtxReadback.ctx_readback_wf_subst V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of X l Hwf Hsof
                eF a Hsound c sub Hwfc (eq_sym Hmapfst) Hrbef).
     Qed.
+
+    (* Sort analogue of [eq_ctx_inversion_gen] (the SAME confined admit, for
+       the sort_eq query [add_ctx_gen ... no_sort c] with [add_open_sort t1]).
+       [Hskip]: a skipped var occurs in the LHS sort [t1].  Admitted for the
+       identical reason as [eq_ctx_inversion_gen] (see its comment / memory
+       min_sorts_query). *)
+    Lemma eq_sort_ctx_inversion_gen (no_sort : V -> bool) (rf : nat) (a : interp) c t1
+        (Hwfc : wf_ctx l c) (Hwft1 : wf_sort l c t1)
+        (Hskip : forall x, no_sort x = true -> In x (fv_sort t1))
+      : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
+                  (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                  t1
+                  (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X))))))
+            = Result.Success tt ->
+        (forall al, @Semantics.atom_in_egraph V V V_map V_map V_trie X al
+                (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
+                  (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                  t1
+                  (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))))))
+              -> @Semantics.atom_sound_for_model V V V_map lang_model a al) ->
+        exists sg, wf_subst l [] sg c
+                /\ map fst sg = map fst c
+                /\ (forall x, In x (map fst (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))) ->
+                      map.get a (named_list_lookup default
+                                  (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X))) x)
+                        = Some (inl (named_list_lookup default sg x))).
+    Proof.
+    Admitted.
 
     Lemma eq_sort_add_ctx_readback_eF (rf : nat) c t1
         (Hwfc : wf_ctx l c) (Hwft1 : wf_sort l c t1)
