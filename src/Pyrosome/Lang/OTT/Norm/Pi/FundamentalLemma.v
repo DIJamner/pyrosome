@@ -2180,6 +2180,111 @@ Proof.
     eapply eq_args_nil.
 Qed.
 
+(* the under'-lift ounder is congruent under the F->F' machinery swap.  Its    *)
+(* v-leaf (hdD) lands at the wkn-form sort but snoc demands the cmp(g0)-form,   *)
+(* bridged by ty_subst_g0_El_eq (THE under'-lift crux). *)
+Lemma ounder_mach_cong rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : let iF := term_info rF lF in
+    let extGF := oext (oEl rF lF G F) iF G in
+    let extGF' := oext (oEl rF lF G F') iF G in
+    let wknF := owkn (oEl rF lF G F) iF G in
+    let wknF' := owkn (oEl rF lF G F') iF G in
+    let ElaF' := oEl rF lF extGF' (act_code rF lF wknF' G extGF' F') in
+    eq_term ott [] (s_sub (oext ElaF' iF extGF') extGF')
+      (ounder rF lF wknF G extGF F')
+      (ounder rF lF wknF' G extGF' F').
+Proof.
+  pose proof ott_wf as Hwf.
+  intros iF extGF extGF' wknF wknF' ElaF'.
+  pose proof (El_cong rF lF G F F' HG HrF HlF HFF') as HElFF'.
+  pose proof (ext_cong rF lF G (oEl rF lF G F) (oEl rF lF G F') HG HrF HlF HElFF') as HextGG'.
+  assert (HextGF' : wf_term ott [] extGF' s_env).
+  { unfold extGF', iF. ott_build. }
+  assert (HwknF'wf : wf_term ott [] wknF' (s_sub extGF' G)).
+  { unfold wknF', extGF', iF. ott_build. }
+  pose proof (hdD_mach_cong rF lF G F F' HG HrF HlF HF HF' HFF') as Hhd. cbv zeta in Hhd.
+  pose proof (cmp_g0_mach_cong rF lF G F F' HG HrF HlF HF HF' HFF') as Hg0. cbv zeta in Hg0.
+  pose proof (extc_mach_cong rF lF G F F' HG HrF HlF HF HF' HFF') as Hextc.
+  cbv zeta in Hextc. unfold extc, dom_info in Hextc.
+  pose proof (ty_subst_g0_El_eq rF lF wknF' G extGF' F' HG HextGF' HrF HlF HwknF'wf HF') as Hcrux.
+  unfold ounder, dom_info. cbv zeta.
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons.
+    2:{ eapply eq_term_conv; [ exact Hhd | ].
+        unfold s_exp; sort_cong; cbn [Model.eq_term core_model];
+        try solve [ eapply eq_term_refl; ott_build ].
+        eapply eq_term_sym. exact Hcrux. }
+    eapply eq_args_cons. 2:{ exact Hg0. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_cons. 2:{ exact Hextc. }
+    eapply eq_args_nil.
+Qed.
+
+(* snoc_a (the snoc a id that instantiates the binder at the argument) is       *)
+(* congruent.  Its v-leaf (the SIMPLE bound var hd over El F) lands at the El   *)
+(* (act_code) sort but snoc demands ty_subst id (El act_code); bridged by       *)
+(* El_subst_eq then ty_subst_id_El_eq. *)
+Lemma snoc_a_mach_cong rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : let iF := term_info rF lF in
+    let extGF := oext (oEl rF lF G F) iF G in
+    let extGF' := oext (oEl rF lF G F') iF G in
+    let wknF := owkn (oEl rF lF G F) iF G in
+    let wknF' := owkn (oEl rF lF G F') iF G in
+    let ElaF := oEl rF lF extGF (act_code rF lF wknF G extGF F') in
+    let ElaF' := oEl rF lF extGF' (act_code rF lF wknF' G extGF' F') in
+    eq_term ott [] (s_sub extGF' (oext ElaF' iF extGF'))
+      (osnoc (ohd (oEl rF lF G F) iF G) (oid extGF) ElaF iF extGF extGF)
+      (osnoc (ohd (oEl rF lF G F') iF G) (oid extGF') ElaF' iF extGF' extGF').
+Proof.
+  pose proof ott_wf as Hwf.
+  intros iF extGF extGF' wknF wknF' ElaF ElaF'.
+  pose proof (El_cong rF lF G F F' HG HrF HlF HFF') as HElFF'.
+  pose proof (ext_cong rF lF G (oEl rF lF G F) (oEl rF lF G F') HG HrF HlF HElFF') as HextGG'.
+  assert (HextGF' : wf_term ott [] extGF' s_env).
+  { unfold extGF', iF. ott_build. }
+  assert (HwknF'wf : wf_term ott [] wknF' (s_sub extGF' G)).
+  { unfold wknF', extGF', iF. ott_build. }
+  pose proof (hd_cong rF lF G F F' HG HrF HlF HF HF' HFF') as Hhd.
+  pose proof (id_cong rF lF G F F' HG HrF HlF HF HF' HFF') as Hid. cbv zeta in Hid.
+  pose proof (ElaF_mach_cong rF lF G F F' HG HrF HlF HF HF' HFF') as Hel. cbv zeta in Hel.
+  pose proof (El_subst_eq rF lF wknF' G extGF' F' HG HextGF' HrF HlF HwknF'wf HF') as Hels.
+  pose proof (ty_subst_id_El_eq rF lF wknF' G extGF' F' HG HextGF' HrF HlF HwknF'wf HF') as Hidel.
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons.
+    2:{ eapply eq_term_conv; [ exact Hhd | ].
+        unfold s_exp; sort_cong; cbn [Model.eq_term core_model];
+        try solve [ eapply eq_term_refl; ott_build ].
+        eapply eq_term_trans; [ exact Hels | eapply eq_term_sym; exact Hidel ]. }
+    eapply eq_args_cons. 2:{ exact Hid. }
+    eapply eq_args_cons. 2:{ exact Hel. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_cons. 2:{ exact HextGG'. }
+    eapply eq_args_cons. 2:{ exact HextGG'. }
+    eapply eq_args_nil.
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
