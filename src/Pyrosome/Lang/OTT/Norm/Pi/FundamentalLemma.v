@@ -1075,6 +1075,44 @@ Proof.
     apply El_act_cod_subst_eq; assumption.
 Qed.
 
+(* The GENERAL two-sided reflect-at-Pi bridge: a pair of DISTINCT neutral
+   functions `na ~ nb` sends a related argument pair `a ~ a'` to an `ne_eq`
+   pair of member applications `mapp na a ~ mapp nb a'`, at the instantiated
+   codomain type.  Both reducts are neutral (`mapp_neutral`); the equation is
+   `mapp na a ~ mapp na a' ~ mapp nb a'` by `mapp_cong` then `mapp_cong_fun`.
+   This is the input the codomain reflect call consumes on the PER (eq_term)
+   side, where the two neutrals genuinely differ; `mapp_ne_eq` is the `na = nb`
+   special case used by the fundamental lemma's reflexive reflect leaves. *)
+Lemma mapp_ne_eq2 rF lF lG g G D F C na nb a a'
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (Hna : wf_term ott [] na (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  (Hnb : wf_term ott [] nb (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  (Heqf : eq_term ott [] (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))) na nb)
+  (Hnna : neutral ott_pa na)
+  (Hnnb : neutral ott_pa nb)
+  (Ha : wf_term ott [] a (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  (Ha' : wf_term ott [] a' (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  (Heqa : eq_term ott [] (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))) a a')
+  : ne_eq string ott ott_pa
+      (s_exp D (term_info orel lG) (oEl orel lG D (cod_at rF lF lG g G D F C a')))
+      (mapp rF lF lG g G D F C na a) (mapp rF lF lG g G D F C nb a').
+Proof.
+  unfold ne_eq; repeat split.
+  - apply mapp_neutral; exact Hnna.
+  - apply mapp_neutral; exact Hnnb.
+  - eapply eq_term_trans.
+    + apply mapp_cong; eassumption.
+    + apply mapp_cong_fun; eassumption.
+Qed.
+
 (* ====================================================================== *)
 (* LR ESCAPE (soundness) at the CONCRETE language `l := ott`.               *)
 (*                                                                        *)
