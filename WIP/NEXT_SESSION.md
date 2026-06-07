@@ -1,5 +1,44 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z6 — codomain id/var-collapse `cod_at_wkn_hd_eq` **COMPLETE** (GREEN, axiom-free modulo `egraph_sound`, in `FundamentalLemma.v`). BOTH escape-at-Pi collapse prerequisites are now done. NEXT = escape-at-Pi proper (instantiate CodRed at the bound var) + the mutual reflect/escape adequacy induction (the eta crux).
+
+`cod_at_wkn_hd_eq` (FundamentalLemma.v, right after `sub_collapse`) is DONE:
+  `cod_at(wkn, hd) ≡ C`  at sort `exp extG iG (U ! lG extG)`  (extG := ext G (El F)).
+  `rocq_assumptions` = only `egraph_sound`.  This is the codomain analogue of
+  `sub_collapse`: the pushed-and-instantiated codomain collapses back to `C`.
+
+KEY STRUCTURE (reusable for any "push-then-instantiate collapses to identity"):
+- `cod_at = exp_subst snoc_a (exp_subst ounder C)` (definitionally, after
+  `unfold cod_at, act_cod, dom_info, extc`).
+- 4-link `eq_term_trans` chain, ALL at the goal sort `exp extG iG Uext`
+  (Uext := `U ! lG extG`):
+  1. **annotation bridge** (`term_con_congruence` on `exp_subst`): rewrite the
+     OUTER A-annotation `UextD = U ! lG extD` ⇒ `ty_subst ounder Uext` (they are
+     `eq_term` by "U subst" but NOT convertible, so `exp_subst_cmp` won't fire
+     directly).  The `v`-leaf refl needs `act_cod` at its NATURAL (un-collapsed)
+     ty_subst-annotated sort — `Hactcod_nat` = `act_cod_wf` conv'd by `sym HUcW`.
+  2. **`exp_subst_cmp`** (`change`→`eq_term_subst`→`eq_term_by`, wrapped in
+     `eq_term_conv`): compose the two pushes into `exp_subst (cmp ounder snoc_a) C`.
+  3. **`sub_collapse`** (`term_con_congruence`, g-position = `Hsc`): the composite
+     sub `cmp ounder snoc_a ≡ id extG`.
+  4. **`exp_subst_id`** (`change` recipe, natural sort = goal sort, NO conv): drop
+     the identity substitution.
+- **THE U-COLLAPSE TRICK** (made this tractable): every link's natural sort wraps
+  `Uext` in some `ty_subst g (·)`; since `U` is a CLOSED code, `ty_subst g (U r l)
+  = U r l` for ANY `g` (`U_subst_eq` = "U subst") — so each sort obligation
+  collapses by ONE `U_subst_eq` (no need to push `cmp`/`id` through the type
+  level).  Pre-built leaves: `HUcW` (at `ounder`), `HUcS` (at `snoc_a`), `HUcCmp`
+  (at `cmp ounder snoc_a`), `HUid` (at `id`), and `Hty2` (the doubly-nested
+  `ty_subst snoc_a (ty_subst ounder Uext) ≡ Uext` for link1's sort, via
+  `HUcW`-cong then `HUcS`).
+- GOTCHAS: `pose proof ott_wf as Hwf` must be in context for `sort_cong` (it looks
+  up the lang-wf hint) — the MCP `rocq_start` starts AT the theorem, so re-add it.
+  `eq_term_wf_l Hwf wf_ctx_ott_nil Hsc` extracts `wf (cmp ounder snoc_a)` for
+  `HUcCmp`.  `fold extG`/`fold Uext` (goal-only, NOT `in *` — self-ref) to unify
+  let-folded vs literal `oext (oEl rF lF G F) iF G` occurrences.
+
+(Superseded: z5's "NEXT = cod_at_wkn_hd_eq".)
+
 ## UPDATE 2026-06-07z5 — id/var-collapse builder `sub_collapse` **COMPLETE** (GREEN, axiom-free modulo `egraph_sound`, in `FundamentalLemma.v`). NEXT = `cod_at_wkn_hd_eq` (`cod_at(wkn,hd) ≡ C`) then escape-at-Pi.
 
 `sub_collapse` (FundamentalLemma.v, ~line 1269) is DONE:
