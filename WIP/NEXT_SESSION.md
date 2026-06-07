@@ -1,5 +1,97 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z28 — *** TreeProofs route (D2) INVESTIGATED: the Type recursor WORKS (env-keyed Type motive validated, `WIP/TreeProofHardDir_proto.v` compiles), BUT the make-or-break COMPLETENESS bridge `wf_term -> tree` DOES NOT EXIST and is the SAME Prop->Type wall. QUESTION for Dustin. *** (tree UNTOUCHED + green/only egraph_sound; proto is WIP-only with admits.)
+
+Dustin's route: keep the `Type` LR + `RedTy_fund` (z23 milestone) untouched; drive the
+hard direction off the project's existing PROOF-TREE representation
+(`Proof/TreeProofs.v`), inducting a Type-level tree into the Type LR.  I investigated
+the TreeProofs + the (already-present) `Gluing/` infra and prototyped the skeleton.
+
+### (1) Tree proofs ARE Type, and the recursor is Type — confirmed
+- `TreeProofs.pf` is `Inductive pf : Type` (TreeProofs.v:73), 5 ctors
+  `pvar/pcon/ptrans/psym/pconv` (`pconv` = the explicit conversion node — the thing a
+  Prop wf_term lacks a Type elim for).  It has BOTH `pf_ind` (Prop motive) AND
+  **`pf_rect` (Type motive, TreeProofs.v:112)** + `pf_rec` (Set).  So a tree proof
+  large-eliminates into `Type`.  ✔ The whole premise (induct a tree into Type) is sound.
+- `DAGProofs.v` is the positive-keyed DAG variant (`node : Type`, `pf := list node`); same
+  story, soundness only.
+
+### (2) The two bridges
+- **SOUNDNESS (tree -> judgement): EXISTS.**  `pf_checker_sound`
+  (TreeProofs.v:370): `check_proof l c p = Some (e1,e2,t) -> eq_term l c t e1 e2` (+ the
+  sort half).  `check_proof : pf -> option (term*term*sort)` is a COMPUTATIONAL checker.
+  `Gluing/ProofModel.v` packages this as a **Type-valued model** `ProofModel`
+  (`teq_term c t e1 e2 := { p & check_proof l c p = Some (e1,e2,t) }`) + `*_sound` lemmas.
+- **COMPLETENESS (judgement -> tree): DOES NOT EXIST.**  grep over `src/Pyrosome/Proof`
+  and `src/Pyrosome/Gluing` finds NO `wf_term/eq_term -> { p & check_proof ... }`.
+  `ProofModel.v:80` defines `reflect_tm : term -> pf` STRUCTURALLY, but its CORRECTNESS
+  (`check_proof (reflect_tm e) = Some (e,e,S)` for well-typed `e`) is explicitly
+  DEFERRED to "a later module (M6)" — **M6 does not exist** (only the comment + the def).
+
+### (3) THE MAKE-OR-BREAK: completeness is the SAME Prop->Type wall
+- To USE the tree-proof recursor on a well-typed term you must first OBTAIN a tree with
+  `check_proof l [] p = Some (e,e,S)`.  The honest input is the **Prop** `wf_term l [] e S`.
+  The output `{ p & check_proof ... }` is a **Type** `sigT`.  In the proto, even just
+  STATING `COMPLETENESS_BRIDGE : wf_term -> { p & check_proof ... }` is **rejected in
+  `Prop`** (universe inconsistency) and forced into `Type` — i.e. it IS a Prop->Type
+  elimination, the z24 wall verbatim.  Proving it by induction on `wf_term` is the wall;
+  `reflect_tm`'s correctness still needs to invert `wf_term` into a Type/sigT goal.
+- The project's computational wf CHECKER (`compute_wf_term'`) is no escape: per memory
+  `ott-open-term-wf-no-checker`, it only works on **CLOSED** terms and CANNOT evaluate a
+  free Coq variable — and the hard-direction subjects are OPEN (object env `G : tm` is a
+  free var, and we work under an object substitution).  So there is no closed-term
+  decidable Some-ness to case on at the leaves.
+
+### (4) The recursor + env-keyed Type motive: VALIDATED (`WIP/TreeProofHardDir_proto.v`, compiles)
+- Motive `HardMot G p := forall e1 e2 S, check_proof l [] p = Some (e1,e2,S) ->
+  forall D g, OSUB G D g -> RED D (act g e1) (act g e2)` (substitution-generalized,
+  env-keyed; `RED`/`OSUB`/`act` opaque stand-ins for RedTy / osub / `e[/g/]`).
+- `pf_rect (fun p => HardMot G p) ...` typechecks: the Type elimination GOES THROUGH.
+  `pvar` closes vacuously (Pyrosome ctx is `[]`; object vars are `con "hd"` terms in the
+  pcon case).  `pcon/ptrans/psym/pconv` are `admit` with the proof plan in comments
+  (base types via RedTy_nat/empty; Pi via RedTy_pi from the env; trans/sym = member PER;
+  pconv = transport along the sort-eq SUB-TREE — NOT a wf_term sub-derivation, which is
+  exactly why the conversion case is no longer Prop-blocked AT THE FOLD).
+- So: **once you HAVE the tree, the fold into the Type LR is clean.**  The wall has been
+  PUSHED to the single point of obtaining the tree (completeness), away from the per-case
+  conversion problem.
+
+### *** QUESTION FOR DUSTIN (z28) — completeness is the same wall; pick the resolution ***
+The TreeProofs route does NOT, by itself, dodge the Prop->Type wall: it relocates it from
+"eliminate wf_term per-case into the LR" to "produce a tree from wf_term once"
+(`wf_term -> { p & check_proof ... }`).  That single bridge is still Prop->Type.  Options:
+  (T1) **Decidable typing route.**  Build a `Type`/`Set`-valued decision procedure that,
+       on a CLOSED `wf_term` instance, RETURNS a tree (`{p & check_proof = Some ..} +
+       {...}`) by COMPUTATION (no induction on the Prop judgement; the Some-ness is a
+       decidable Prop one can `destruct`).  This is genuinely choice-free IF terms are
+       closed — but the hard-direction subjects are OPEN under an object subst, so this
+       needs the object env discharged FIRST (instantiate `G`/`g` to closed data, then
+       check), which changes what "the hard direction" proves.  Feasibility unclear.
+  (T2) **Take the tree as the PRIMARY input** (what `Gluing/Eval.v` + the `Norm` model
+       already do): state the fundamental theorem over a tree proof `p`, NOT over
+       `wf_term`.  Then "every well-typed term is reducible" becomes "every term WITH A
+       TREE PROOF is reducible", and lifting `wf_term -> tree` is a SEPARATE (still-open)
+       concern.  This is honest and unblocks the LR work, but it does NOT close the
+       canonicity theorem as usually stated — it needs T1 (or an admitted completeness)
+       to finish.
+  (T3) **Reconsider the whole hard direction.**  Accept that EVERY route to feed the Type
+       LR from the Prop `wf_term` is a Prop->Type elimination (z24/z25/z26/z27 + now z28),
+       and that the principled fix is a **Type-valued typing judgement** that the LR is
+       inducted on directly (z24-P2 / z27-D2 "new typing inductive"), with `wf_term`
+       soundness/completeness a separate bridge — i.e. the TreeProofs `pf` IS that Type
+       judgement, but it needs its OWN intro rules / a `wf_term`-faithful typing checker.
+
+MY READ: the `Gluing/` infra (TModel/CutTModel/ProofModel/Eval + the `Norm` gluing model)
+is ALREADY built around T2 — it folds a tree into a Type CutTModel and never claims
+`wf_term -> tree`.  So the project's own design has implicitly chosen T2 and left
+completeness open.  **Recommend confirming T2 as the framing** (state the theorem over
+tree proofs, reuse `Gluing/Eval.eval` as the fold, plug the OTT LR in as a CutTModel),
+and treat `wf_term -> tree` (T1) as a clearly-separated, possibly-admitted obligation —
+because it is the irreducible Prop->Type content and no amount of LR cleverness removes it.
+NO src/ edits; tree green + only `egraph_sound`; proto is WIP-only (admits).
+
+(Below: z27 and earlier.)
+
 ## UPDATE 2026-06-07z27 — *** D1 (Dustin's choice) DOES NOT CLOSE: the canonicalization transport needs SYNTACTIC reds-determinism at Pi, which funext/propext CANNOT supply and the LR design deliberately forbids. QUESTION re-surfaced; recommend pivot to D2. *** (NO src/ edits; tree green + only egraph_sound; protos WIP-only.)
 
 Dustin chose **D1** (finish the El-A `Prop` LR, accept `functional_extensionality` +
