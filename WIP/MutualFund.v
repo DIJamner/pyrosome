@@ -21,7 +21,7 @@ Definition elt_sort {G A B} (r : RedTy ott G A B) : osort :=
   match projT2 r with
   | rtt_nat _ G _ _ _ _ => nat_sort G
   | rtt_empty _ G _ _ _ _ => empty_sort G
-  | rtt_ne _ _ _ _ _ _ t _ _ _ => t
+  | rtt_ne _ G _ _ na _ rN lN _ _ _ => el_sort rN lN G na
   | rtt_pi _ G _ _ rF lF lG F C _ _ _ _ _ _ _ _ =>
       s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))
   end.
@@ -35,9 +35,10 @@ Lemma elt_sort_empty (G A B : tm) (ra : REmpty ott G A) (rb : REmpty ott G B)
   : elt_sort (RedTy_empty ott ra rb) = empty_sort G.
 Proof. reflexivity. Qed.
 
-Lemma elt_sort_ne (G A B na nb : tm) (t : osort) (ra : reds string ott ott_pa A na)
-  (rb : reds string ott ott_pa B nb) (h : ne_eq string ott ott_pa t na nb)
-  : elt_sort (@RedTy_ne ott G A B na nb t ra rb h) = t.
+Lemma elt_sort_ne (G A B na nb rN lN : tm) (ra : reds string ott ott_pa A na)
+  (rb : reds string ott ott_pa B nb)
+  (h : ne_eq string ott ott_pa (code_sort rN lN G) na nb)
+  : elt_sort (@RedTy_ne ott G A B na nb rN lN ra rb h) = el_sort rN lN G na.
 Proof. reflexivity. Qed.
 
 (* ---- the three components of the motive ---- *)
@@ -88,18 +89,24 @@ Proof.
 Qed.
 
 (* ---- LEAF: neutral code ---- *)
-Lemma leaf_ne (G A B na nb : tm) (t : osort) (ra : reds string ott ott_pa A na)
-  (rb : reds string ott ott_pa B nb) (h : ne_eq string ott ott_pa t na nb)
-  : Pmot G A B (RedTy_ne ott na nb t ra rb h).
+Lemma leaf_ne (G A B na nb rN lN : tm) (ra : reds string ott ott_pa A na)
+  (rb : reds string ott ott_pa B nb)
+  (h : ne_eq string ott ott_pa (code_sort rN lN G) na nb)
+  : Pmot G A B (@RedTy_ne ott G A B na nb rN lN ra rb h).
 Proof.
   unfold Pmot, esc_ty, esc_tm, reflect_at; rewrite !elt_sort_ne.
   repeat split.
-  - intros S HA HB. eapply RedNe_sound_at with (t:=t);
+  - (* escape_ty: type codes A,B reduce to ne_eq codes na,nb at the U code-sort *)
+    intros S HA HB. eapply RedNe_sound_at with (t:=code_sort rN lN G);
       [ eapply red_ne; eassumption | eassumption | eassumption ].
-  - intros a b Hm Ha Hb.
-    change (RedTy_R ott (RedTy_ne ott na nb t ra rb h) a b) with (RedNe ott t a b) in Hm.
+  - (* escape_tm: members reduce to ne_eq neutrals at El na *)
+    intros a b Hm Ha Hb.
+    change (RedTy_R ott (@RedTy_ne ott G A B na nb rN lN ra rb h) a b)
+      with (RedNe ott (el_sort rN lN G na) a b) in Hm.
     eapply RedNe_sound_at; eassumption.
-  - intros a b Hna Hnb Ha Hb Heq.
-    change (RedTy_R ott (RedTy_ne ott na nb t ra rb h) a b) with (RedNe ott t a b).
+  - (* reflect: a neutral pair at El na is a neutral member *)
+    intros a b Hna Hnb Ha Hb Heq.
+    change (RedTy_R ott (@RedTy_ne ott G A B na nb rN lN ra rb h) a b)
+      with (RedNe ott (el_sort rN lN G na) a b).
     apply RedNe_reflect; repeat split; eassumption.
 Qed.
