@@ -311,9 +311,13 @@ Section RedTyConcrete.
     scon "exp" [oEl orel oL0 G (oNat G); term_info orel oL0; G].
 
   (* ---- base member relations ---- *)
-  (* Neutral-code members, compared by ne_eq at the carried sort. *)
+  (* Neutral-code members: each side weak-head reduces to a neutral, and the
+     two neutral reducts are ne_eq at the carried sort.  Carrying the `reds`
+     witnesses (rather than demanding `a`/`b` themselves neutral) is what makes
+     the neutral fiber BACKWARD-CLOSED — a well-typed term of neutral type may
+     reduce before becoming neutral.  Mirrors `RedNatMem`'s `rnm_ne`. *)
   Inductive RedNe (t : osort) (a b : tm) : Type :=
-  | red_ne : ne_eq t a b -> RedNe t a b.
+  | red_ne : forall na nb, reds a na -> reds b nb -> ne_eq t na nb -> RedNe t a b.
 
   (* Nat members: zero/suc congruence + stuck neutrals. *)
   Inductive RedNatMem (G : tm) : tm -> tm -> Type :=
@@ -518,6 +522,27 @@ Section RedTyConcrete.
     intros H Hm.
     apply RedNatMem_sym; eapply RedNatMem_back_l;
       [ eassumption | apply RedNatMem_sym; eassumption ].
+  Qed.
+
+  (* ---- the neutral fiber is likewise a backward-closed PER ---- *)
+  Lemma RedNe_sym t a b : RedNe t a b -> RedNe t b a.
+  Proof.
+    intros [na nb ra rb h]; eapply red_ne;
+      [ exact rb | exact ra | apply ne_eq_sym; exact h ].
+  Qed.
+
+  Lemma RedNe_back_l t a a' b
+    : star whstep a a' -> RedNe t a' b -> RedNe t a b.
+  Proof.
+    intros H [na nb ra rb h]; eapply red_ne;
+      [ eapply reds_back; eassumption | exact rb | exact h ].
+  Qed.
+
+  Lemma RedNe_back_r t a b b'
+    : star whstep b b' -> RedNe t a b' -> RedNe t a b.
+  Proof.
+    intros H [na nb ra rb h]; eapply red_ne;
+      [ exact ra | eapply reds_back; eassumption | exact h ].
   Qed.
 
 End RedTyConcrete.
