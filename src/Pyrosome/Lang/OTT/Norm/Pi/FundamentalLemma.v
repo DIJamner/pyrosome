@@ -3558,6 +3558,102 @@ Proof.
   intro H. unfold act_member, oexp_subst. apply whstep_exp_subst_cong. exact H.
 Qed.
 
+(* ---- Kripke action soundness LEAVES: Nat / Empty domains ---- *)
+(* A code that reduces to `Nat G` (resp. `Empty G`), pushed along an object
+   substitution `g : sub G D`, reduces to `Nat D` (resp. `Empty D`).  The
+   relevance/level of the `act_code` wrapper is forced to `orel/oL0` (resp.
+   `oirr/oL0`) for the subst redex to fire — exactly the relevance/level of the
+   Nat (resp. Empty) code.  These build the Pi case's `DomRed` field when the
+   domain is Nat / Empty (the bound-var reflect then bridges the canonical sort
+   to the Pi former's symbolic `rF/lF` via the distinctness lemmas above). *)
+Lemma whstep_Nat_subst g G D
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (Hg : osub ott G D g)
+  : whstep string ott ott_pa
+      (act_code orel oL0 g G D (oNat G)) (oNat D).
+Proof.
+  apply whstep_redex.
+  unfold redex.
+  exists "Nat subst",
+    [("g", {{s #"sub" "G" "G'"}}); ("G'", {{s #"env"}}); ("G", {{s #"env"}})],
+    {{e #"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" #"L0")) (#"U" "G'" #"rel" #"L0") (#"Nat" "G'")}},
+    {{e #"Nat" "G"}},
+    {{s #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" "G" #"rel" #"L0")}},
+    [("g", g); ("G'", G); ("G", D)].
+  split; [| split; [| split]].
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - simple apply wf_subst_cons.
+    + simple apply wf_subst_cons.
+      * simple apply wf_subst_cons.
+        -- simple apply wf_subst_nil.
+        -- cbn [Model.wf_term core_model]. exact HD.
+      * cbn [Model.wf_term core_model]. exact HG.
+    + cbn [Model.wf_term core_model]. unfold osub in Hg. cbn. exact Hg.
+  - vm_compute. unfold act_code, oexp_subst, oNat, oU, code_info, oinfo, onext, orel, oL0. reflexivity.
+  - vm_compute. unfold oNat. reflexivity.
+Qed.
+
+Lemma RNat_act g G D A
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (Hg : osub ott G D g)
+  : RNat ott G A -> RNat ott D (act_code orel oL0 g G D A).
+Proof.
+  intros [Hstar Hwhnf].
+  unfold RNat, reds. split.
+  - eapply star_trans.
+    + eapply star_act_code. exact Hstar.
+    + eapply OperationalBridge.star_step.
+      * apply OperationalBridge.star_refl.
+      * apply whstep_Nat_subst; assumption.
+  - apply whnf_Nat.
+Qed.
+
+Lemma whstep_Empty_subst g G D
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (Hg : osub ott G D g)
+  : whstep string ott ott_pa
+      (act_code oirr oL0 g G D (oEmpty G)) (oEmpty D).
+Proof.
+  apply whstep_redex.
+  unfold redex.
+  exists "Empty subst",
+    [("g", {{s #"sub" "G" "G'"}}); ("G'", {{s #"env"}}); ("G", {{s #"env"}})],
+    {{e #"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" #"L0")) (#"U" "G'" #"irr" #"L0") (#"Empty" "G'")}},
+    {{e #"Empty" "G"}},
+    {{s #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" "G" #"irr" #"L0")}},
+    [("g", g); ("G'", G); ("G", D)].
+  split; [| split; [| split]].
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - simple apply wf_subst_cons.
+    + simple apply wf_subst_cons.
+      * simple apply wf_subst_cons.
+        -- simple apply wf_subst_nil.
+        -- cbn [Model.wf_term core_model]. exact HD.
+      * cbn [Model.wf_term core_model]. exact HG.
+    + cbn [Model.wf_term core_model]. unfold osub in Hg. cbn. exact Hg.
+  - vm_compute. unfold act_code, oexp_subst, oEmpty, oU, code_info, oinfo, onext, orel, oirr, oL0. reflexivity.
+  - vm_compute. unfold oEmpty. reflexivity.
+Qed.
+
+Lemma REmpty_act g G D A
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (Hg : osub ott G D g)
+  : REmpty ott G A -> REmpty ott D (act_code oirr oL0 g G D A).
+Proof.
+  intros [Hstar Hwhnf].
+  unfold REmpty, reds. split.
+  - eapply star_trans.
+    + eapply star_act_code. exact Hstar.
+    + eapply OperationalBridge.star_step.
+      * apply OperationalBridge.star_refl.
+      * apply whstep_Empty_subst; assumption.
+  - apply whnf_Empty.
+Qed.
+
 (* TODO (file 4 body, continued) — STEP 3 remaining (the typing-induction
    fundamental lemma):
    - The mutual ESCAPE/REFLECT lemma (Pmot) Pi case + the hard direction
