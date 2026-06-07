@@ -292,7 +292,19 @@ Section WithVar.
         interprets_to := lang_model_interprets_to;
       |}.
 
-    
+    (* Every constructor of [lang_model_interprets_to] takes an all-[inl]
+       argument list (sort_of's [ [inl e] ], or a [map inl args]).  So any
+       sound atom's resolved arguments are terms. *)
+    Lemma lang_model_args_inl f dargs out
+      : lang_model_interprets_to f dargs out -> exists ds, dargs = map inl ds.
+    Proof.
+      intro Hi; inversion Hi; subst.
+      - exists [e]; reflexivity.
+      - eexists; reflexivity.
+      - eexists; reflexivity.
+    Qed.
+
+
     Lemma all2_model_eq_eq_args args args0 c'
       : wf_args l [] args c' ->
         wf_ctx l c' ->

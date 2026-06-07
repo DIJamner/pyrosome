@@ -123,6 +123,7 @@ Section WithVar.
     Local Notation interp := (V_map (lang_model.(domain _))).
     Local Notation ain a e := (@Semantics.atom_in_egraph V V V_map V_map V_trie X a e).
     Local Notation asnd a al := (@Semantics.atom_sound_for_model V V V_map lang_model a al).
+    Local Notation lang_model_args_inl := (@Theorems.lang_model_args_inl V V_Eqb sort_of l).
 
     (* The eF-side readback: the F1c-discharged form of [ctx_readback].
        Per ctx var [(x,t)] with companion [x'], the rebuilt egraph [eF]
@@ -392,6 +393,91 @@ Section WithVar.
                 ** exact Hatom_db.
              ++ cbn [atom_args Defs.atom_args]. split; [exact Hx'_root | exact I].
              ++ cbn [atom_ret Defs.atom_ret]. exact Hxs_root.
+    Qed.
+
+    (* ===== skip-sorts (_gen) reconstruction of the assignment ===== *)
+    (* [ctx_readback_vals_gen]: the minimized-query analogue of               *)
+    (* [ctx_readback_wf_subst], restricted to the VALUE map + leaf            *)
+    (* correspondence (the non-circular part).  A skipped var                 *)
+    (* ([no_sort x = true]) carries no [sort_of] atom, so its value is        *)
+    (* supplied externally ([Hskip], discharged at the assembly from the LHS  *)
+    (* image via [atom_tree_leaf_inl]); a non-skipped var's value is read off *)
+    (* its [sort_of] atom (every sound atom resolves its args to terms,       *)
+    (* [lang_model_args_inl]).  This yields the full value map [sg] and the   *)
+    (* full companion leaf correspondence [Hfaith] -- WITHOUT building a       *)
+    (* [wf_subst].  Recovering well-formedness at the declared (substituted)  *)
+    (* sorts is the remaining obligation: it needs the skip vars' wf, which   *)
+    (* in turn comes from the LHS image, so it cannot be done here (the       *)
+    (* [wf_subst]-needs-[wf_subst] circularity).  [eq_ctx_inversion_gen]      *)
+    (* closes it by feeding [sg]+[Hfaith] (plus the image) to                 *)
+    (* [wf_subst_from_image]. *)
+    Lemma ctx_readback_vals_gen (no_sort : V -> bool) (eF : instance X) (a : interp)
+      (Hsound : forall al, ain al eF -> asnd a al)
+      : forall c sub, wf_ctx l c ->
+          map fst c = map fst sub ->
+          ctx_readback_eF_gen no_sort eF sub c ->
+          (forall x, In x (map fst c) -> no_sort x = true ->
+              exists es, map.get a (named_list_lookup default sub x) = Some (inl es)) ->
+          exists sg, map fst sg = map fst c
+                  /\ (forall x, In x (map fst sub) ->
+                        map.get a (named_list_lookup default sub x)
+                          = Some (inl (named_list_lookup default sg x))).
+    Proof.
+      induction c as [|[x t] c' IH]; intros sub Hwfc Hdom Hrb Hskip.
+      - exists []. split; [reflexivity|].
+        destruct sub as [|[? ?] ?]; cbn in Hdom; [|discriminate].
+        intros x [].
+      - destruct sub as [|[x0 x'] sub']; cbn [map fst] in Hdom; [discriminate|].
+        injection Hdom as Hx Hdom'. subst x0.
+        apply invert_wf_ctx_cons in Hwfc.
+        destruct Hwfc as [Hfresh [Hwfc' Hwst] ].
+        cbn [ctx_readback_eF_gen] in Hrb.
+        destruct Hrb as [Hhead Hrb'].
+        (* tail [Hskip]: companion lookups of [sub'] agree with [sub] off [x] *)
+        assert (Hskip' : forall y, In y (map fst c') -> no_sort y = true ->
+                  exists es, map.get a (named_list_lookup default sub' y) = Some (inl es)).
+        { intros y Hy Hyns.
+          pose proof (eqb_spec y x) as Hsp.
+          specialize (Hskip y (or_intror Hy) Hyns).
+          cbn [named_list_lookup] in Hskip.
+          destruct (eqb y x) eqn:Hyxb;
+            [ subst y; contradiction | exact Hskip ]. }
+        specialize (IH sub' Hwfc' Hdom' Hrb' Hskip').
+        destruct IH as [sg' [Hdomsg' Hleaf'] ].
+        (* head value [es] with [map.get a x' = Some (inl es)] *)
+        assert (Hval : exists es, map.get a x' = Some (inl es)).
+        { destruct (no_sort x) eqn:Hns.
+          - (* skip: value from Hskip *)
+            specialize (Hskip x (or_introl eq_refl) Hns).
+            assert (Hlk_x : named_list_lookup default ((x,x')::sub') x = x').
+            { cbn [named_list_lookup]. pose proof (eqb_spec x x) as Hs.
+              destruct (eqb x x); [reflexivity | exfalso; apply Hs; reflexivity]. }
+            rewrite Hlk_x in Hskip. exact Hskip.
+          - (* non-skip: read the value off the [sort_of] atom *)
+            destruct Hhead as [xs [Htree Hatom_sof] ].
+            pose proof (Hsound _ Hatom_sof) as Hsnd.
+            unfold Semantics.atom_sound_for_model, Is_Some_satisfying in Hsnd.
+            cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn
+                 list_Mmap] in Hsnd.
+            destruct (map.get a x') as [dx|] eqn:Hgx'; cbn beta iota in Hsnd; [|contradiction].
+            destruct (map.get a xs) as [out|] eqn:Hgxs; cbn beta iota in Hsnd; [|contradiction].
+            change (domain V lang_model) with (term + sort)%type in Hsnd.
+            cbn [interprets_to lang_model] in Hsnd.
+            apply lang_model_args_inl in Hsnd.
+            destruct Hsnd as [ds Hds].
+            destruct ds as [|d ds']; cbn [map] in Hds; [discriminate|].
+            injection Hds as Hd _. subst dx.
+            exists d. reflexivity. }
+        destruct Hval as [es Hgx'].
+        exists ((x, es) :: sg'). split.
+        + cbn [map fst]. rewrite Hdomsg'. reflexivity.
+        + intros y Hy. pose proof (eqb_spec y x) as Hsp.
+          cbn [named_list_lookup].
+          destruct (eqb y x) eqn:Hyx.
+          * subst y. exact Hgx'.
+          * apply Hleaf'. cbn [map fst] in Hy.
+            destruct Hy as [Heqyx | Hy];
+              [ exfalso; apply Hsp; symmetry; exact Heqyx | exact Hy ].
     Qed.
 
   End AddCtxInvert.
