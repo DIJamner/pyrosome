@@ -1733,6 +1733,39 @@ Proof.
     + compute; reflexivity.
 Qed.
 
+(* ====================================================================== *)
+(* act_code_id_eq: the id-collapse for the DOMAIN code.  At the            *)
+(* escape-at-Pi instantiation of DomRed at (D := G, g := id G) the pushed  *)
+(* domain code collapses back to F:                                        *)
+(*   act_code(id G) = exp_subst (id G) F = F                               *)
+(* directly by exp_subst_id (a single push along the identity).  This is   *)
+(* the domain analogue of cod_at_wkn_hd_eq, and feeds F ~ F' in the Pi     *)
+(* type-escape congruence. *)
+(* ====================================================================== *)
+Lemma act_code_id_eq rF lF G F
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G))
+      (act_code rF lF (oid G) G G F) F.
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold act_code.
+  pose (s4 := [("v", F); ("A", oU rF lF G); ("i", code_info lF); ("G", G)] : subst string).
+  change (eq_term ott []
+    (({{s #"exp" "G" "i" "A"}})[/s4/])
+    (({{e #"exp_subst" "G" "G" (#"id" "G") "i" "A" "v"}})[/s4/])
+    (({{e "v"}})[/s4/])).
+  eapply eq_term_subst.
+  - eapply eq_term_by with (name := "exp_subst_id"). apply named_list_lookup_err_in; compute; reflexivity.
+  - apply eq_subst_refl. unfold s4. ott_build.
+  - eapply rule_in_ctx_wf with (name := "exp_subst_id").
+    + exact Hwf.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + compute; reflexivity.
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
