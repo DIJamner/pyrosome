@@ -3654,6 +3654,112 @@ Proof.
   - apply whnf_Empty.
 Qed.
 
+(* ---- Kripke action soundness LEAF: neutral type code ---- *)
+(* A pushed neutral code stays neutral: `act_code` is `exp_subst` with the code
+   at principal arg 0, so `neutral_elim i=0` preserves neutrality. *)
+Lemma act_code_neutral rF lF g G D F
+  : neutral ott_pa F -> neutral ott_pa (act_code rF lF g G D F).
+Proof.
+  intro HF; unfold act_code, oexp_subst.
+  eapply neutral_elim with (i:=0); [ reflexivity | reflexivity | exact HF ].
+Qed.
+
+(* The neutral type-code conversion `ne_eq (code_sort rN lN G) na nb` is pushed
+   along `g : sub G D`: the `exp_subst` term-former congruence on the two codes
+   gives an `eq_term` at the `exp_subst` result sort, which converts to
+   `code_sort rN lN D` via the "U subst" computation rule (`U_subst_eq`). *)
+Lemma eq_term_act_code rN lN g G D na nb
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrN : wf_term ott [] rN (scon "relevance" []))
+  (HlN : wf_term ott [] lN (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (Hna : wf_term ott [] na (code_sort rN lN G))
+  (Hnb : wf_term ott [] nb (code_sort rN lN G))
+  (Heq : eq_term ott [] (code_sort rN lN G) na nb)
+  : eq_term ott [] (code_sort rN lN D)
+      (act_code rN lN g G D na) (act_code rN lN g G D nb).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold act_code, oexp_subst, code_sort.
+  eapply eq_term_conv.
+  - (* exp_subst term-former congruence; ctx order [v;A;i;g;G';G] *)
+    eapply term_con_congruence.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + right. cbn [with_names_from]. reflexivity.
+    + exact Hwf.
+    + cbn [with_names_from].
+      eapply eq_args_cons.
+      2:{ exact Heq. }                                    (* v : the two codes *)
+      eapply eq_args_cons.
+      2:{ eapply eq_term_refl. cbn [Model.wf_term core_model].
+          unfold oU. ott_wf_args. }                       (* A : U rN lN G *)
+      eapply eq_args_cons.
+      2:{ eapply eq_term_refl. cbn [Model.wf_term core_model].
+          unfold code_info, oinfo, onext. ott_wf_args. }   (* i : code_info lN *)
+      eapply eq_args_cons.
+      2:{ eapply eq_term_refl. exact Hg. }                  (* g : sub D G *)
+      eapply eq_args_cons.
+      2:{ eapply eq_term_refl. exact HG. }                  (* G' : G *)
+      eapply eq_args_cons.
+      2:{ eapply eq_term_refl. exact HD. }                  (* G : D *)
+      eapply eq_args_nil.
+  - (* result sort `exp D (code_info lN) (ty_subst D G g (code_info lN)(U rN lN G))`
+       converts to `exp D (code_info lN) (U rN lN D)` via U_subst_eq.
+       NB sort_con_congruence puts Eqb_ok FIRST. *)
+    cbn [with_names_from].
+    eapply sort_con_congruence.
+    + typeclasses eauto.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + exact Hwf.
+    + cbn [with_names_from].
+      eapply eq_args_cons.
+      2:{ apply U_subst_eq; assumption. }                  (* A : the ty_subst *)
+      eapply eq_args_cons.
+      2:{ eapply eq_term_refl. cbn [Model.wf_term core_model].
+          unfold code_info, oinfo, onext. ott_wf_args. }   (* i : code_info lN *)
+      eapply eq_args_cons.
+      2:{ eapply eq_term_refl. exact HD. }                  (* G : D *)
+      eapply eq_args_nil.
+Qed.
+
+(* Kripke action soundness LEAF for the neutral type code: a code `A` that
+   reduces to a neutral code `na` (ne_eq at the U code-sort) pushes along
+   `g : sub G D` to a `RedTy D` between the two pushed codes.  No subst redex
+   fires (the pushed neutral is itself whnf); the `ne_eq` is transported by
+   `eq_term_act_code`.  This is the Pi case's `DomRed` field when the domain is
+   a neutral code. *)
+Lemma RNe_act g G D A B na nb rN lN
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrN : wf_term ott [] rN (scon "relevance" []))
+  (HlN : wf_term ott [] lN (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (Hna : wf_term ott [] na (code_sort rN lN G))
+  (Hnb : wf_term ott [] nb (code_sort rN lN G))
+  (ra : reds string ott ott_pa A na)
+  (rb : reds string ott ott_pa B nb)
+  (h : ne_eq string ott ott_pa (code_sort rN lN G) na nb)
+  : RedTy ott D (act_code rN lN g G D A) (act_code rN lN g G D B).
+Proof.
+  destruct h as (Hnna & Hnnb & Hconv).
+  eapply (@RedTy_ne ott D _ _
+            (act_code rN lN g G D na) (act_code rN lN g G D nb) rN lN).
+  - (* reds (act_code A) (act_code na) *)
+    unfold reds. split.
+    + eapply star_act_code. eapply reds_star. exact ra.
+    + apply neutral_whnf. apply act_code_neutral. exact Hnna.
+  - (* reds (act_code B) (act_code nb) *)
+    unfold reds. split.
+    + eapply star_act_code. eapply reds_star. exact rb.
+    + apply neutral_whnf. apply act_code_neutral. exact Hnnb.
+  - (* ne_eq (code_sort rN lN D) (act_code na) (act_code nb) *)
+    unfold ne_eq. repeat split.
+    + apply act_code_neutral. exact Hnna.
+    + apply act_code_neutral. exact Hnnb.
+    + apply eq_term_act_code; assumption.
+Qed.
+
 (* TODO (file 4 body, continued) — STEP 3 remaining (the typing-induction
    fundamental lemma):
    - The mutual ESCAPE/REFLECT lemma (Pmot) Pi case + the hard direction
