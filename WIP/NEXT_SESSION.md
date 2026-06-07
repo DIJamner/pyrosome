@@ -69,6 +69,40 @@ var) for free; the RedTy_rect mutual lemma alone is structurally too weak for th
 reflect direction. The escape leaves + RedTy_Pi_sound + RedTm_Pi_eta_sound + the
 WIP motive/leaves all carry over.
 
+### DUSTIN CHOSE (A) — but a REFINEMENT: (A) still needs a small U-inj/canonicity foundation
+On closer reading of the OTT Base rules, the U-inj obstacle does NOT vanish under
+(A): inverting the Nat-domain typing yields `eq_sort (code_sort orel oL0)
+(code_sort rF lF)`, and lowering THAT to the El-level still needs `rF≡orel`. BUT it
+factors cheaply:
+- `#"relevance"` has ONLY `#"rel"`/`#"irr"` (no ops); `#"lvl"` has ONLY
+  `#"L0"`/`#"L1"` (no ops). So a closed `rF : relevance` / `lF : lvl` is one of
+  those by `WfCutElim.invert_wf_term_con` (RELEVANCE/LEVEL CANONICITY) — a finite
+  enumeration, NOT normalization.
+- So `rF ∈ {orel,oirr}`. For a Nat/Empty(relevant) domain, the `oirr` case is
+  either impossible (the domain is irrelevant ⇒ handle the bound-var member by
+  PROOF IRRELEVANCE, no reflect needed) or ruled out by a one-shot
+  relevant-vs-irrelevant universe DISTINCTNESS lemma (small relevance MODEL, e.g.
+  interpret relevance as bool; eq_term-soundness is standard Pyrosome Model work).
+  Likewise `lF ∈ {L0,L1}`, rule out `L1` for level-L0 types via an analogous
+  level-distinctness fact (note Base has `#"L0<L1" : #"ltl" L0 L1`).
+- NB `U r l` is a `ty` (NOT an `exp`) — `#"U" "r" "l" : #"ty" G (info rel (next
+  l))`; its sort records `(rel, next l)` and does NOT mention `r`, so two U's at the
+  same level are same-sorted ⇒ no free sort obstruction, the distinctness must come
+  from the model.
+
+CONCRETE NEXT STEPS for (A):
+1. **relevance_canon / lvl_canon** (`wf_term ott [] r (scon "relevance" []) -> r =
+   con "rel" [] \/ r = con "irr" []`, sim. lvl). Proof = induction via
+   `wf_term_ind` (NOT `inversion` — the wf_term CONV rule makes naive inversion
+   loop; con case ⇒ rule ∈ {rel,irr} by enumerating ott; var case False in []).
+   GOTCHA: do NOT `Require Import WfCutElim` — it SHADOWS `wf_term` with
+   `Model.wf_term` (first arg becomes a Model, breaks `wf_term ott`); reference
+   `WfCutElim.invert_wf_term_con` qualified instead.
+2. relevant-vs-irrelevant + L0-vs-L1 universe DISTINCTNESS (relevance/level model).
+3. the reducible-substitution / valid-context (VR) layer + the typing-induction
+   fundamental lemma; bound-var reflect uses 1+2 to discharge `rF≡orel`/`lF≡oL0`
+   (or proof-irrelevance for `oirr`).
+
 (Below: z8 and earlier. z8's "wire one RedTy_rect, motive=escape*reflect" plan is
 SUPERSEDED by the fork above — RedTy_rect handles escape but not reflect.)
 
