@@ -1,5 +1,74 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z19 — N1 EXECUTED (Dustin's directive): `hd` is now `neutral`, the z18 blocker is DISSOLVED, and the first-order bound-var reducibility witness `bound_var_redtm` LANDED. 2 commits, both green + axiom-clean (only egraph_sound), pushed.
+
+### PART A — the `var` audit (confirmed the diagnosis)
+Grepped every `var` occurrence across `src/Pyrosome/Lang/OTT/`.  **NO OTT object
+term is built with the meta `var` constructor** — variables are always
+`hd`/`exp_subst` projections.  Classification of the real `.v` uses:
+- (i) `neutral_var` + `var_neutral`/`var_whnf` (Neutral.v).
+- (ii) generic match arms for completeness: `ctx_len`/`nf_info` (EvalRel.v,
+  Pi/EvalRel.v), `tm_head`/`code_rel`/`code_lvl` (FundamentalLemma.v), SortInj f01.
+- (iv) vacuous "no closed var is wf" lemmas (`no_wf_var_nil`, `Norm_cterm_var`)
+  + comments + `nVar` (the value-domain var, a DIFFERENT constructor).
+No case (iii).  So `neutral_var` is dead for OTT but harmless (generic lemmas use
+it); KEPT it and ADDED `neutral_hd` (minimal, non-disruptive — Dustin's default).
+
+### PART B — the N1 fix (commit 1)
+- **Neutral.v**: new `Context (hd_name : V)` + clause
+  `neutral_hd : forall A i G, neutral (con hd_name [A;i;G])` (recognized
+  STRUCTURALLY, not via `pa`; `pa hd_name = None`).  `neutral`/`whnf` now carry
+  `hd_name`; `Arguments` updated.  `neutral_inv` RESTATED as a disjunction
+  (hd-projection \/ eliminator) — the old "neutral con => eliminator" was
+  falsified by `neutral_hd`.  `neutral_whnf`/`whnf_elim_neutral` unaffected (hd
+  lands in the neutral disjunct of whnf).  `neutral_inv` is UNUSED downstream.
+- **Threading `hd_name`**: only LogicalRelation.v + FundamentalLemma.v import the
+  term-level `Pi.Neutral` (the `LogRel2*`/`Reduction`/`Typing` "Neutral" matches
+  were the value-domain `Domain.Neutral` or comments).  LogicalRelation: abstract
+  `Context (hd_name)` in WithLang, `"hd"` in the concrete string sections.
+  FundamentalLemma: passed `"hd"` at every `reds`/`ne_eq`/`neutral`/`whnf` site and
+  DROPPED the now-ungeneralized `V_default` underscore at every `@reds_sound`/
+  `@reds_wf` site (adding `hd_name`).  GOTCHA: adding the `hd_name` Context to
+  WithLang changed which section variables Coq generalizes/orders for
+  `reds_sound`/`reds_wf` — `V_default` is no longer generalized (they don't use
+  it), so `@reds_sound string _ _ _ l ...` (3 underscores) became
+  `@reds_sound string _ _ l wfl pa "hd" ...` (2 underscores + "hd").  Verify arg
+  order with a live `Check @reds_sound` (rocq_check at a position past End
+  WithVar) — the `rocq_query`/`Require Import` path reads a STALE .vo (the known
+  MCP-stale-vo gotcha); use `file=`-mode or a position session.
+- Re-green chain: Neutral.vo -> LogicalRelation.vo -> FundamentalLemma.vo.
+
+### z19 next step DONE — `bound_var_redtm` (commit 2, axiom-free)
+`RedTm (DomRed extGF wknF os) hd hd` (the CodRed-instantiation witness for the Pi
+case): DESTRUCT the domain fiber and reflect `hd`:
+- Nat -> `RedNatMem_refl_ne`; Empty/Ne -> `RedNe_reflect`+`ne_eq_refl`.
+All three feed off `bound_var_typed` (typing) + `neutral_hd` (neutrality) — the
+exact z18 obstacle, now removed.  The Pi-DOMAIN (higher-order bound var) sub-case
+is a `RedAtPi` member whose eta witness needs the codomain mutual IH, so it is an
+explicit PREMISE here (keeps the lemma standalone + axiom-free).  Inside the full
+`RedTy_rect` that premise is the codomain reflect IH.
+PROOF SKELETON (reusable): `pose bound_var_typed` -> `cbn zeta` -> `assert neutral
+.. by apply neutral_hd` -> `unfold RedTm,RedTy_R,elt_sort` -> `change owkn/oext/ohd
+.. with wknF/extGF/hdF in Hhdty` (so the let-vars match) -> `set DR := DomRed .. in
+*; clearbody DR wknF extGF hdF` (so `destruct DR` substitutes into Hhdty's stuck
+match) -> `destruct DR as [R r]; cbn [projT1 projT2] in *; destruct r` -> the 3
+leaf reflect leaves (pass `ott` explicitly: `apply (RedNatMem_refl_ne ott)` etc.).
+
+### NEXT (z20) — the Pi case of `Pmot` in one `RedTy_rect` + the hard direction
+Now that the bound-var witness exists for the first-order leaves, assemble the Pi
+case of the mutual escape/reflect lemma INSIDE `RedTy_rect` (where the codomain
+reflect IH discharges `bound_var_redtm`'s Pi-domain premise):
+- esc_ty@Pi = `RedTy_Pi_sound`, HFF' from DomRed esc_ty IH @ g:=id G
+  (+`act_code_id_eq`), HCC' from `cod_collapse_both` ← CodRed esc_ty IH @ the bound
+  var (witness = `bound_var_redtm`, Pi-premise from the codomain reflect IH).
+- esc_tm@Pi = `RedTm_Pi_eta_sound` ← CodRed esc_tm IH @ bound var.
+- reflect@Pi = `at_pi_app` + `mapp_ne_eq2` + CodRed reflect IH (transported across
+  `elt_sort_eq_El_gen` ∘ CodRed esc_ty IH) + DomRed esc_tm IH (for a~a').
+Then (c) the hard direction via `wf_judge_ind` (Nat/Empty/Ne leaves =
+`RNat_act`/`REmpty_act`/`RNe_act`); see z15/z17 below.
+
+(Below: z18 and earlier.)
+
 ## UPDATE 2026-06-07z18 — z18 STEP 1 partial: the SYMBOLIC-relevance member-sort bridge (`elt_sort_eq_El_gen`, handles the irrelevant domain WITHOUT a fork) + the bound-var typing (`bound_var_typed`) + `osub_wknF` LANDED (green, axiom-clean, pushed). But the bound-var REDUCIBILITY witness `RedTm (DomRed) hd hd` is BLOCKED by a structural fact the z9/z15/z17 plan overlooked: **the Pyrosome bound variable `hd` is NOT `neutral`.** QUESTION FOR DUSTIN below.
 
 ### What landed this session (FundamentalLemma.v, 1 commit, pushed)
