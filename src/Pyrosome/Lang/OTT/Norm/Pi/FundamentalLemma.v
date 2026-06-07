@@ -3894,6 +3894,82 @@ Proof.
     + cbn [Model.eq_term core_model]. exact HElPiA.
 Qed.
 
+(* ====================================================================== *)
+(* STEP 2 prerequisite (z17): Pi-code TYPING INVERSION.                    *)
+(*                                                                        *)
+(* From a well-typed relevant Pi code `oPi_rel rF lF lG F C G : S`, recover *)
+(* the individual typings of the domain `F`, codomain `C`, and the info-   *)
+(* layer args (rF/lF/lG/G), plus `eq_sort S (code_sort orel lG G)` (the     *)
+(* Pi code's natural output sort).  These typings are NOT carried by the    *)
+(* `RedTy` relation (which holds only `reds` witnesses), so the Pi case of  *)
+(* the mutual escape/reflect lemma re-derives them from the `wf_term [] A S`*)
+(* presupposition (A reds to the Pi code; `reds_wf` types the code; this    *)
+(* lemma inverts it).  Recipe: `invert_wf_term_con` + pin the `Pi_rel` rule *)
+(* via `in_all_fresh_same`, then peel the `wf_args` chain; the output sort  *)
+(* equation comes from the inversion's `Hsort` disjunct (escape via         *)
+(* `eq_sort_sym`, or the syntactic `=` closed by `eq_sort_refl` on the      *)
+(* freshly built `wf_sort`).                                                *)
+(* ====================================================================== *)
+Lemma Pi_rel_inv rF lF lG F C G S
+  (Hwf : wf_term ott [] (oPi_rel rF lF lG F C G) S)
+  : wf_term ott [] G s_env
+    /\ wf_term ott [] rF (scon "relevance" [])
+    /\ wf_term ott [] lF (scon "lvl" [])
+    /\ wf_term ott [] lG (scon "lvl" [])
+    /\ wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G))
+    /\ wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G)))
+    /\ eq_sort ott [] S (code_sort orel lG G).
+Proof.
+  pose proof ott_wf as Hwf'.
+  unfold oPi_rel in Hwf.
+  apply WfCutElim.invert_wf_term_con in Hwf
+    as (c' & cargs & t' & Hin & Hwfargs & Hsort).
+  assert (Hall : all_fresh ott) by exact (wf_lang_ext_all_fresh ott_wf).
+  assert (Hin2 : In ("Pi_rel",
+    term_rule
+      [("B", {{s #"exp" (#"ext" "G" (#"info" "rF" (#"iota" "lF")) (#"El" "G" "rF" "lF" "F")) (#"info" #"rel" (#"next" "lG")) (#"U" (#"ext" "G" (#"info" "rF" (#"iota" "lF")) (#"El" "G" "rF" "lF" "F")) #"rel" "lG")}});
+       ("F", {{s #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" "G" "rF" "lF")}});
+       ("lG", {{s #"lvl"}}); ("lF", {{s #"lvl"}}); ("rF", {{s #"relevance"}}); ("G", {{s #"env"}})]
+      ["B"; "F"; "lG"; "lF"; "rF"]
+      {{s #"exp" "G" (#"info" #"rel" (#"next" "lG")) (#"U" "G" #"rel" "lG")}}) ott)
+    by (apply named_list_lookup_err_in; vm_compute; reflexivity).
+  pose proof (in_all_fresh_same _ _ _ _ Hall Hin Hin2) as Heqr; safe_invert Heqr.
+  cbn [with_names_from] in Hsort, Hwfargs.
+  repeat match goal with
+  | H : wf_args _ (_ :: _) _ |- _ => safe_invert H
+  | H : wf_args _ [] _ |- _ => clear H
+  end.
+  cbn [with_names_from named_list_lookup] in H2, H3, H4, H5, H6, H7.
+  assert (HG : wf_term ott [] G s_env) by exact H7.
+  assert (HrF : wf_term ott [] rF (scon "relevance" [])) by exact H6.
+  assert (HlF : wf_term ott [] lF (scon "lvl" [])) by exact H5.
+  assert (HlG : wf_term ott [] lG (scon "lvl" [])) by exact H4.
+  assert (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G))).
+  { unfold s_exp, code_info, oU, oinfo, onext. exact H3. }
+  assert (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G)))).
+  { unfold s_exp, code_info, oU, oinfo, onext, oext, oEl, term_info, oiota, orel. exact H2. }
+  assert (Hwfsort : wf_sort ott [] (code_sort orel lG G)).
+  { unfold code_sort, oU.
+    eapply wf_sort_by; [ apply named_list_lookup_err_in; compute; reflexivity | ].
+    simple eapply wf_args_cons.
+    2:{ simple eapply wf_args_cons.
+        2:{ simple eapply wf_args_cons.
+            2:{ simple apply wf_args_nil. }
+            cbn [with_names_from]. exact HG. }
+        cbn [with_names_from]. cbn [Model.wf_term core_model].
+        unfold code_info, oinfo, onext. ott_build. }
+    cbn [with_names_from]. cbn [Model.wf_term core_model].
+    eapply Elab.wf_term_by'; [ apply named_list_lookup_err_in; compute; reflexivity
+      | cbn [Model.wf_term core_model]; ott_build | left; compute; reflexivity ]. }
+  repeat split; try assumption.
+  destruct Hsort as [Hs | Hs].
+  - vm_compute in Hs. eapply eq_sort_sym. exact Hs.
+  - vm_compute in Hs. unfold code_sort, oU. rewrite <- Hs.
+    eapply eq_sort_refl. unfold code_sort, oU in Hwfsort. exact Hwfsort.
+Qed.
+
 (* TODO (file 4 body, continued) — STEP 3 remaining (the typing-induction
    fundamental lemma):
    - The mutual ESCAPE/REFLECT lemma (Pmot) Pi case + the hard direction
