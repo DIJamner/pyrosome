@@ -4397,6 +4397,118 @@ Proof.
       eapply eq_args_nil.
 Qed.
 
+(* ====================================================================== *)
+(* RedTm_Pi_eta_sound2 (z21) — the MIXED eta law for esc_tm@Pi.  Two       *)
+(* functions t (at the A-Pi sort, F/C) and u, that agree on the bound      *)
+(* variable up to the two-sided data (Hbody : mapp F C t hd ~ mapp F' C' u *)
+(* hd, the RHS mapp built from the B-side F'/C'), are eq_term at A-Pi.      *)
+(* Generalizes `RedTm_Pi_eta_sound` (the single-sided F=F'/C=C' case).      *)
+(* Heta_t = A-data eta (t ~ lam_A(mapp F C t hd)); Heta_u = B-data eta      *)
+(* (u ~ lam_B(mapp F' C' u hd)) at B-Pi, converted back to A-Pi via         *)
+(* eq_sort_sym HABeq (HABeq from oPi_rel_code_cong + El_cong).  The bodies  *)
+(* are bridged by lam_rel con-congruence (`left; exact HABeq` targets the   *)
+(* A-Pi result sort), whose body eq_arg is Hbody transported to the B-side  *)
+(* body sort via `body_sort_transport`.                                     *)
+(* ====================================================================== *)
+Lemma RedTm_Pi_eta_sound2 rF lF lG G F C F' C' t u
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (HC' : wf_term ott [] C' (s_exp (oext (oEl rF lF G F') (term_info rF lF) G) (code_info lG)
+                                  (oU orel lG (oext (oEl rF lF G F') (term_info rF lF) G))))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  (HCC' : eq_term ott []
+            (s_exp (oext (oEl rF lF G F') (term_info rF lF) G) (code_info lG)
+                   (oU orel lG (oext (oEl rF lF G F') (term_info rF lF) G)))
+            C C')
+  (Ht : wf_term ott [] t (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  (Hu : wf_term ott [] u (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  (Hbody : eq_term ott []
+             (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (term_info orel lG)
+                (oEl orel lG (oext (oEl rF lF G F) (term_info rF lF) G) C))
+             (mapp rF lF lG (owkn (oEl rF lF G F) (term_info rF lF) G) G
+                (oext (oEl rF lF G F) (term_info rF lF) G) F C t
+                (ohd (oEl rF lF G F) (term_info rF lF) G))
+             (mapp rF lF lG (owkn (oEl rF lF G F') (term_info rF lF) G) G
+                (oext (oEl rF lF G F') (term_info rF lF) G) F' C' u
+                (ohd (oEl rF lF G F') (term_info rF lF) G)))
+  : eq_term ott [] (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))) t u.
+Proof.
+  pose proof ott_wf as Hwf.
+  assert (Horel : wf_term ott [] orel (scon "relevance" [])) by
+    (unfold orel; eapply Elab.wf_term_by';
+       [apply named_list_lookup_err_in; compute; reflexivity
+       | cbn [Model.wf_term core_model]; ott_build | left; compute; reflexivity]).
+  pose (etac := [("f", {{s #"exp" "G" (#"info" #"rel" (#"iota" "lG")) (#"El" "G" #"rel" "lG" (#"Pi_rel" "G" "rF" "lF" "lG" "F" "B"))}});
+    ("B", {{s #"exp" (#"ext" "G" (#"info" "rF" (#"iota" "lF")) (#"El" "G" "rF" "lF" "F")) (#"info" #"rel" (#"next" "lG")) (#"U" (#"ext" "G" (#"info" "rF" (#"iota" "lF")) (#"El" "G" "rF" "lF" "F")) #"rel" "lG")}});
+    ("F", {{s #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" "G" "rF" "lF")}});
+    ("lG", {{s #"lvl"}}); ("lF", {{s #"lvl"}}); ("rF", {{s #"relevance"}}); ("G", {{s #"env"}})] : ctx string).
+  assert (Hin : In ("Pi_rel eta", _) ott) by (apply named_list_lookup_err_in; compute; reflexivity).
+  assert (Hwfc : wf_ctx (Model:=core_model ott) etac).
+  { use_rule_in_wf. rewrite invert_wf_term_eq_rule in H. destruct H as [Hc _]. exact Hc. }
+  (* parametric eta over (F0,C0,f0): lam_rel(mapp f0 hd) ~ f0 *)
+  assert (Heta : forall F0 C0 f0,
+     wf_term ott [] F0 (s_exp G (code_info lF) (oU rF lF G)) ->
+     wf_term ott [] C0 (s_exp (oext (oEl rF lF G F0) (term_info rF lF) G) (code_info lG)
+                              (oU orel lG (oext (oEl rF lF G F0) (term_info rF lF) G))) ->
+     wf_term ott [] f0 (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F0 C0 G))) ->
+     eq_term ott [] (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F0 C0 G)))
+       (con "lam_rel" [mapp rF lF lG (owkn (oEl rF lF G F0) (term_info rF lF) G) G
+            (oext (oEl rF lF G F0) (term_info rF lF) G) F0 C0 f0 (ohd (oEl rF lF G F0) (term_info rF lF) G);
+          C0; F0; lG; lF; rF; G]) f0).
+  { intros F0 C0 f0 HF0 HC0 Hf0.
+    pose (s0 := [("f",f0);("B",C0);("F",F0);("lG",lG);("lF",lF);("rF",rF);("G",G)] : subst string).
+    assert (Hws0 : wf_subst (Model:=core_model ott) [] s0 etac) by
+      (unfold s0, etac; repeat first [ simple apply wf_subst_nil | simple apply wf_subst_cons ];
+       first [ exact HG | exact HrF | exact HlF | exact HlG | exact HF0 | exact HC0 | exact Hf0 ]).
+    eassert (Hrule : eq_term ott _ _ _ _) by (eapply eq_term_by; exact Hin).
+    exact (eq_term_subst Hrule (eq_subst_refl Hws0) Hwfc). }
+  pose proof (Heta F C t HF HC Ht) as Heta_t.
+  (* the A-Pi / B-Pi member-sort eq_sort, from F~F' / C~C' *)
+  pose proof (oPi_rel_code_cong rF lF lG G F C F' C' HG HrF HlF HlG HF HF' HFF' HCC') as HPiCong.
+  pose proof (El_cong orel lG G (oPi_rel rF lF lG F C G) (oPi_rel rF lF lG F' C' G) HG Horel HlG HPiCong) as HElPi.
+  assert (HABeq : eq_sort ott []
+     (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G)))
+     (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F' C' G)))).
+  { unfold s_exp. sort_cong.
+    - cbn [Model.eq_term core_model with_names_from]. eapply eq_term_refl. exact HG.
+    - cbn [Model.eq_term core_model with_names_from]. eapply eq_term_refl. ott_build.
+    - cbn [Model.eq_term core_model with_names_from]. exact HElPi. }
+  clear Hin.
+  pose proof (wf_term_conv Hu HABeq) as Hu_at_BPi.
+  pose proof (Heta F' C' u HF' HC' Hu_at_BPi) as Heta_u_B.
+  pose proof (eq_term_conv Heta_u_B (eq_sort_sym HABeq)) as Heta_u.
+  (* transport the body equality to the B-side body sort *)
+  pose proof (body_sort_transport rF lF lG G F C F' C' HG HrF HlF HlG HF HF' HFF' HC HC' HCC') as Hbtr.
+  cbv zeta in Hbtr.
+  pose proof (eq_term_conv Hbody Hbtr) as Hbody'.
+  (* lam_rel congruence on the bodies (left disjunct targets the A-Pi result sort) *)
+  assert (Hlamcong : eq_term ott [] (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G)))
+     (con "lam_rel" [mapp rF lF lG (owkn (oEl rF lF G F) (term_info rF lF) G) G
+          (oext (oEl rF lF G F) (term_info rF lF) G) F C t (ohd (oEl rF lF G F) (term_info rF lF) G); C; F; lG; lF; rF; G])
+     (con "lam_rel" [mapp rF lF lG (owkn (oEl rF lF G F') (term_info rF lF) G) G
+          (oext (oEl rF lF G F') (term_info rF lF) G) F' C' u (ohd (oEl rF lF G F') (term_info rF lF) G); C'; F'; lG; lF; rF; G])).
+  { eapply term_con_congruence.
+    - apply named_list_lookup_err_in; compute; reflexivity.
+    - left. exact HABeq.
+    - exact ott_wf.
+    - cbn [with_names_from].
+      eapply eq_args_cons. 2:{ exact Hbody'. }
+      eapply eq_args_cons. 2:{ exact HCC'. }
+      eapply eq_args_cons. 2:{ exact HFF'. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_nil. }
+  exact (eq_term_trans (eq_term_sym Heta_t) (eq_term_trans Hlamcong Heta_u)).
+Qed.
+
 (* TODO (file 4 body, continued) — STEP 3 remaining (the typing-induction
    fundamental lemma):
    - The mutual ESCAPE/REFLECT lemma (Pmot) Pi case + the hard direction
