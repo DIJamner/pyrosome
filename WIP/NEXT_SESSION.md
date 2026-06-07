@@ -1,5 +1,83 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z24 — *** BLOCKER / QUESTION before the hard direction: Prop→Type elimination wall ***  (NO build attempted; orientation only)
+
+The hard direction as planned (`wf_judge_ind` with the env-keyed motive `P [] e
+(code_sort r l G') := forall D g, osub G' D g -> RedTy D e[g] e[g]`, analogously
+RedTm) is **blocked by a foundational Coq restriction**, not a tactical one:
+
+- `wf_term : ctx -> term -> sort -> Prop` and `wf_sort : ctx -> sort -> Prop`
+  (Core.v:141/153) are `Prop`-valued multi-constructor mutual inductives.  Their
+  recursor `wf_judge_ind` (Core.v:1477, a hand-written fixpoint) hard-codes the
+  motives to `Prop`: `Context (P : ctx -> sort -> Prop) (P0 : ctx -> term -> sort
+  -> Prop) (P1 : ctx -> list term -> ctx -> Prop)`.  There is NO Type-valued
+  recursor for wf_term/wf_sort anywhere in Theory/Proof (checked CutFreeInd.v,
+  WfCutElim.v — both `Prop`; no `Sort Type` typing derivation exists).
+- But `RedTy`/`RedTm`/`RedTy_tot`/`RedNatMem`/`RedNe`/`RedAtPi` are all **`Type`**
+  (LogicalRelation.v:352/371/382/412/415) — `RedTy_tot` carries the member
+  relation `R : tm -> tm -> Type` as an OUTPUT index (the Sig trick) and the
+  fibers are `Type`.  So inducting a `wf_term ott [] e S` derivation to PRODUCE a
+  `Type`-valued `RedTy`/`RedTm` is **large elimination of a `Prop`**, which Coq
+  forbids (multi-ctor Prop ⇒ no Type elimination).  `RedTy_fund`'s `Pmot` is
+  `Type` (reflect_at returns `RedTy_R ... : Type`); the hard direction's
+  conclusion `RedTy` is `Type`.  This wall sits BEFORE any case work.
+
+Note the good news: every Kripke INDEX/leaf is already `Prop` — `osub`, `RNat`,
+`REmpty`, `reds`, `ne_eq` (LogicalRelation.v:328/330/332, and reds/ne_eq).  The
+ONLY thing forcing the LR into `Type` is the three fiber inductives + `RedTy_tot`
+being declared `Type` and carrying the member relation as a `Type`-valued
+field/index.
+
+### *** QUESTION FOR DUSTIN (genuine structural fork; build-expensive whichever way) ***
+How should the hard-direction reducibility predicate be sorted so it can be
+produced by induction on the `Prop` typing derivation `wf_term ott [] e S`?
+
+  (P1) **Re-sort the whole LR to `Prop`.**  Redeclare `RedNatMem`/`RedNe`/
+       `RedAtPi`/`RedTy_tot` (and the Sig `RedTy`/member `RedTy_R`/`RedTm`) in
+       `Prop`.  Then `wf_judge_ind` applies directly and the env-keyed motive
+       lands in `Prop`.  COST: a redesign of LogicalRelation.v AND a re-`Qed` of
+       the z23 `RedTy_fund` milestone + the whole supporting tower (the `RedTy_rect`
+       custom eliminator becomes a `Prop` recursor; the `existT`/`projT` Sig
+       packaging must move to `ex`/`proj`-style — but the member relation is an
+       OUTPUT, so a `Prop` Sig (`exists R, RedTy_totP ... R` with `R : tm -> tm ->
+       Prop`) works since all consumers (esc → eq_term, reflect → member, the PER
+       lemmas) have `Prop`/eq_term conclusions or take the member as a hypothesis).
+       RISK: I need to re-audit that NOTHING downstream extracts a `Type`-level
+       witness (a normalizer FUNCTION).  Since the payoff is normalization-AS-A-
+       THEOREM (escape ⇒ eq_term, all Prop), this looks SOUND — but it is the
+       larger rewrite and it re-opens the just-closed milestone.  RECOMMEND THIS
+       if the goal is purely the adequacy/canonicity theorem (no extracted nbe
+       function).
+  (P2) **Keep the LR in `Type`; build a separate `Type`-valued typing derivation
+       to induct on.**  Define an algorithmic / cut-free OTT typing judgement in
+       `Type` (or `Set`) mirroring `wf_term ott`, prove `wf_term ott [] e S ->
+       <Type-typing> e S` (the Prop⇒Type reflection, provable because each rule's
+       premises are decidable/finitely-branching for the closed OTT lang), then
+       induct on the `Type`-typing.  COST: a new typing inductive + its soundness/
+       completeness vs `wf_term ott`; the LR + `RedTy_fund` stay AS-IS.  RISK: the
+       Prop⇒Type reflection itself needs large elimination unless the Type-typing
+       is built constructively from a DECISION PROCEDURE (a checker) returning the
+       derivation — i.e. it needs `ComputeWf`/type-inference returning a Type
+       witness.  Heavier infra, but keeps z23 untouched.
+  (P3) **Hybrid: Prop-truncate only the motive, supply Type via a parametric
+       choice baked into the LR.**  Does NOT work cleanly: the Pi case must BUILD
+       `RedTy_pi`'s `DomRed : forall D g, osub G D g -> RedTy D ...` (a Type-valued
+       FUNCTION) from `forall D g os, inhabited (RedTy D ...)` (Prop) — requires
+       choice over the Prop `osub` index.  Reject unless we add an axiom (we won't).
+
+  My RECOMMENDATION: **(P1)** — re-sort the LR to `Prop`.  It is the
+  mathematically clean route for a normalization THEOREM, makes `wf_judge_ind`
+  apply with zero friction, and (P2)'s Prop⇒Type reflection is itself blocked by
+  the same large-elimination wall unless backed by a full checker.  The price is
+  re-`Qed`-ing `RedTy_fund` in Prop, but every consumer of it is Prop/eq_term, so
+  the proof SCRIPTS port almost verbatim (Sig → ex, `Type` → `Prop`, `existT` →
+  `ex_intro`/`exists`).  **Need your sign-off before the rewrite** since it
+  re-opens the z23 milestone file.
+
+Until the decision, I did NOT start the build (the wrong choice forces redoing the
+entire LR layer).  Everything below (z23 ↓) is unchanged and remains green +
+axiom-clean.
+
 ## UPDATE 2026-06-07z23 — *** MILESTONE: `RedTy_fund` Qed'd AXIOM-CLEAN *** (commit 2f287f5, pushed). The escape+reflect FUNDAMENTAL LEMMA — the central payoff of the whole OTT pivot — is closed. `Print Assumptions RedTy_fund` = only `egraph_sound`. It now lives in the REAL `FundamentalLemma.v` (not WIP).
 
 ### What landed (3 commits, all green + only egraph_sound, pushed)
