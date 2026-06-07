@@ -2916,6 +2916,75 @@ Proof.
   apply core_eq_term_ott_same_head in H; [ cbn in H; discriminate | right; reflexivity ].
 Qed.
 
+(* ====================================================================== *)
+(* SYNTACTIC UNIQUENESS at #"relevance"/#"lvl" (z13, Dustin's directive).   *)
+(*                                                                        *)
+(* STRENGTHENING of `core_eq_term_ott_same_head`: at the rigid info-layer   *)
+(* sorts #"relevance"/#"lvl", declarative `eq_term` forces FULL syntactic   *)
+(* equality (the whole term, not just the head constructor).  This is the   *)
+(* trans-stable leaf the Pi bound-var distinctness obligation bottoms out   *)
+(* at: those sorts admit NO `term_eq_rule` (`ott_no_term_eq_rule_rl`), so a  *)
+(* closed `eq_term` at them can never relate two distinct terms, and the     *)
+(* claim is trans/sym/conv-stable because it is itself a syntactic equality. *)
+(* Runs over the CUT-FREE judgments (no `eq_term_subst` ctor) and bridges    *)
+(* back via `CutElim.core_implies_cut`, exactly like the z10 head version.   *)
+(* ====================================================================== *)
+
+(* Cut-free `eq_term` at #"relevance"/#"lvl" forces syntactic equality. *)
+Lemma cut_eq_term_ott_rl_syntactic : forall c t a b,
+  @CutElim.eq_term string _ ott c t a b ->
+  (sort_name t = "relevance" \/ sort_name t = "lvl") ->
+  a = b.
+Proof.
+  intros c t a b H.
+  induction H using CutElim.eq_term_ind'
+    with (P := fun (_ _ : osort) => True)
+         (P1 := fun (_ : ctx string) (_ _ : subst string) => True)
+         (P2 := fun (_ : ctx string) (_ _ : list tm) => True);
+    try (exact I); intros Hs.
+  - (* eq_term_by: vacuous (no term_eq_rule at relevance/lvl) *)
+    exfalso.
+    destruct (ott_no_term_eq_rule_rl _ _ _ _ _ H) as [Hr Hl].
+    destruct t as [tn ts]. cbn in Hs.
+    destruct Hs as [Hs|Hs]; [apply Hr|apply Hl]; cbn; exact Hs.
+  - (* eq_term_cong: the rule is one of rel/irr/L0/L1, all with empty ctx,
+       so the argument lists are nil and `con name [] = con name []`. *)
+    destruct t as [tn ts]. cbn in Hs.
+    pose (f := fun p : string * rule string =>
+      match snd p with
+      | term_rule _ _ t' => orb (String.eqb (sort_name t') "relevance")
+                                (String.eqb (sort_name t') "lvl")
+      | _ => false end).
+    assert (Hfin : In (name, term_rule c' args (scon tn ts)) (filter f ott)).
+    { apply filter_In. split; [exact H|]. subst f; cbn.
+      destruct Hs as [Hs|Hs]; rewrite Hs; cbn; reflexivity. }
+    vm_compute in Hfin.
+    repeat (destruct Hfin as [He | Hfin]; [ inversion He; subst; clear He |]);
+      try (exfalso; exact Hfin);
+      inversion H0; subst; reflexivity.
+  - (* eq_term_var *) reflexivity.
+  - (* eq_term_trans: trans of two syntactic equalities *)
+    rewrite IHeq_term1 by assumption. apply IHeq_term2; assumption.
+  - (* eq_term_sym *) symmetry. apply IHeq_term; assumption.
+  - (* eq_term_conv: sort head preserved, so condition transports *)
+    apply IHeq_term. apply cut_eq_sort_ott_same_name in H0. rewrite H0. exact Hs.
+Qed.
+
+(* Bridge to declarative `Core.eq_term`: FULL syntactic equality at rel/lvl. *)
+Lemma core_eq_term_ott_rl_syntactic : forall t a b,
+  eq_term ott [] t a b ->
+  (sort_name t = "relevance" \/ sort_name t = "lvl") ->
+  a = b.
+Proof.
+  intros t a b Hcore Hs.
+  assert (Hcut : CutElim.wf_lang _ ott).
+  { apply CutElim.wf_lang_iff_cut; [ typeclasses eauto | typeclasses eauto | exact ott_wf ]. }
+  pose proof (CutElim.core_implies_cut _ ott Hcut) as Himpl.
+  destruct Himpl as [_ [Hterm _]].
+  apply Hterm in Hcore.
+  eapply cut_eq_term_ott_rl_syntactic; eassumption.
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
