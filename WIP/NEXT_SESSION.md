@@ -1,5 +1,75 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z12 — IMPLEMENTING (C). Scoped the relevance/level MODEL against the project's ACTUAL soundness machinery (`inductive_implies_semantic` / `compute_preserving_compiler`). Confirmed (C) is necessary (no cheaper syntactic route) AND found the ONLY viable cheap realization is a small *syntactic target language* `D` reached by a `preserving_compiler` discharged by the e-graph tactic. But `D`'s DESIGN is a new fork with real consequences → surfaced as QUESTION (recommend D-as-syntactic-lang). No code landed this session (would have been a wrong-`D` risk); FundamentalLemma.v / LogicalRelation.v UNTOUCHED + green.
+
+### What was verified this session
+1. **The obligation is genuinely `eq_sort`, buried.** `term_sorts_eq` (Core.v:1708) yields
+   `eq_sort l c t1 t2` — confirmed the Nat-domain Pi gives
+   `eq_sort ott extG (code_sort rF lF G) (code_sort orel oL0 G)` (both `scon "exp" [oU r l G; code_info l; G]`),
+   NOT a bare `eq_term relevance`. So z10's `rel_neq_irr`/`L0_neq_L1` (which ARE green+axiom-free,
+   FundamentalLemma.v:2904/2912) do not directly apply — the relevance sits inside the `oU` code
+   argument of `exp`.
+2. **No syntactic escape (z11 confirmed).** `Core.eq_sort` has NO `eq_sort_cong` constructor
+   (congruence is admissible); cut-free `CutElim.eq_sort` HAS `eq_sort_cong` (carries `eq_args`,
+   descends ONE step to `eq_term (ty..) (oU oirr..) (oU orel..)`), but `eq_sort_trans`'s intermediate
+   is an arbitrary sort, not necessarily an `exp`-of-`U`, so the relevance is not trans-stable.
+   There is no coarse trans-stable invariant for the U-relevance argument (heads ARE rewritten at
+   #"ty"/#"tlvl" by "U subst"/"next0/1"). A MODEL (trans-free-by-soundness) is required.
+3. **The project's ONLY soundness path is the full `preserving_compiler`** (`inductive_implies_semantic`,
+   Compilers.v:1122; `term_eq_preserving_sem`/`sort_eq_preserving_sem`, SemanticsPreservingDef.v).
+   There is NO partial/restricted-language soundness and NO set-`Model`-soundness-by-hand helper.
+   So (C) "a small Pyrosome Model" literally requires a `preserving_compiler` covering EVERY ott rule
+   (term/sort cases) and validating EVERY eq-rule (U/El subst, Nat/Empty/zero/suc subst, **Pi beta×2,
+   Pi/lam subst, the whole subst_ott calculus, info next0/1, ltl_irr**).
+4. **Cost is tamed by `compute_preserving_compiler`** (Tools/EGraph/ComputeWf.v:703): an e-graph-driven
+   tactic that discharges ALL the preserving_compiler obligations AUTOMATICALLY (modulo `egraph_sound`)
+   **when the target is the `core_model` of another SYNTACTIC language** (it proves each eq-rule by the
+   target language's own equational theory). Used exactly this way in SimpleVCPS.v:135/244 etc.
+
+### The realization of (C): target = a small SYNTACTIC language `D`
+Build `D` (relevance + lvl + tlvl + tyinfo + env + a "ty"/"exp" layer with a `U`-tag and `El`)
+that:
+  (a) VALIDATES every ott equation when ott is compiled into it (so `compute_preserving_compiler`
+      succeeds — this is the load-bearing constraint; `D` must have Pi-beta/eta/subst counterparts
+      OR the compiler must send those ott terms to `D`-terms where the equation holds definitionally/
+      by a `D` rule), AND
+  (b) makes the compiled images of `code_sort oirr lF G` and `code_sort orel oL0 G` provably
+      `eq_sort D`-DISTINCT (so transporting the false ott `eq_sort` through `sort_eq_preserving_sem`
+      yields a contradiction in `D`). Distinctness in `D` is then the SAME `ott_no_sort_eq_rule`-style
+      argument but trivial IF `D` has no eq-rule equating the two tags.
+The tension between (a) and (b) is the design crux: `D` must equate enough (to validate ott's eq-rules)
+but keep `oU irr` ≠ `oU rel` at the sort level. Two natural `D` designs:
+  - **D1 (collapse-to-info):** compile every ott type-code to its `#"U" r l`-tag-bearing sort but DROP
+    the Pi/Nat structure (send all codes of `U r l` to a single opaque `D`-constant `Ucode r l`, and
+    `El` of it to a single opaque `D`-type). Pi-beta/eta/subst on TERMS then must still hold in `D` —
+    risky, because lam/app are compiled too. Likely needs `D` to make all exp's of a given sort equal
+    (proof-irrelevant exp layer) — which would ALSO equate the two relevance sorts' ELEMENTS but NOT
+    the sorts themselves (the sort still carries `U r l`). This is the most promising: a
+    *proof-irrelevant element layer over a rigid info/U skeleton*.
+  - **D2 (D = ott itself minus the offending identification):** essentially re-derive canonicity.
+    Rejected (circular / no smaller).
+RECOMMEND **D1**. The skeleton to keep RIGID in `D`: `relevance`, `lvl`, `tlvl`, `tyinfo`, `info`,
+`next` (with next0/next1!), `env`, `ty`, `exp`, `U`, `El`. Everything below (Pi/Nat/lam/app/Empty +
+subst_ott) compiles to a layer where `D` proves equality by proof-irrelevance of `exp`/`ty`
+(add a `D` rule `"e1" "e2" : exp G i A |- e1 = e2`, and `"ty" t1 t2 ... |- t1 = t2`? — careful: that
+last would collapse `U irr ≠ U rel`; so make ONLY the `exp` layer irrelevant, keep `ty` rigid, and
+ensure `U r l : ty` stays tag-distinct). The two target sorts are
+`exp G (code_info l) (U irr l G)` vs `exp G (code_info oL0) (U rel oL0 G)` — distinct as long as no
+`D` sort_eq_rule rewrites `U`. This needs ZERO `sort_eq_rule` in `D` ⇒ distinctness is immediate
+(`ott_no_sort_eq_rule`-clone for `D`).
+
+QUESTION FOR DUSTIN (z12): Confirm the (C) realization = **a small SYNTACTIC target language `D`
+(design D1: rigid info/U/El/ty skeleton + proof-irrelevant `exp` element layer), compiler discharged
+by `compute_preserving_compiler`, distinctness from `D` having no `sort_eq_rule`**? Or do you want a
+genuine set-theoretic `Model` built by hand (no existing helper — would require hand-proving
+`semantics_preserving` by the Core mutual induction, much heavier)? The risk in just diving into D1 is
+that `compute_preserving_compiler` must validate ott's Pi-beta/eta and subst calculus INTO `D`'s
+irrelevant exp layer; if the irrelevant-exp rule subtly collapses `U irr`/`U rel` at the sort level (via
+`El` then back), distinctness breaks and the whole `D` is wrong. Want a quick design review of `D`'s
+rule set before I build+run the (slow) e-graph compiler tactic, OR shall I proceed with D1 and iterate?
+
+(Below: z11 and earlier.)
+
 ## UPDATE 2026-06-07z11 — STEP 3 VERIFICATION: the z10 claim "U-injectivity wall DISSOLVES syntactically" is **OVER-OPTIMISTIC for the actual Pi bound-var obligation**. The obligation is NOT crackable by steps 1+2 alone; it needs either a relevance/level MODEL (z9 option C) or an LR member-sort redesign. **DECISION NEEDED before building the VR layer** (see QUESTION at end).
 
 This session VERIFIED the exact shape of the Pi bound-var obligation (the prior
