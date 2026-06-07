@@ -1,5 +1,73 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z16 — STEP 3 (a) DONE: the Ne Kripke action-soundness leaf landed (green, axiom-clean, pushed). (b)/(c) NOT attempted — verified the precise separability blocker for the Pi case of `Pmot` (a member-sort `eq_sort` bridge), so next session starts informed.
+
+### What landed this session (FundamentalLemma.v, 1 commit, pushed)
+- **(a) Ne action-soundness leaf** — the neutral-domain analogue of
+  `RNat_act`/`REmpty_act`.  Three new lemmas, all green + only `egraph_sound`:
+  - `act_code_neutral` — `act_code rF lF g G D F` (= `exp_subst` at principal
+    arg 0) is neutral when `F` is.  One-line via `neutral_elim (i:=0)` (mirrors
+    `act_member_neutral`).
+  - `eq_term_act_code` — pushes the `ne_eq` conversion `eq_term (code_sort rN lN
+    G) na nb` along `g : sub G D` to `eq_term (code_sort rN lN D) (act_code .. na)
+    (act_code .. nb)`.  `eq_term_conv` of: (i) the `exp_subst` term-former
+    congruence (`term_con_congruence`; ctx order `[v;A;i;g;G';G]` — head is `v`,
+    then `A`,`i`,`g`,`G'`,`G`), (ii) the result-sort conversion via
+    `sort_con_congruence` on `exp` (NB: `sort_con_congruence` puts the `Eqb_ok`
+    goal FIRST, unlike `term_con_congruence`) with the `A`-position discharged by
+    the existing `U_subst_eq` ("U subst" computation rule).
+  - `RNe_act` — `A` reds to neutral code `na`, `B` to `nb`, `ne_eq na nb` ⇒
+    `RedTy D (act_code rN lN g G D A) (act_code rN lN g G D B)`.  No subst redex
+    fires (the pushed neutral is itself whnf, by `act_code_neutral` +
+    `neutral_whnf`); reds prefix from `star_act_code`; the `ne_eq` transported by
+    `eq_term_act_code`.  This is the Pi DomRed field when the domain is neutral.
+
+### (b)/(c) — VERIFIED SEPARABILITY BLOCKER (the precise next obstacle)
+Tried to extract a standalone **reflect@Pi** lemma (z8 suggested quantifying over
+`RDom`/`RCod` and taking the IH outputs as hyps).  It does NOT separate cleanly,
+for a concrete reason now pinned down:
+- `at_pi_app` requires, per `D g os a a' raa'`, a member of the codomain fiber
+  `RCod D g os a a' raa' (mapp t a) (mapp u a')`.  That member is produced by the
+  **codomain reflect IH** `reflect_at (CodRed D g os a a' raa')`, which demands the
+  pair typed + `ne_eq` at the LITERAL `elt_sort (CodRed D g os a a' raa')`.
+- But the available `ne_eq` engine `mapp_ne_eq2` (DONE) delivers `ne_eq` at the
+  SYNTACTIC sort `s_exp D (term_info orel lG) (oEl orel lG D (cod_at rF lF lG g G
+  D F C a'))` = `El (cod_at .. a')`.
+- These two sorts are NOT definitionally equal in general: `elt_sort (CodRed)`
+  depends on what the codomain RedTy reduces to (Nat/Empty/Ne/Pi giving different
+  `elt_sort`s), whereas `mapp_ne_eq2` reads `El(cod_at a')` off the Pi data.  They
+  ARE `eq_sort`-equal by a CODOMAIN ESCAPE (an `esc_ty`-style `eq_sort` between
+  `elt_sort(CodRed)` and `El(cod_at a')`), and `wf_term`/`eq_term` transport
+  across `eq_sort` by conversion — so the bridge EXISTS but needs that codomain
+  member-sort `eq_sort` lemma, which is itself escape machinery.
+⇒ reflect@Pi is genuinely entangled with escape@Pi and the `elt_sort`
+  reconciliation; it belongs IN the `RedTy_rect` (where the CodRed escape IH is in
+  hand), NOT as a small standalone leaf.  This is the concrete shape of the
+  "all entangled" warning from z8/z9.
+
+### NEXT (recommended, in order)
+1. **Codomain member-sort bridge** `eq_sort (elt_sort (CodRed D g os a a' raa'))
+   (El (cod_at rF lF lG g G D F' C' a'))` — derive from the codomain `esc_ty` IH
+   (the CodRed RedTy escapes its two type-codes to `eq_term`, and `elt_sort` reads
+   the LEFT whnf-reduct code; the syntactic `El(cod_at a')` is the RIGHT side).
+   This is the missing transport for reflect@Pi and unblocks the Pi case of `Pmot`.
+2. **Pi case of `Pmot`** in one `RedTy_rect` (the three components together):
+   - `esc_ty@Pi` = `RedTy_Pi_sound`, fed `HFF'` (domain `esc_ty` IH at `g:=id G`,
+     rewritten by `act_code_id_eq`) + `HCC'` (`cod_collapse_both` fed by the
+     codomain `esc_ty` IH at `D:=ext G(El F), g:=wkn, a=a':=hd`, whose `RedTm
+     (DomRed) hd hd` witness is the domain REFLECT IH at the bound var — the z14
+     distinctness lemmas discharge `rF=orel`/`lF=oL0` for a Nat/Empty domain, or
+     proof-irrelevance for an irrelevant domain).
+   - `esc_tm@Pi` = `RedTm_Pi_eta_sound`, `Hbody` from the codomain `esc_tm` IH at
+     the same bound-var instantiation.
+   - `reflect_at@Pi` = `at_pi_app` + `mapp_ne_eq2` + codomain reflect IH (via the
+     bridge in step 1) + domain `esc_tm` IH (to get `a~a'` from `raa'`).
+3. **(c) the hard direction** via `wf_judge_ind`, substitution-generalized motive
+   keyed on the conclusion sort's object env (see z15 KEY STRUCTURAL FINDING);
+   Nat/Empty/Ne leaves use `RNat_act`/`REmpty_act`/`RNe_act`.
+
+(Below: z15 and earlier.)
+
 ## UPDATE 2026-06-07z15 — STEP 3 STARTED: ported the mutual-fund motive + 3 leaves into FundamentalLemma.v, landed the VR-layer reduction-congruence groundwork + the Nat/Empty Kripke action-soundness leaves (the Pi DomRed building blocks). 3 commits, all green + axiom-clean (egraph_sound / closed-under-global). The hard direction (typing-induction fundamental lemma + the Pi case of Pmot) is the remaining work; structure decided (substitution-generalized motive keyed on sort env).
 
 ### What landed this session (FundamentalLemma.v, all pushed)
