@@ -1,5 +1,56 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z17 — STEP 1 (codomain member-sort BRIDGE) + STEP 2 PREREQ (Pi-code typing inversion) both LANDED (green, axiom-clean, pushed). The Pi-case assembly is now fully unblocked; only the bound-var reducibility witness + the RedTy_rect wiring remain.
+
+### What landed this session (FundamentalLemma.v, 2 commits, both pushed)
+1. **STEP 1 — the codomain member-sort bridge** `elt_sort_eq_El` (+ helper
+   `code_sort_rel_lvl_eq`).  `elt_sort r` reads the canonical member sort off the
+   LEFT whnf reduct of the type `X`; for a RELEVANT code `X : code_sort orel lX G`
+   (which the Pi codomain always is) that is `eq_sort`-equal to `El orel lX G X`
+   (El of the bare type itself), via `reds_sound` (reduct ~ X at the code sort) +
+   `El_cong`.  Per-constructor LEVEL/RELEVANCE reconciliation by subject reduction
+   (`reds_wf`) + the rel/lvl sort invariants:
+   - `code_sort_rel_lvl_eq`: `eq_sort` of two code sorts ⇒ buried relevance AND
+     level are SYNTACTICALLY equal (`core_sort_rel_invariant` /
+     `core_sort_lvl_invariant` read the rel/lvl off the U-head and are eq_sort-
+     stable — the z13/z14 reading machinery).
+   - Nat pins `lX=oL0`; Empty case is VACUOUS (a relevant code can't reduce to the
+     `oirr` Empty code — `code_sort_rel_neq_irr`); Ne pins `rN=orel, lN=lX`; Pi
+     pins `lX=lG` (via the Pi_rel-rule inversion of the reduct's typing).
+   - NB: the z16-stated target `eq_sort (elt_sort CodRed) (El (cod_at .. F' C' a'))`
+     is reached by COMPOSING `elt_sort_eq_El` (gives El of the LEFT `cod_at .. F C
+     a`) with the codomain `esc_ty` IH (relates LEFT/RIGHT cod_at codes).  The
+     genuine missing transport — the "self-escape" — is `elt_sort_eq_El`.
+2. **STEP 2 PREREQ — Pi-code typing inversion** `Pi_rel_inv`.  From `wf_term []
+   (oPi_rel rF lF lG F C G) S` recover the typings of `G/rF/lF/lG/F/C` + `eq_sort S
+   (code_sort orel lG G)`.  The `RedTy` relation carries ONLY `reds` witnesses (no
+   typing), so the Pi case re-derives F/C typings from the `wf_term [] A S`
+   presupposition (A reds to the Pi code; `reds_wf` types the code; this inverts
+   it).  Recipe: `invert_wf_term_con` + pin Pi_rel via `in_all_fresh_same` +
+   generic `repeat match` wf_args peel; eq_sort from the inversion `Hsort` disjunct
+   (`eq_sort_sym` / `eq_sort_refl` on a hand-built `wf_sort`).
+
+### NEXT (z18) — the Pi case of `Pmot` in one `RedTy_rect` (all pieces in hand)
+- **esc_ty@Pi** = `RedTy_Pi_sound`, fed `HFF'` (DomRed esc_ty IH @ `g:=id G`,
+  via `act_code_id_eq`) + `HCC'` (`cod_collapse_both` ← CodRed esc_ty IH @ bound
+  var).  Domain/codomain typings from `Pi_rel_inv` on the `wf_term [] A S` arg.
+- **esc_tm@Pi** = `RedTm_Pi_eta_sound` ← CodRed esc_tm IH @ bound var.
+- **reflect@Pi** = `at_pi_app` + `mapp_ne_eq2` + CodRed reflect IH (transported
+  across `elt_sort_eq_El` ∘ CodRed esc_ty IH) + DomRed esc_tm IH (a~a' from raa').
+- **KEY REMAINING OBSTACLE (the one substantial piece left): the bound-var
+  reducibility witness** `RedTm (DomRed D g os) hd hd` needed to instantiate
+  `CodRed`.  It is the DOMAIN REFLECT IH at the bound var `hd`: needs `hd` neutral
+  (it's a var), `hd` typed at `elt_sort (DomRed)` (bridge `elt_sort_eq_El` from the
+  NATURAL `El (act_code rF lF wkn G extG F)`), `eq_term hd hd` (refl), and the z14
+  distinctness reconciliation (`rF=orel`/`lF=oL0` for a Nat/Empty domain, or
+  proof-irrelevance for an irrelevant one).  Plus the Kripke object-sub typings
+  (`extG`/`wkn`/`hd`, `osub G extG wkn`).  This is a multi-lemma effort — do it as
+  its own green commit(s).
+- Then (c) the hard direction via `wf_judge_ind` (Nat/Empty/Ne leaves =
+  `RNat_act`/`REmpty_act`/`RNe_act`).
+
+(Below: z16 and earlier.)
+
 ## UPDATE 2026-06-07z16 — STEP 3 (a) DONE: the Ne Kripke action-soundness leaf landed (green, axiom-clean, pushed). (b)/(c) NOT attempted — verified the precise separability blocker for the Pi case of `Pmot` (a member-sort `eq_sort` bridge), so next session starts informed.
 
 ### What landed this session (FundamentalLemma.v, 1 commit, pushed)
