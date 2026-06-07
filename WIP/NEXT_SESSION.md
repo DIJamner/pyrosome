@@ -1,5 +1,44 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07x — FILE 4 KRIPKE-BUILDER CLUSTER **COMPLETE** (all GREEN, coqc-verified, only `egraph_sound`). Every `LogicalRelation.v` RedTy_tot Pi-case builder is now well-typed against the real OTT rules. **NEXT = the fundamental lemma proper** (`wf_term ott [] e t -> reducible e`) by Pyrosome cut-elimination; discharges the Pi reflect/reify eta crux.
+
+THIS SESSION (in `src/.../Norm/Pi/FundamentalLemma.v`, committed+pushed on `gluing-nbe`):
+the entire under'-lift cluster, built bottom-up. Each is a `wf_term`/`eq_term`
+over OPEN builder vars, all checker-free (the `change`→`eq_term_subst`→
+`eq_term_by` recipe + `term_con_congruence`, never `eredex_steps_with`).
+Helper sorts `s_env/s_sub/s_exp/s_ty` + driver `ott_build` (checker-free
+wf builder with the cluster lemmas as leaves) added at top of the section.
+
+  - `El_act_code_ty` `wkn_extc_wf` `cmp_g0_wf` — small companion typings.
+  - `El_subst_eq` — "El subst" instance `ty_subst g (El F) = El (act_code)`.
+  - **`ty_subst_g0_El_eq`** (THE CRUX) — dissolves `ounder`'s `hd`-leaf type
+    mismatch: `ty_subst (cmp g wkn)(El F) = ty_subst wkn (El act_code)` via
+    "ty_subst_cmp" + "El subst" under a `ty_subst wkn` congruence.
+  - `hd_extc_wf` `ounder_wf` — the fiddly under'-lift `snoc (cmp g wkn) hd`.
+  - `act_cod_wf` — codomain code pushed along `ounder` ("U subst" at `ounder`).
+  - `ty_subst_id_El_eq` `snoc_a_wf` `cod_at_wf` — `act_cod` instantiated at the
+    argument via `snoc a id` ("ty_subst_id" conv on the `a`-leaf).
+  - **`Pi_rel_subst_eq`** — the full "Pi_rel subst" rule (huge RHS transcribed
+    to `{{e}}`, matched on first try) `exp_subst g (Pi_rel..G) = Pi_rel..(act_code)(act_cod) D`.
+  - `El_Pi_subst_eq` `act_member_wf` — push the Π function member, re-type via
+    El-subst-then-Pi_rel-subst.
+  - `El_act_cod_subst_eq` `mapp_wf` — `app_rel` over act_code/act_cod/act_member,
+    re-typed to the `El (cod_at .. a)` the RedAtPi member relation consumes.
+
+KEY RECIPES (reuse for the fundamental lemma's syntactic obligations):
+- **checker-free rule application** = `pose s; change (… [/s/] …); eapply
+  eq_term_subst; [ eq_term_by NAME | eq_subst_refl;ott_build | rule_in_ctx_wf ]`.
+  For composite convs, `eq_term_trans` with an EXPLICIT `e12` (a bare evar
+  middle defeats `change`) + `term_con_congruence` (eq_args: the one changed arg
+  by the sub-lemma, rest `eq_term_refl;ott_build`).
+- **builder typing** = `wf_term_by'` + a `repeat first[wf_args_cons2/cons | cbn |
+  compute_wf_subjects | (apply <prev-builder>;eassumption) | eassumption |
+  wf_term_by'…]`; for a leaf needing a conv (hd/a), peel with `wf_args_cons2`
+  and `eapply wf_term_conv;[apply H | sort_cong;…<conv lemma>]`.
+- con-arg orders: con storage = REVERSE of `{{e}}` surface order. The `o*`
+  builders in LogicalRelation.v already encode the correct order — trust them;
+  `s_sub tgt src = scon "sub" [src; tgt]`.
+
 ## UPDATE 2026-06-07w — FILE 4 BODY STARTED: first Kripke-builder typing `act_code_wf` LANDED (GREEN, coqc-verified, only `egraph_sound`). NEXT = the remaining builder typings (extc/act_member/act_cod/cod_at/mapp), then the fundamental lemma proper.
 
 THIS SESSION (in `src/.../Norm/Pi/FundamentalLemma.v`, committed+pushed):
