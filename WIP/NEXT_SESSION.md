@@ -1,5 +1,39 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z2 — TYPE-LEVEL ESCAPE LEAF CASES LANDED (FundamentalLemma.v; GREEN, only egraph_sound). NEXT = the Pi-escape crux (gated on reflect adequacy) / the fundamental lemma proper.
+
+THIS SESSION (committed+pushed on `gluing-nbe`, in `FundamentalLemma.v`):
+- **`wf_ctx_ott_nil`** — `wf_ctx (Model := core_model ott) []` (the empty ctx is
+  wf under `ott`); reusable for the presupposition / sort-uniqueness lemmas.
+  NB `wf_ctx` is NOT exported with an explicit-`l` notation (unlike `wf_term ott`,
+  which works because `Core.wf_term` has `l` explicit after the section); state it
+  with the explicit `Model := core_model ott`.
+- **`RedTy_Nat_sound` / `RedTy_Empty_sound`** — type-level escape LEAF cases: a
+  reducible Nat (resp. Empty) code pair, both codes well typed at a common
+  code-sort `S`, escapes to `eq_term S A B`.  Pure `reds_sound` on both sides +
+  trans (each code is `eq_term`-equal to its common reduct `Nat G`/`Empty G`).
+- **`RedNe_sound_at`** — the neutral-code leaf, GENERALIZING `RedNe_sound`: the
+  codes may be typed at a sort `S` DIFFERENT from the `ne_eq` sort `t` carried by
+  `rtt_ne`.  Bridge: the common reduct `na` is wf at `t` (presupposition of the
+  `ne_eq`'s `eq_term`, via `eq_term_wf_l`) and at `S` (subject reduction,
+  `reds_wf`), so `term_sorts_eq` gives `eq_sort t S`, transporting the neutral
+  equation to `S` by `eq_term_conv`.
+
+These are exactly the nat/empty/ne constructors of the eventual TOTAL
+`RedTy_sound : RedTy ott G A B -> wf A S -> wf B S -> eq_term S A B`.  The
+`rtt_pi` case is NOT a leaf and blocks the total statement: it must instantiate
+the codomain `CodRed` at a FRESH VARIABLE (the bound var of `ext G (El F)`),
+which requires a reducibility witness for that variable — i.e. REFLECT ADEQUACY
+at the domain type.  Reflect adequacy is fundamental-lemma content (the eta crux),
+so `RedTy_sound` total is gated on the fundamental lemma's Pi case, not the other
+way round.  Gotchas hit: `term_sorts_eq`'s `t2` (the `forall t2`) is IMPLICIT
+(don't pass `_` for it); same for `eq_term_wf_l`'s `l c e1 e2 t`.
+
+NEXT (unchanged crux): the fundamental lemma proper `wf_term ott [] e t ->
+RedTy/RedTm` by Pyrosome cut-elim.  Leaf type cases now have escape (Nat/Empty/ne
++ the new type-level leaves) AND reflect leaves in hand; the Pi case is the
+reflect/reify eta crux that also unblocks `RedTy_sound` total.
+
 ## UPDATE 2026-06-07z — LR ESCAPE + REFLECT-LEAVES LANDED (2 commits, pushed). NEXT = type-level escape (Pi crux) / the fundamental lemma proper.
 
 THIS SESSION (both committed+pushed on `gluing-nbe`):
