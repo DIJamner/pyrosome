@@ -1,6 +1,21 @@
 # Next-session kickoff — OTT two-sided PER migration
 
-## UPDATE 2026-06-07z3 — REFLECT-AT-Pi MEMBER COMBINATORS LANDED (3 commits, GREEN). NEXT = assemble the mutual reflect/escape induction (the eta crux) + the escape-at-Pi id-collapse builder.
+## UPDATE 2026-06-07z3 — REFLECT-AT-Pi MEMBER COMBINATORS **COMPLETE** (6 commits, GREEN). NEXT = the escape-at-Pi id/var-collapse builder + assemble the mutual reflect/escape induction (the eta crux).
+
+THE MEMBER-RELATION SIDE OF reflect-at-Pi IS NOW FULLY DISCHARGED.  The full set
+(all committed+pushed on `gluing-nbe`):
+- `act_member_neutral` / `mapp_neutral` (LogicalRelation.v, abstract, axiom-free)
+- `mapp_cong` (argument), `act_member_cong` + `mapp_cong_fun` (function) — app_rel
+  congruence in each position (FundamentalLemma.v, only egraph_sound)
+- `mapp_ne_eq` (na=nb reflexive) and **`mapp_ne_eq2`** (general na~nb distinct):
+  neutral functions + related args ⇒ `ne_eq` of member applications at the
+  instantiated codomain.  `mapp_ne_eq2`'s equation = `mapp_cong` (arg) then
+  `mapp_cong_fun` (fun) by `eq_term_trans`.
+So: given members `a~a'` (from escape at the domain) and the reflected pair of
+Π-functions, the two applications are `ne_eq` at the codomain — exactly the input
+the recursive codomain reflect call consumes.  Nothing more is needed on the
+member side; the eta crux's remaining content is the INDUCTION ASSEMBLY and the
+TYPE-side (escape-at-Pi) instantiation builder.
 
 THIS SESSION (committed+pushed on `gluing-nbe`): the self-contained combinators
 the reflect-at-Pi case's MEMBER-relation obligation consumes — proving that a
