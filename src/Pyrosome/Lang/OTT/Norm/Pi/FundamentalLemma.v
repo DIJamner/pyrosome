@@ -4117,10 +4117,13 @@ Qed.
 
 (* The bound-variable typing + member-sort bridge (the SOUND part of the
    witness): `hd` types at `El rF lF extGF (act_code .. F)`, hence at
-   `elt_sort (DomRed extGF wknF os)` via `elt_sort_eq_El_gen`.  The REFLECT-
-   based witness `RedTm (DomRed) hd hd` does NOT go through, because `hd` is
-   NOT `neutral` in this explicit-substitution encoding (`ott_pa "hd" = None`,
-   so `con "hd"` is whnf-but-not-neutral) — see QUESTION in NEXT_SESSION z18. *)
+   `elt_sort (DomRed extGF wknF os)` via `elt_sort_eq_El_gen`.
+
+   z19 UPDATE: the z18 blocker is RESOLVED.  `hd` IS now `neutral` (the
+   `neutral_hd` clause added in Neutral.v per Dustin's N1 — the CwF bound
+   variable `con "hd"` is the canonical neutral NbE reflects), so the
+   REFLECT-based witness `RedTm (DomRed) hd hd` DOES go through for the
+   first-order domain fibers; see `bound_var_redtm` below. *)
 Lemma bound_var_typed rF lF G F F'
   (HG : wf_term ott [] G s_env)
   (HrF : wf_term ott [] rF (scon "relevance" []))
@@ -4156,6 +4159,72 @@ Proof.
                 (act_code rF lF wknF G extGF F') (DomRed extGF wknF os) rF lF
                 HD HrF HlF HactF) as Hbridge.
   eapply wf_term_conv; [ exact Hhd | eapply eq_sort_sym; exact Hbridge ].
+Qed.
+
+(* ====================================================================== *)
+(* z19: THE BOUND-VARIABLE REDUCIBILITY WITNESS `RedTm (DomRed) hd hd`,     *)
+(* unblocked by the N1 fix (`neutral_hd` in Neutral.v).                     *)
+(*                                                                        *)
+(* For the Pi case of the mutual escape/reflect lemma, the CodRed field is  *)
+(* instantiated at the bound variable, which needs a domain member          *)
+(* `RedTm (DomRed extGF wknF os) hd hd`.  We DESTRUCT the domain fiber       *)
+(* `DomRed extGF wknF os` and reflect `hd` into it:                         *)
+(*   - Nat fiber  -> `RedNatMem_refl_ne`  at `nat_sort`,                     *)
+(*   - Empty fiber-> `RedNe_reflect`/`ne_eq_refl` at `empty_sort`,           *)
+(*   - Ne fiber   -> `RedNe_reflect`/`ne_eq_refl` at `el_sort rN lN na`.    *)
+(* All three use `bound_var_typed` (the member-sort bridge) for the typing   *)
+(* and `neutral_hd` for the neutrality side condition — the EXACT z18        *)
+(* obstacle that the N1 fix removes.                                         *)
+(*                                                                        *)
+(* The Pi-DOMAIN fiber (a HIGHER-ORDER bound variable, when `DomRed`         *)
+(* reduces to a Pi code) is NOT first-order: its member is a `RedAtPi`,      *)
+(* whose `hd hd` witness is the eta-expansion reflected through the codomain *)
+(* — that needs the codomain mutual IH, so it is taken here as an explicit   *)
+(* premise `Hpi` (to keep this lemma standalone and axiom-free).  Inside the *)
+(* full mutual `RedTy_rect` the premise is discharged by the codomain        *)
+(* reflect IH (the eta crux). *)
+(* ====================================================================== *)
+Lemma bound_var_redtm rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (DomRed : forall D g (os : osub ott G D g),
+      RedTy ott D (act_code rF lF g G D F) (act_code rF lF g G D F'))
+  : let extGF := oext (oEl rF lF G F) (term_info rF lF) G in
+    let wknF  := owkn (oEl rF lF G F) (term_info rF lF) G in
+    let hdF   := ohd (oEl rF lF G F) (term_info rF lF) G in
+    forall (os : osub ott G extGF wknF),
+      (* Pi-domain (higher-order) sub-case: supplied by the codomain mutual IH
+         (the eta crux); the three FIRST-ORDER fibers are discharged outright. *)
+      (forall G0 F0 C F'0 C' rF0 lF0 lG
+              (RDom : forall D g, osub ott G0 D g -> tm -> tm -> Type)
+              (RCod : forall D g (os0 : osub ott G0 D g) a a',
+                  RDom D g os0 a a' -> tm -> tm -> Type),
+          wf_term ott [] hdF
+            (s_exp G0 (term_info orel lG) (oEl orel lG G0 (oPi_rel rF0 lF0 lG F0 C G0))) ->
+          RedAtPi ott rF0 lF0 lG G0 F0 C F'0 C' RDom RCod hdF hdF) ->
+      RedTm ott (DomRed extGF wknF os) hdF hdF.
+Proof.
+  pose proof ott_wf as Hwf.
+  intros extGF wknF hdF os Hpi.
+  pose proof (bound_var_typed rF lF G F F' HG HrF HlF HF DomRed os) as Hhdty.
+  cbn zeta in Hhdty.
+  assert (Hhdne : neutral ott_pa "hd" hdF) by (unfold hdF, ohd; apply neutral_hd).
+  unfold RedTm, RedTy_R in *.
+  unfold elt_sort in Hhdty.
+  change (owkn (oEl rF lF G F) (term_info rF lF) G) with wknF in Hhdty.
+  change (oext (oEl rF lF G F) (term_info rF lF) G) with extGF in Hhdty.
+  change (ohd (oEl rF lF G F) (term_info rF lF) G) with hdF in Hhdty.
+  set (DR := DomRed extGF wknF os) in *.
+  clearbody DR wknF extGF hdF.
+  destruct DR as [R r].
+  cbn [projT1 projT2] in *.
+  destruct r.
+  - apply (RedNatMem_refl_ne ott); assumption.
+  - apply (RedNe_reflect ott), ne_eq_refl; assumption.
+  - apply (RedNe_reflect ott), ne_eq_refl; assumption.
+  - apply Hpi; assumption.
 Qed.
 
 (* TODO (file 4 body, continued) — STEP 3 remaining (the typing-induction
