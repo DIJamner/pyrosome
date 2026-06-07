@@ -1,6 +1,21 @@
 # Next-session kickoff — OTT two-sided PER migration
 
-## UPDATE 2026-06-07z2 — TYPE-LEVEL ESCAPE LEAF CASES LANDED (FundamentalLemma.v; GREEN, only egraph_sound). NEXT = the Pi-escape crux (gated on reflect adequacy) / the fundamental lemma proper.
+## UPDATE 2026-06-07z2 — TYPE-LEVEL ESCAPE LEAVES + TWO-SIDED REFLECT LEAVES LANDED (2 commits, GREEN). NEXT = the Pi-escape crux (gated on reflect adequacy) / the fundamental lemma proper.
+
+ALSO this session (LogicalRelation.v, abstract `l`, axiom-free — `Closed under the
+global context`): the **two-sided reflect leaves** the PER fundamental lemma's
+neutral/variable cases actually consume (the existing leaves were reflexive
+`a = a` only):
+- **`RedNe_reflect`** : `ne_eq t a b -> RedNe t a b`.
+- **`RedNatMem_reflect`** : `ne_eq (nat_sort G) a b -> RedNatMem G a b`.
+- **`RedTy_ne_reflect`** : `ne_eq t A B -> RedTy G A B`.
+Each is `reds_refl` (a neutral is whnf) on both sides + the `ne_eq` carried
+verbatim; the reflexive leaves are now the `a = b` instances (`ne_eq_refl`).
+NB design check confirmed: standalone typing-inversion lemmas (à la `suc_inv`) are
+NOT generally needed — the fundamental lemma is by induction on a CANONICAL/cut-free
+typing derivation, which hands each constructor's premises (the `wf_args`) for free;
+`suc_inv` was needed only because `RedNatMem_sound` inducts on `RedNatMem` (off the
+typing) and must re-type a reduct. So don't pre-build app_rel/lam_rel inversions.
 
 THIS SESSION (committed+pushed on `gluing-nbe`, in `FundamentalLemma.v`):
 - **`wf_ctx_ott_nil`** — `wf_ctx (Model := core_model ott) []` (the empty ctx is
