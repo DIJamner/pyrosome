@@ -334,6 +334,12 @@ Section RedTyConcrete.
   (* the sort of Empty-typed elements in env G. *)
   Definition empty_sort (G : tm) : osort :=
     scon "exp" [oEl oirr oL0 G (oEmpty G); term_info oirr oL0; G].
+  (* the sort of a type CODE A : U r l in env G (a code lives at `code_info`). *)
+  Definition code_sort (r l G : tm) : osort :=
+    scon "exp" [oU r l G; code_info l; G].
+  (* the sort of the ELEMENTS of a type code A : U r l in env G (`El A`). *)
+  Definition el_sort (r l G A : tm) : osort :=
+    scon "exp" [oEl r l G A; term_info r l; G].
 
   (* ---- base member relations ---- *)
   (* Neutral-code members: each side weak-head reduces to a neutral, and the
@@ -374,8 +380,13 @@ Section RedTyConcrete.
       RNat G A -> RNat G B -> RedTy_tot G A B (RedNatMem G)
   | rtt_empty : forall G A B,
       REmpty G A -> REmpty G B -> RedTy_tot G A B (RedNe (empty_sort G))
-  | rtt_ne : forall G A B na nb (t : osort),
-      reds A na -> reds B nb -> ne_eq t na nb -> RedTy_tot G A B (RedNe t)
+  (* Neutral type code: A,B reduce to neutral CODES na,nb that are `ne_eq` at
+     the U code-sort `code_sort rN lN G`; the MEMBERS of this neutral type live
+     at the element sort `el_sort rN lN G na` (= `El na`, the whnf reduct, so
+     the member sort is stable under backward closure / `anti_*`). *)
+  | rtt_ne : forall G A B na nb (rN lN : tm),
+      reds A na -> reds B nb -> ne_eq (code_sort rN lN G) na nb ->
+      RedTy_tot G A B (RedNe (el_sort rN lN G na))
   | rtt_pi : forall G A B rF lF lG F C F' C',
       reds A (oPi_rel rF lF lG F C G) ->
       reds B (oPi_rel rF lF lG F' C' G) ->
@@ -406,9 +417,10 @@ Section RedTyConcrete.
   Definition RedTy_empty {G A B} (ra : REmpty G A) (rb : REmpty G B) : RedTy G A B :=
     existT _ _ (rtt_empty G A B ra rb).
 
-  Definition RedTy_ne {G A B} na nb t
-    (ra : reds A na) (rb : reds B nb) (h : ne_eq t na nb) : RedTy G A B :=
-    existT _ _ (rtt_ne G A B na nb t ra rb h).
+  Definition RedTy_ne {G A B} na nb rN lN
+    (ra : reds A na) (rb : reds B nb) (h : ne_eq (code_sort rN lN G) na nb)
+    : RedTy G A B :=
+    existT _ _ (rtt_ne G A B na nb rN lN ra rb h).
 
   Definition RedTy_pi {G A B rF lF lG F C F' C'}
     (hA : reds A (oPi_rel rF lF lG F C G))
@@ -438,9 +450,9 @@ Section RedTyConcrete.
         P G A B (RedTy_nat ra rb))
     (Hempty : forall G A B (ra : REmpty G A) (rb : REmpty G B),
         P G A B (RedTy_empty ra rb))
-    (Hne : forall G A B na nb t (ra : reds A na) (rb : reds B nb)
-                  (h : ne_eq t na nb),
-        P G A B (RedTy_ne na nb t ra rb h))
+    (Hne : forall G A B na nb rN lN (ra : reds A na) (rb : reds B nb)
+                  (h : ne_eq (code_sort rN lN G) na nb),
+        P G A B (RedTy_ne na nb rN lN ra rb h))
     (Hpi : forall G A B rF lF lG F C F' C'
              (hA : reds A (oPi_rel rF lF lG F C G))
              (hB : reds B (oPi_rel rF lF lG F' C' G))
@@ -461,7 +473,7 @@ Section RedTyConcrete.
     intros G A B [R r].
     induction r as [ G A B ra rb
                    | G A B ra rb
-                   | G A B na nb t ra rb h
+                   | G A B na nb rN lN ra rb h
                    | G A B rF lF lG F C F' C' hA hB
                      RDom DomRed IHDom RCod CodRed IHCod ].
     - apply Hnat.
@@ -634,11 +646,11 @@ Section RedTyConcrete.
                    | apply ne_eq_refl; assumption ].
   Qed.
 
-  Lemma RedTy_ne_refl G A t
-    : neutral ott_pa A -> wf_term l [] A t -> RedTy G A A.
+  Lemma RedTy_ne_refl G A rN lN
+    : neutral ott_pa A -> wf_term l [] A (code_sort rN lN G) -> RedTy G A A.
   Proof.
     intros Hn Hwf.
-    eapply (RedTy_ne A A t);
+    eapply (RedTy_ne A A rN lN);
       [ apply reds_refl; apply neutral_whnf; exact Hn
       | apply reds_refl; apply neutral_whnf; exact Hn
       | apply ne_eq_refl; assumption ].
@@ -667,9 +679,10 @@ Section RedTyConcrete.
       | exact (conj Ha (conj Hb Hab)) ].
   Qed.
 
-  Lemma RedTy_ne_reflect G A B t : ne_eq t A B -> RedTy G A B.
+  Lemma RedTy_ne_reflect G A B rN lN
+    : ne_eq (code_sort rN lN G) A B -> RedTy G A B.
   Proof.
-    intros (Ha & Hb & Hab); eapply (RedTy_ne A B t);
+    intros (Ha & Hb & Hab); eapply (RedTy_ne A B rN lN);
       [ apply reds_refl; apply neutral_whnf; exact Ha
       | apply reds_refl; apply neutral_whnf; exact Hb
       | exact (conj Ha (conj Hb Hab)) ].
