@@ -1748,35 +1748,202 @@ Proof.
 Qed.
 
 
-(* Substitution inversion: a substitution [s : c' -> c] is well-formed as soon
-   as (a) the image [e[/s/]] of *some* term [e] well-typed in [c'] is itself
-   well-formed in [c], and (b) every ctx var of [c'] that does NOT occur in [e]
-   is independently shown well-formed at its (substituted) sort.  Variables that
-   DO occur in [e] get their well-formedness for free from [e[/s/]] being
-   well-formed: the derivation of [e[/s/]] witnesses exactly the sort equations
-   needed to bridge each variable's "use sort" inside [e] back to its declared
-   sort in [c'] (the bridge that, taken in isolation, would require [s] to
-   already be known well-formed).
+(* Dropping a fresh leading binding from a substitution does not change the
+   action on a sort well-formed in the (unextended) context. *)
+Lemma wf_sort_strengthen_cons (l : lang) c' n e s t'
+  : wf_lang l ->
+    wf_sort l c' t' ->
+    fresh n c' ->
+    map fst s = map fst c' ->
+    t' [/(n,e)::s/] = t' [/s/].
+Proof.
+  intros wfl Hwf Hfr Hmap.
+  erewrite strengthen_subst; try typeclasses eauto.
+  - reflexivity.
+  - rewrite Hmap. eapply wf_sort_implies_ws; eauto with lang_core.
+  - unfold fresh in *. rewrite Hmap. exact Hfr.
+Qed.
 
-   This is the key lemma enabling minimized e-graph rule queries: the LHS [e1]
-   of an equational rule plays the role of [e], so the ctx vars appearing in the
-   LHS need no [sort_of] atom in the query, while the remaining vars supply the
-   explicit witnesses.
+(* Pushing a substitution through a [con]/[scon] head (definitional). *)
+Lemma con_subst (s : subst) n (s0 : list term) : (con n s0)[/s/] = con n s0[/s/].
+Proof. reflexivity. Qed.
+Lemma scon_subst (s : subst) n (s0 : list term) : (scon n s0)[/s/] = scon n s0[/s/].
+Proof. reflexivity. Qed.
 
-   ADMITTED: provable via the conversion-elimination induction
-   ([ConvElim.conv_ind] / [CutFreeInd]); deferred. *)
-Lemma wf_subst_from_image (l : lang) c' e t
+(* Assembly: a substitution is well-formed as soon as each context variable's
+   image is well-formed at the variable's (substituted) declared sort.  This is
+   the easy direction; the work is in producing those per-variable witnesses. *)
+Lemma wf_subst_from_pointwise (l : lang) c c' s
   : wf_lang l ->
     wf_ctx l c' ->
-    wf_term l c' e t ->
+    map fst s = map fst c' ->
+    (forall x t', In (x,t') c' -> wf_term l c (subst_lookup s x) t'[/s/]) ->
+    wf_subst l c s c'.
+Proof.
+  intro wfl.
+  revert s.
+  induction c' as [|[n t] c' IH]; intros s Hwfc Hmap Hpt.
+  - destruct s; cbn in Hmap; [constructor | discriminate].
+  - destruct s as [|[n' e] s]; cbn in Hmap; [discriminate|].
+    injection Hmap as Hnn Hmap'. subst n'.
+    autorewrite with model in Hwfc.
+    destruct Hwfc as [Hfr [Hwfc' Hwfsort] ].
+    constructor.
+    + (* tail *)
+      apply IH; [exact Hwfc' | exact Hmap' | ].
+      intros x t' Hin.
+      assert (Hxn : x <> n)
+        by (intro Heq; subst x; eapply fresh_notin; [exact Hfr | eapply Hin]).
+      pose proof (Hpt x t' (or_intror Hin)) as Hx.
+      rewrite subst_lookup_tl in Hx by assumption.
+      erewrite wf_sort_strengthen_cons with (c':=c') in Hx;
+        eauto with lang_core.
+    + (* head *)
+      pose proof (Hpt n t (or_introl eq_refl)) as Hn.
+      rewrite subst_lookup_hd in Hn by assumption.
+      erewrite wf_sort_strengthen_cons with (c':=c') in Hn;
+        eauto with lang_core.
+Qed.
+
+(* Inversion of a [con]'s well-formedness down to its argument list.  Unlike a
+   direct [inversion], this peels any trailing conversions. *)
+Lemma wf_term_con_args (l : lang) c n s t
+  : wf_term l c (con n s) t ->
+    exists c', wf_args l c s c'
+            /\ (exists args tret, In (n, term_rule c' args tret) l).
+Proof.
+  intro H.
+  remember (con n s) as e eqn:Heqe.
+  revert Heqe.
+  induction H; intro Heqe; try (exfalso; discriminate Heqe).
+  - (* wf_term_by *)
+    safe_invert Heqe.
+    match goal with
+    | Hwa : wf_args _ _ _ ?cc |- _ =>
+        exists cc; split; [exact Hwa | repeat eexists; eassumption]
+    end.
+  - (* wf_term_conv *)
+    match goal with
+    | IH : _ = con _ _ -> _ |- _ => apply IH; exact Heqe
+    end.
+Qed.
+
+(* COVERING LEMMA (the genuine remaining content; ADMITTED).
+
+   If a list of arguments [args] is well-formed in [c'] against an operator
+   argument context [cA], and its [s]-image is well-formed in [c] against the
+   SAME [cA], then every context variable occurring in [args] is well-formed
+   (in [c]) at its [s]-substituted declared sort.
+
+   This is true (and false for a bare-variable term, which is why the e-graph
+   minimization never drops the sort of a bare-LHS variable): inside a [con],
+   each argument's required sort is pinned by the operator, so a well-formed
+   instantiation forces every variable occurrence to be well-formed at its
+   declared sort.
+
+   PROOF STRATEGY (deferred): induction on [wf_args l c' args cA] (structural,
+   recursing on the tail).  The head argument [e0]'s required sort
+   [tA[/with_names_from cArest rest/]] mentions only variables of the later
+   arguments [rest], whose well-formedness is already established by the IH;
+   that partial information is exactly what is needed to substitute the
+   "use-sort = declared-sort" conversion at each variable leaf of [e0] (the
+   step that, taken globally, would require [s] to be known well-formed).
+   Variable leaves with no conversion are immediate; [con] leaves recurse. *)
+Lemma wf_args_covers_fv (l : lang) c' cA args
+  : wf_lang l ->
+    wf_ctx l c' ->
+    wf_args l c' args cA ->
+    forall c s,
+      map fst s = map fst c' ->
+      wf_args l c args[/s/] cA ->
+      forall x t', In (x,t') c' -> In x (fv_args args) ->
+                   wf_term l c (subst_lookup s x) t'[/s/].
+Proof.
+Admitted.
+
+(* Substitution inversion for a [con] LHS: a substitution [s : c' -> c] is
+   well-formed as soon as (a) the image [(con n0 s0)[/s/]] of a [con] term
+   well-typed in [c'] is itself well-formed in [c], and (b) every ctx var of
+   [c'] that does NOT occur in the term is independently shown well-formed at
+   its (substituted) sort.  Variables that DO occur get their well-formedness
+   from the image via [wf_args_covers_fv].
+
+   This is the key lemma enabling minimized e-graph rule queries (term_eq): the
+   LHS [e1 = con n0 s0] plays the role of the term, so its ctx vars need no
+   [sort_of] atom in the query, while the remaining vars supply explicit
+   witnesses. *)
+Lemma wf_subst_from_image (l : lang) c' n0 s0 t
+  : wf_lang l ->
+    wf_ctx l c' ->
+    wf_term l c' (con n0 s0) t ->
     forall c s ts,
       map fst s = map fst c' ->
-      wf_term l c e[/s/] ts ->
-      (forall x t', In (x,t') c' -> ~ In x (fv e) ->
+      wf_term l c (con n0 s0)[/s/] ts ->
+      (forall x t', In (x,t') c' -> ~ In x (fv (con n0 s0)) ->
                     wf_term l c (subst_lookup s x) t'[/s/]) ->
       wf_subst l c s c'.
 Proof.
-Admitted.
+  intros wfl Hwfc Hwfe c s ts Hmap Himg Hwit.
+  apply (wf_subst_from_pointwise (c:=c)); auto.
+  intros x t' Hin.
+  destruct (inb x (fv_args s0)) eqn:Hib.
+  - (* x occurs in the LHS: recover from the image *)
+    assert (Hfv : In x (fv_args s0))
+      by (apply (proj1 (inb_is_In x (fv_args s0))); rewrite Hib; exact I).
+    apply wf_term_con_args in Hwfe.
+    destruct Hwfe as (cA & Hargs & args & tret & Hrule).
+    rewrite con_subst in Himg.
+    apply wf_term_con_args in Himg.
+    destruct Himg as (cA' & Hargs' & args' & tret' & Hrule').
+    pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh wfl) Hrule Hrule') as Heqr.
+    safe_invert Heqr.
+    eapply wf_args_covers_fv;
+      [exact wfl | exact Hwfc | exact Hargs | exact Hmap | exact Hargs' | exact Hin | exact Hfv].
+  - (* x does not occur: explicit witness *)
+    apply Hwit; auto.
+    intro Hcontra.
+    pose proof (proj2 (inb_is_In x (fv_args s0)) Hcontra) as Hbad.
+    rewrite Hib in Hbad; exact Hbad.
+Qed.
+
+(* Substitution inversion for a [scon] LHS (sort_eq); the sort analogue of
+   [wf_subst_from_image].  A sort is always a [scon], so there is no bare-var
+   case to guard. *)
+Lemma wf_subst_from_sort_image (l : lang) c' n0 s0
+  : wf_lang l ->
+    wf_ctx l c' ->
+    wf_sort l c' (scon n0 s0) ->
+    forall c s,
+      map fst s = map fst c' ->
+      wf_sort l c (scon n0 s0)[/s/] ->
+      (forall x t', In (x,t') c' -> ~ In x (fv_sort (scon n0 s0)) ->
+                    wf_term l c (subst_lookup s x) t'[/s/]) ->
+      wf_subst l c s c'.
+Proof.
+  intros wfl Hwfc Hwft c s Hmap Himg Hwit.
+  apply (wf_subst_from_pointwise (c:=c)); auto.
+  intros x t' Hin.
+  destruct (inb x (fv_args s0)) eqn:Hib.
+  - assert (Hfv : In x (fv_args s0))
+      by (apply (proj1 (inb_is_In x (fv_args s0))); rewrite Hib; exact I).
+    safe_invert Hwft.
+    rewrite scon_subst in Himg.
+    safe_invert Himg.
+    match goal with
+    | Hr : In (n0, sort_rule ?cA _) l, Hr' : In (n0, sort_rule ?cA' _) l |- _ =>
+        pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh wfl) Hr Hr') as Heqr;
+        safe_invert Heqr
+    end.
+    match goal with
+    | Hargs : wf_args l c' s0 ?cA, Hargs' : wf_args l c s0[/s/] ?cA |- _ =>
+        eapply wf_args_covers_fv;
+          [exact wfl | exact Hwfc | exact Hargs | exact Hmap | exact Hargs' | exact Hin | exact Hfv]
+    end.
+  - apply Hwit; auto.
+    intro Hcontra.
+    pose proof (proj2 (inb_is_In x (fv_args s0)) Hcontra) as Hbad.
+    rewrite Hib in Hbad; exact Hbad.
+Qed.
 
 
 End WithVar.

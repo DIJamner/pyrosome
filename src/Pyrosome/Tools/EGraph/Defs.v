@@ -238,8 +238,33 @@ Section WithVar.
                      let _ <- union t_v tx' in
                      ret (x,x')::sub) c [].
 
+  (* [add_ctx] is kept as its own standalone definition (rather than
+     [add_ctx_gen (fun _ => false)]) so that the many existing tactics that
+     [unfold add_ctx; cbn [list_Mfoldr]] to step through the fold keep working
+     verbatim.  It is extensionally equal to [add_ctx_gen (fun _ => false)]
+     (see [add_ctx_eq_gen] below). *)
   Definition add_ctx (c : ctx) : state instance _ :=
-    add_ctx_gen (fun _ => false) c.
+    list_Mfoldr (fun '(x,t) sub =>
+                   (*use the empty substitution to indicate the identity.
+                      Assumes that the input egraph starts with an allocator
+                    *)
+                   @! let t_v <- add_open_sort sub t in
+                     (* using the variables from ctx isn't sound,
+                          so we make sure to allocate a fresh one.
+                          We also write a default analysis value
+                          so that things are analyzable and rebuilding doesn't loop
+                      *)
+                     let {(state instance)} x' <- alloc_opaque in
+                     (*Note: do not replace with update_entry.
+                       It does not work correctly, likely with
+                       the unmapped variables in rule compilation.
+                      *)
+                     let tx' <- hash_entry sort_of [x'] in
+                     let _ <- union t_v tx' in
+                     ret (x,x')::sub) c [].
+
+  Lemma add_ctx_eq_gen c : add_ctx c = add_ctx_gen (fun _ => false) c.
+  Proof. reflexivity. Qed.
 
   End SortFlag.
   
