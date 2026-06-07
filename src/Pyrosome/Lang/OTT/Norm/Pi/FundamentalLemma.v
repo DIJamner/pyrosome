@@ -466,11 +466,62 @@ Proof.
   - left; compute; reflexivity.
 Qed.
 
+(* `act_cod rF lF lG g G D F C : exp (extc ..) (code_info lG) (U ! lG (extc ..))`
+   — the codomain code `C` pushed along the under'-lift `ounder`, landing as a
+   code over the extended target env `extc`.  Structurally `act_code_wf` over
+   `ounder` instead of `g`: `exp_subst` then a "U subst" conversion, whose only
+   non-reflexive component reuses `U_subst_eq` instantiated at `ounder`. *)
+Lemma act_cod_wf rF lF lG g G D F C
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  : wf_term ott [] (act_cod rF lF lG g G D F C)
+      (s_exp (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)
+             (code_info lG)
+             (oU orel lG (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D))).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold act_cod, dom_info, extc, oexp_subst, s_exp.
+  eapply wf_term_conv.
+  - eapply wf_term_by.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + repeat first
+        [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+        | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+        | (apply ounder_wf; eassumption)
+        | (apply El_act_code_ty; eassumption)
+        | (apply act_code_wf; eassumption)
+        | eassumption
+        | (eapply Elab.wf_term_by';
+             [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - cbn [with_names_from sort_subst apply_subst substable_sort
+         Substable.apply_subst0 term_substable].
+    sort_cong.
+    all: cbn [Model.eq_term core_model].
+    all: try solve [ eapply eq_term_refl; ott_build ].
+    change (eq_term ott []
+      (s_ty (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D) (code_info lG))
+      (con "ty_subst"
+         [oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G); code_info lG;
+          ounder rF lF g G D F;
+          oext (oEl rF lF G F) (term_info rF lF) G;
+          oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D])
+      (oU orel lG (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D))).
+    apply U_subst_eq;
+      first [ (apply ounder_wf; eassumption) | eassumption | ott_build ].
+Qed.
+
 (* TODO (file 4 body, continued):
-   - remaining under'-lift cluster: `act_cod` / `cod_at` (codomain code over
-     `ounder`, reusing `ounder_wf`), then `act_member` (naive `exp_subst` type
-     converted via a "Pi_rel subst" analogue) and `mapp` (`app_rel` over the
-     three).
+   - remaining under'-lift cluster: `cod_at` (instantiate `act_cod` at the
+     argument via `snoc a id`, reusing `act_cod_wf` + a "ty_subst_id"
+     conversion), then `act_member` (naive `exp_subst` type converted via a
+     "Pi_rel subst" analogue) and `mapp` (`app_rel` over the three).
    - then the fundamental lemma proper:
        wf_term ott [] e t -> reducible e   (and the eq_term -> RedTm PER side),
      by Pyrosome cut-elimination on canonical derivations; discharges the
