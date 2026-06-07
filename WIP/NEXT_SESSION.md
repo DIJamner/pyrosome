@@ -1,5 +1,77 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z9 — MUTUAL-FUND motive + 3 LEAVES validated (WIP/MutualFund.v, green, axiom-free); rtt_ne TIGHTENED (LogicalRelation.v, committed); but the Pi-case REFLECT hits a U-INJECTIVITY / circularity wall. **DECISION NEEDED (see fork below).**
+
+This session (3 commits, all pushed):
+1. **WIP/MutualFund.v** — validated the mutual-fundamental motive and the three
+   LEAF cases (nat/empty/ne), green + axiom-free (`Print Assumptions` =
+   `egraph_sound`). Design:
+   - `elt_sort {G A B} (r:RedTy ott G A B) : osort` — the canonical MEMBER sort,
+     read off the `RedTy_tot` constructor by `match projT2 r`: nat_sort/empty_sort/
+     `el_sort rN lN G na`(neutral, reduct)/Pi-exp-sort. Computes on the smart ctors
+     (elt_sort_nat/empty/ne = refl).
+   - motive `Pmot = (esc_ty * esc_tm * reflect_at)`: esc_ty (free S, the
+     RedTy_*_sound leaves), esc_tm + reflect_at both at `elt_sort r`.
+   - leaf_nat/empty/ne discharged by RedTy_Nat/Empty_sound, RedNatMem_sound/reflect,
+     RedNe_sound_at/reflect (all pre-existing).
+2. **LogicalRelation.v — rtt_ne TIGHTENED** (Dustin's call). Was `RedNe t` with one
+   LOOSE `t` conflating the code-level `na~nb` sort and the member sort. Now carries
+   `rN lN`; `na~nb` at the U code-sort `code_sort rN lN G`; member relation
+   `RedNe (el_sort rN lN G na)` (El of the WHNF reduct `na`, STABLE under anti_l/r).
+   New helpers `code_sort`/`el_sort`. Re-threaded RedTy_ne / RedTy_rect Hne / induction
+   pattern / RedTy_ne_refl / RedTy_ne_reflect. LogicalRelation.vo + FundamentalLemma.vo
+   rebuild GREEN (no downstream break).
+3. WIP re-greened against the tightened rtt_ne.
+
+### THE Pi-case BLOCKER (precise, and why it is the next design call)
+escape_ty@Pi / escape_tm@Pi reduce MECHANICALLY to the already-proven
+`RedTy_Pi_sound` / `RedTm_Pi_eta_sound`, GIVEN a bound-variable reducibility
+witness `raa' : RDom (extG) wkn os hd hd`. That `raa'` = REFLECT the bound var
+`hd` into the DOMAIN fiber `DomRed extG wkn os`. The reflect IH expects `hd` at
+`elt_sort (DomRed ..)`; but `hd : el_sort rF lF extG (act_code wkn F)` — the El of
+the domain code at the Pi former's SYMBOLIC relevance/level `rF,lF`.
+
+For a NAT/EMPTY domain the fiber's member sort is canonical
+(`nat_sort = el_sort orel oL0 ..`). Bridging `el_sort rF lF .. (act_code F)` ≡
+`el_sort orel oL0 .. (oNat ..)` needs the CODE part (`act_code F ≡ oNat` — free via
+`reds_sound`) AND the rel/lvl part `rF ≡ orel`, `lF ≡ oL0`. `lF≡oL0` comes free
+(code_info/`next` inversion), but **`rF ≡ orel` requires injectivity of `oU` under
+`eq_term`** (`oU rF lF ≡ oU orel oL0 → rF ≡ orel`). That injectivity is normally a
+CONSEQUENCE of the LR / normalization, so demanding it to BUILD the fundamental
+lemma is CIRCULAR; and the project's cut-elim (CutElim/ConvElim/WfCutElim) exposes
+only `invert_wf_*` (rule inversions), no type-constructor injectivity under eq_term.
+
+Root cause: a NAT-domain Pi only TYPECHECKS when `rF≡orel` (you cannot type `oNat`
+in `oU rF lF` otherwise), so the equality lives in the Pi's TYPING DERIVATION — but
+`RedTy_rect` (induction on the reducibility witness) does NOT carry that derivation,
+and `DomRed` is an abstract field, so the equality is unrecoverable inside the
+RedTy_rect Pi branch. Stored-field / case-split workarounds just relocate the same
+`rF≡orel` obligation (→ U-inj again).
+
+### FORK for Dustin (how to supply `rF≡orel` non-circularly)
+- **(A) Prove the fundamental lemma by induction on the TYPING derivation**, not
+  `RedTy_rect`. At a Pi the domain's typing yields `rF≡orel` for a Nat domain
+  (standard LR shape: reducible/valid context + reducible substitutions; the bound
+  var enters as a related pair from the valid extended context). escape stays a
+  RedTy_rect corollary; reflect/reducibility come from the typing induction.
+- **(B) Store the rel/lvl bridge as FIELDS** in rtt_nat/rtt_empty (an `eq_sort`
+  witness `el_sort rN lN G na ≡ nat_sort/empty_sort`), discharged at construction
+  (where rN,lN are concrete = orel/oL0, so refl). RedTy_rect then has it in hand.
+  Bloats the inductive; otherwise local.
+- **(C) Prove `oU`/relevance/level RIGIDITY (type-constructor injectivity) as a
+  standalone SYNTACTIC metatheorem** (relevance/lvl are rigid inductive sorts with
+  no equational rules; a small bool/nat model of relevance+level may discharge it
+  without the LR — verify non-circular first).
+
+RECOMMENDATION: (A) — it is the standard fundamental-lemma structure and supplies
+ALL the typing-derivation equalities (rel/lvl rigidity, domain wf for the bound
+var) for free; the RedTy_rect mutual lemma alone is structurally too weak for the
+reflect direction. The escape leaves + RedTy_Pi_sound + RedTm_Pi_eta_sound + the
+WIP motive/leaves all carry over.
+
+(Below: z8 and earlier. z8's "wire one RedTy_rect, motive=escape*reflect" plan is
+SUPERSEDED by the fork above — RedTy_rect handles escape but not reflect.)
+
 ## UPDATE 2026-06-07z8 — escape-at-Pi BOTH SIDES COMPLETE + rtt_pi env-index bug FIXED (4 commits, all GREEN, only `egraph_sound`). NEXT = reflect@Pi + wire the mutual `RedTy_rect` (escape_ty * escape_tm * reflect).
 
 This session landed the entire ESCAPE side at Pi, modulo the bound-variable reflect:
