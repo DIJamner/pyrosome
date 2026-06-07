@@ -3511,10 +3511,63 @@ Proof.
     apply RedNe_reflect; repeat split; eassumption.
 Qed.
 
-(* TODO (file 4 body, continued):
-   - The full under'-lift Kripke-builder cluster is now TYPED
-     (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
-     LogicalRelation.v RedTy_tot Pi case is fully discharged on the syntax side.
-   - NEXT: the VR / valid-context + typing-induction fundamental lemma; the Pi
-     case of `Pmot` is built there (it needs the bound-var reflect, which is
-     discharged via the distinctness lemmas above). *)
+(* ====================================================================== *)
+(* VR-layer groundwork: reduction is a CONGRUENCE at the principal arg of   *)
+(* `exp_subst` (index 0 = the substituted code/term).  This is the          *)
+(* substrate of the Kripke ACTION soundness the Pi case needs: the          *)
+(* `act_code`/`act_member` of a reduct is a reduct, so a domain/codomain    *)
+(* code that reduces-to-whnf still reduces-to-whnf after being pushed along  *)
+(* an object substitution `g`.  Generic over the tail args (the type/info/   *)
+(* env annotations of `exp_subst`), so it applies to both `act_code`         *)
+(* (code push) and `act_member` (member push).                              *)
+(* ====================================================================== *)
+Lemma whstep_exp_subst_cong A A' rest
+  : OperationalBridge.star (whstep string ott ott_pa) A A' ->
+    OperationalBridge.star (whstep string ott ott_pa)
+      (con "exp_subst" (A :: rest)) (con "exp_subst" (A' :: rest)).
+Proof.
+  intro H. induction H.
+  - constructor.
+  - eapply OperationalBridge.star_step.
+    + exact IHstar.
+    + eapply (whstep_congr string ott ott_pa "exp_subst" (b :: rest) 0 b c).
+      * reflexivity.
+      * reflexivity.
+      * exact H0.
+Qed.
+
+(* The Kripke push of a term that weak-head reduces to `w` weak-head reduces
+   to the push of `w` (one `exp_subst`-congruence run).  `act_code`/`act_member`
+   are both `oexp_subst _ _ _ g G' G` with the pushed term at index 0, so this
+   covers both.  (whnf of the pushed `w` is supplied by the caller — a pushed
+   whnf may itself be a redex, e.g. `exp_subst g (Nat) -> Nat`, so the caller
+   chains one more `reds` step to the true whnf.) *)
+Lemma star_act_code rF lF g G D A w
+  : OperationalBridge.star (whstep string ott ott_pa) A w ->
+    OperationalBridge.star (whstep string ott ott_pa)
+      (act_code rF lF g G D A) (act_code rF lF g G D w).
+Proof.
+  intro H. unfold act_code, oexp_subst. apply whstep_exp_subst_cong. exact H.
+Qed.
+
+Lemma star_act_member rF lF lG g G D F C f w
+  : OperationalBridge.star (whstep string ott ott_pa) f w ->
+    OperationalBridge.star (whstep string ott ott_pa)
+      (act_member rF lF lG g G D F C f) (act_member rF lF lG g G D F C w).
+Proof.
+  intro H. unfold act_member, oexp_subst. apply whstep_exp_subst_cong. exact H.
+Qed.
+
+(* TODO (file 4 body, continued) — STEP 3 remaining (the typing-induction
+   fundamental lemma):
+   - The mutual ESCAPE/REFLECT lemma (Pmot) Pi case + the hard direction
+     (typing-derivation induction producing RedTy/RedTm), structured by
+     `wf_judge_ind` with a substitution-generalized motive keyed on the
+     sort's object env (P [] e (code_sort r l G') := forall D g, osub G' D g ->
+     RedTy D e[g] e[g]).  The Pi case builds DomRed/CodRed from the args-IH on
+     F / C; the bound-var reflect consumes relevance_canon / lvl_canon +
+     code_sort_rel_neq_irr / code_sort_lvl_neq_L1_L0 to discharge rF=orel /
+     lF=oL0 (or proof-irrelevance for an irrelevant domain).
+   - Kripke action soundness for the Nat/Empty/Ne leaves uses
+     star_act_code (above) + the per-former subst redex (Nat subst / Empty
+     subst / exp_subst-of-neutral). *)
