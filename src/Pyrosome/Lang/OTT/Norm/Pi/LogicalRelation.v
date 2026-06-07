@@ -491,4 +491,33 @@ Section RedTyConcrete.
   Definition RedTy_Nat G : RedTy G (oNat G) (oNat G) :=
     RedTy_nat (RNat_Nat G) (RNat_Nat G).
 
+  (* ---- the Nat fiber is a (backward-closed) PER ---- *)
+  (* Nat members never recurse into `RedTy`, so symmetry and backward closure
+     are self-contained inductions on `RedNatMem` (no irrelevance / typing
+     needed); they feed the fundamental lemma's Nat term cases directly. *)
+  Lemma RedNatMem_sym G a b : RedNatMem G a b -> RedNatMem G b a.
+  Proof.
+    induction 1.
+    - eapply rnm_zero; eassumption.
+    - eapply rnm_suc; eassumption.
+    - eapply rnm_ne; [ eassumption | eassumption | apply ne_eq_sym; eassumption ].
+  Qed.
+
+  Lemma RedNatMem_back_l G a a' b
+    : star whstep a a' -> RedNatMem G a' b -> RedNatMem G a b.
+  Proof.
+    intros H Hm; destruct Hm.
+    - eapply rnm_zero; [ eapply reds_back; eassumption | eassumption ].
+    - eapply rnm_suc; [ eapply reds_back; eassumption | eassumption | eassumption ].
+    - eapply rnm_ne; [ eapply reds_back; eassumption | eassumption | eassumption ].
+  Qed.
+
+  Lemma RedNatMem_back_r G a b b'
+    : star whstep b b' -> RedNatMem G a b' -> RedNatMem G a b.
+  Proof.
+    intros H Hm.
+    apply RedNatMem_sym; eapply RedNatMem_back_l;
+      [ eassumption | apply RedNatMem_sym; eassumption ].
+  Qed.
+
 End RedTyConcrete.
