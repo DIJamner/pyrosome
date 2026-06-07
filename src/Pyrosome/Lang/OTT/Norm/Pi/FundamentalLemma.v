@@ -1766,6 +1766,53 @@ Proof.
     + compute; reflexivity.
 Qed.
 
+(* ====================================================================== *)
+(* El_cong / ext_cong: congruence of code-decoding and env-extension.      *)
+(* These reconcile the two codomain environments in the escape-at-Pi       *)
+(* Pi_rel congruence: from F ~ F' we get El F ~ El F', hence               *)
+(* ext G (El F) ~ ext G (El F') (as envs), so the codomain codes C, C'     *)
+(* (which live over these distinct envs) can be compared. *)
+(* ====================================================================== *)
+Lemma El_cong rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : eq_term ott [] (s_ty G (term_info rF lF)) (oEl rF lF G F) (oEl rF lF G F').
+Proof.
+  pose proof ott_wf as Hwf.
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons.
+    2:{ exact HFF'. }
+    eapply eq_args_refl.
+    1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+    repeat first [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects | progress ott_build | eassumption ].
+Qed.
+
+Lemma ext_cong rF lF G A A'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HAA' : eq_term ott [] (s_ty G (term_info rF lF)) A A')
+  : eq_term ott [] s_env (oext A (term_info rF lF) G) (oext A' (term_info rF lF) G).
+Proof.
+  pose proof ott_wf as Hwf.
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons.
+    2:{ exact HAA'. }
+    eapply eq_args_refl.
+    1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+    repeat first [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects | progress ott_build | eassumption ].
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
