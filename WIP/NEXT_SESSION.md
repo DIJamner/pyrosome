@@ -35,11 +35,16 @@ THIS SESSION (committed+pushed on `gluing-nbe`):
    the placeholder; `RedNe` wraps ne_eq. `nat_sort G` = exp sort of El(Nat) at L0.
    Empty members deferred (proof-irrelevant; trivial PER) — add when needed.
 
-**NEXT = file 4 `FundamentalLemma.v`.** This is where the DEFERRED correctness of
-the builders gets exercised: assemble `ott := ott_pi ++ ott_nat ++ ott_base ++
-subst_ott ++ ott_info`, get `wf_lang ott` (from the Derive `*_wf` lemmas:
-ott_pi_wf : wf_lang_ext (ott_base++subst_ott++ott_info) ott_pi, etc. — chain
-wf_lang_ext into a single wf_lang), instantiate `l := ott`. Then prove
+**file 4 `FundamentalLemma.v` FOUNDATION LANDED (committed+pushed):**
+`ott := ott_pi ++ ott_nat ++ ott_base ++ subst_ott ++ ott_info` + `wf_lang ott`
+proved (bottom-up `wf_lang_concat`; `lang_ext_monotonicity` weakens `ott_pi_wf`
+over `ott_nat`; `compute_all_fresh`).  GOTCHA: `Open Scope string` (from the
+imported OTT lang files) shadows list `++` — annotate `(... ++ ...)%list`.
+`wf_lang_concat`'s l1/l2 are IMPLICIT (no `_ _`).  `ott_wf` inherits the standard
+`egraph_sound` axiom from the OTT lang wf proofs (the LR machinery stays
+axiom-free).
+
+**NEXT = file 4 BODY (the fundamental lemma).** instantiate `l := ott` and prove
 `wf_term ott [] e t -> RedTy/RedTm ...` by Pyrosome cut-elim
 (Theory/CutElim/CutFreeInd/WfCutElim) on canonical derivations. The hard sub-
 goals: (a) the act_code/cod_at/under' terms are well-typed (the under'-lift
