@@ -296,6 +296,26 @@ Definition mapp (rF lF lG g G D F C f a : tm) : tm :=
   oapp_rel rF lF lG (act_code rF lF g G D F) (act_cod rF lF lG g G D F C)
     (act_member rF lF lG g G D F C f) a D.
 
+(* ---- neutral preservation along the Kripke operations ---- *)
+(* Pushing a member `f` along `g` (`exp_subst`, principal arg 0) preserves
+   neutrality; so does applying it (`app_rel`, principal arg 1).  These feed the
+   reflect-at-Pi case: a neutral function applied to any argument is neutral, so
+   it lands back in the neutral fiber of the codomain. *)
+Lemma act_member_neutral rF lF lG g G D F C f
+  : neutral ott_pa f -> neutral ott_pa (act_member rF lF lG g G D F C f).
+Proof.
+  intro Hf; unfold act_member, oexp_subst.
+  eapply neutral_elim with (i:=0); [ reflexivity | reflexivity | exact Hf ].
+Qed.
+
+Lemma mapp_neutral rF lF lG g G D F C f a
+  : neutral ott_pa f -> neutral ott_pa (mapp rF lF lG g G D F C f a).
+Proof.
+  intro Hf; unfold mapp, oapp_rel.
+  eapply neutral_elim with (i:=1); [ reflexivity | reflexivity | ].
+  apply act_member_neutral; exact Hf.
+Qed.
+
 Section RedTyConcrete.
   Context (l : Rule.lang string) (wfl : wf_lang l).
 
