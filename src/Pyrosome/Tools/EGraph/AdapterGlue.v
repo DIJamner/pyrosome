@@ -295,7 +295,7 @@ Section WithVar.
             (fun sub => add_open_term succ sort_of l true false sub (con n (id_args c))) rf
       | sort_eq_rule c t1 t2 =>
           QueryOpt.sequent_of_states_seq
-            (@! let sub <- add_ctx succ sort_of l false false c in
+            (@! let sub <- add_ctx_gen succ sort_of l false false (fun x => inb x (fv_sort t1)) c in
                 let x1 <- add_open_sort succ sort_of l false false sub t1 in
                 ret (sub, x1))
             (fun '(sub, x1) =>
@@ -303,7 +303,11 @@ Section WithVar.
                   (@Defs.union V V_Eqb V V_map V_map V_trie unit HX x1 x2)) rf
       | term_eq_rule c e1 e2 t =>
           QueryOpt.sequent_of_states_seq
-            (@! let sub <- add_ctx succ sort_of l false false c in
+            (@! let sub <- add_ctx_gen succ sort_of l false false
+                             (fun x => match e1 with
+                                       | con _ _ => inb x (fv e1)
+                                       | var _ => false
+                                       end) c in
                 let x1 <- add_open_term succ sort_of l false false sub e1 in
                 ret (sub, x1))
             (fun '(sub, x1) =>
