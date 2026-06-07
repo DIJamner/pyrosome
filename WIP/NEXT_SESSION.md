@@ -66,6 +66,25 @@ GATE: step 3's variable-reflect ⇒ `RedTy_sound` total is gated on the mutual
 fundamental lemma (escape_ty + escape_tm + reflect bundled in one `RedTy_rect`).
 The reflect-at-Pi side consumes `mapp_ne_eq2` (DONE) + escape_tm at the domain.
 
+**CRITICAL SUBTLETY discovered (read before attempting step 3/4).** In
+`rtt_pi`'s `CodRed`, the SECOND code is `cod_at rF lF lG g G D F' C' a'` — note
+it uses the domain code `F'` (and `C'`, `a'`) but the SAME Kripke machinery
+`g`, `D` as the first.  For the escape instantiation (D := ext G (El **F**),
+g := wkn-over-El-**F**, a=a':=hd-over-El-**F**) the second code becomes
+`cod_at .. wkn_F G (ext G (El F)) F' C' hd_F` — a MIXED instantiation: the
+substitution machinery (ounder/snoc_a) is built from **F** but the code pushed
+is **F'/C'**, whose home env is `ext G (El F')`.  So `cod_at_wkn_hd_eq` (which
+needs machinery AND code BOTH = the same X) does NOT directly collapse the
+second to `C'`.  The fix is the F≡F' reconciliation: since `El F ≡ El F'`
+(`El_cong`), the F-machinery ≡ F'-machinery (as substitutions), so
+`cod_at(machinery=F) F' C' hd_F ≡ cod_at(machinery=F') F' C' hd_F' ≡ C'`
+(swap machinery by F≡F', THEN `cod_at_wkn_hd_eq` at F').  This means the Pi
+escape cannot treat the two sides symmetrically/independently — F≡F' (step 2)
+must be threaded into the second-side collapse.  A clean intermediate to build
+next: a `cod_at_machinery_cong` (cod_at is congruent in its g/D/a machinery
+arguments under eq_term, given the code fixed) so the F→F' machinery swap is
+one lemma.  El_cong/ext_cong are the leaves for it.
+
 (Superseded: z5's "NEXT = cod_at_wkn_hd_eq".)
 
 ## UPDATE 2026-06-07z5 — id/var-collapse builder `sub_collapse` **COMPLETE** (GREEN, axiom-free modulo `egraph_sound`, in `FundamentalLemma.v`). NEXT = `cod_at_wkn_hd_eq` (`cod_at(wkn,hd) ≡ C`) then escape-at-Pi.
