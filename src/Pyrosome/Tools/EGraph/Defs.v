@@ -206,8 +206,20 @@ Section WithVar.
     (alloc_opaque V succ V V_map V_map V_trie _).
 
 
-  Definition add_ctx (c : ctx) : state instance _ :=
+  (* Like [add_ctx], but skips emitting the sort subterm, [sort_of] atom, and
+     [union] for any context variable [x] with [no_sort x = true].  Such a
+     variable is still allocated a fresh node and recorded in the returned
+     substitution, so it can still be looked up while opening a term/sort; only
+     its sort *requirement* is dropped from the query.  This is sound for the
+     query side of an equational rule when [x] appears in the LHS: the LHS atoms
+     already bind [x]'s node, and a term's sort is unique up to equivalence, so
+     the dropped [sort_of] constraint is redundant. *)
+  Definition add_ctx_gen (no_sort : V -> bool) (c : ctx) : state instance _ :=
     list_Mfoldr (fun '(x,t) sub =>
+                   if no_sort x
+                   then (@! let {(state instance)} x' <- alloc_opaque in
+                            ret (x,x')::sub)
+                   else
                    (*use the empty substitution to indicate the identity.
                       Assumes that the input egraph starts with an allocator
                     *)
@@ -225,6 +237,9 @@ Section WithVar.
                      let tx' <- hash_entry sort_of [x'] in
                      let _ <- union t_v tx' in
                      ret (x,x')::sub) c [].
+
+  Definition add_ctx (c : ctx) : state instance _ :=
+    add_ctx_gen (fun _ => false) c.
 
   End SortFlag.
   
@@ -403,16 +418,29 @@ Section WithVar.
        As a design question, is that what I want?
      *)
     | sort_eq_rule c t1 t2 =>
+        (* Drop the query's sort requirements for ctx vars appearing in the LHS
+           [t1]: their nodes are bound by the LHS atoms and their sorts are
+           determined up to equivalence.  A sort is always a [scon], so every
+           free var of [t1] occurs as an atom argument (no bare-var case). *)
+        let skip x := inb x (fv_sort t1) in
         sequent_of_states
-          (@!let sub <- add_ctx false false c in
+          (@!let sub <- add_ctx_gen false false skip c in
              let x1 <- add_open_sort false false sub t1 in
              ret (sub,x1))
           (fun '(sub,x1) =>
              @! let x2 <- add_open_sort true false sub t2 in
                (union x1 x2))
     | term_eq_rule c e1 e2 t =>
+        (* As above, drop query sort requirements for ctx vars in the LHS [e1].
+           Guard the degenerate [e1 = var x] case: then [x]'s node is the whole
+           LHS and is referenced by no atom, so dropping its sort would leave it
+           unbound. *)
+        let skip x := match e1 with
+                      | con _ _ => inb x (fv e1)
+                      | var _ => false
+                      end in
         sequent_of_states
-          (@!let sub <- add_ctx false false c in
+          (@!let sub <- add_ctx_gen false false skip c in
              let x1 <- add_open_term false false sub e1 in
              ret (sub,x1))
           (* TODO: should I add that t is its sort?*)

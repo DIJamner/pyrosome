@@ -1748,6 +1748,37 @@ Proof.
 Qed.
 
 
+(* Substitution inversion: a substitution [s : c' -> c] is well-formed as soon
+   as (a) the image [e[/s/]] of *some* term [e] well-typed in [c'] is itself
+   well-formed in [c], and (b) every ctx var of [c'] that does NOT occur in [e]
+   is independently shown well-formed at its (substituted) sort.  Variables that
+   DO occur in [e] get their well-formedness for free from [e[/s/]] being
+   well-formed: the derivation of [e[/s/]] witnesses exactly the sort equations
+   needed to bridge each variable's "use sort" inside [e] back to its declared
+   sort in [c'] (the bridge that, taken in isolation, would require [s] to
+   already be known well-formed).
+
+   This is the key lemma enabling minimized e-graph rule queries: the LHS [e1]
+   of an equational rule plays the role of [e], so the ctx vars appearing in the
+   LHS need no [sort_of] atom in the query, while the remaining vars supply the
+   explicit witnesses.
+
+   ADMITTED: provable via the conversion-elimination induction
+   ([ConvElim.conv_ind] / [CutFreeInd]); deferred. *)
+Lemma wf_subst_from_image (l : lang) c' e t
+  : wf_lang l ->
+    wf_ctx l c' ->
+    wf_term l c' e t ->
+    forall c s ts,
+      map fst s = map fst c' ->
+      wf_term l c e[/s/] ts ->
+      (forall x t', In (x,t') c' -> ~ In x (fv e) ->
+                    wf_term l c (subst_lookup s x) t'[/s/]) ->
+      wf_subst l c s c'.
+Proof.
+Admitted.
+
+
 End WithVar.
 
 (* TODO: assess benefits of symmetry and transitivity in hints
