@@ -1,5 +1,79 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z18 — z18 STEP 1 partial: the SYMBOLIC-relevance member-sort bridge (`elt_sort_eq_El_gen`, handles the irrelevant domain WITHOUT a fork) + the bound-var typing (`bound_var_typed`) + `osub_wknF` LANDED (green, axiom-clean, pushed). But the bound-var REDUCIBILITY witness `RedTm (DomRed) hd hd` is BLOCKED by a structural fact the z9/z15/z17 plan overlooked: **the Pyrosome bound variable `hd` is NOT `neutral`.** QUESTION FOR DUSTIN below.
+
+### What landed this session (FundamentalLemma.v, 1 commit, pushed)
+1. **`elt_sort_eq_El_gen`** — the SYMBOLIC-relevance generalization of z17's
+   `elt_sort_eq_El`. For ANY relevance `rX` (not just `orel`), `elt_sort r` is
+   `eq_sort`-equal to `El rX lX G X` when `X : code_sort rX lX G`. Each branch pins
+   the buried `rX/lX` from the reduct's OWN typing via `code_sort_rel_lvl_eq` (Nat
+   ⇒ orel/oL0; **Empty ⇒ oirr/oL0 — NO LONGER vacuous, this IS the irrelevant case**;
+   Ne ⇒ rN/lN; Pi ⇒ orel/lG). This DISSOLVES the z9 relevant/irrelevant fork for the
+   bound var: no case-split on `rF` is needed — the bridge is uniform. Axiom-clean.
+2. **`bound_var_typed`** — `hd` types at `elt_sort (DomRed extGF wknF os)` for the
+   Kripke world `extGF=ext G (El F)`, `wknF=wkn`. = `act_code_wf` (X at code_sort rF
+   lF extGF) + the El-subst sort reconciliation (`El_subst_eq`) for hd's native type
+   + the `elt_sort_eq_El_gen` bridge + `wf_term_conv`. Axiom-clean.
+3. **`osub_wknF`** — `wkn : sub extGF G` IS an `osub G extGF wkn` (the Kripke world-
+   extension at which CodRed is instantiated for the bound var). Axiom-clean.
+
+### THE BLOCKER (z18) — `hd` is NOT `neutral`, so the domain REFLECT IH cannot fire
+The bound-var reducibility witness `RedTm (DomRed extGF wknF os) hd hd` (needed to
+instantiate CodRed for `cod_collapse_both` ⇒ esc_ty@Pi, and for esc_tm@Pi) was
+planned as the DOMAIN REFLECT IH applied at `hd`. But `reflect_at` requires
+`neutral ott_pa hd`, and **`hd` is NOT neutral in this encoding**:
+- `Neutral.v`: `neutral := neutral_var (var x) | neutral_elim (con whose pa-principal
+  arg is neutral)`. `ott_pa "hd" = None` (it is not an eliminator), so `hd =
+  con "hd" [El F; iF; G]` is a whnf-but-NOT-neutral former.
+- The domain member relation `RedTm (DomRed ..) hd hd` can ONLY hold via the
+  neutral fiber (`rnm_ne`/`red_ne`), which carries `ne_eq`, which DEMANDS
+  `neutral hd /\ neutral hd`. `hd` reduces to nothing (it's whnf) and is not zero/
+  suc/lam, so there is NO domain-member witness for `hd` under the current `neutral`.
+- This is unavoidable for the ESCAPE direction too: `C ~ C'` (esc_ty@Pi) needs the
+  codomain escape IH at SOME `raa' : RDom extGF wknF os hd hd`, whose only source is a
+  domain member at `hd hd`. (reflect@Pi itself is fine — there `raa'` is a HYPOTHESIS.)
+
+The z9/z15/z17 notes repeatedly say "hd neutral (it's a var)" — that is FALSE for the
+Pyrosome explicit-substitution encoding, where the context-head variable is the
+projection `con "hd"`, not `var x`. The whole bound-var-via-reflect plan rests on
+this incorrect premise.
+
+### QUESTION FOR DUSTIN (z18) — how should the bound variable `hd` be made reducible?
+The reflect/`ne_eq` machinery is built on `neutral`, but the substitution-calculus
+bound variable `hd` (a `con "hd"` projection) is whnf-but-not-`neutral`. Pick one:
+  (N1) **Extend `neutral` to count projections/variables.** Add `hd` (and `wkn`-
+       composed projections `hd∘wkn^n`, the de-Bruijn variables) as neutral. This is
+       the metamltt-faithful "a variable is neutral" — but `hd`/`wkn` are NOT
+       eliminators (no principal arg), so it needs a NEW `neutral` constructor (a
+       "variable-projection" clause), with a discipline ensuring those projections
+       are genuinely inert (they ARE whnf already). Ripple: Neutral.v + re-verify
+       every `neutral`/`whnf`/`reds`/anti-closure lemma + the LR's `mapp_neutral`/
+       `act_*_neutral` (these compose under the new clause). Most faithful; touches
+       the file-2 neutral core.
+  (N2) **Add a dedicated DomRed member for the bound var** (a non-reflect path): a
+       constructor/lemma giving `RedTm (DomRed ..) hd hd` directly from `hd`'s
+       typing + the domain RedTy, bypassing `ne_eq`. E.g. a "var is reducible"
+       leaf baked into the fiber (Nat: an `rnm_var hd`; Ne: an explicit
+       projection-member). Avoids touching `neutral` but bloats every fiber and the
+       PER/anti-closure proofs, and must be threaded through `RedTy_rect`.
+  (N3) **Move to the typing-induction fundamental lemma NOW** (z9 fork A, deferred):
+       induct on the TYPING derivation with a substitution-generalized motive; the
+       bound var enters the extended valid context as a reducible pair supplied by
+       the CONTEXT-reducibility hypothesis (metamltt `varRed`/valid-context), NOT
+       reflected. This is the standard structure and SIDESTEPS the `hd`-neutrality
+       question entirely (the var's reducibility is an INPUT from the valid context,
+       not derived). It is the larger build but the mathematically robust one — and
+       z15 already documented that the hard direction MUST be this `wf_judge_ind`
+       induction regardless. RECOMMEND N3 (with N1 as the value-world prerequisite
+       if the valid-context member for a Nat/Ne-domain var still needs `hd` neutral).
+The three new lemmas above (`elt_sort_eq_El_gen`/`bound_var_typed`/`osub_wknF`)
+are REUSED by all three options. The `RedTy_Pi_sound`/`RedTm_Pi_eta_sound`/
+`cod_collapse_both`/`at_pi_app`/`mapp_ne_eq2` escape+reflect ENGINE is unaffected;
+only the bound-var domain MEMBER is the open question. I recommend (N3) but it is a
+real re-plan of the hard direction — your call before I commit to the large build.
+
+(Below: z17 and earlier.)
+
 ## UPDATE 2026-06-07z17 — STEP 1 (codomain member-sort BRIDGE) + STEP 2 PREREQ (Pi-code typing inversion) both LANDED (green, axiom-clean, pushed). The Pi-case assembly is now fully unblocked; only the bound-var reducibility witness + the RedTy_rect wiring remain.
 
 ### What landed this session (FundamentalLemma.v, 2 commits, both pushed)
