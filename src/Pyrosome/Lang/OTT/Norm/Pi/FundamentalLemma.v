@@ -632,9 +632,263 @@ Proof.
       first [ (apply snoc_a_wf; eassumption) | eassumption | ott_build ].
 Qed.
 
+(* The "Pi_rel subst" computation rule under an explicit substitution:
+   `exp_subst g (Pi_rel rF lF lG F C G) = Pi_rel rF lF lG (act_code)(act_cod) D`.
+   This is the OTT rule whose codomain push is exactly the `ounder` under'-lift;
+   the (large) RHS reuses `act_code`/`act_cod` definitionally.  Packaged
+   checker-free like `U_subst_eq`. *)
+Lemma Pi_rel_subst_eq rF lF lG g G D F C
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  : eq_term ott [] (s_exp D (code_info lG) (oU orel lG D))
+      (con "exp_subst" [oPi_rel rF lF lG F C G; oU orel lG G; code_info lG; g; G; D])
+      (oPi_rel rF lF lG (act_code rF lF g G D F) (act_cod rF lF lG g G D F C) D).
+Proof.
+  pose proof ott_wf as Hwf.
+  pose (s := [("B", C); ("F", F); ("lG", lG); ("lF", lF); ("rF", rF);
+              ("g", g); ("G'", G); ("G", D)] : subst string).
+  change (eq_term ott []
+    ({{s #"exp" "G" (#"info" #"rel" (#"next" "lG")) (#"U" "G" #"rel" "lG") }} [/s/])
+    ({{e #"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" "lG")) (#"U" "G'" #"rel" "lG")
+            (#"Pi_rel" "G'" "rF" "lF" "lG" "F" "B") }} [/s/])
+    ({{e #"Pi_rel" "G" "rF" "lF" "lG"
+            (#"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" "lF")) (#"U" "G'" "rF" "lF") "F")
+            (#"exp_subst"
+               (#"ext" "G" (#"info" "rF" (#"iota" "lF"))
+                  (#"El" "G" "rF" "lF" (#"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" "lF")) (#"U" "G'" "rF" "lF") "F")))
+               (#"ext" "G'" (#"info" "rF" (#"iota" "lF")) (#"El" "G'" "rF" "lF" "F"))
+               (#"snoc"
+                  (#"ext" "G" (#"info" "rF" (#"iota" "lF"))
+                     (#"El" "G" "rF" "lF" (#"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" "lF")) (#"U" "G'" "rF" "lF") "F")))
+                  "G'" (#"info" "rF" (#"iota" "lF")) (#"El" "G'" "rF" "lF" "F")
+                  (#"cmp"
+                     (#"ext" "G" (#"info" "rF" (#"iota" "lF"))
+                        (#"El" "G" "rF" "lF" (#"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" "lF")) (#"U" "G'" "rF" "lF") "F")))
+                     "G" "G'"
+                     (#"wkn" "G" (#"info" "rF" (#"iota" "lF"))
+                        (#"El" "G" "rF" "lF" (#"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" "lF")) (#"U" "G'" "rF" "lF") "F")))
+                     "g")
+                  (#"hd" "G" (#"info" "rF" (#"iota" "lF"))
+                     (#"El" "G" "rF" "lF" (#"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" "lF")) (#"U" "G'" "rF" "lF") "F"))))
+               (#"info" #"rel" (#"next" "lG"))
+               (#"U" (#"ext" "G'" (#"info" "rF" (#"iota" "lF")) (#"El" "G'" "rF" "lF" "F")) #"rel" "lG")
+               "B") }} [/s/])).
+  eapply eq_term_subst.
+  - eapply eq_term_by with (name := "Pi_rel subst").
+    apply named_list_lookup_err_in; compute; reflexivity.
+  - apply eq_subst_refl. unfold s. ott_build.
+  - eapply rule_in_ctx_wf with (name := "Pi_rel subst").
+    + exact Hwf.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + compute; reflexivity.
+Qed.
+
+(* `ty_subst g (El (Pi_rel .. G)) = El (Pi_rel .. D)` — push a Π-code under an
+   object substitution.  Composes "El subst" (outer) with `Pi_rel_subst_eq`
+   (under an `El` congruence).  This is the conversion `act_member` needs. *)
+Lemma El_Pi_subst_eq rF lF lG g G D F C
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  : eq_term ott [] (s_ty D (term_info orel lG))
+      (con "ty_subst" [oEl orel lG G (oPi_rel rF lF lG F C G); term_info orel lG; g; G; D])
+      (oEl orel lG D (oPi_rel rF lF lG (act_code rF lF g G D F) (act_cod rF lF lG g G D F C) D)).
+Proof.
+  pose proof ott_wf as Hwf.
+  eapply eq_term_trans with
+    (e12 := oEl orel lG D
+              (con "exp_subst" [oPi_rel rF lF lG F C G; oU orel lG G; code_info lG; g; G; D])).
+  - pose (s := [("e", oPi_rel rF lF lG F C G); ("l", lG); ("r", orel);
+                ("g", g); ("G'", G); ("G", D)] : subst string).
+    change (eq_term ott []
+      ({{s #"ty" "G" (#"info" "r" (#"iota" "l")) }} [/s/])
+      ({{e #"ty_subst" "G" "G'" "g" (#"info" "r" (#"iota" "l")) (#"El" "G'" "r" "l" "e") }} [/s/])
+      ({{e #"El" "G" "r" "l" (#"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" "l")) (#"U" "G'" "r" "l") "e") }} [/s/])).
+    eapply eq_term_subst.
+    + eapply eq_term_by with (name := "El subst").
+      apply named_list_lookup_err_in; compute; reflexivity.
+    + apply eq_subst_refl. unfold s. ott_build.
+    + eapply rule_in_ctx_wf with (name := "El subst").
+      * exact Hwf.
+      * apply named_list_lookup_err_in; compute; reflexivity.
+      * compute; reflexivity.
+  - eapply term_con_congruence.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + right; compute; reflexivity.
+    + exact Hwf.
+    + do 4 (simple eapply eq_args_cons;
+            [ | try (apply Pi_rel_subst_eq; eassumption);
+                try (eapply eq_term_refl; ott_build) ]);
+      apply eq_args_nil.
+Qed.
+
+(* `act_member rF lF lG g G D F C f : exp D (term_info ! lG) (El (Pi_rel .. D))`
+   — the function member `f` pushed along `g`, then re-typed (via El_Pi_subst_eq)
+   from its naive `ty_subst g (El (Pi_rel .. G))` type to the `act_code`/`act_cod`
+   Π over `D` that `mapp`'s `app_rel` consumes. *)
+Lemma act_member_wf rF lF lG g G D F C f
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (Hf : wf_term ott [] f (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  : wf_term ott [] (act_member rF lF lG g G D F C f)
+      (s_exp D (term_info orel lG)
+             (oEl orel lG D (oPi_rel rF lF lG (act_code rF lF g G D F) (act_cod rF lF lG g G D F C) D))).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold act_member, oexp_subst, s_exp.
+  eapply wf_term_conv.
+  - eapply wf_term_by.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + repeat first
+        [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+        | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+        | (apply El_act_code_ty; eassumption)
+        | (apply act_code_wf; eassumption)
+        | eassumption
+        | (eapply Elab.wf_term_by';
+             [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - cbn [with_names_from sort_subst apply_subst substable_sort
+         Substable.apply_subst0 term_substable].
+    sort_cong.
+    all: cbn [Model.eq_term core_model].
+    all: try solve [ eapply eq_term_refl; ott_build ].
+    change (eq_term ott []
+      (s_ty D (term_info orel lG))
+      (con "ty_subst" [oEl orel lG G (oPi_rel rF lF lG F C G); term_info orel lG; g; G; D])
+      (oEl orel lG D (oPi_rel rF lF lG (act_code rF lF g G D F) (act_cod rF lF lG g G D F C) D))).
+    apply El_Pi_subst_eq; assumption.
+Qed.
+
+(* `ty_subst (snoc a id) (El (act_cod)) = El (cod_at)` — instantiating the pushed
+   codomain code's decode at the argument is exactly the `cod_at` build (an "El
+   subst" with `g := snoc_a`). *)
+Lemma El_act_cod_subst_eq rF lF lG g G D F C a
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (Ha : wf_term ott [] a (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  : eq_term ott [] (s_ty D (term_info orel lG))
+      (con "ty_subst"
+         [oEl orel lG (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)
+              (act_cod rF lF lG g G D F C);
+          term_info orel lG;
+          osnoc a (oid D) (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D D;
+          oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D;
+          D])
+      (oEl orel lG D (cod_at rF lF lG g G D F C a)).
+Proof.
+  pose proof ott_wf as Hwf.
+  pose (s := [("e", act_cod rF lF lG g G D F C); ("l", lG); ("r", orel);
+              ("g", osnoc a (oid D) (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D D);
+              ("G'", oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D);
+              ("G", D)] : subst string).
+  change (eq_term ott []
+    ({{s #"ty" "G" (#"info" "r" (#"iota" "l")) }} [/s/])
+    ({{e #"ty_subst" "G" "G'" "g" (#"info" "r" (#"iota" "l")) (#"El" "G'" "r" "l" "e") }} [/s/])
+    ({{e #"El" "G" "r" "l" (#"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" "l")) (#"U" "G'" "r" "l") "e") }} [/s/])).
+  eapply eq_term_subst.
+  - eapply eq_term_by with (name := "El subst").
+    apply named_list_lookup_err_in; compute; reflexivity.
+  - apply eq_subst_refl. unfold s.
+    repeat first
+      [ simple apply wf_subst_nil | simple eapply wf_subst_cons
+      | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+      | (apply act_cod_wf; eassumption)
+      | (apply snoc_a_wf; eassumption)
+      | eassumption
+      | ott_build ].
+  - eapply rule_in_ctx_wf with (name := "El subst").
+    + exact Hwf.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + compute; reflexivity.
+Qed.
+
+(* `mapp rF lF lG g G D F C f a : exp D (term_info ! lG) (El (cod_at .. a))` — the
+   pushed member `act_member` applied to the argument `a` via `app_rel`, re-typed
+   (El_act_cod_subst_eq) to the instantiated codomain type the RedAtPi member
+   relation consumes.  THE LAST under'-lift builder; closes the cluster. *)
+Lemma mapp_wf rF lF lG g G D F C f a
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (Hf : wf_term ott [] f (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  (Ha : wf_term ott [] a (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  : wf_term ott [] (mapp rF lF lG g G D F C f a)
+      (s_exp D (term_info orel lG) (oEl orel lG D (cod_at rF lF lG g G D F C a))).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold mapp, oapp_rel, s_exp.
+  eapply wf_term_conv.
+  - eapply wf_term_by.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + repeat first
+        [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+        | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+        | (apply act_member_wf; eassumption)
+        | (apply act_cod_wf; eassumption)
+        | (apply act_code_wf; eassumption)
+        | (apply El_act_code_ty; eassumption)
+        | eassumption
+        | (eapply Elab.wf_term_by';
+             [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - cbn [with_names_from sort_subst apply_subst substable_sort
+         Substable.apply_subst0 term_substable].
+    sort_cong.
+    all: cbn [Model.eq_term core_model].
+    all: try solve [ eapply eq_term_refl; ott_build ].
+    change (eq_term ott []
+      (s_ty D (term_info orel lG))
+      (con "ty_subst"
+         [oEl orel lG (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)
+              (act_cod rF lF lG g G D F C);
+          term_info orel lG;
+          osnoc a (oid D) (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D D;
+          oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D;
+          D])
+      (oEl orel lG D (cod_at rF lF lG g G D F C a))).
+    apply El_act_cod_subst_eq; assumption.
+Qed.
+
 (* TODO (file 4 body, continued):
-   - `act_member` (naive `exp_subst` type converted via a "Pi_rel subst"
-     analogue) and `mapp` (`app_rel` over act_code/act_cod/act_member).
+   - The full under'-lift Kripke-builder cluster is now TYPED
+     (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
+     LogicalRelation.v RedTy_tot Pi case is fully discharged on the syntax side.
+   - NEXT: the fundamental lemma proper:
+       wf_term ott [] e t -> reducible e   (and the eq_term -> RedTm PER side),
+     by Pyrosome cut-elimination on canonical derivations; discharges the
+     Pi reflect/reify eta crux.
    - then the fundamental lemma proper:
        wf_term ott [] e t -> reducible e   (and the eq_term -> RedTm PER side),
      by Pyrosome cut-elimination on canonical derivations; discharges the
