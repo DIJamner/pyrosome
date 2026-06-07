@@ -1,5 +1,77 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z11 — STEP 3 VERIFICATION: the z10 claim "U-injectivity wall DISSOLVES syntactically" is **OVER-OPTIMISTIC for the actual Pi bound-var obligation**. The obligation is NOT crackable by steps 1+2 alone; it needs either a relevance/level MODEL (z9 option C) or an LR member-sort redesign. **DECISION NEEDED before building the VR layer** (see QUESTION at end).
+
+This session VERIFIED the exact shape of the Pi bound-var obligation (the prior
+agent explicitly flagged this as the thing to confirm first) and found that the
+syntactic route bottoms out. No code landed (the verification was conclusive that
+the next step is a design fork). FundamentalLemma.v / LogicalRelation.v UNTOUCHED,
+still green + axiom-clean. Findings:
+
+### The obligation shape (CONFIRMED)
+At the Pi former with a Nat (or Empty) domain, the bound variable
+`hd : el_sort rF lF extG (act_code wkn F)` must be reflected into the domain
+fiber, whose member sort is the CANONICAL `nat_sort extG = el_sort orel oL0 extG
+(oNat extG)` (`elt_sort` reads the canonical sort off the rtt_nat ctor). The
+reflect lemma `reflect_at (DomRed ..)` needs `hd` typed at `nat_sort extG`, so I
+need the SORT BRIDGE
+  eq_sort (el_sort rF lF extG (act_code wkn F)) (nat_sort extG).
+Both BUILDING this bridge (term_con_congruence on #"El") and DERIVING it from
+sort-uniqueness (`term_sorts_eq` on F's reduct gives
+`eq_sort (code_sort rF lF G) (code_sort orel oL0 G)`) require
+  rF == orel  AND  lF == oL0   (eq_term at #"relevance" / #"lvl").
+`relevance` appears ONLY inside the buried `#"U" r l G` (the i-component
+`info rel (next l)` fixes `rel`, NOT `r`); `lvl` appears in `next l` (i-comp) and
+in `U`. So both are buried under a type constructor.
+
+### Why steps 1+2 do NOT suffice (the z10 claim is wrong here)
+- `relevance_canon` reduces `rF` to syntactic `orel`/`oirr`; the `orel` case is
+  refl. The HARD residual is `eq_sort (code_sort oirr lF G) (code_sort orel oL0 G)
+  -> False` (rule out the irr case). `rel_neq_irr` (eq_term distinctness) does NOT
+  fire: it needs `eq_term #"relevance" oirr orel`, but the relevance is buried in
+  the U, and there is NO eq_term/eq_sort constructor injectivity to descend.
+- CUT-FREE descent (`CutElim.eq_sort_cong`/`eq_term_cong` DO carry `eq_args`, so a
+  SINGLE congruence step descends into arguments — VERIFIED, `cut_eq_sort_exp_descent`
+  conjunct+cong cases proved interactively) **cracks ONE cong step but NOT the
+  `eq_sort_trans` case**: the trans intermediate `t12`'s A-component is an ARBITRARY
+  type term, NOT necessarily a `#"U"`, so U-shape (hence the relevance argument) is
+  NOT preserved through trans. Step 2 survived trans only because it tracked the
+  coarse `tm_head` (trans-stable at #"relevance", where no rule rewrites heads);
+  the relevance ARGUMENT of U has no such trans-stable coarse invariant (and at the
+  #"ty"/#"tlvl" sorts heads ARE rewritten — "U subst", "next0"/"next1"). So
+  U-relevance injectivity under FULL `eq_sort` is genuinely a canonicity/normalization
+  fact, exactly the z9 wall — NOT dissolved.
+- The valid-context / `varRed` telescope (metamltt style) RELOCATES but does not
+  eliminate the bridge: constructing the bound-var's `RedTm (DomRed) hd hd` field
+  (= `RedNatMem extG hd hd` via `rnm_ne`) STILL needs `ne_eq (nat_sort extG) hd hd`,
+  i.e. `hd : nat_sort extG` — same bridge, same `rF==orel`.
+
+### The two viable resolutions (Dustin's call)
+- **(C) relevance + level MODEL** (z9's option, now confirmed NECESSARY not optional):
+  a Pyrosome `Model` interpreting `#"relevance"`/`#"lvl"` (e.g. as `bool`), proven
+  eq_sort/eq_term-SOUND, so the false `eq_sort (code_sort oirr ..)(code_sort orel ..)`
+  transports to `true=false`. Soundness handles `trans`/`sym`/`conv` FOR FREE (that's
+  the whole point of a model) — sidestepping the trans wall. Must interpret the SORT
+  `code_sort r l G` so its denotation EXPOSES `r` (i.e. `[[U r l]]`/`[[exp]]` depends
+  on r) — a relevance/proof-irrelevance model. Standard Pyrosome Model work
+  (eq_sort/eq_term soundness over `core_model`), but a real construction.
+- **(D) LR member-sort redesign**: change the Nat/Empty fibers' `elt_sort` (and the
+  member relations) to carry the Pi-FORMER's `rF`/`lF` rather than the canonical
+  `orel`/`oL0`, so the bound-var reflect never canonicalizes. Deep change to
+  LogicalRelation.v (rtt_nat/rtt_empty + RedNatMem sort + all the escape/reflect
+  leaves); avoids the model entirely but touches the LR core.
+
+RECOMMENDATION: (C) — the model is local, reusable (it also discharges any future
+relevance/level distinctness obligation), and does not perturb the LR. It is exactly
+what z9 step-2 originally scoped before z10's (wrong) "no model needed" shortcut.
+z10's `rel_neq_irr`/`L0_neq_L1`/`relevance_canon`/`lvl_canon` REMAIN USEFUL (the
+canon lemmas reduce the model's obligation to the single irr-vs-rel / L1-vs-L0
+distinctness fact the model must prove).
+
+QUESTION for Dustin: proceed with (C) the relevance/level soundness model, or (D)
+the LR member-sort redesign? (Recommend C.) Everything below (z10..) stands; only
+the "U-inj dissolves syntactically / no model needed" conclusion is corrected.
+
 ## UPDATE 2026-06-07z10 — plan (A) steps 1 AND 2 DONE, **fully SYNTACTIC (no model)**. The U-injectivity wall DISSOLVES syntactically. 2 commits, pushed, axiom-clean. NEXT = step 3 (VR/valid-context + typing-induction fundamental lemma).
 
 All in `FundamentalLemma.v` (`l := ott`), GREEN, `Print Assumptions` clean
