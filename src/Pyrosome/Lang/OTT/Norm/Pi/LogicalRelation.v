@@ -567,4 +567,61 @@ Section RedTyConcrete.
       [ exact ra | eapply reds_back; eassumption | exact h ].
   Qed.
 
+  (* ---- ESCAPE (soundness) for the neutral fiber ---- *)
+  (* Reducibility of a neutral pair, together with WELL-TYPEDNESS of the two
+     members, escapes to declarative `eq_term`.  Members are raw terms (the LR
+     does NOT bundle typing), so `reds_sound` needs the wf hypotheses supplied
+     externally — exactly what the fundamental lemma threads.  The neutral fiber
+     is non-recursive, so this is abstract over `l`.
+
+     NB the *Nat* fiber escape (`RedNatMem` ⇒ `eq_term`) and the *type-level*
+     escape (`RedTy` ⇒ `eq_term`) are NOT here: their `rnm_suc` / `rtt_pi`
+     cases recurse and must re-derive a sub-member's typing by subject reduction
+     + constructor inversion, which needs the CONCRETE `suc` / `Pi_rel` rule
+     shapes.  They land in file 4 (`FundamentalLemma`) where `l := ott`. *)
+  Lemma RedNe_sound t a b
+    : RedNe t a b -> wf_term l [] a t -> wf_term l [] b t -> eq_term l [] t a b.
+  Proof.
+    intros [na nb ra rb h] Hwfa Hwfb.
+    pose proof (@reds_sound string _ _ _ l wfl ott_pa a na t Hwfa ra) as H1.
+    pose proof (@reds_sound string _ _ _ l wfl ott_pa b nb t Hwfb rb) as H2.
+    eapply eq_term_trans; [ exact H1 | ].
+    eapply eq_term_trans; [ | eapply eq_term_sym; exact H2 ].
+    exact (proj2 (proj2 h)).
+  Qed.
+
+  (* ---- REFLECT leaves: a well-typed neutral is reducible ---- *)
+  (* The easy direction of the fundamental lemma's neutral/variable cases: a
+     well-typed stuck term is a reducible member of its (neutral or Nat) fiber,
+     and a well-typed neutral type code is reducible.  All are constructors
+     (`reds_refl` on the whnf neutral + `ne_eq_refl`), hence abstract over `l`.
+     Reflect AT Π (a neutral function is a reducible Π-member) is the eta crux
+     and is NOT a leaf — it lands with the Pi case of the fundamental lemma. *)
+  Lemma RedNe_refl t a : neutral ott_pa a -> wf_term l [] a t -> RedNe t a a.
+  Proof.
+    intros Hn Hwf.
+    eapply red_ne; [ apply reds_refl; apply neutral_whnf; exact Hn
+                   | apply reds_refl; apply neutral_whnf; exact Hn
+                   | apply ne_eq_refl; assumption ].
+  Qed.
+
+  Lemma RedNatMem_refl_ne G a
+    : neutral ott_pa a -> wf_term l [] a (nat_sort G) -> RedNatMem G a a.
+  Proof.
+    intros Hn Hwf.
+    eapply rnm_ne; [ apply reds_refl; apply neutral_whnf; exact Hn
+                   | apply reds_refl; apply neutral_whnf; exact Hn
+                   | apply ne_eq_refl; assumption ].
+  Qed.
+
+  Lemma RedTy_ne_refl G A t
+    : neutral ott_pa A -> wf_term l [] A t -> RedTy G A A.
+  Proof.
+    intros Hn Hwf.
+    eapply (RedTy_ne A A t);
+      [ apply reds_refl; apply neutral_whnf; exact Hn
+      | apply reds_refl; apply neutral_whnf; exact Hn
+      | apply ne_eq_refl; assumption ].
+  Qed.
+
 End RedTyConcrete.
