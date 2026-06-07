@@ -1,5 +1,94 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z20 — esc_ty@Pi FULLY VALIDATED (interactively); esc_tm/reflect motive STRENGTHENED with a B-side typing presupposition + 2 reusable Pi-case helpers LANDED (1 commit, green + axiom-clean, pushed). esc_tm@Pi / reflect@Pi reduced to ONE remaining sort-transport (the eq_args body-sort move in the lam_rel congruence); RedTm_Pi_eta_sound2 plan fully worked out interactively.
+
+### What LANDED + pushed (FundamentalLemma.v, 1 commit)
+- **MOTIVE STRENGTHENING** (load-bearing): `esc_tm` / `reflect_at` now carry a
+  B-side typing presupposition `forall Sb, wf_term [] B Sb -> ...`.  WHY: the
+  member sort `elt_sort r` reads only the A-side Pi data (F, C), but the
+  two-sided `RedAtPi` member relates `mapp .. F C t a` with `mapp .. F' C' u a'`
+  (B-side F', C' on the RIGHT).  Bridging needs F~F' / C~C', which need the
+  B-side F'/C' typings — recovered from `wf_term [] B Sb` via `reds_wf` (on hB)
+  + `Pi_rel_inv`.  Leaves just `intros Sb HB` and ignore it (re-greened).  The
+  hard direction always has both codes' typings, so it is free there.
+- **`El_Pi_member_inv`** — invert a member typed at `El orel lG G (Pi rF lF lG
+  F C G)` to recover G/rF/lF/lG/F/C (presupposition `eq_term_wf_sort` on
+  `eq_term_refl` -> invert #"exp" -> invert #"El" -> `Pi_rel_inv`).  esc_tm /
+  reflect recover the A-side Pi typings here (esc_ty uses `Pi_rel_inv` on the
+  code's typing instead).  Axiom-clean.
+- **`oPi_rel_code_cong`** — Pi-code congruence at the CODE sort `code_sort orel
+  lG G` from F~F' / C~C'; bridges the two-sided member relation's B-side data
+  back to A-side via `El_cong` on the Pi codes.  Axiom-clean.
+
+### esc_ty@Pi — FULLY VALIDATED interactively (ready to paste into RedTy_fund)
+The proof script is solid (validated end to end in a live session).  Recipe,
+inside `RedTy_rect` Pi case after `unfold Pmot; split;[split|]`, goal 1:
+- `intros S HA HB`; `reds_wf` on hA/hB types both Pi codes; `Pi_rel_inv` on
+  each gives HG/HrF/HlF/HlG/HF/HC (A-side) and HF'/HC' (B-side) + HeqS.
+- HFF' = DomRed esc_ty IH @ g:=`oid G` (osub identity, built by `ott_build` on
+  `s_sub G G`), composed with `act_code_id_eq` on both ends.
+- bound-var world `extGF/wknF/hdF` via `osub_wknF`; the bound-var DOMAIN MEMBER
+  `Hraa' : RedTm (DomRed extGF wknF) hd hd` is the DOMAIN reflect IH
+  (`IHDomW_rfl`) applied at hd — UNIFORM across ALL fibers (including the Pi
+  domain), cleaner than `bound_var_redtm`'s Pi-premise threading.  NOTE: with
+  the strengthened motive, `IHDomW_rfl` now takes an extra Sb0 arg
+  `wf (act_code wknF F') Sb0` — supply `HactWF'` (`act_code_wf` on HF').
+- HCC' = `cod_collapse_both` fed HCodEsc = CodRed esc_ty IH (`IHCodW_ty`) @ the
+  bound-var world, at sort `s_exp extGF (code_info lG)(oU orel lG extGF)`; the
+  two `cod_at` typings via `cod_at_wf` (the F'/C' one needs hd typed at
+  `El(act_code wknF F')`, reached by `El_cong` fed by `IHDomW_ty` on
+  act_code F~F').
+- finish: `eapply (RedTy_Pi_sound rF lF lG G F C F' C' A B S ...)` with all
+  args EXPLICIT (a bare `; try eassumption` mis-instantiates an evar — give the
+  full arg list).
+
+### esc_tm@Pi — VALIDATED up to ONE residual sort-transport
+Same preamble (El_Pi_member_inv for A-side, reds_wf+Pi_rel_inv on hB for B-side,
+HFF'/HCC' as above, bound-var world).  Destruct the member:
+`unfold RedTy_R, RedTy_pi, projT1 in Hm; cbn [projT1] in Hm; destruct Hm as
+[Happ]`.  `Happ` @ the bound-var world gives `Hbodymem : RCod (mapp F C t hd)
+(mapp F' C' u hd)`.  Escape it with the CODOMAIN esc_tm IH `IHCodW_tm` (needs
+both mapp typings at `elt_sort(CodRed)` — `mapp_wf` gives them at `El(cod_at F C
+hd)` / `El(cod_at F' C' hd)`; the u-side mapp_wf needs u@B-Pi via `wf_term_conv`
++ `El_cong` + `oPi_rel_code_cong`; bridge to `elt_sort(CodRed)` via
+`elt_sort_eq_El_gen` ∘ CodRed esc_ty IH).  Then `RedTm_Pi_eta_sound2` closes it.
+- **`RedTm_Pi_eta_sound2`** (state validated; to be added to the file): a MIXED
+  eta variant — takes t,u @ A-Pi, F~F', C~C', and `Hbody : mapp F C t hd ~ mapp
+  F' C' u hd`, concludes t~u.  Proof: a PARAMETRIC `Heta F0 C0 f0` (generalize
+  the existing `RedTm_Pi_eta_sound` eta-subst over F0/C0/f0); `Heta_t` (A-data)
+  + `Heta_u` (B-data: instantiate `Heta F' C' u`, needs u@B-Pi via
+  `oPi_rel_code_cong`+`El_cong`+conv, then convert the result back to A-Pi via
+  `eq_sort_sym HABeq`); `Hlamcong : lam_A ~ lam_B` via `term_con_congruence` on
+  lam_rel, **`left; exact HABeq`** for the result-sort disjunct (the two lams
+  are at A-Pi vs B-Pi — the LEFT disjunct lets you target A-Pi), eq_args = [body;
+  C~C'(HCC'); F~F'(HFF'); refl×4].
+  **THE ONE RESIDUAL**: the eq_args BODY position wants `Hbody'` at the
+  s2-substituted sort `El (ext G (El F')) C'` (B-side body sort), but `Hbody'`
+  is at `El (ext G (El F)) C` (A-side).  Transport via an `eq_sort` between
+  those two body sorts (ext-cong on El F~El F' + El-cong on C~C' across the env
+  change — the same heterogeneous move `cod_collapse_both` does).  Build that
+  eq_sort, `eq_term_conv Hbody' <it>`, done.  THEN `eq_term_trans
+  (eq_term_sym Heta_t) (eq_term_trans Hlamcong Heta_u)`.
+
+### reflect@Pi — same shape, NOT yet attempted
+Build a `RedAtPi` via `at_pi_app`: per `D g os a a' raa'`, give the codomain
+member `RCod (mapp F C a a0)(mapp F' C' b a0')` from `mapp_ne_eq2` (gives `ne_eq`
+at `El(cod_at a0')`, both F,C — needs the SAME F'/C'→F/C alignment on the second
+mapp as esc_tm) + the CODOMAIN reflect IH (transported across `elt_sort_eq_El_gen`
+∘ CodRed esc_ty IH).  The domain `a~a'` from `raa'` via the DOMAIN esc_tm IH.
+The second-mapp F'/C' alignment is the SAME residual transport as esc_tm.
+
+### NEXT (z21)
+1. Add `RedTm_Pi_eta_sound2` (discharge the one body-sort transport residual).
+2. Assemble `RedTy_fund` over `RedTy_rect`: leaves (z15) + esc_ty@Pi (validated)
+   + esc_tm@Pi (eta2) + reflect@Pi.  State as a clean top-level theorem;
+   `Print Assumptions` = only egraph_sound.
+3. Then the HARD direction by `wf_judge_ind` (z15 forced motive: `P [] e
+   (code_sort r l G') := forall D g, osub G' D g -> RedTy D e[g] e[g]`); leaves
+   = RNat_act/REmpty_act/RNe_act; Pi builds DomRed/CodRed from the F/C args-IH.
+
+(Below: z19 and earlier.)
+
 ## UPDATE 2026-06-07z19 — N1 EXECUTED (Dustin's directive): `hd` is now `neutral`, the z18 blocker is DISSOLVED, and the first-order bound-var reducibility witness `bound_var_redtm` LANDED. 2 commits, both green + axiom-clean (only egraph_sound), pushed.
 
 ### PART A — the `var` audit (confirmed the diagnosis)
