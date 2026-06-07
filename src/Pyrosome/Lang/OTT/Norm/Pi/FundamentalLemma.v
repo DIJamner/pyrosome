@@ -162,8 +162,33 @@ Proof.
                 apply U_subst_eq; assumption ] ].
 Qed.
 
+(* `extc rF lF g G D F` = `ext D (El (act_code …))` is the env `D` extended by
+   the (decoded) pushed domain code; the Kripke codomain lives over it.  It is
+   well-formed as an env: the `ext` rule needs `El (act_code …) : ty D (info rF
+   (iota lF))`, whose code argument is exactly `act_code_wf`'s conclusion.  Same
+   checker-free driver as `act_code_wf`, extended with an `act_code_wf` leaf. *)
+Lemma extc_wf rF lF g G D F
+  (HG : wf_term ott [] G (scon "env" []))
+  (HD : wf_term ott [] D (scon "env" []))
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (scon "sub" [G; D]))
+  (HF : wf_term ott [] F (scon "exp" [oU rF lF G; code_info lF; G]))
+  : wf_term ott [] (extc rF lF g G D F) (scon "env" []).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold extc, oext.
+  repeat first
+    [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+    | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+    | (apply act_code_wf; eassumption)
+    | eassumption
+    | (eapply Elab.wf_term_by';
+         [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+Qed.
+
 (* TODO (file 4 body, continued):
-   - remaining builder typings: `extc`, `act_member`, `act_cod`, `cod_at`,
+   - remaining builder typings: `act_member`, `act_cod`, `cod_at`,
      `mapp` (the `ounder` under'-lift is the genuinely fiddly one — its
      correctness is exactly the OTT "Pi_rel subst" under' annotation).
    - then the fundamental lemma proper:
