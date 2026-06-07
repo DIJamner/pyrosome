@@ -1,5 +1,50 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07y — LR META-THEORY SCAFFOLDING LANDED (4 commits, all GREEN + axiom-free, pushed). NEXT = the fundamental lemma proper (the Pi-Kripke crux) — but two LR-design gaps must be settled first (see below).
+
+THIS SESSION (in `src/.../Norm/Pi/LogicalRelation.v`, committed+pushed on `gluing-nbe`):
+the reusable LR meta-theory the fundamental lemma's NON-Pi cases consume, all
+self-contained (no induction on typing yet):
+- **`star_trans`** (transitivity of OperationalBridge's right-recursive `star`)
+  + **`reds_back`** (prepend a `whstep` prefix to a reduction-to-whnf).
+- **`RedTy_tot_anti_l/_r` + `RedTy_anti_l/_r`** — type-level BACKWARD (anti-)
+  reduction closure: weak-head-reducing either code `A`/`B` leaves the member
+  relation `R` unchanged (R depends on the env/Pi data, not the codes), so
+  `RedTy` is closed under backward reduction.  Needed by the conversion/β cases.
+- **`whnf_Nat/_Empty/_Pi_rel`** (canonical formers are whnf: `ott_pa head=None`)
+  + **`RedTy_Nat`** (closed base type Nat is reducible: `rtt_nat` over `reds_refl`).
+- **`RedNatMem_sym` + `RedNatMem_back_l/_r`** — the Nat FIBER is a backward-closed
+  PER (Nat members never recurse into RedTy ⇒ pure inductions on `RedNatMem`).
+All `Closed under the global context` (rocq_assumptions).
+
+**TWO LR-DESIGN GAPS discovered (settle BEFORE the fundamental lemma body):**
+1. **`RedTy_tot` has NO Empty case** — only `rtt_nat`/`rtt_ne`/`rtt_pi`.  So the
+   Empty TYPE code cannot be classified by the LR; Empty FORMATION in the
+   fundamental lemma has nowhere to land.  DECISION NEEDED: add `rtt_empty`
+   (mirroring `rtt_nat` with a trivial/empty member relation) OR drop Empty from
+   `ott` for the Π-normalization payoff.  (Members were already deferred as
+   "proof-irrelevant"; the TYPE case is the actual hole.)
+2. **`RedNe` requires BOTH members already NEUTRAL** (`ne_eq t a b` = neutral a /\
+   neutral b /\ eq_term) with NO `reds`-to-neutral witnesses.  So term-level
+   BACKWARD closure at a NEUTRAL TYPE is FALSE as-is (a well-typed term of
+   neutral type may reduce before becoming neutral).  The fundamental lemma's
+   term direction at neutral types will need `RedNe` to instead carry
+   `reds a na /\ reds b nb /\ ne_eq t na nb` (metamltt-style, like `RedNatMem`'s
+   `rnm_ne`).  This is an inductive change to `RedNe` (+ rtt_ne's member) — do it
+   together with gap 1 in one LR-shape revision, then re-prove the anti-closure
+   (the `rtt_ne` case of `RedTy_tot_anti_*` becomes trivially closable too).
+   NB also: `RedNatMem_trans` / whole-LR transitivity needs reds-determinism +
+   ott constructor injectivity (zero/suc/neutral disjoint) — lang-specific, deferred.
+
+**NEXT = fundamental lemma proper** (`wf_term ott [] e t -> RedTy/RedTm`,
++ the eq_term PER side), by Pyrosome cut-elimination on canonical derivations.
+Leaf type cases (Nat, neutral) + anti-closure are now in hand; the CRUX is the
+Pi case: build the Kripke `DomRed`/`CodRed` from the (now-typed) builders and
+discharge reflect/reify adequacy at Π (the eta crux). Suggested order: (i) settle
+gaps 1+2 (LR-shape revision), (ii) state `red_ty`/`red_tm` + the four mutual
+goals, (iii) set up the cut-elim induction (Theory/CutElim/CutFreeInd/WfCutElim),
+(iv) discharge leaf cases with this session's lemmas, (v) the Pi crux.
+
 ## UPDATE 2026-06-07x — FILE 4 KRIPKE-BUILDER CLUSTER **COMPLETE** (all GREEN, coqc-verified, only `egraph_sound`). Every `LogicalRelation.v` RedTy_tot Pi-case builder is now well-typed against the real OTT rules. **NEXT = the fundamental lemma proper** (`wf_term ott [] e t -> reducible e`) by Pyrosome cut-elimination; discharges the Pi reflect/reify eta crux.
 
 THIS SESSION (in `src/.../Norm/Pi/FundamentalLemma.v`, committed+pushed on `gluing-nbe`):
