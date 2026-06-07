@@ -2470,6 +2470,60 @@ Proof.
     unfold extc, dom_info in HUs; exact HUs.
 Qed.
 
+(* ====================================================================== *)
+(* cod_collapse_both -- assemble C ~ C' from the codomain escape at the    *)
+(* bound variable (HCodEsc) plus the domain code equality (HFF').  The     *)
+(* escape gives cod_at(wknF,hdF,F,C) ~ cod_at(wknF,hdF,F',C') at the F-env *)
+(* sort Sf; the LHS collapses to C (cod_at_wkn_hd_eq at F, env extGF), the *)
+(* RHS is MIXED (F-machinery + F'/C' code) and collapses to C' via the     *)
+(* machinery swap (cod_at_machinery_cong, F->F') THEN cod_at_wkn_hd_eq at  *)
+(* F', both at the F'-env sort Sf'.  The two envs reconcile by             *)
+(* ext_cong/El_cong + U_cong giving eq_sort Sf Sf'; the chain lands at the *)
+(* Sf' sort demanded by the Pi_rel congruence's C-position.               *)
+(* ====================================================================== *)
+Lemma cod_collapse_both rF lF lG G F C F' C'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (HC' : wf_term ott [] C' (s_exp (oext (oEl rF lF G F') (term_info rF lF) G) (code_info lG)
+                                  (oU orel lG (oext (oEl rF lF G F') (term_info rF lF) G))))
+  : let iF := term_info rF lF in
+    let extGF := oext (oEl rF lF G F) iF G in
+    let extGF' := oext (oEl rF lF G F') iF G in
+    let wknF := owkn (oEl rF lF G F) iF G in
+    let hdF := ohd (oEl rF lF G F) iF G in
+    eq_term ott [] (s_exp extGF (code_info lG) (oU orel lG extGF))
+      (cod_at rF lF lG wknF G extGF F C hdF)
+      (cod_at rF lF lG wknF G extGF F' C' hdF) ->
+    eq_term ott [] (s_exp extGF' (code_info lG) (oU orel lG extGF'))
+      C C'.
+Proof.
+  pose proof ott_wf as Hwf.
+  intros iF extGF extGF' wknF hdF HCodEsc.
+  pose proof (cod_at_wkn_hd_eq rF lF lG G F C HG HrF HlF HlG HF HC) as HL. cbv zeta in HL.
+  pose proof (cod_at_wkn_hd_eq rF lF lG G F' C' HG HrF HlF HlG HF' HC') as HR. cbv zeta in HR.
+  pose proof (cod_at_machinery_cong rF lF lG G F F' C' HG HrF HlF HlG HF HF' HFF' HC') as HMach.
+  cbv zeta in HMach.
+  pose proof (El_cong rF lF G F F' HG HrF HlF HFF') as HElFF'.
+  pose proof (ext_cong rF lF G (oEl rF lF G F) (oEl rF lF G F') HG HrF HlF HElFF') as HextGG'.
+  assert (HSS' : eq_sort ott []
+            (s_exp extGF (code_info lG) (oU orel lG extGF))
+            (s_exp extGF' (code_info lG) (oU orel lG extGF'))).
+  { unfold extGF, extGF', s_exp. sort_cong.
+    - cbn [Model.eq_term core_model]. exact HextGG'.
+    - cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
+    - cbn [Model.eq_term core_model].
+      apply (U_cong lG (oext (oEl rF lF G F) iF G) (oext (oEl rF lF G F') iF G) HlG HextGG'). }
+  exact (eq_term_trans (eq_term_conv (eq_term_trans (eq_term_sym HL) HCodEsc) HSS')
+           (eq_term_trans HMach HR)).
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
