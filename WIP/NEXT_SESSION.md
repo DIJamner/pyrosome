@@ -37,6 +37,35 @@ KEY STRUCTURE (reusable for any "push-then-instantiate collapses to identity"):
   `HUcCmp`.  `fold extG`/`fold Uext` (goal-only, NOT `in *` — self-ref) to unify
   let-folded vs literal `oext (oEl rF lF G F) iF G` occurrences.
 
+ALSO LANDED this session (FundamentalLemma.v, GREEN, only `egraph_sound`):
+- **`act_code_id_eq`** — DOMAIN id-collapse `act_code(id G) = exp_subst (id G) F
+  = F` (single `exp_subst_id`, natural sort = target, no conv).  Feeds `F ~ F'`
+  in the Pi type-escape (DomRed instantiated at `D:=G, g:=id G`).
+- **`El_cong`** / **`ext_cong`** — one-position congruences `F~F' ⇒ El F ~ El F'`
+  and `A~A' ⇒ ext A i G ~ ext A' i G`.  Needed because the Pi_rel congruence
+  compares the codomain codes `C, C'` which live over DISTINCT envs
+  `ext G (El F)` vs `ext G (El F')` — these reconcile the env component of the
+  sort (`sort_cong`'s env leaf).
+
+**ESCAPE-AT-Pi BUILDER TOOLKIT IS NOW COMPLETE.** Remaining = the mutual
+reflect/escape adequacy induction (the eta crux).  Precise assembly plan for
+the `RedTy_sound` Pi case (`P` = escape_ty), all builders in hand:
+  A reds Pi_rel F C G, B reds Pi_rel F' C' G; goal `eq_term S A B`.
+  1. `reds_sound`: A ≡ Pi_rel F C G, B ≡ Pi_rel F' C' G.
+  2. DomRed at (D:=G, g:=id G): escape (domain IH) ⇒ `act_code id F ≡ act_code
+     id F'`; rewrite both via `act_code_id_eq` ⇒ **F ≡ F'**.
+  3. CodRed at (D:=ext G (El F), g:=wkn, a=a':=hd): NEEDS a member witness
+     `RedTm (DomRed (ext G (El F)) wkn os) hd hd` = REFLECT at the domain for the
+     bound variable (THE MUTUAL ENTANGLEMENT).  Then escape (codomain IH) ⇒
+     `cod_at wkn C hd ≡ cod_at wkn C' hd`; rewrite both via `cod_at_wkn_hd_eq`
+     ⇒ **C ≡ C'**.
+  4. `term_con_congruence` on `Pi_rel`: eq_args = F≡F' (step 2) + C≡C' (step 3);
+     the C-position demanded sort uses F' (env `ext G (El F')`), so reconcile C's
+     env via `El_cong`/`ext_cong` (`eq_sort` from F≡F') + `eq_term_conv`.
+GATE: step 3's variable-reflect ⇒ `RedTy_sound` total is gated on the mutual
+fundamental lemma (escape_ty + escape_tm + reflect bundled in one `RedTy_rect`).
+The reflect-at-Pi side consumes `mapp_ne_eq2` (DONE) + escape_tm at the domain.
+
 (Superseded: z5's "NEXT = cod_at_wkn_hd_eq".)
 
 ## UPDATE 2026-06-07z5 — id/var-collapse builder `sub_collapse` **COMPLETE** (GREEN, axiom-free modulo `egraph_sound`, in `FundamentalLemma.v`). NEXT = `cod_at_wkn_hd_eq` (`cod_at(wkn,hd) ≡ C`) then escape-at-Pi.
