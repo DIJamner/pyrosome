@@ -1,5 +1,68 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z27 — *** D1 (Dustin's choice) DOES NOT CLOSE: the canonicalization transport needs SYNTACTIC reds-determinism at Pi, which funext/propext CANNOT supply and the LR design deliberately forbids. QUESTION re-surfaced; recommend pivot to D2. *** (NO src/ edits; tree green + only egraph_sound; protos WIP-only.)
+
+Dustin chose **D1** (finish the El-A `Prop` LR, accept `functional_extensionality` +
+`propositional_extensionality`). On execution I found D1's canonicalization transport
+(`redtm_canon`, built on `member_det`) is **FALSE at the Pi case** for a reason
+funext/propext cannot fix — surfaced below as a QUESTION before any tree edits.
+
+### What D1 requires, and where it breaks
+- D1's whole path is: re-sort the LR to `Prop` (member SORT a syntactic index — the El-A
+  redesign, VALIDATED in `WIP/LRPropProto.v`), carry the member RELATION `R` as a Prop
+  OUTPUT index (`exists R, RedTy_totP .. S R`), and CANONICALIZE it (use the fixed
+  predicate `RedTmP G A B S := exists R, RedTy_totP .. R /\ R a b` as THE member relation
+  everywhere) so the Pi smart constructor needs no choice. Canonicalization =
+  `redtm_canon : RedTy_totP G A B S R -> RedTy_totP G A B S (RedTmP G A B S)`. funext +
+  propext turn the pointwise-iff `member_det : R1 a b <-> R2 a b` into `R1 = R2` and
+  rewrite the fixed member index to the canonical one. **This hinges on `member_det`:
+  the member relation must be DETERMINED by `(G,A,B,S)`.**
+- **`member_det` is FALSE at the Pi case.** The Pi member relation
+  `RedAtPiP rF lF lG G F C F' C' RDom RCod` carries the B-SIDE codes `F' C'` and uses them
+  SYNTACTICALLY in the B-side application `mapp .. F' C' u a'`. The index
+  `S = pi_sort..F C..` pins only the A-side `F,C` (`oPi_rel` inj on the sort). `F'/C'`
+  come from the ctor premise `reds B (oPi_rel..F' C'..)` and FLOAT FREE: two derivations
+  at the SAME `(G,A,B,S)` can use a DIFFERENT reduct `F'0 C'0` of `B`, giving GENUINELY
+  different relations. Equating them needs `reds B` SYNTACTICALLY deterministic
+  (`whnf_det`) — but the OTT LR **deliberately avoids `whstep` confluence / `whnf_det`**
+  (LogicalRelation.v:17-21,117-124). `reds_eq` gives only `eq_term` of `F'`/`F'0`, and the
+  relation consumes them syntactically, so eq_term is insufficient. **funext/propext do
+  NOT help — there is no genuine pointwise-iff to lift.** (Verified interactively at
+  `member_det` goal 5; both non-Pi reflexive goals and the 4 cross-fiber neutrality-
+  contradiction goals DO close as the proto claimed; only Pi is the wall.)
+- ROOT CAUSE confirmed against the Type LR (LogicalRelation.v:382-448): the Type
+  Sig-output trick NEVER canonicalizes — `RedTy_pi` pulls the member relation per
+  `(D,g,os)` via `projT1` (a FUNCTION, free in Type), so the member relation need NOT be
+  determined by the indices. In Prop you can neither project the function out (choice =
+  E1) nor canonicalize (member_det FALSE at Pi). This is EXACTLY why metamltt/LogRel2
+  carry the member relation as a Type Record-of-functions (`PolyRedPack`) + adequacy.
+
+### *** QUESTION FOR DUSTIN (z27) — D1 is infeasible as scoped; pick the revival ***
+D1 ("finish the proto + add funext/propext") does NOT reach a Prop LR. To get one you
+must ALSO supply something funext/propext can't:
+  (D1') **Develop `reds`/`whstep` whnf-DETERMINISM** (a confluence-style result the design
+        explicitly rejected) so `member_det@Pi` holds. Large new development; re-opens the
+        confluence-free invariant the whole OTT LR was built to avoid. NOT RECOMMENDED.
+  (D1'') **Reformulate `RedAtPiP`** so the B-side codes are not carried syntactically
+        (existentially quantify `F'/C'` per application, or relate the two mapps up to
+        `eq_term`). A genuine LR REDESIGN; risks `RedTy_fund`'s reflect@Pi, which depends
+        on the specific `F'/C'`. Unvalidated; could re-open the z23 milestone.
+  (D2) **[RECOMMEND]** Revert to D2: a Type-valued cut-free OTT typing judgement + a
+        checker returning the derivation; induct on THAT for the hard direction. The LR +
+        `RedTy_fund` stay **Type** and axiom-clean; the El-A redesign becomes unnecessary
+        (it only ever served the Prop re-sort). D2 dodges the determinism requirement
+        entirely — the hard-direction recursor is Type, so no Prop motive, no
+        canonicalization, no member_det. Heavier infra (new typing inductive +
+        soundness/completeness vs `wf_term ott`), but it is the only route that keeps the
+        axiom budget AND the z23 milestone.
+
+MY READ: the determinism wall is intrinsic to the confluence-free LR design, so **D2** is
+the principled path. D1 cannot be finished as written. NO src/ edits made; tree green +
+only `egraph_sound`; both protos remain WIP-only; the El-A member-SORT idea is still valid
+and reusable should a Prop LR ever be wanted with a determinism development.
+
+(Below: z26 and earlier.)
+
 ## UPDATE 2026-06-07z26 — *** P1c PROTOTYPED: the El-A-indexed Prop LR VALIDATES as an inductive (positivity OK, Prop sort OK, elt_sort GONE), BUT the Prop re-sort hits a FOUNDATIONAL choice/positivity wall that the Type Sig-output design specifically dodges. QUESTION before migrating the real tree. *** (built tree UNTOUCHED + green/axiom-clean; two WIP protos compiled)
 
 ### What was validated (cheap, on protos — NO real-tree edits)
