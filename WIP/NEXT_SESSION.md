@@ -1,5 +1,74 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z13 — Dustin's "syntactic-uniqueness, no model/no D" directive: STEP 2 STRENGTHENED + LANDED (full syntactic equality at relevance/lvl, trans-stable, axiom-clean, committed+pushed). But the NARROW-TRIGGER fired: directive STEP 1 ("eq_sort ==> full syntactic equality") is **FALSE for #"exp"/#"ty" sorts** (verified against the real defs). The obligation needs the refinement Dustin predicted, but that refinement is **NOT a one-line fix** — it is a relevance-preservation metatheorem on ty/exp. QUESTION below.
+
+### LANDED this session (FundamentalLemma.v, green, only egraph_sound, committed+pushed)
+- `cut_eq_term_ott_rl_syntactic` / `core_eq_term_ott_rl_syntactic`:
+  `eq_term ott [] t a b -> sort_name t ∈ {relevance,lvl} -> a = b`
+  (FULL syntactic equality — strengthens z10's head-only `core_eq_term_ott_same_head`).
+  Proof = same cut-free + `core_implies_cut` bridge; the four rel/lvl rules
+  (rel/irr/L0/L1) have EMPTY ctxs so `eq_term_cong` descends to nil args ⇒ refl;
+  trans/sym/conv stable because the claim is itself a syntactic equality. This is
+  the trans-stable LEAF the bound-var obligation bottoms out at.
+
+### VERIFIED AGAINST THE REAL DEFS (the load-bearing check Dustin asked for)
+1. `Core.eq_sort` ctors = {eq_sort_by, eq_sort_subst, eq_sort_refl, eq_sort_trans,
+   eq_sort_sym}. NO eq_sort_cong — BUT `eq_sort_subst` relates `t1'[/s1/]`/`t2'[/s2/]`
+   where `eq_subst` recurses into `eq_term` at ARBITRARY arg-sorts. (Print confirmed.)
+2. `CutElim.eq_sort` ctors = {eq_sort_by, **eq_sort_cong**, eq_sort_trans, eq_sort_sym}.
+   `eq_sort_cong : eq_args c c' s1 s2 -> eq_sort (scon name s1)(scon name s2)` — DOES
+   recurse into term args via eq_args/eq_term. (Print confirmed.)
+3. **`ott` HAS term_eq_rules at sorts #"ty" AND #"exp"** (enumerated by vm_compute:
+   #"ty" — "El subst","U subst","ty_subst_cmp","ty_subst_id"; #"exp" — Pi beta×2,
+   "Pi_rel eta","*_subst","exp_subst_*",… ). So `eq_term ott c (scon "ty" _) A A'`
+   does NOT force `A = A'` (e.g. "U subst" rewrites `ty_subst g (U r l) = U r l`).
+   ⇒ via cut-free `eq_sort_cong` on #"exp", two `code_sort` (= `scon "exp" [oU r l G;
+   code_info l; G]`) sorts CAN be eq_sort-related while their #"ty" (oU) components
+   differ syntactically. **Directive STEP 1 is FALSE as literally stated.**
+
+### Why the predicted refinement is NOT one line (the trans wall, re-confirmed)
+The obligation `eq_sort ott extG (code_sort oirr lF G)(code_sort orel oL0 G) -> False`
+is a bare `eq_sort` between two #"exp" sorts (it arises in step 3 as type-uniqueness
+of `oNat`: `reds_sound` gives `eq_term (code_sort rF lF G) F (oNat G)`, and oNat is
+typed at `code_sort orel oL0 G`, so two wf typings of oNat ⇒ this eq_sort; OR via
+`term_sorts_eq` on F's reduct — z11/z12). A SINGLE cut-free `eq_sort_cong` descent
+#"exp"→#"ty"→ (#"U" cong) →#"relevance"/#"lvl" leaf WOULD discharge it (the new
+`core_eq_term_ott_rl_syntactic` is exactly the leaf). BUT `eq_sort_trans`'s
+intermediate is an ARBITRARY #"exp" sort whose #"ty" component need NOT be U-headed,
+so "the ty-component is `oU` with relevance r" is NOT a trans-stable invariant. There
+is no obvious coarse trans-stable reading of the buried U-relevance (no rule rewrites
+one relevance CONSTANT to another, but beta/subst at #"exp"/#"ty" drop/move subterms,
+so a naive `code_rel : tm -> option tm` extraction breaks at a None intermediate).
+Making it trans-stable = a genuine **relevance-preservation metatheorem on the #"ty"
+sub-language** (define a relevance-reading invariant on ty-terms and prove it
+preserved by U-subst/El-subst/ty_subst_cmp/ty_subst_id + their congruences + conv).
+That is tractable (the #"ty" rules genuinely never alter relevance) but it is a real
+multi-lemma development, NOT a one-liner.
+
+### QUESTION FOR DUSTIN (z13) — narrow-trigger fired per your instruction
+Your directive says: surface ONLY if eq_sort admits term-arg congruence making
+step 1 false; it does (cut-free `eq_sort_cong`; Core `eq_sort_subst`). Your predicted
+fix ("bottoms out at rel/lvl arg-sorts") is the RIGHT idea but is NOT trans-stable as
+a single descent — the bare obligation eq_sort can be `eq_sort_trans`-built through a
+non-U #"exp" intermediate. Three ways to close it, pick one:
+  (R1) **Relevance-preservation metatheorem on #"ty"** (the faithful realization of
+       your framing): define a relevance-reading on ty-terms, prove it preserved by
+       every #"ty" rule + cong + conv over cut-free eq_term, lift through #"exp" cong,
+       and read off `oirr ≠ orel`. ~6–10 lemmas, axiom-free, no model/no D.
+       RECOMMENDED (smallest, in the spirit of "no model"). I can build it next.
+  (R2) **Avoid the bare eq_sort in step 3**: structure the valid-context/reducible-
+       substitution layer so the bound var's relevance equality is read DIRECTLY off
+       the Pi domain's TYPING derivation (single `wf_term`/inversion, no eq_sort
+       round-trip), so a single-cong descent suffices and `core_eq_term_ott_rl_syntactic`
+       discharges it. Requires the step-3 VR layer to be designed to never produce the
+       trans-built eq_sort. Cleanest if the VR layer is written that way from the start.
+  (R3) the z11/z12 model/D route — you've REJECTED this. Listed for completeness.
+I recommend **(R1)** (or (R2) if the VR layer can be shaped to avoid the round-trip).
+The new `core_eq_term_ott_rl_syntactic` is the leaf both R1 and R2 consume; it is
+already landed.
+
+(Below: z12 and earlier.)
+
 ## UPDATE 2026-06-07z12 — IMPLEMENTING (C). Scoped the relevance/level MODEL against the project's ACTUAL soundness machinery (`inductive_implies_semantic` / `compute_preserving_compiler`). Confirmed (C) is necessary (no cheaper syntactic route) AND found the ONLY viable cheap realization is a small *syntactic target language* `D` reached by a `preserving_compiler` discharged by the e-graph tactic. But `D`'s DESIGN is a new fork with real consequences → surfaced as QUESTION (recommend D-as-syntactic-lang). No code landed this session (would have been a wrong-`D` risk); FundamentalLemma.v / LogicalRelation.v UNTOUCHED + green.
 
 ### What was verified this session
