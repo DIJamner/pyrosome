@@ -1259,6 +1259,297 @@ Proof.
   eapply eq_term_trans; [ exact HeqS | eapply eq_term_sym; exact H2 ].
 Qed.
 
+
+(* ====================================================================== *)
+(* Escape-at-Pi prerequisite: the id/var-collapse substitution identity.    *)
+(* cmp (ounder wkn) (snoc hd (id extG)) = id  at sort sub extG extG          *)
+(* (extG := ext G (El F)).  Feeds cod_at(wkn,hd) = C, the Pi-codomain        *)
+(* instantiation at the bound variable used by escape-at-Pi.                *)
+(* ====================================================================== *)
+Lemma sub_collapse rF lF G F
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HD : wf_term ott [] (oext (oEl rF lF G F) (term_info rF lF) G) s_env)
+  (Hwkn : wf_term ott [] (owkn (oEl rF lF G F) (term_info rF lF) G)
+            (s_sub (oext (oEl rF lF G F) (term_info rF lF) G) G))
+  (Hhd : wf_term ott [] (ohd (oEl rF lF G F) (term_info rF lF) G)
+            (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (term_info rF lF)
+               (oEl rF lF (oext (oEl rF lF G F) (term_info rF lF) G)
+                  (act_code rF lF (owkn (oEl rF lF G F) (term_info rF lF) G)
+                     G (oext (oEl rF lF G F) (term_info rF lF) G) F))))
+  : let extG := oext (oEl rF lF G F) (term_info rF lF) G in
+    let wkn  := owkn (oEl rF lF G F) (term_info rF lF) G in
+    let hd   := ohd (oEl rF lF G F) (term_info rF lF) G in
+    eq_term ott [] (s_sub extG extG)
+      (ocmp (ounder rF lF wkn G extG F)
+            (osnoc hd (oid extG)
+               (oEl rF lF extG (act_code rF lF wkn G extG F))
+               (term_info rF lF) extG extG)
+            extG
+            (oext (oEl rF lF extG (act_code rF lF wkn G extG F)) (term_info rF lF) extG)
+            extG)
+      (oid extG).
+Proof.
+  pose proof ott_wf as Hwf.
+  intros extG wkn hd. unfold ounder, act_code, dom_info.
+  pose (ElaF := oEl rF lF extG (oexp_subst F (oU rF lF G) (code_info lF) wkn G extG)).
+  pose (iF := term_info rF lF).
+  pose (extc := oext ElaF iF extG).
+  pose (wknD := owkn ElaF iF extG).
+  pose (hdD := ohd ElaF iF extG).
+  pose (g0 := ocmp wkn wknD G extG extc).
+  pose (snoc_a := osnoc hd (oid extG) ElaF iF extG extG).
+  (* ----- g-equality: cmp snoc_a g0 = wkn (cmp_assoc; wkn_snoc; id_left).
+     VALIDATED interactively (axiom-free). ----- *)
+  assert (Hgeq : eq_term ott [] (s_sub extG G) (ocmp g0 snoc_a G extc extG) wkn).
+  { pose (sa := [("h", wkn); ("g", wknD); ("f", snoc_a); ("G4", G); ("G3", extG); ("G2", extc); ("G1", extG)] : subst string).
+    eapply eq_term_trans with (e12 := ({{e #"cmp" "G1" "G3" "G4" (#"cmp" "G1" "G2" "G3" "f" "g") "h"}})[/sa/]).
+    { change (eq_term ott []
+        (({{s #"sub" "G1" "G4"}})[/sa/])
+        (({{e #"cmp" "G1" "G2" "G4" "f" (#"cmp" "G2" "G3" "G4" "g" "h")}})[/sa/])
+        (({{e #"cmp" "G1" "G3" "G4" (#"cmp" "G1" "G2" "G3" "f" "g") "h"}})[/sa/])).
+      eapply eq_term_subst.
+      - eapply eq_term_by with (name := "cmp_assoc"). apply named_list_lookup_err_in; compute; reflexivity.
+      - apply eq_subst_refl. unfold sa.
+        repeat first
+          [ progress ott_build
+          | (apply El_act_code_ty; eassumption)
+          | (apply act_code_wf; eassumption)
+          | (simple apply snoc_a_wf; eassumption)
+          | eassumption
+          | (eapply Elab.wf_term_by'; [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ])
+          | (eapply wf_term_conv;
+               [ exact Hhd
+               | unfold s_exp; sort_cong; cbn [Model.eq_term core_model];
+                 try solve [ eapply eq_term_refl; ott_build ];
+                 eapply eq_term_sym; apply ty_subst_id_El_eq; eassumption ]) ].
+      - eapply rule_in_ctx_wf with (name := "cmp_assoc").
+        + exact Hwf.
+        + apply named_list_lookup_err_in; compute; reflexivity.
+        + compute; reflexivity. }
+    eapply eq_term_trans with (e12 := ocmp wkn (oid extG) G extG extG).
+    - eapply term_con_congruence.
+      + apply named_list_lookup_err_in; compute; reflexivity.
+      + right. cbn [with_names_from]. reflexivity.
+      + exact ott_wf.
+      + cbn [with_names_from].
+        eapply eq_args_cons.
+        2:{ eapply eq_term_refl. eassumption. }
+        eapply eq_args_cons.
+        2:{ pose (sw := [("v", hd); ("A", oEl rF lF extG (act_code rF lF wkn G extG F)); ("i", iF); ("g", oid extG); ("G'", extG); ("G", extG)] : subst string).
+            change (eq_term ott []
+              (({{s #"sub" "G" "G'"}})[/sw/])
+              (({{e #"cmp" "G" (#"ext" "G'" "i" "A") "G'" (#"snoc" "G" "G'" "i" "A" "g" "v") (#"wkn" "G'" "i" "A")}})[/sw/])
+              (({{e "g"}})[/sw/])).
+            eapply eq_term_subst.
+            * eapply eq_term_by with (name := "wkn_snoc"). apply named_list_lookup_err_in; compute; reflexivity.
+            * apply eq_subst_refl. unfold sw.
+              repeat first
+                [ progress ott_build | (apply El_act_code_ty; eassumption) | (apply act_code_wf; eassumption) | eassumption
+                | (eapply wf_term_conv;
+                     [ exact Hhd
+                     | unfold s_exp; sort_cong; cbn [Model.eq_term core_model];
+                       try solve [ eapply eq_term_refl; ott_build ];
+                       eapply eq_term_sym; apply ty_subst_id_El_eq; eassumption ]) ].
+            * eapply rule_in_ctx_wf with (name := "wkn_snoc").
+              -- exact Hwf.
+              -- apply named_list_lookup_err_in; compute; reflexivity.
+              -- compute; reflexivity. }
+        eapply eq_args_refl.
+        1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+        repeat first [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects | eassumption ].
+    - pose (sl := [("f", wkn); ("G'", G); ("G", extG)] : subst string).
+      change (eq_term ott []
+        (({{s #"sub" "G" "G'"}})[/sl/])
+        (({{e #"cmp" "G" "G" "G'" (#"id" "G") "f"}})[/sl/])
+        (({{e "f"}})[/sl/])).
+      eapply eq_term_subst.
+      + eapply eq_term_by with (name := "id_left"). apply named_list_lookup_err_in; compute; reflexivity.
+      + apply eq_subst_refl. unfold sl. repeat first [ progress ott_build | eassumption ].
+      + eapply rule_in_ctx_wf with (name := "id_left").
+        * exact Hwf.
+        * apply named_list_lookup_err_in; compute; reflexivity.
+        * compute; reflexivity. }
+  (* ----- annotation equality: ty_subst g0 (El F) = ty_subst wknD (El act_code).
+     Brings the cmp_snoc-produced exp_subst annotation to snoc_hd's form. ----- *)
+  assert (annot_eq : eq_term ott [] (s_ty extc iF)
+            (con "ty_subst" [oEl rF lF G F; iF; g0; G; extc])
+            (con "ty_subst" [oEl rF lF extG (act_code rF lF wkn G extG F); iF; wknD; extG; extc])).
+  { eapply eq_term_trans with (e12 := con "ty_subst" [con "ty_subst" [oEl rF lF G F; iF; wkn; G; extG]; iF; wknD; extG; extc]).
+    - eapply eq_term_sym.
+      pose (sc := [("A", oEl rF lF G F); ("i", iF); ("g", wkn); ("f", wknD); ("G3", G); ("G2", extG); ("G1", extc)] : subst string).
+      change (eq_term ott []
+        (({{s #"ty" "G1" "i"}})[/sc/])
+        (({{e #"ty_subst" "G1" "G2" "f" "i" (#"ty_subst" "G2" "G3" "g" "i" "A")}})[/sc/])
+        (({{e #"ty_subst" "G1" "G3" (#"cmp" "G1" "G2" "G3" "f" "g") "i" "A"}})[/sc/])).
+      eapply eq_term_subst.
+      + eapply eq_term_by with (name := "ty_subst_cmp"). apply named_list_lookup_err_in; compute; reflexivity.
+      + apply eq_subst_refl. unfold sc.
+        repeat first
+          [ progress ott_build | (apply El_act_code_ty; eassumption) | (apply act_code_wf; eassumption) | eassumption
+          | (eapply Elab.wf_term_by'; [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+      + eapply rule_in_ctx_wf with (name := "ty_subst_cmp").
+        * exact Hwf.
+        * apply named_list_lookup_err_in; compute; reflexivity.
+        * compute; reflexivity.
+    - eapply term_con_congruence.
+      + apply named_list_lookup_err_in; compute; reflexivity.
+      + right. cbn [with_names_from]. reflexivity.
+      + exact ott_wf.
+      + cbn [with_names_from].
+        eapply eq_args_cons.
+        2:{ apply El_subst_eq; eassumption. }
+        eapply eq_args_refl.
+        1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+        repeat first
+          [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+          | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+          | progress ott_build | (apply El_act_code_ty; eassumption) | (apply act_code_wf; eassumption) | eassumption
+          | (eapply Elab.wf_term_by'; [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ]. }
+  (* ----- main chain: cmp ounder snoc_a = id ----- *)
+  pose (s := [("v", hdD); ("A", oEl rF lF G F); ("i", iF); ("g", g0); ("f", snoc_a); ("G3", G); ("G2", extc); ("G1", extG)] : subst string).
+  (* Step 1 (cmp_snoc) -- VALIDATED. *)
+  eapply eq_term_trans with (e12 := ({{e #"snoc" "G1" "G3" "i" "A" (#"cmp" "G1" "G2" "G3" "f" "g") (#"exp_subst" "G1" "G2" "f" "i" (#"ty_subst" "G2" "G3" "g" "i" "A") "v")}}) [/s/]).
+  { change (eq_term ott []
+      (({{s #"sub" "G1" (#"ext" "G3" "i" "A")}})[/s/])
+      (({{e #"cmp" "G1" "G2" (#"ext" "G3" "i" "A") "f" (#"snoc" "G2" "G3" "i" "A" "g" "v")}})[/s/])
+      (({{e #"snoc" "G1" "G3" "i" "A" (#"cmp" "G1" "G2" "G3" "f" "g") (#"exp_subst" "G1" "G2" "f" "i" (#"ty_subst" "G2" "G3" "g" "i" "A") "v")}})[/s/])).
+    eapply eq_term_subst.
+    - eapply eq_term_by with (name := "cmp_snoc"). apply named_list_lookup_err_in; compute; reflexivity.
+    - apply eq_subst_refl. unfold s.
+      repeat first
+        [ progress ott_build
+        | (apply hd_extc_wf; eassumption)
+        | (apply cmp_g0_wf; eassumption)
+        | (simple apply snoc_a_wf; eassumption)
+        | (apply El_act_code_ty; eassumption)
+        | (apply act_code_wf; eassumption)
+        | eassumption
+        | (eapply wf_term_conv;
+             [ exact Hhd
+             | unfold s_exp; sort_cong; cbn [Model.eq_term core_model];
+               try solve [ eapply eq_term_refl; ott_build ];
+               eapply eq_term_sym; apply ty_subst_id_El_eq; eassumption ]) ].
+    - eapply rule_in_ctx_wf with (name := "cmp_snoc").
+      + exact Hwf.
+      + apply named_list_lookup_err_in; compute; reflexivity.
+      + compute; reflexivity. }
+  (* Step 2: snoc (cmp snoc_a g0) (exp_subst snoc_a hdD) = snoc wkn hd = id.
+     congruence (g-position = Hgeq; v-position = snoc_hd, TODO) then snoc_wkn_hd. *)
+  eapply eq_term_trans with (e12 := osnoc hd wkn (oEl rF lF G F) iF G extG).
+  - eapply term_con_congruence.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + right. cbn [with_names_from]. reflexivity.
+    + exact ott_wf.
+    + cbn [with_names_from].
+      eapply eq_args_cons.
+      2:{ (* v-position: exp_subst snoc_a hdD = hd.  Proved REVERSED (hd = e1) so the
+             congruence's s2 = e1 carries the natural annotation ANNOT1. *)
+          eapply eq_term_sym.
+          eapply eq_term_trans with (e12 := oexp_subst hdD (con "ty_subst" [oEl rF lF extG (act_code rF lF wkn G extG F); iF; wknD; extG; extc]) iF snoc_a extc extG).
+          - (* hd = e1' : sym snoc_hd, conv SORT_id -> SORT_wkn *)
+            eapply eq_term_sym.
+            eapply eq_term_conv with (t := scon "exp" [con "ty_subst" [oEl rF lF extG (act_code rF lF wkn G extG F); iF; oid extG; extG; extG]; iF; extG]).
+            + pose (s3 := [("v", hd); ("A", oEl rF lF extG (act_code rF lF wkn G extG F)); ("i", iF); ("g", oid extG); ("G'", extG); ("G", extG)] : subst string).
+              change (eq_term ott []
+                (({{s #"exp" "G" "i" (#"ty_subst" "G" "G'" "g" "i" "A")}})[/s3/])
+                (({{e #"exp_subst" "G" (#"ext" "G'" "i" "A") (#"snoc" "G" "G'" "i" "A" "g" "v") "i" (#"ty_subst" (#"ext" "G'" "i" "A") "G'" (#"wkn" "G'" "i" "A") "i" "A") (#"hd" "G'" "i" "A")}})[/s3/])
+                (({{e "v"}})[/s3/])).
+              eapply eq_term_subst.
+              * eapply eq_term_by with (name := "snoc_hd"). apply named_list_lookup_err_in; compute; reflexivity.
+              * apply eq_subst_refl. unfold s3.
+                repeat first
+                  [ progress ott_build | (apply act_code_wf; eassumption) | (apply El_act_code_ty; eassumption) | eassumption
+                  | (eapply wf_term_conv; [ exact Hhd | unfold s_exp; sort_cong; cbn [Model.eq_term core_model]; try solve [ eapply eq_term_refl; ott_build ]; eapply eq_term_sym; apply ty_subst_id_El_eq; eassumption ]) ].
+              * eapply rule_in_ctx_wf with (name := "snoc_hd").
+                -- exact Hwf.
+                -- apply named_list_lookup_err_in; compute; reflexivity.
+                -- compute; reflexivity.
+            + unfold s_exp; sort_cong; cbn [Model.eq_term core_model];
+              try solve [ eapply eq_term_refl; ott_build ];
+              eapply eq_term_trans; [ apply ty_subst_id_El_eq; eassumption | eapply eq_term_sym; apply El_subst_eq; eassumption ].
+          - (* e1' = e1 : annotation congruence (s2 = e1, ANNOT1), conv SORT_out -> SORT_wkn via ty_subst_cmp + Hgeq *)
+            eapply eq_term_conv.
+            + eapply term_con_congruence.
+              * apply named_list_lookup_err_in; compute; reflexivity.
+              * right. cbn [with_names_from]. reflexivity.
+              * exact ott_wf.
+              * cbn [with_names_from].
+                eapply eq_args_cons.
+                2:{ eapply eq_term_refl. apply hd_extc_wf; eassumption. }
+                eapply eq_args_cons.
+                2:{ eapply eq_term_sym; exact annot_eq. }
+                eapply eq_args_refl.
+                1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+                repeat first
+                  [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+                  | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+                  | (simple apply snoc_a_wf; eassumption) | (apply El_act_code_ty; eassumption) | (apply act_code_wf; eassumption)
+                  | progress ott_build | eassumption
+                  | (eapply wf_term_conv; [ exact Hhd | unfold s_exp; sort_cong; cbn [Model.eq_term core_model]; try solve [ eapply eq_term_refl; ott_build ]; eapply eq_term_sym; apply ty_subst_id_El_eq; eassumption ]) ].
+            + unfold s_exp; sort_cong; cbn [Model.eq_term core_model];
+              try solve [ eapply eq_term_refl; ott_build ];
+              eapply eq_term_trans with (e12 := con "ty_subst" [oEl rF lF G F; iF; ocmp g0 snoc_a G extc extG; G; extG]).
+              * pose (sk := [("A", oEl rF lF G F); ("i", iF); ("g", g0); ("f", snoc_a); ("G3", G); ("G2", extc); ("G1", extG)] : subst string).
+                change (eq_term ott []
+                  (({{s #"ty" "G1" "i"}})[/sk/])
+                  (({{e #"ty_subst" "G1" "G2" "f" "i" (#"ty_subst" "G2" "G3" "g" "i" "A")}})[/sk/])
+                  (({{e #"ty_subst" "G1" "G3" (#"cmp" "G1" "G2" "G3" "f" "g") "i" "A"}})[/sk/])).
+                eapply eq_term_subst.
+                -- eapply eq_term_by with (name := "ty_subst_cmp"). apply named_list_lookup_err_in; compute; reflexivity.
+                -- apply eq_subst_refl. unfold sk.
+                   repeat first
+                     [ progress ott_build | (apply cmp_g0_wf; eassumption) | (simple apply snoc_a_wf; eassumption) | (apply El_act_code_ty; eassumption) | (apply act_code_wf; eassumption) | eassumption
+                     | (eapply wf_term_conv; [ exact Hhd | unfold s_exp; sort_cong; cbn [Model.eq_term core_model]; try solve [ eapply eq_term_refl; ott_build ]; eapply eq_term_sym; apply ty_subst_id_El_eq; eassumption ]) ].
+                -- eapply rule_in_ctx_wf with (name := "ty_subst_cmp").
+                   ++ exact Hwf.
+                   ++ apply named_list_lookup_err_in; compute; reflexivity.
+                   ++ compute; reflexivity.
+              * eapply term_con_congruence.
+                -- apply named_list_lookup_err_in; compute; reflexivity.
+                -- right. cbn [with_names_from]. reflexivity.
+                -- exact ott_wf.
+                -- cbn [with_names_from].
+                   eapply eq_args_cons.
+                   2:{ eapply eq_term_refl. eapply Elab.wf_term_by';
+                         [ apply named_list_lookup_err_in; compute; reflexivity
+                         | cbn [Model.wf_term core_model]; repeat first [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons | progress compute_wf_subjects | eassumption ]
+                         | left; compute; reflexivity ]. }
+                   eapply eq_args_cons.
+                   2:{ eapply eq_term_refl. ott_build. }
+                   eapply eq_args_cons.
+                   2:{ exact Hgeq. }
+                   eapply eq_args_refl.
+                   1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+                   repeat first [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects | progress ott_build | eassumption ]. }
+      eapply eq_args_cons.
+      2:{ exact Hgeq. }
+      eapply eq_args_refl.
+      1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+      repeat first [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+        | (eapply Elab.wf_term_by'; [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ])
+        | progress ott_build | eassumption ].
+  - (* snoc wkn hd = id (snoc_wkn_hd) -- VALIDATED. *)
+    pose (s2 := [("A", oEl rF lF G F); ("i", iF); ("G", G)] : subst string).
+    change (eq_term ott []
+      (({{s #"sub" (#"ext" "G" "i" "A") (#"ext" "G" "i" "A")}})[/s2/])
+      (({{e #"snoc" (#"ext" "G" "i" "A") "G" "i" "A" (#"wkn" "G" "i" "A") (#"hd" "G" "i" "A")}})[/s2/])
+      (({{e #"id" (#"ext" "G" "i" "A")}})[/s2/])).
+    eapply eq_term_subst.
+    + eapply eq_term_by with (name := "snoc_wkn_hd"). apply named_list_lookup_err_in; compute; reflexivity.
+    + apply eq_subst_refl. unfold s2.
+      repeat first
+        [ progress ott_build
+        | (eapply Elab.wf_term_by';
+             [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ])
+        | eassumption ].
+    + eapply rule_in_ctx_wf with (name := "snoc_wkn_hd").
+      * exact Hwf.
+      * apply named_list_lookup_err_in; compute; reflexivity.
+      * compute; reflexivity.
+Qed.
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the

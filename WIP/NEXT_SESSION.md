@@ -1,6 +1,37 @@
 # Next-session kickoff — OTT two-sided PER migration
 
-## UPDATE 2026-06-07z4 — id/var-collapse builder `sub_collapse` PROVEN **modulo ONE scoped `admit`** (the v-equality). Lives in `WIP/SubCollapse.v` (NOT in src, not built by `make`). NEXT = discharge that single v-equality `admit`, then port `sub_collapse` into `FundamentalLemma.v`, then the `cod_at(wkn,hd) ≡ C` collapse + escape-at-Pi.
+## UPDATE 2026-06-07z5 — id/var-collapse builder `sub_collapse` **COMPLETE** (GREEN, axiom-free modulo `egraph_sound`, in `FundamentalLemma.v`). NEXT = `cod_at_wkn_hd_eq` (`cod_at(wkn,hd) ≡ C`) then escape-at-Pi.
+
+`sub_collapse` (FundamentalLemma.v, ~line 1269) is DONE:
+  `cmp (ounder wkn) (snoc hd (id extG)) ≡ id extG`  at `sub extG extG`
+  (extG := ext G (El F)).  `rocq_assumptions` = only `egraph_sound`.  The whole
+  chain landed: `cmp_snoc`; g-eq (`cmp_assoc`/`wkn_snoc`/`id_left`); the
+  v-equality (the hard part); `snoc_wkn_hd`.
+
+KEY LESSONS from the v-equality (reusable for the next builders):
+- `cmp_snoc`'s RHS exp_subst hard-codes the annotation `ty_subst g0 (El F)`
+  (ANNOT1), which mismatches `snoc_hd`'s `ty_subst wknD (El act_code)` (ANNOT2);
+  bridge with an `annot_eq` lemma (`ty_subst_cmp` reverse + an `El subst`
+  congruence), proved as an inline `assert`.
+- `term_con_congruence` builds its OUTPUT sort from **s2** (the RHS args, via the
+  `right; cbn; reflexivity` disjunct `t = t'[/s2/]`).  So prove the v-equality
+  **REVERSED** (`hd ≡ e1` via `eq_term_sym`): then s2 = e1 carries the natural
+  ANNOT1, so the v-refl matches `hd_extc_wf` directly and the sort conversion
+  uses `ty_subst_cmp` + `Hgeq` (`cmp snoc_a g0 ≡ wkn`) cleanly.
+- **`change` cannot instantiate an evar sort.**  After `eapply eq_term_conv` the
+  inner sort `?t` is an evar; the change-recipe's `change (eq_term … SORT …)`
+  then fails "Not convertible" (it can't unify `?t`).  Fix: `eapply eq_term_conv
+  with (t := <explicit inner sort>)`.  (When the inner step is
+  `term_con_congruence`, `?t` is auto-instantiated by its `t = t'[/s2/]`
+  disjunct, so no explicit `t` is needed there.)
+- `Elab.wf_term_by'` leaves a middle `wf_args` goal; inside a `2:{ … }` you must
+  close it (e.g. `cbn [Model.wf_term core_model]; repeat first [wf_args_* | …
+  eassumption]`) or you hit "cannot be unfocused this way".
+
+(Superseded: the z4 plan's "single admit + WIP/SubCollapse.v" — the admit is
+discharged and the lemma is ported; `WIP/SubCollapse.v` removed.)
+
+## UPDATE 2026-06-07z4 (SUPERSEDED by z5) — id/var-collapse builder `sub_collapse` PROVEN **modulo ONE scoped `admit`** (the v-equality). Lived in `WIP/SubCollapse.v`. NEXT = discharge that single v-equality `admit`, then port `sub_collapse` into `FundamentalLemma.v`, then the `cod_at(wkn,hd) ≡ C` collapse + escape-at-Pi.
 
 THE id/var-collapse SUBSTITUTION IDENTITY is the escape-at-Pi prerequisite (UPDATE-z3):
   `cmp (ounder wkn) (snoc hd (id extG)) ≡ id extG`   (at sort `sub extG extG`,
