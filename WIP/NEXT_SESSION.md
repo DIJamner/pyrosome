@@ -1,5 +1,87 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z22 — the mapp CODE-CONGRUENCE FAMILY LANDED+pushed (green, axiom-clean: commit dbf4e6c). esc_ty@Pi AND esc_tm@Pi BOTH FULLY VALIDATED inside `RedTy_fund` (interactively; paste-ready script in WIP/RedTy_fund_partial.v). reflect@Pi BLOCKED on a genuine STRUCTURAL question (domain-argument typing) — QUESTION below; `RedTy_fund` is NOT yet Qed-able.
+
+### LANDED + pushed (FundamentalLemma.v, commit dbf4e6c)
+The six same-env CODE congruences (R-a residual of z21), all green + only
+`egraph_sound`:
+- `extc_code_cong`, `ounder_code_cong`, `act_cod_code_cong`,
+  `act_member_code_cong`, `cod_at_code_cong`, and the capstone **`mapp_code_cong`**
+  (`mapp F C f a ~ mapp F' C' f a` over the SAME world; the app_rel con-cong over
+  the four leaves; `a` re-typed across `act_code F~F'`, codomain sort moved by
+  `El_act_cod_subst_eq`∘`cod_at_code_cong`).  (`act_code_code_cong` was the z21
+  template.)  GOTCHAS captured: heterogeneous result sorts are stated at the
+  s2/RHS (F') env form so `term_con_congruence`'s `right` disjunct lands cleanly;
+  the snoc/cmp/hd leaves reconcile via `ty_subst_g0_El_eq`/`ty_subst_id_El_eq`.
+
+### esc_ty@Pi + esc_tm@Pi — BOTH CLOSED (validated interactively; WIP/RedTy_fund_partial.v)
+- **esc_ty@Pi**: the z21 paste-ready script, end-to-end.  HFF' = DomRed esc_ty IH
+  @ `oid G`+`act_code_id_eq`; bound-var domain member `Hraa'` = DOMAIN reflect IH
+  `IHDomW_rfl` at hd (strengthened-motive extra Sb0 = `act_code_wf` on HF'); HCC'
+  = `cod_collapse_both`←CodRed esc_ty IH @ bound var; finish `RedTy_Pi_sound`
+  (ALL args explicit).
+- **esc_tm@Pi**: same preamble (A-data via `El_Pi_member_inv` on Ha; B-data via
+  `reds_wf hB`+`Pi_rel_inv`) + the identical HFF'/bound-var/HCC' block.  Then
+  destruct the member (`Happ`), `Hbodymem := Happ @ bound var` (RCod at the
+  F-world), `mapp_wf`×2 (both at `El(cod_at)`), bridge to `elt_sort(CodRed)` via
+  `elt_sort_eq_El_gen`, escape with `IHCodW_tm _ HcodatF' _ _ Hbodymem ..` ->
+  `Hbody_ElCod : mapp F C a hd ~ mapp F' C' b hd` @ `El(cod_at F C hd)`; then
+  **`mapp_code_cong`** (function `b`) gives `mapp F C b hd ~ mapp F' C' b hd`,
+  whose sym composes with `Hbody_ElCod` to `mapp F C a hd ~ mapp F C b hd` @
+  `El(cod_at F C hd)`; close with the SINGLE-sided `RedTm_Pi_eta_sound` (NOT
+  eta_sound2 — R-a needs no B-side eta).  GOTCHA: `IHCodW_tm`'s B-side typing arg
+  is `wf_term [] (cod_at F' C' hd) Sb`, supply `HcodatF'` (NOT the outer `B`).
+
+### reflect@Pi — *** QUESTION FOR DUSTIN (genuine structural fork) ***
+`at_pi_app` requires, for EVERY `D g os a0 a' (raa' : RDom a0 a')`, a codomain
+member `RCod (mapp F C a a0)(mapp F' C' b a')`.  The ONLY way to inhabit the
+arbitrary codomain fiber `RCod` is its REFLECT IH (`IHCod D g os a0 a'
+raa'`.reflect), which DEMANDS the two mapps be `neutral` + **`wf_term`-typed** at
+`elt_sort(CodRed)` + `ne_eq`.  The mapp typings (`mapp_wf`) need the ARGUMENT
+`a0`/`a'` typed at `El(act_code g G D F)`.  But:
+- `a0`/`a'` come from `raa' : RedTy_R (DomRed) a0 a'` — an OPAQUE member at the
+  abstract `RedTy_rect` level — and **the LR carries NO member-typing invariant**:
+  `RedNatMem_sound`/`RedNe_sound_at`/`RedNe_reflect` etc. all TAKE the typings as
+  inputs (verified: no `RedTm -> wf_term` adequacy lemma exists in
+  LogicalRelation.v).  The domain ESCAPE IH (`IHDom_tm'`) that would give `a0~a'`
+  ALSO requires `a0`/`a'` typed as inputs — circular.
+- So the domain-argument typing for an ARBITRARY member is genuinely UNAVAILABLE.
+  (esc_ty/esc_tm dodge this: their bound-var arg is `hd`, which IS typed via
+  `bound_var_typed`.)
+
+This is the z16-flagged "reflect@Pi entangled with adequacy" wall, now pinned to
+its exact cause.  Resolution needs a DESIGN call — options:
+  (Q-a) **Bake a member-typing invariant into the LR**: extend `RedTy_tot`/the
+        fibers so every member pair carries `wf_term a0 (member-sort) * wf_term a'
+        (member-sort)` (the metamltt "reducible terms are well-typed" adequacy).
+        Then `at_pi_app`'s `raa'` yields the arg typings; reflect@Pi closes with
+        the SAME mapp_code_cong + `mapp_ne_eq2` engine as esc_tm.  Touches
+        LogicalRelation.v (the fibers + smart ctors + RedTy_rect) and re-greens
+        the leaves; the cong family + esc_ty/esc_tm are unaffected.
+  (Q-b) **Prove member-typing adequacy as a SEPARATE `RedTy_rect` induction**
+        (`forall a b, RedTy_R r a b -> wf_term a (elt_sort r) * wf_term b ..`),
+        then feed it inside reflect@Pi.  No LR change, but the adequacy proof has
+        the same Pi-member entanglement (a Pi member is a `RedAtPi` whose typing
+        needs the function typed — likely circular again unless the functions in
+        `at_pi_app` are known typed; they ARE here, but the recursion at the
+        codomain re-hits arbitrary args).  Probably reduces to (Q-a).
+  (Q-c) **Restrict `RedAtPi`/`at_pi_app` to typed args** (add `wf_term a0
+        (El act_code) -> wf_term a' (..) ->` premises to the member quantifier).
+        Smallest LR change; the hard-direction fundamental lemma supplies typed
+        args anyway.  Then reflect@Pi closes directly.
+RECOMMEND (Q-c) (or (Q-a) if the value-domain analogue is wanted) — but it is a
+LogicalRelation.v change with ripple to the leaves' member soundness, so it needs
+your sign-off before the build.  The cong family + esc_ty@Pi + esc_tm@Pi are DONE
+and committed; only this LR-shape decision gates the `Qed` of `RedTy_fund`.
+
+### z22 NEXT (after the Q decision)
+1. Apply the chosen reflect@Pi fix (Q-a/b/c) in LogicalRelation.v + re-green leaves.
+2. Paste WIP/RedTy_fund_partial.v's leaves+esc_ty+esc_tm, close reflect@Pi
+   (at_pi_app + mapp_ne_eq2 + CodRed reflect IH via elt_sort_eq_El_gen + the
+   now-available arg typings + mapp_code_cong), `Qed RedTy_fund`, confirm
+   `Print Assumptions` = only egraph_sound.  THIS is the escape+reflect milestone.
+3. Hard direction by `wf_judge_ind` (z15 motive).
+
 ## UPDATE 2026-06-07z21 — body_sort_transport (1) + RedTm_Pi_eta_sound2 (2) LANDED+pushed (green, axiom-clean). esc_ty@Pi FULLY VALIDATED *inside* `RedTy_fund` (the RedTy_rect, paste-ready). esc_tm@Pi VALIDATED up to ONE residual: a `mapp` CODE/MACHINERY congruence (`mapp_F F' C' b hdF ~ mapp_F F C b hdF`, same F-world env extGF). reflect@Pi NOT yet attempted (same residual). `RedTy_fund` NOT yet Qed-able (needs that congruence). DETAILS + paste-ready scripts below.
 
 ### LANDED + pushed (FundamentalLemma.v, 2 commits)
