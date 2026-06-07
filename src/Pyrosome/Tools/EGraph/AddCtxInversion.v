@@ -2539,6 +2539,248 @@ Section WithVar.
         rewrite <- Hab. exact Hnode_eF_a.
     Qed.
 
+    (* [_gen] port over add_ctx_gen ... no_sort.  Skip vars add no db atoms,
+       so a non-sort_of atom is either a kept-var's sort node (LEFT) or in
+       the e1 tree (RIGHT); the RIGHT branch is where skip vars land. *)
+    Lemma eq_assum_db_frame_eF_gen (no_sort : V -> bool) (rf : nat) c e1 t
+      (Hwfc : wf_ctx l c) (Hwfe1 : wf_term l c e1 t)
+      (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
+                (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                e1
+                (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X))))))
+               = Result.Success tt)
+      : forall b,
+          @Semantics.atom_in_egraph V V V_map V_map V_trie X b
+            (snd (rebuild rf (snd (add_open_term succ sort_of l false false
+                (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                e1
+                (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X))))))) ->
+          b.(atom_fn) <> sort_of ->
+          (exists x n_x s_x xs_x,
+            In (x, scon n_x s_x) c
+            /\ atom_tree_sort V V_map V_trie X
+                 (snd (rebuild rf (snd (add_open_term succ sort_of l false false
+                   (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                   e1
+                   (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))))))
+                 (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                 (scon n_x s_x) xs_x
+            /\ atom_node V V_map V_trie X
+                 (snd (rebuild rf (snd (add_open_term succ sort_of l false false
+                   (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                   e1
+                   (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))))))
+                 (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                 (con n_x s_x) xs_x b)
+          \/ (exists xe,
+                atom_tree V V_map V_trie X
+                  (snd (rebuild rf (snd (add_open_term succ sort_of l false false
+                    (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                    e1
+                    (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))))))
+                  (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                  e1 xe
+                /\ atom_node V V_map V_trie X
+                     (snd (rebuild rf (snd (add_open_term succ sort_of l false false
+                       (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                       e1
+                       (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))))))
+                     (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+                     e1 xe b).
+    Proof.
+      intros b Hb Hbfn.
+      change (empty_egraph V_default X)
+        with (@empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (e0 := @empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (sub := fst (add_ctx_gen succ sort_of l false false no_sort c e0)) in *.
+      set (e_ctx := snd (add_ctx_gen succ sort_of l false false no_sort c e0)) in *.
+      set (e_open := snd (add_open_term succ sort_of l false false sub e1 e_ctx)) in *.
+      set (x1 := fst (add_open_term succ sort_of l false false sub e1 e_ctx)) in *.
+      set (eF := snd (rebuild rf e_open)) in *.
+      assert (Hok0 : egraph_ok V lt V V_map V_map V_trie X e0)
+        by exact (proj1 (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok
+                           V_map V_map_ok V_trie X lang_model)).
+      assert (Huf0 : exists roots, union_find_ok lt (Defs.equiv e0) roots)
+        by exact (ex_intro _ [] (@union_find_empty_ok V lt succ V_default V_map V_map_ok)).
+      assert (Hdb0 : db_ctx_inv V V_map V_trie sort_of X e0)
+        by (intros aa Hin; exfalso;
+            unfold Semantics.atom_in_db in Hin;
+            unfold e0 in Hin; cbn [Defs.db empty_egraph] in Hin;
+            rewrite map.get_empty in Hin; exact Hin).
+      pose proof (@Theorems.add_ctx_gen_egraph_ok V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof no_sort c Hwfc) as HE.
+      unfold vc in HE. specialize (HE e0).
+      fold sub e_ctx in HE.
+      specialize (HE Huf0 Hdb0 Hok0).
+      destruct HE as (Huf1 & Hdb1 & Hroots1 & Hmapfst_sub & Hok1).
+      assert (Hmapfst' : map fst c = map fst sub) by (symmetry; exact Hmapfst_sub).
+      fold sub e_ctx in Huf1, Hdb1, Hroots1, Hmapfst_sub, Hok1.
+      pose proof (@Theorems.add_open_node_atoms V V_Eqb V_Eqb_ok V_default V_map V_map_ok
+                    V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
+                    l (add_open_sort succ sort_of l false false) Hwf (incl_refl l)
+                    c Hwfc) as Hnodes.
+      pose proof (proj1 Hnodes e1 t Hwfe1 sub Hmapfst') as Hnode_term.
+      unfold vc in Hnode_term. specialize (Hnode_term e_ctx).
+      unfold Theorems.open_atomtree_post in Hnode_term.
+      specialize (Hnode_term Huf1 Hdb1 Hroots1).
+      cbn [fst snd] in Hnode_term.
+      fold e_open x1 in Hnode_term.
+      destruct Hnode_term as (Henv_open & Hx1_root & Htree_open & _).
+      unfold Theorems.roots_env in Henv_open.
+      destruct Henv_open as (Huf_open & Hdb_open & Hdb_incl & Hroots_mono).
+      unfold add_open_term in e_open, x1.
+      fold e_open x1 in Huf_open, Hdb_open, Hdb_incl, Hroots_mono, Hx1_root, Htree_open.
+      fold sub e_ctx in Huf1, Hdb1, Hroots1, Hmapfst_sub, Hok1.
+      assert (Hbase_keys : all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_ctx))) sub)
+        by (eapply all_wkn; [| exact Hroots1];
+            intros p _ Hp; apply (Theorems.is_root_has_key V V_map V_trie X e_ctx (snd p)); exact Hp).
+      pose proof (add_ctx_good_worklist_vc_gen no_sort c Hwfc) as Hvc_full.
+      unfold vc in Hvc_full. specialize (Hvc_full e0).
+      assert (Hpke0 : parents_keys_in_equiv V V V_map V_map V_trie X e0)
+        by (intros y [s Hs]; unfold e0 in Hs; cbn [parents empty_egraph] in Hs;
+            rewrite map.get_empty in Hs; discriminate).
+      assert (Hac0 : SemanticsAnalysesCover.analyses_cover V V V_map V_map V_trie X e0)
+        by (intros z Hz; exfalso; unfold Sep.has_key in Hz; unfold e0 in Hz;
+            cbn [equiv empty_egraph UnionFind.parent UnionFind.empty] in Hz;
+            rewrite map.get_empty in Hz; exact Hz).
+      assert (Hwl0 : Defs.worklist e0 = []) by reflexivity.
+      specialize (Hvc_full Huf0
+                           (fun aa Hin => ltac:(exfalso; unfold Semantics.atom_in_db in Hin;
+                                                unfold e0 in Hin; cbn [Defs.db empty_egraph] in Hin;
+                                                rewrite map.get_empty in Hin; exact Hin))
+                           Hok0 Hpke0 Hac0 Hwl0).
+      destruct Hvc_full as (_ & _ & _ & _ & _ & _ & Hac1 & _).
+      fold sub e_ctx in Hac1.
+      pose proof (@Theorems.add_open_worklist_frame V V_Eqb V_Eqb_ok V_default V_map V_map_ok
+                    V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf
+                    l (add_open_sort succ sort_of l false false) Hwf (incl_refl l)
+                    c Hwfc) as Hwlf.
+      pose proof (proj1 Hwlf e1 t Hwfe1 sub Hmapfst') as Hwlf_term.
+      unfold vc in Hwlf_term. specialize (Hwlf_term e_ctx).
+      unfold Theorems.open_wlframe_post in Hwlf_term.
+      specialize (Hwlf_term Hok1 Hac1 Hbase_keys).
+      fold e_open in Hwlf_term.
+      destruct Hwlf_term as (_ & Hok_open & _ & _ & _).
+      unfold add_open_term in e_open.
+      fold e_open in Hok_open.
+      pose proof (good_worklist_eq_assum_gen no_sort c e1 t Hwfc Hwfe1) as Hgwl_open.
+      unfold add_open_term in Hgwl_open.
+      fold e0 sub e_ctx e_open in Hgwl_open.
+      pose proof (@rebuild_survives_canonical V V_Eqb V_Eqb_ok V_default V_map V_map_ok
+                    V_trie V_trie_ok succ sort_of lt X HX l Hwf Hsof
+                    e_open rf Hok_open Hgwl_open Hsucc) as Hsurv0.
+      fold eF in Hsurv0.
+      assert (Hrefl_per : forall xl,
+                 all (is_root V V_map V_trie X e_open) xl ->
+                 all2 (UnionFind.uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e_open)) xl xl)
+        by (induction xl as [|z xl IHxl]; cbn; [trivial|];
+            intros [Hz Hxl]; split;
+            [apply Relations.PER_clo_base; exact Hz | apply IHxl; exact Hxl]).
+      assert (Hsurv : forall a0 : atom,
+                 @Semantics.atom_in_egraph V V V_map V_map V_trie X a0 e_open ->
+                 all (is_root V V_map V_trie X e_open) (atom_args a0) ->
+                 is_root V V_map V_trie X e_open (atom_ret a0) ->
+                 @Semantics.atom_in_egraph V V V_map V_map V_trie X a0 eF)
+        by (intros a0 Ha0_in Ha0_args Ha0_ret;
+            apply Hsurv0; [ | exact Ha0_args | exact Ha0_ret ];
+            exists a0; split; [| exact Ha0_in];
+            unfold Semantics.atom_canonical_equiv; split; [reflexivity|]; split;
+            [apply Hrefl_per; exact Ha0_args | apply Relations.PER_clo_base; exact Ha0_ret]).
+      pose proof (@Theorems.atom_tree_survives V V_Eqb V_default V_map V_trie sort_of X l Hsof
+                    e_open eF sub c Hdb_open Hsurv e1 t Hwfe1 x1 Htree_open) as Htree_eF.
+      pose proof (@Theorems.add_open_new_atoms_are_nodes V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof l (add_open_sort succ sort_of l false false) Hwf (incl_refl l) c Hwfc) as Hnewat.
+      pose proof (proj1 Hnewat e1 t Hwfe1 sub Hmapfst') as Hnewat_term.
+      unfold vc in Hnewat_term. specialize (Hnewat_term e_ctx).
+      unfold Theorems.open_newatom_post in Hnewat_term.
+      specialize (Hnewat_term Huf1 Hdb1 Hroots1).
+      cbn [fst snd] in Hnewat_term.
+      fold e_open x1 in Hnewat_term.
+      destruct Hnewat_term as (_ & _ & _ & _ & Hnew_disj).
+      assert (Hsurv_ctx : forall a0 : atom,
+                 @Semantics.atom_in_egraph V V V_map V_map V_trie X a0 e_ctx ->
+                 all (is_root V V_map V_trie X e_ctx) (atom_args a0) ->
+                 is_root V V_map V_trie X e_ctx (atom_ret a0) ->
+                 @Semantics.atom_in_egraph V V V_map V_map V_trie X a0 eF)
+        by (intros a0 Ha0 Hargs Hret;
+            apply Hsurv;
+            [ exact (Hdb_incl a0 Ha0)
+            | eapply all_wkn; [| exact Hargs]; intros z _ Hz; exact (Hroots_mono z Hz)
+            | exact (Hroots_mono _ Hret) ]).
+      destruct rf as [|fuel]; [exfalso; cbn in Hsucc; discriminate Hsucc|].
+      destruct Hgwl_open as [ed_list Hgwl_open].
+      pose proof (@rebuild_canon V V_Eqb V_Eqb_ok lt succ V_default
+                    V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                    X HX (Theorems.lang_model V sort_of l)
+                    (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
+                    fuel e_open ed_list Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
+      destruct (Hrev b Hb) as (a & Ha_eopen_db & Hafn & Haargs).
+      assert (Ha_eopen : @Semantics.atom_in_egraph V V V_map V_map V_trie X a e_open) by exact Ha_eopen_db.
+      assert (Hafn_ne : atom_fn a <> sort_of) by (rewrite Hafn; exact Hbfn).
+      destruct (Hnew_disj a Ha_eopen) as [Ha_ectx | Hnode_eopen].
+      - (* LEFT BRANCH: a ∈ e_ctx *)
+        pose proof (@Theorems.assum_db_frame_pre_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof no_sort c Hwfc) as Hframe_vc.
+        unfold vc in Hframe_vc. specialize (Hframe_vc e0).
+        fold sub e_ctx in Hframe_vc.
+        assert (He0_sortof : forall a0, @Semantics.atom_in_egraph V V V_map V_map V_trie X a0 e0 -> a0.(atom_fn) = sort_of)
+          by (intros a0 Ha0; exfalso;
+              unfold Semantics.atom_in_egraph, Semantics.atom_in_db in Ha0;
+              unfold e0 in Ha0; cbn [Defs.db empty_egraph] in Ha0;
+              rewrite map.get_empty in Ha0; exact Ha0).
+        specialize (Hframe_vc Huf0 Hdb0 He0_sortof).
+        destruct (Hframe_vc a Ha_ectx Hafn_ne) as (x & n_x & s_x & xs_x & Hxin & Htree_e1 & Hnode_e1).
+        pose proof (@Core.in_ctx_wf V V_Eqb V_Eqb_ok l c x (scon n_x s_x) Hwf Hwfc Hxin) as Hwst.
+        fold e_ctx sub in Htree_e1, Hnode_e1.
+        pose proof (@Theorems.atom_tree_sort_survives V V_Eqb V_default V_map V_trie sort_of X l Hsof
+                      e_ctx eF sub c Hdb1 Hsurv_ctx (scon n_x s_x) Hwst xs_x Htree_e1) as Htree_eF_sort.
+        pose proof (@Theorems.atom_node_sort_survives V V_Eqb V_default V_map V_trie sort_of X l Hsof
+                      e_ctx eF sub c Hdb1 Hsurv_ctx n_x s_x Hwst xs_x a Hnode_e1) as Hnode_eF_a.
+        assert (Ha_eF_in : atom_in_db V V V_map V_trie X a (db eF))
+          by (clear - Hnode_eF_a;
+              induction Hnode_eF_a as [n0 s0 sids0 xe0 HF2_0 Hain0
+                                      | n0 s0 sids0 xe0 si0 sid0 a0 HF2_0 Hain0 Hcomb0 Hnode0 IH0];
+              [unfold Semantics.atom_in_egraph in Hain0; exact Hain0 | exact IH0]).
+        assert (Hret_eq : atom_ret a = atom_ret b)
+          by (unfold Semantics.atom_in_db, Is_Some_satisfying in Ha_eF_in;
+              unfold Semantics.atom_in_egraph, Semantics.atom_in_db, Is_Some_satisfying in Hb;
+              rewrite Hafn, Haargs in Ha_eF_in;
+              destruct (map.get (Defs.db eF) (atom_fn b)) as [tbl|];
+                cbn in Ha_eF_in, Hb; [|contradiction];
+              destruct (map.get tbl (atom_args b)) as [entry|];
+                cbn in Ha_eF_in, Hb; [|contradiction];
+              rewrite <- Hb; exact (eq_sym Ha_eF_in)).
+        assert (Hab : a = b)
+          by (destruct a as [afn aargs aret]; destruct b as [bfn bargs bret];
+              cbn [atom_fn atom_args atom_ret] in *; subst; reflexivity).
+        left. exists x, n_x, s_x, xs_x.
+        split; [exact Hxin|].
+        split; [exact Htree_eF_sort|].
+        rewrite <- Hab. exact Hnode_eF_a.
+      - (* RIGHT BRANCH: atom_node X e_open sub e1 x1 a *)
+        pose proof (@Theorems.atom_node_survives V V_Eqb V_default V_map V_trie sort_of X l Hsof
+                      e_open eF sub c Hdb_open Hsurv e1 x1 a Hnode_eopen t Hwfe1) as Hnode_eF_a.
+        assert (Ha_eF_in : atom_in_egraph a eF)
+          by (apply (@atom_node_ind V V_Eqb V_default V_map V_trie X eF sub
+                         (fun _ _ a => atom_in_egraph a eF))
+                with (t := e1) (v := x1);
+              [ intros n0 s0 sids0 xe0 _ Hain0; exact Hain0
+              | intros n0 s0 sids0 xe0 si0 sid0 a0 _ _ _ _ IH0; exact IH0
+              | exact Hnode_eF_a ]).
+        assert (Hret_eq : atom_ret a = atom_ret b)
+          by (unfold Semantics.atom_in_egraph, Semantics.atom_in_db, Is_Some_satisfying in Ha_eF_in, Hb;
+              rewrite Hafn in Ha_eF_in;
+              rewrite Haargs in Ha_eF_in;
+              destruct (map.get (Defs.db eF) (atom_fn b)) as [tbl|];
+                cbn in Ha_eF_in, Hb; [|contradiction];
+              destruct (map.get tbl (atom_args b)) as [entry|];
+                cbn in Ha_eF_in, Hb; [|contradiction];
+              rewrite <- Hb; exact (eq_sym Ha_eF_in)).
+        assert (Hab : a = b)
+          by (destruct a as [afn aargs aret]; destruct b as [bfn bargs bret];
+              cbn [atom_fn atom_args atom_ret] in *; subst; reflexivity).
+        right. exists x1.
+        split; [exact Htree_eF|].
+        rewrite <- Hab. exact Hnode_eF_a.
+    Qed.
+
     (* [ctx_readback_eF] on the COMBINED eq-assumption egraph.  Factored
        out of [eq_ctx_inversion]'s body (everything up to [Hrbef]); unlike
        [eq_ctx_inversion] it needs no adversary [a] / soundness hypothesis.
