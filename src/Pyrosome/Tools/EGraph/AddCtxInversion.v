@@ -2153,7 +2153,8 @@ Section WithVar.
                 (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X))))))) ->
           b.(atom_fn) = sort_of ->
           exists nm x', b.(atom_args) = [x'] /\
-            In (nm, x') (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X))).
+            In (nm, x') (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+            /\ no_sort nm = false.
     Proof.
       intros b Hb Hbfn.
       change (empty_egraph V_default X)
@@ -2285,8 +2286,8 @@ Section WithVar.
             unfold e0 in Ha0; cbn [Defs.db empty_egraph] in Ha0;
             rewrite map.get_empty in Ha0; exact Ha0).
       specialize (Hsf_vc Huf0 Hdb0 He0_nosof).
-      destruct (Hsf_vc a Ha_ectx_db Hafn_sof) as (nm & x' & Hargs_a & Hin_sub).
-      exists nm, x'. split; [ rewrite <- Haargs; exact Hargs_a | exact Hin_sub ].
+      destruct (Hsf_vc a Ha_ectx_db Hafn_sof) as (nm & x' & Hargs_a & Hin_sub & Hns_nm).
+      exists nm, x'. split; [ rewrite <- Haargs; exact Hargs_a | split; [ exact Hin_sub | exact Hns_nm ] ].
     Qed.
 
     Lemma eq_assum_db_frame_eF (rf : nat) c e1 t
@@ -4020,7 +4021,8 @@ Section WithVar.
                 (snd (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X))))))) ->
           b.(atom_fn) = sort_of ->
           exists nm x', b.(atom_args) = [x'] /\
-            In (nm, x') (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X))).
+            In (nm, x') (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
+            /\ no_sort nm = false.
     Proof.
       intros b Hb Hbfn.
       change (empty_egraph V_default X)
@@ -4138,8 +4140,8 @@ Section WithVar.
             unfold e0 in Ha0; cbn [Defs.db empty_egraph] in Ha0;
             rewrite map.get_empty in Ha0; exact Ha0).
       specialize (Hsf_vc Huf0 Hdb0 He0_nosof).
-      destruct (Hsf_vc a Ha_ectx_db Hafn_sof) as (nm & x' & Hargs_a & Hin_sub).
-      exists nm, x'. split; [ rewrite <- Haargs; exact Hargs_a | exact Hin_sub ].
+      destruct (Hsf_vc a Ha_ectx_db Hafn_sof) as (nm & x' & Hargs_a & Hin_sub & Hns_nm).
+      exists nm, x'. split; [ rewrite <- Haargs; exact Hargs_a | split; [ exact Hin_sub | exact Hns_nm ] ].
     Qed.
 
     (* [_gen] sort port. *)

@@ -279,6 +279,17 @@ Section WithVar.
     Local Notation atom_node :=
       (@Theorems.atom_node V V_Eqb V_default V_map V_trie X).
 
+    (* Skip predicates matching the equational cases of [Defs.rule_to_log_rule]
+       / [rule_to_log_seq]: a ctx var's sort_of atom is dropped from the QUERY
+       exactly when the var occurs in the LHS (and the LHS isn't a bare var). *)
+    Definition term_eq_skip (e1 : term) (x : V) : bool :=
+      match e1 with
+      | con _ _ => inb x (fv e1)
+      | var _ => false
+      end.
+    Definition sort_eq_skip (t1 : sort) (x : V) : bool :=
+      inb x (fv_sort t1).
+
     (* The bare compiled sequent for [r] — the [Success] value of
        [rule_to_log_rule] (which now returns [result sequent]).  Used in the
        adapter's obligations, whose soundness holds regardless of whether the
@@ -295,7 +306,7 @@ Section WithVar.
             (fun sub => add_open_term succ sort_of l true false sub (con n (id_args c))) rf
       | sort_eq_rule c t1 t2 =>
           QueryOpt.sequent_of_states_seq
-            (@! let sub <- add_ctx_gen succ sort_of l false false (fun x => inb x (fv_sort t1)) c in
+            (@! let sub <- add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c in
                 let x1 <- add_open_sort succ sort_of l false false sub t1 in
                 ret (sub, x1))
             (fun '(sub, x1) =>
@@ -303,11 +314,7 @@ Section WithVar.
                   (@Defs.union V V_Eqb V V_map V_map V_trie unit HX x1 x2)) rf
       | term_eq_rule c e1 e2 t =>
           QueryOpt.sequent_of_states_seq
-            (@! let sub <- add_ctx_gen succ sort_of l false false
-                             (fun x => match e1 with
-                                       | con _ _ => inb x (fv e1)
-                                       | var _ => false
-                                       end) c in
+            (@! let sub <- add_ctx_gen succ sort_of l false false (term_eq_skip e1) c in
                 let x1 <- add_open_term succ sort_of l false false sub e1 in
                 ret (sub, x1))
             (fun '(sub, x1) =>
@@ -1904,8 +1911,8 @@ Section WithVar.
        the forward witness interpretation [i1] maps [x1] to [inl e1[/sg/]]. *)
     Lemma assumption_egraph_sound_eq c e1 t (sg : subst)
         (Hwfc : wf_ctx l c) (Hwfe1 : wf_term l c e1 t) (Hsg : wf_subst l [] sg c)
-      : let sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
-        let e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+      : let sub    := fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)) in
+        let e_ctx  := snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)) in
         let x1     := fst (add_open_term succ sort_of l false false sub e1 e_ctx) in
         let e_open := snd (add_open_term succ sort_of l false false sub e1 e_ctx) in
         let e_assum := snd (rebuild rf e_open) in
@@ -1918,8 +1925,8 @@ Section WithVar.
                   (map.get i1 x1) (Some (inl e1[/sg/])).
     Proof.
       cbn zeta.
-      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
-      set (e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (sub    := fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))).
+      set (e_ctx  := snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))).
       set (x1     := fst (add_open_term succ sort_of l false false sub e1 e_ctx)).
       set (e_open := snd (add_open_term succ sort_of l false false sub e1 e_ctx)).
       set (e_assum := snd (rebuild rf e_open)).
@@ -1928,12 +1935,12 @@ Section WithVar.
                   V lt succ V_default V V_map (V_map_ok) V_map (V_map_ok)
                   V_trie X (lang_model l))
         as [Hok_empty Hsnd_empty].
-      (* Step 2: add_ctx_sound gives ctx_post *)
-      pose proof (@Theorems.add_ctx_sound
+      (* Step 2: add_ctx_gen_sound gives ctx_post *)
+      pose proof (@Theorems.add_ctx_gen_sound
                     V V_Eqb V_Eqb_ok V_default V_map (V_map_ok) V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans
                     X HX l Hwf Hsof false
-                    sg c Hsg Hwfc
+                    (term_eq_skip e1) sg c Hsg Hwfc
                     map.empty)
         as Hvc_ctx.
       unfold vc in Hvc_ctx.
@@ -1942,8 +1949,8 @@ Section WithVar.
       specialize (Hvc_ctx Hok_empty Hsnd_empty).
       destruct Hvc_ctx as [i1 (Hext1 & Hfst1 & Hai1)].
       destruct Hext1 as (Hok_ctx & _ & Hsnd_ctx & _).
-      change (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))) with e_ctx in Hok_ctx, Hsnd_ctx.
-      change (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) with sub in Hfst1, Hai1.
+      change (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))) with e_ctx in Hok_ctx, Hsnd_ctx.
+      change (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))) with sub in Hfst1, Hai1.
       (* Step 3: add_open_term_sound on e1 *)
       pose proof (@Theorems.add_open_term_sound
                     V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
@@ -2006,8 +2013,8 @@ Section WithVar.
         (Hwfe2 : wf_term l c e2 t)
         (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_term l [] t[/sg0/] e1[/sg0/] e2[/sg0/])
         (Hsg : wf_subst l [] sg c)
-      : let sub     := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
-        let e_ctx   := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+      : let sub     := fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)) in
+        let e_ctx   := snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)) in
         let x1      := fst (add_open_term succ sort_of l false false sub e1 e_ctx) in
         let e_open1 := snd (add_open_term succ sort_of l false false sub e1 e_ctx) in
         let e_assum := snd (rebuild rf e_open1) in
@@ -2021,8 +2028,8 @@ Section WithVar.
           /\ (exists i1, egraph_sound_for_interpretation (lang_model l) i1 e_assum /\ map.extends i2 i1).
     Proof.
       cbn zeta.
-      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
-      set (e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (sub    := fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))).
+      set (e_ctx  := snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))).
       set (x1     := fst (add_open_term succ sort_of l false false sub e1 e_ctx)).
       set (e_open1 := snd (add_open_term succ sort_of l false false sub e1 e_ctx)).
       set (e_assum := snd (rebuild rf e_open1)).
@@ -2138,8 +2145,8 @@ Section WithVar.
         (Hwfe2 : wf_term l c e2 t)
         (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_term l [] t[/sg0/] e1[/sg0/] e2[/sg0/])
         (Hsg : wf_subst l [] sg c)
-      : let sub     := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
-        let e_ctx   := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+      : let sub     := fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)) in
+        let e_ctx   := snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)) in
         let x1      := fst (add_open_term succ sort_of l false false sub e1 e_ctx) in
         let e_open1 := snd (add_open_term succ sort_of l false false sub e1 e_ctx) in
         let e_assum := snd (rebuild rf e_open1) in
@@ -2173,20 +2180,20 @@ Section WithVar.
                      (snd (rebuild rf
                        (snd (@Defs.union V V_Eqb V V_map V_map V_trie unit HX
                           (fst (add_open_term succ sort_of l false false
-                                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                                  e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+                                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
+                                  e1 (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))))
                           (fst (add_open_term succ sort_of l true false
-                                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                                   e2
                                   (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-                                          (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                                          e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))))
+                                          (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
+                                          e1 (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))))))))
                           (snd (add_open_term succ sort_of l true false
-                                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                                   e2
                                   (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-                                          (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                                          e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))))))))))))
+                                          (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
+                                          e1 (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))))))))))))
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
             (seq_conclusions (rule_to_log_seq name (term_eq_rule c e1 e2 t))).
     Proof.
@@ -2194,7 +2201,7 @@ Section WithVar.
       cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
-      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
+      destruct (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
       cbn [fst snd] in *.
       destruct (add_open_term succ sort_of l false false sub_c e1 e_ctx_c) as [x1_c e_open1_c] eqn:Hao1.
       cbn [fst snd] in *.
@@ -2241,23 +2248,23 @@ Section WithVar.
         (Hwfc : wf_ctx l c)
         (Hwfe1 : wf_term l c e1 t)
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                   e1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : forall k,
           In k (forall_vars
                   (rule_to_log_seq name (term_eq_rule c e1 e2 t))) ->
           (exists e' t', wf_term l c e' t'
              /\ atom_tree (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                  e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) e' k)
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
+                  e1 (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))))))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))) e' k)
         \/ (exists ts, wf_sort l c ts
              /\ atom_tree_sort (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                  e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
+                  e1 (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))))))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))) ts k).
     Proof.
       intros k Hk.
       unfold forall_vars in Hk.
@@ -2267,7 +2274,7 @@ Section WithVar.
       cbn [seq_assumptions fst] in Hk.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
       cbn beta iota in Hk.
-      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
+      destruct (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
       cbn [fst snd] in *.
       destruct (add_open_term succ sort_of l false false sub_c e1 e_ctx_c) as [x1_c e_open1_c] eqn:Hao1.
       cbn [fst snd] in *.
@@ -2285,8 +2292,8 @@ Section WithVar.
               unfold Semantics.atom_in_db in Hin0;
               unfold e0 in Hin0; cbn [Defs.db Defs.empty_egraph] in Hin0;
               rewrite map.get_empty in Hin0; exact Hin0).
-        pose proof (@Theorems.add_ctx_egraph_ok V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
-                      succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as HE.
+        pose proof (@Theorems.add_ctx_gen_egraph_ok V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+                      succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof (term_eq_skip e1) c Hwfc) as HE.
         unfold vc in HE. specialize (HE e0).
         unfold e0 in HE. rewrite Hac in HE. cbn [fst] in HE.
         specialize (HE Huf0 Hdb0 Hok0).
@@ -2300,33 +2307,33 @@ Section WithVar.
         exact HA_in. }
       assert (HA_uf : @Semantics.atom_in_egraph V V V_map V_map V_trie X A
         (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                   e1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))) .
+                  (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))))))) .
       { rewrite Hac. cbn [fst snd]. rewrite Hao1. cbn [snd]. rewrite Hr1. cbn [snd]. exact HA. }
       assert (Hsucc_uf : fst (rebuild rf (snd (add_open_term succ sort_of l false false
-                    (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                    (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                     e1
-                    (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                    (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))
                = Result.Success tt).
       { rewrite Hac. cbn [fst snd]. rewrite Hao1. cbn [snd]. rewrite Hr1. cbn [fst]. exact Hsucc. }
       destruct (eqb (Defs.atom_fn A) sort_of) eqn:Heqfn.
       - pose proof (@eqb_spec V V_Eqb V_Eqb_ok (Defs.atom_fn A) sort_of) as Hsp.
         rewrite Heqfn in Hsp. rename Hsp into Hsof_A.
-        pose proof (@eq_assum_sortof_frame_eF V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+        pose proof (@eq_assum_sortof_frame_eF_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                       succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                      rf c e1 t Hwfc Hwfe1 Hsucc_uf A HA_uf Hsof_A) as (nm & x' & Hargs_A & Hin_sub_raw).
+                      (term_eq_skip e1) rf c e1 t Hwfc Hwfe1 Hsucc_uf A HA_uf Hsof_A) as (nm & x' & Hargs_A & Hin_sub_raw & Hns_nm).
         assert (Hin_sub : In (nm, x') sub_c).
         { rewrite Hac in Hin_sub_raw. cbn [fst] in Hin_sub_raw. exact Hin_sub_raw. }
-        pose proof (@eq_add_ctx_readback_eF V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+        pose proof (@eq_add_ctx_readback_eF_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                       succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                      rf c e1 t Hwfc Hwfe1 Hsucc_uf) as Hrbef.
+                      (term_eq_skip e1) rf c e1 t Hwfc Hwfe1 Hsucc_uf) as Hrbef.
         rewrite Hac in Hrbef. cbn [fst snd] in Hrbef.
         rewrite Hao1 in Hrbef. cbn [snd] in Hrbef.
         rewrite Hr1 in Hrbef. cbn [snd] in Hrbef.
-        pose proof (@CtxReadback.ctx_readback_eF_lookup V V_Eqb V_Eqb_ok V_default V_map V_trie
-                      sort_of X l Hwf
-                      e_assum_c c sub_c Hwfc (eq_sym Hmapfst) Hrbef nm x' Hin_sub)
+        pose proof (@CtxReadback.ctx_readback_eF_lookup_gen V V_Eqb V_Eqb_ok V_default V_map V_trie
+                      sort_of X l Hwf (term_eq_skip e1)
+                      e_assum_c c sub_c Hwfc (eq_sym Hmapfst) Hrbef nm x' Hin_sub Hns_nm)
           as (t' & xs' & Hin_c' & Htree' & Hatom').
         rewrite Hargs_A in Hk_in. cbn [In] in Hk_in.
         assert (HA' : @Semantics.atom_in_db V V V_map V_trie X
@@ -2370,9 +2377,9 @@ Section WithVar.
           rewrite <- Hlk. apply (@Theorems.at_var V V_Eqb V_default V_map V_trie X e_assum_c sub_c nm).
       - pose proof (eqb_spec (Defs.atom_fn A) sort_of) as Hsp.
         rewrite Heqfn in Hsp. rename Hsp into Hnsof_A.
-        pose proof (@eq_assum_db_frame_eF V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+        pose proof (@eq_assum_db_frame_eF_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                       succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                      rf c e1 t Hwfc Hwfe1 Hsucc_uf A HA_uf Hnsof_A)
+                      (term_eq_skip e1) rf c e1 t Hwfc Hwfe1 Hsucc_uf A HA_uf Hnsof_A)
           as [(x & n_x & s_x & xs_x & Hxin & Htree & Hnode) | (xe & Htree_e1 & Hnode_e1)].
         + rewrite Hac in Htree, Hnode. cbn [fst snd] in Htree, Hnode.
           rewrite Hao1 in Htree, Hnode. cbn [snd] in Htree, Hnode.
@@ -2399,16 +2406,16 @@ Section WithVar.
         (Hsg : wf_subst l [] sg c)
         (Hsnd_a : forall al, atom_in_egraph al
                     (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-                      (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                      e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))) ->
+                      (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
+                      e1 (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))) ->
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
                            (rule_to_log_seq name (term_eq_rule c e1 e2 t))))
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                   e1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : forall k da d,
           In k (flat_map (clause_vars V V) (seq_conclusions
@@ -2416,14 +2423,14 @@ Section WithVar.
           map.get a k = Some da -> map.get i2 k = Some d ->
           (exists e' t', wf_term l c e' t'
              /\ atom_tree (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                  e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) e' k)
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
+                  e1 (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))))))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))) e' k)
         \/ (exists ts, wf_sort l c ts
              /\ atom_tree_sort (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                  e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
+                  e1 (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))))))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))) ts k).
     Proof.
       intros k da d Hk Ha Hi2k.
       apply (eq_assum_ids_covered name c e1 e2 t Hwfc Hwfe1 Hsucc k).
@@ -2472,24 +2479,24 @@ Section WithVar.
         (sg : subst)
         (Hsg : wf_subst l [] sg c)
         (Hmapfst : map fst sg = map fst c)
-        (Hfaith : forall x, In x (map fst (fst (add_ctx succ sort_of l false false c
+        (Hfaith : forall x, In x (map fst (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c
                                                   (empty_egraph V_default X)))) ->
                     map.get a (named_list_lookup default
-                                (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) x)
+                                (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))) x)
                       = Some (inl (named_list_lookup default sg x)))
         (Hwfc : wf_ctx l c)
         (Hwfe1 : wf_term l c e1 t)
         (Hwfe2 : wf_term l c e2 t)
         (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_term l [] t[/sg0/] e1[/sg0/] e2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                   e1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))
                = Result.Success tt)
         (Hsnd_a : forall al, atom_in_egraph al
                     (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-                      (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                      e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))) ->
+                      (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
+                      e1 (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))) ->
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
@@ -2499,9 +2506,9 @@ Section WithVar.
           all (clause_sound_for_model V V V_map (lang_model l) a')
             (seq_conclusions (rule_to_log_seq name (term_eq_rule c e1 e2 t))).
     Proof.
-      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) in *.
+      set (sub    := fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))) in *.
       set (e_assum := snd (rebuild rf (snd (add_open_term succ sort_of l false false sub e1
-                        (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))) in *.
+                        (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))) in *.
       pose proof (conclusion_i2_sound_assum_eq c e1 e2 t sg Hwfc Hwfe1 Hwfe2 Heqf Hsg)
         as (i2 & Hsnd_concl_i2 & Hai2 & Hsnd_i2_assum).
       cbn zeta in Hsnd_concl_i2, Hai2, Hsnd_i2_assum.
@@ -2553,9 +2560,9 @@ Section WithVar.
         (Hwfe2 : wf_term l c e2 t)
         (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_term l [] t[/sg0/] e1[/sg0/] e2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                   e1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : @model_satisfies_rule V V V_map (lang_model l)
           (rule_to_log_seq name (term_eq_rule c e1 e2 t)).
@@ -2568,7 +2575,7 @@ Section WithVar.
       cbn [seq_assumptions fst] in Hassum.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hassum.
       cbn beta iota in Hassum.
-      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
+      destruct (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
       cbn [fst snd] in *.
       destruct (add_open_term succ sort_of l false false sub_c e1 e_ctx_c) as [x1_c e_open1_c] eqn:Hao1.
       cbn [fst snd] in *.
@@ -2580,9 +2587,9 @@ Section WithVar.
       assert (Hsnd_atoms_uf : forall al : atom,
           @Semantics.atom_in_egraph V V V_map V_map V_trie X al
             (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-              (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+              (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
               e1
-              (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
+              (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))))))
           -> @Semantics.atom_sound_for_model V V V_map (lang_model l) a al).
       { intros al Hal.
         apply Hsnd_atoms.
@@ -2591,15 +2598,19 @@ Section WithVar.
         rewrite Hr1 in Hal. cbn [snd] in Hal.
         exact Hal. }
       assert (Hsucc_uf : fst (rebuild rf (snd (add_open_term succ sort_of l false false
-                    (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                    (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                     e1
-                    (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                    (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))
                = Result.Success tt).
       { rewrite Hac. cbn [fst snd]. rewrite Hao1. cbn [snd]. rewrite Hr1. cbn [fst]. exact Hsucc. }
-      pose proof (@eq_assumption_inversion V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+      assert (Hskip : forall x, term_eq_skip e1 x = true -> In x (fv e1)).
+      { intros x Hx. unfold term_eq_skip in Hx.
+        destruct e1; [discriminate Hx|].
+        apply (proj1 (inb_is_In _ _)). rewrite Hx. exact I. }
+      pose proof (@eq_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                    rf a c e1 t Hwfc Hwfe1 Hsucc_uf Hsnd_atoms_uf) as Hinv.
-      destruct Hinv as (sg & Hsg & Hmapfst_sg & Hfaith & _).
+                    (term_eq_skip e1) rf a c e1 t Hwfc Hwfe1 Hskip Hsucc_uf Hsnd_atoms_uf) as Hinv.
+      destruct Hinv as (sg & Hsg & Hmapfst_sg & Hfaith).
       (* Hfaith uses (fst (add_ctx ...)) - rewrite to sub_c *)
       assert (Hfaith' : forall x, In x (map fst sub_c) ->
                 map.get a (named_list_lookup default sub_c x)
@@ -2613,9 +2624,9 @@ Section WithVar.
       { intros al Hal. apply Hsnd_atoms. exact Hal. }
       (* Hsucc for e_assum_c (= r1_c = Success tt) is Hsucc *)
       (* Pass to term_eq_rule_concl_obligation using Hfaith lifted to unfolded form *)
-      assert (Hfaith_orig : forall x, In x (map fst (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))) ->
+      assert (Hfaith_orig : forall x, In x (map fst (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))) ->
                 map.get a (named_list_lookup default
-                            (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) x)
+                            (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))) x)
                   = Some (inl (named_list_lookup default sg x))).
       { intros x Hx.
         rewrite Hac in Hx. cbn [fst] in Hx.
@@ -2632,9 +2643,9 @@ Section WithVar.
         (Hwfe2 : wf_term l c e2 t)
         (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_term l [] t[/sg0/] e1[/sg0/] e2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                   e1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : model_satisfies_rule V V V_map (lang_model l)
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
@@ -2646,10 +2657,10 @@ Section WithVar.
                (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
                lt_asymmetric lt_succ lt_trans
                (db_to_atoms (db (snd (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                  e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))))) .
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
+                  e1 (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))))))))) .
       - cbn;
-        destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub e_c];
+        destruct (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)) as [sub e_c];
         cbn [fst snd];
         destruct (add_open_term succ sort_of l false false sub e1 e_c) as [x1 e_o];
         cbn [fst snd];
@@ -2663,9 +2674,9 @@ Section WithVar.
     Lemma central_obligation_term_eq name c e1 e2 t
         (Hin : In (name, term_eq_rule c e1 e2 t) l)
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                   e1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : model_satisfies_rule V V V_map (lang_model l)
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
@@ -2688,9 +2699,9 @@ Section WithVar.
     Lemma central_obligation_term_eq_rev name c e1 e2 t
         (Hin : In (name, term_eq_rule c e1 e2 t) l)
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e2) c (empty_egraph V_default X)))
                   e2
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e2) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : model_satisfies_rule V V V_map (lang_model l)
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
@@ -2716,8 +2727,8 @@ Section WithVar.
     (* ----- Lemma 1: assumption_egraph_sound_sort_eq ----- *)
     Lemma assumption_egraph_sound_sort_eq c t1 (sg : subst)
         (Hwfc : wf_ctx l c) (Hwft1 : wf_sort l c t1) (Hsg : wf_subst l [] sg c)
-      : let sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
-        let e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+      : let sub    := fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)) in
+        let e_ctx  := snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)) in
         let x1     := fst (add_open_sort succ sort_of l false false sub t1 e_ctx) in
         let e_open := snd (add_open_sort succ sort_of l false false sub t1 e_ctx) in
         let e_assum := snd (rebuild rf e_open) in
@@ -2730,8 +2741,8 @@ Section WithVar.
                   (map.get i1 x1) (Some (inr t1[/sg/])).
     Proof.
       cbn zeta.
-      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
-      set (e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (sub    := fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))).
+      set (e_ctx  := snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))).
       set (x1     := fst (add_open_sort succ sort_of l false false sub t1 e_ctx)).
       set (e_open := snd (add_open_sort succ sort_of l false false sub t1 e_ctx)).
       set (e_assum := snd (rebuild rf e_open)).
@@ -2739,11 +2750,11 @@ Section WithVar.
                   V lt succ V_default V V_map (V_map_ok) V_map (V_map_ok)
                   V_trie X (lang_model l))
         as [Hok_empty Hsnd_empty].
-      pose proof (@Theorems.add_ctx_sound
+      pose proof (@Theorems.add_ctx_gen_sound
                     V V_Eqb V_Eqb_ok V_default V_map (V_map_ok) V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans
                     X HX l Hwf Hsof false
-                    sg c Hsg Hwfc
+                    (sort_eq_skip t1) sg c Hsg Hwfc
                     map.empty)
         as Hvc_ctx.
       unfold vc in Hvc_ctx.
@@ -2752,8 +2763,8 @@ Section WithVar.
       specialize (Hvc_ctx Hok_empty Hsnd_empty).
       destruct Hvc_ctx as [i1 (Hext1 & Hfst1 & Hai1)].
       destruct Hext1 as (Hok_ctx & _ & Hsnd_ctx & _).
-      change (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))) with e_ctx in Hok_ctx, Hsnd_ctx.
-      change (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) with sub in Hfst1, Hai1.
+      change (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))) with e_ctx in Hok_ctx, Hsnd_ctx.
+      change (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))) with sub in Hfst1, Hai1.
       pose proof (@Theorems.add_open_sort_sound
                     V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans
@@ -2810,8 +2821,8 @@ Section WithVar.
         (Hwft2 : wf_sort l c t2)
         (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_sort l [] t1[/sg0/] t2[/sg0/])
         (Hsg : wf_subst l [] sg c)
-      : let sub     := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
-        let e_ctx   := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+      : let sub     := fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)) in
+        let e_ctx   := snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)) in
         let x1      := fst (add_open_sort succ sort_of l false false sub t1 e_ctx) in
         let e_open1 := snd (add_open_sort succ sort_of l false false sub t1 e_ctx) in
         let e_assum := snd (rebuild rf e_open1) in
@@ -2825,8 +2836,8 @@ Section WithVar.
           /\ (exists i1, egraph_sound_for_interpretation (lang_model l) i1 e_assum /\ map.extends i2 i1).
     Proof.
       cbn zeta.
-      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
-      set (e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (sub    := fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))).
+      set (e_ctx  := snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))).
       set (x1     := fst (add_open_sort succ sort_of l false false sub t1 e_ctx)).
       set (e_open1 := snd (add_open_sort succ sort_of l false false sub t1 e_ctx)).
       set (e_assum := snd (rebuild rf e_open1)).
@@ -2932,8 +2943,8 @@ Section WithVar.
         (Hwft2 : wf_sort l c t2)
         (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_sort l [] t1[/sg0/] t2[/sg0/])
         (Hsg : wf_subst l [] sg c)
-      : let sub     := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
-        let e_ctx   := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+      : let sub     := fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)) in
+        let e_ctx   := snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)) in
         let x1      := fst (add_open_sort succ sort_of l false false sub t1 e_ctx) in
         let e_open1 := snd (add_open_sort succ sort_of l false false sub t1 e_ctx) in
         let e_assum := snd (rebuild rf e_open1) in
@@ -2967,20 +2978,20 @@ Section WithVar.
                      (snd (rebuild rf
                        (snd (@Defs.union V V_Eqb V V_map V_map V_trie unit HX
                           (fst (add_open_sort succ sort_of l false false
-                                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                                  t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+                                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
+                                  t1 (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))))
                           (fst (add_open_sort succ sort_of l true false
-                                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                                   t2
                                   (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-                                          (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                                          t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))))
+                                          (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
+                                          t1 (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))))))))
                           (snd (add_open_sort succ sort_of l true false
-                                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                                   t2
                                   (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-                                          (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                                          t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))))))))))))
+                                          (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
+                                          t1 (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))))))))))))
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
             (seq_conclusions (rule_to_log_seq name (sort_eq_rule c t1 t2))).
     Proof.
@@ -2988,7 +2999,7 @@ Section WithVar.
       cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
-      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
+      destruct (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
       cbn [fst snd] in *.
       destruct (add_open_sort succ sort_of l false false sub_c t1 e_ctx_c) as [x1_c e_open1_c] eqn:Hao1.
       cbn [fst snd] in *.
@@ -3030,23 +3041,23 @@ Section WithVar.
         (Hwfc : wf_ctx l c)
         (Hwft1 : wf_sort l c t1)
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                   t1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : forall k,
           In k (forall_vars
                   (rule_to_log_seq name (sort_eq_rule c t1 t2))) ->
           (exists e' t', wf_term l c e' t'
              /\ atom_tree (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                  t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) e' k)
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
+                  t1 (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))))))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))) e' k)
         \/ (exists ts, wf_sort l c ts
              /\ atom_tree_sort (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                  t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
+                  t1 (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))))))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))) ts k).
     Proof.
       intros k Hk.
       unfold forall_vars in Hk.
@@ -3056,7 +3067,7 @@ Section WithVar.
       cbn [seq_assumptions fst] in Hk.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hk.
       cbn beta iota in Hk.
-      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
+      destruct (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
       cbn [fst snd] in *.
       destruct (add_open_sort succ sort_of l false false sub_c t1 e_ctx_c) as [x1_c e_open1_c] eqn:Hao1.
       cbn [fst snd] in *.
@@ -3074,8 +3085,8 @@ Section WithVar.
               unfold Semantics.atom_in_db in Hin0;
               unfold e0 in Hin0; cbn [Defs.db Defs.empty_egraph] in Hin0;
               rewrite map.get_empty in Hin0; exact Hin0).
-        pose proof (@Theorems.add_ctx_egraph_ok V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
-                      succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as HE.
+        pose proof (@Theorems.add_ctx_gen_egraph_ok V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+                      succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof (sort_eq_skip t1) c Hwfc) as HE.
         unfold vc in HE. specialize (HE e0).
         unfold e0 in HE. rewrite Hac in HE. cbn [fst] in HE.
         specialize (HE Huf0 Hdb0 Hok0).
@@ -3089,33 +3100,33 @@ Section WithVar.
         exact HA_in. }
       assert (HA_uf : @Semantics.atom_in_egraph V V V_map V_map V_trie X A
         (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                   t1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))) .
+                  (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))))))) .
       { rewrite Hac. cbn [fst snd]. rewrite Hao1. cbn [snd]. rewrite Hr1. cbn [snd]. exact HA. }
       assert (Hsucc_uf : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
-                    (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                    (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                     t1
-                    (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                    (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))
                = Result.Success tt).
       { rewrite Hac. cbn [fst snd]. rewrite Hao1. cbn [snd]. rewrite Hr1. cbn [fst]. exact Hsucc. }
       destruct (eqb (Defs.atom_fn A) sort_of) eqn:Heqfn.
       - pose proof (@eqb_spec V V_Eqb V_Eqb_ok (Defs.atom_fn A) sort_of) as Hsp.
         rewrite Heqfn in Hsp. rename Hsp into Hsof_A.
-        pose proof (@AddCtxInversion.eq_sort_assum_sortof_frame_eF V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+        pose proof (@AddCtxInversion.eq_sort_assum_sortof_frame_eF_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                       succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                      rf c t1 Hwfc Hwft1 Hsucc_uf A HA_uf Hsof_A) as (nm & x' & Hargs_A & Hin_sub_raw).
+                      (sort_eq_skip t1) rf c t1 Hwfc Hwft1 Hsucc_uf A HA_uf Hsof_A) as (nm & x' & Hargs_A & Hin_sub_raw & Hns_nm).
         assert (Hin_sub : In (nm, x') sub_c).
         { rewrite Hac in Hin_sub_raw. cbn [fst] in Hin_sub_raw. exact Hin_sub_raw. }
-        pose proof (@AddCtxInversion.eq_sort_add_ctx_readback_eF V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+        pose proof (@AddCtxInversion.eq_sort_add_ctx_readback_eF_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                       succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                      rf c t1 Hwfc Hwft1 Hsucc_uf) as Hrbef.
+                      (sort_eq_skip t1) rf c t1 Hwfc Hwft1 Hsucc_uf) as Hrbef.
         rewrite Hac in Hrbef. cbn [fst snd] in Hrbef.
         rewrite Hao1 in Hrbef. cbn [snd] in Hrbef.
         rewrite Hr1 in Hrbef. cbn [snd] in Hrbef.
-        pose proof (@CtxReadback.ctx_readback_eF_lookup V V_Eqb V_Eqb_ok V_default V_map V_trie
-                      sort_of X l Hwf
-                      e_assum_c c sub_c Hwfc (eq_sym Hmapfst) Hrbef nm x' Hin_sub)
+        pose proof (@CtxReadback.ctx_readback_eF_lookup_gen V V_Eqb V_Eqb_ok V_default V_map V_trie
+                      sort_of X l Hwf (sort_eq_skip t1)
+                      e_assum_c c sub_c Hwfc (eq_sym Hmapfst) Hrbef nm x' Hin_sub Hns_nm)
           as (t' & xs' & Hin_c' & Htree' & Hatom').
         rewrite Hargs_A in Hk_in. cbn [In] in Hk_in.
         assert (HA' : @Semantics.atom_in_db V V V_map V_trie X
@@ -3159,9 +3170,9 @@ Section WithVar.
           rewrite <- Hlk. apply (@Theorems.at_var V V_Eqb V_default V_map V_trie X e_assum_c sub_c nm).
       - pose proof (eqb_spec (Defs.atom_fn A) sort_of) as Hsp.
         rewrite Heqfn in Hsp. rename Hsp into Hnsof_A.
-        pose proof (@AddCtxInversion.eq_sort_assum_db_frame_eF V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+        pose proof (@AddCtxInversion.eq_sort_assum_db_frame_eF_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                       succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                      rf c t1 Hwfc Hwft1 Hsucc_uf A HA_uf Hnsof_A)
+                      (sort_eq_skip t1) rf c t1 Hwfc Hwft1 Hsucc_uf A HA_uf Hnsof_A)
           as (ns & ss & xs & Hwst & Htree & Hnode).
         rewrite Hac in Htree, Hnode. cbn [fst snd] in Htree, Hnode.
         rewrite Hao1 in Htree, Hnode. cbn [snd] in Htree, Hnode.
@@ -3180,16 +3191,16 @@ Section WithVar.
         (Hsg : wf_subst l [] sg c)
         (Hsnd_a : forall al, atom_in_egraph al
                     (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-                      (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                      t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))) ->
+                      (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
+                      t1 (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))) ->
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
                            (rule_to_log_seq name (sort_eq_rule c t1 t2))))
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                   t1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : forall k da d,
           In k (flat_map (clause_vars V V) (seq_conclusions
@@ -3197,14 +3208,14 @@ Section WithVar.
           map.get a k = Some da -> map.get i2 k = Some d ->
           (exists e' t', wf_term l c e' t'
              /\ atom_tree (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                  t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) e' k)
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
+                  t1 (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))))))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))) e' k)
         \/ (exists ts, wf_sort l c ts
              /\ atom_tree_sort (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                  t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
+                  t1 (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))))))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))) ts k).
     Proof.
       intros k da d Hk Ha Hi2k.
       apply (eq_sort_assum_ids_covered name c t1 t2 Hwfc Hwft1 Hsucc k).
@@ -3253,24 +3264,24 @@ Section WithVar.
         (sg : subst)
         (Hsg : wf_subst l [] sg c)
         (Hmapfst : map fst sg = map fst c)
-        (Hfaith : forall x, In x (map fst (fst (add_ctx succ sort_of l false false c
+        (Hfaith : forall x, In x (map fst (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c
                                                   (empty_egraph V_default X)))) ->
                     map.get a (named_list_lookup default
-                                (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) x)
+                                (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))) x)
                       = Some (inl (named_list_lookup default sg x)))
         (Hwfc : wf_ctx l c)
         (Hwft1 : wf_sort l c t1)
         (Hwft2 : wf_sort l c t2)
         (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_sort l [] t1[/sg0/] t2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                   t1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))
                = Result.Success tt)
         (Hsnd_a : forall al, atom_in_egraph al
                     (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-                      (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                      t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))) ->
+                      (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
+                      t1 (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))) ->
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
@@ -3280,9 +3291,9 @@ Section WithVar.
           all (clause_sound_for_model V V V_map (lang_model l) a')
             (seq_conclusions (rule_to_log_seq name (sort_eq_rule c t1 t2))).
     Proof.
-      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) in *.
+      set (sub    := fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))) in *.
       set (e_assum := snd (rebuild rf (snd (add_open_sort succ sort_of l false false sub t1
-                        (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))) in *.
+                        (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))) in *.
       pose proof (conclusion_i2_sound_assum_sort_eq c t1 t2 sg Hwfc Hwft1 Hwft2 Heqf Hsg)
         as (i2 & Hsnd_concl_i2 & Hai2 & Hsnd_i2_assum).
       cbn zeta in Hsnd_concl_i2, Hai2, Hsnd_i2_assum.
@@ -3334,9 +3345,9 @@ Section WithVar.
         (Hwft2 : wf_sort l c t2)
         (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_sort l [] t1[/sg0/] t2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                   t1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : @model_satisfies_rule V V V_map (lang_model l)
           (rule_to_log_seq name (sort_eq_rule c t1 t2)).
@@ -3349,7 +3360,7 @@ Section WithVar.
       cbn [seq_assumptions fst] in Hassum.
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad in Hassum.
       cbn beta iota in Hassum.
-      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
+      destruct (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
       cbn [fst snd] in *.
       destruct (add_open_sort succ sort_of l false false sub_c t1 e_ctx_c) as [x1_c e_open1_c] eqn:Hao1.
       cbn [fst snd] in *.
@@ -3360,9 +3371,9 @@ Section WithVar.
       assert (Hsnd_atoms_uf : forall al : atom,
           @Semantics.atom_in_egraph V V V_map V_map V_trie X al
             (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-              (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+              (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
               t1
-              (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))
+              (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))))))
           -> @Semantics.atom_sound_for_model V V V_map (lang_model l) a al).
       { intros al Hal.
         apply Hsnd_atoms.
@@ -3371,14 +3382,17 @@ Section WithVar.
         rewrite Hr1 in Hal. cbn [snd] in Hal.
         exact Hal. }
       assert (Hsucc_uf : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
-                    (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                    (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                     t1
-                    (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                    (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))
                = Result.Success tt).
       { rewrite Hac. cbn [fst snd]. rewrite Hao1. cbn [snd]. rewrite Hr1. cbn [fst]. exact Hsucc. }
-      pose proof (@AddCtxInversion.eq_sort_ctx_inversion V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+      assert (Hskip : forall x, sort_eq_skip t1 x = true -> In x (fv_sort t1)).
+      { intros x Hx. unfold sort_eq_skip in Hx.
+        apply (proj1 (inb_is_In _ _)). rewrite Hx. exact I. }
+      pose proof (@AddCtxInversion.eq_sort_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                    rf a c t1 Hwfc Hwft1 Hsucc_uf Hsnd_atoms_uf) as Hinv.
+                    (sort_eq_skip t1) rf a c t1 Hwfc Hwft1 Hskip Hsucc_uf Hsnd_atoms_uf) as Hinv.
       destruct Hinv as (sg & Hsg & Hmapfst_sg & Hfaith).
       assert (Hfaith' : forall x, In x (map fst sub_c) ->
                 map.get a (named_list_lookup default sub_c x)
@@ -3389,9 +3403,9 @@ Section WithVar.
       assert (Hsnd_a : forall al, @Semantics.atom_in_egraph V V V_map V_map V_trie X al e_assum_c ->
                     @Semantics.atom_sound_for_model V V V_map (lang_model l) a al).
       { intros al Hal. apply Hsnd_atoms. exact Hal. }
-      assert (Hfaith_orig : forall x, In x (map fst (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))) ->
+      assert (Hfaith_orig : forall x, In x (map fst (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))) ->
                 map.get a (named_list_lookup default
-                            (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) x)
+                            (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))) x)
                   = Some (inl (named_list_lookup default sg x))).
       { intros x Hx.
         rewrite Hac in Hx. cbn [fst] in Hx.
@@ -3408,9 +3422,9 @@ Section WithVar.
         (Hwft2 : wf_sort l c t2)
         (Heqf : forall sg0, wf_subst l [] sg0 c -> eq_sort l [] t1[/sg0/] t2[/sg0/])
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                   t1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : model_satisfies_rule V V V_map (lang_model l)
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
@@ -3422,15 +3436,15 @@ Section WithVar.
                (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
                lt_asymmetric lt_succ lt_trans
                (db_to_atoms (db (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
-                  t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))))) .
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
+                  t1 (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))))))))) .
       - unfold rule_to_log_seq.
         cbn [seq_assumptions fst].
         unfold QueryOpt.sequent_of_states_seq.
         cbn [seq_assumptions fst].
         unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
         cbn beta iota.
-        destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
+        destruct (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)) as [sub_c e_ctx_c] eqn:Hac.
         cbn [fst snd] in *.
         destruct (add_open_sort succ sort_of l false false sub_c t1 e_ctx_c) as [x1_c e_open1_c] eqn:Hao1.
         cbn [fst snd] in *.
@@ -3445,9 +3459,9 @@ Section WithVar.
     Lemma central_obligation_sort_eq name c t1 t2
         (Hin : In (name, sort_eq_rule c t1 t2) l)
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                   t1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : model_satisfies_rule V V V_map (lang_model l)
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
@@ -3470,9 +3484,9 @@ Section WithVar.
     Lemma central_obligation_sort_eq_rev name c t1 t2
         (Hin : In (name, sort_eq_rule c t1 t2) l)
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t2) c (empty_egraph V_default X)))
                   t2
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t2) c (empty_egraph V_default X))))))
                = Result.Success tt)
       : model_satisfies_rule V V V_map (lang_model l)
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
@@ -3531,14 +3545,17 @@ Section WithVar.
     Lemma status_Hsucc_term_eq name c e1 e2 t s
       : @rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (term_eq_rule c e1 e2 t) = Result.Success s ->
         fst (rebuild rf (snd (add_open_term succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X)))
                   e1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (term_eq_skip e1) c (empty_egraph V_default X))))))
         = Result.Success tt.
     Proof.
       intro H.
-      cbv -[add_ctx add_open_term add_open_sort rebuild empty_egraph] in H.
-      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X))
+      unfold term_eq_skip.
+      cbv -[add_ctx_gen add_open_term add_open_sort rebuild empty_egraph inb fv] in H.
+      destruct (add_ctx_gen succ sort_of l false false
+                  (fun x => match e1 with con _ _ => inb x (fv e1) | var _ => false end)
+                  c (empty_egraph V_default X))
         as [sub e_ctx].
       cbn [fst snd] in H |- *.
       destruct (add_open_term succ sort_of l false false sub e1 e_ctx)
@@ -3552,14 +3569,16 @@ Section WithVar.
     Lemma status_Hsucc_sort_eq name c t1 t2 s
       : @rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (sort_eq_rule c t1 t2) = Result.Success s ->
         fst (rebuild rf (snd (add_open_sort succ sort_of l false false
-                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  (fst (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X)))
                   t1
-                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+                  (snd (add_ctx_gen succ sort_of l false false (sort_eq_skip t1) c (empty_egraph V_default X))))))
         = Result.Success tt.
     Proof.
       intro H.
-      cbv -[add_ctx add_open_term add_open_sort rebuild empty_egraph] in H.
-      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X))
+      unfold sort_eq_skip.
+      cbv -[add_ctx_gen add_open_term add_open_sort rebuild empty_egraph inb fv_sort] in H.
+      destruct (add_ctx_gen succ sort_of l false false
+                  (fun x => inb x (fv_sort t1)) c (empty_egraph V_default X))
         as [sub e_ctx].
       cbn [fst snd] in H |- *.
       destruct (add_open_sort succ sort_of l false false sub t1 e_ctx)

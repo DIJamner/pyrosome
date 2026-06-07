@@ -341,6 +341,59 @@ Section WithVar.
       | _, _ => False
       end.
 
+    (* [_gen] form of [ctx_readback_eF_lookup]: the looked-up var must be    *)
+    (* NON-skipped ([no_sort nm = false]) so it carries the sort_of witness  *)
+    (* (skip vars have no sort_of atom and are covered via the LHS tree      *)
+    (* branch downstream, never through this lemma).  Skipped HEAD vars      *)
+    (* contribute a trivial head clause; they only affect the [sub]-weaken   *)
+    (* on the tail, which [atom_tree_sort_sub_cons_fresh] handles uniformly. *)
+    Lemma ctx_readback_eF_lookup_gen (no_sort : V -> bool) (eF : instance X)
+      : forall c sub, wf_ctx l c ->
+          map fst c = map fst sub ->
+          ctx_readback_eF_gen no_sort eF sub c ->
+          forall nm x', In (nm, x') sub -> no_sort nm = false ->
+            exists t xs, In (nm, t) c
+                  /\ atom_tree_sort X eF sub t xs
+                  /\ ain (Build_atom sort_of [x'] xs) eF.
+    Proof.
+      pose proof (wf_lang_implies_ws_noext Hwf) as Hwsl.
+      induction c as [|[x tx] c' IH]; intros sub Hwfc Hdom Hrb nm x' Hin Hns.
+      - destruct sub as [|[? ?] ?]; cbn in Hdom; [|discriminate].
+        cbn in Hin. contradiction.
+      - destruct sub as [|[x0 x'x] sub']; cbn [map fst] in Hdom; [discriminate|].
+        injection Hdom as Hx Hdom'. subst x0.
+        apply invert_wf_ctx_cons in Hwfc.
+        destruct Hwfc as [Hfresh [Hwfc' Hwst] ].
+        cbn [ctx_readback_eF_gen] in Hrb.
+        destruct Hrb as [Hhead Hrb'].
+        cbn [In] in Hin. destruct Hin as [Heq | Hin'].
+        + injection Heq as Hnm Hx'eq. subst nm x'.
+          (* head var = looked-up var; non-skip, so the witness exists *)
+          rewrite Hns in Hhead.
+          destruct Hhead as [xs [Htree Hatom_sof] ].
+          destruct tx as [ntx stx].
+          exists (scon ntx stx), xs.
+          split; [left; reflexivity|].
+          split; [| exact Hatom_sof].
+          refine (@Theorems.atom_tree_sort_sub_cons_fresh V V_Eqb V_Eqb_ok V_default
+                    V_map V_trie X eF sub' x x'x ntx stx xs _ Htree).
+          eapply (@Theorems.ws_sort_fresh_not_fv V V_Eqb x (map fst c') ntx stx);
+            [ exact Hfresh |].
+          eapply wf_sort_implies_ws; eassumption.
+        + specialize (IH sub' Hwfc' Hdom' Hrb' nm x' Hin' Hns).
+          destruct IH as (t & xs0 & Hin_c' & Htree' & Hatom').
+          destruct t as [nt st].
+          exists (scon nt st), xs0.
+          split; [right; exact Hin_c'|].
+          split; [| exact Hatom'].
+          refine (@Theorems.atom_tree_sort_sub_cons_fresh V V_Eqb V_Eqb_ok V_default
+                    V_map V_trie X eF sub' x x'x nt st xs0 _ Htree').
+          eapply (@Theorems.ws_sort_fresh_not_fv V V_Eqb x (map fst c') nt st);
+            [ exact Hfresh |].
+          assert (Hwf_t : wf_sort l c' (scon nt st)) by (eapply in_ctx_wf; eauto).
+          eapply wf_sort_implies_ws; eassumption.
+    Qed.
+
     (* P5 bridge, _gen form: [ctx_readback_gen] (pre-rebuild) ->            *)
     (* [ctx_readback_eF_gen] (post-rebuild eF).  Mirrors [ctx_readback_to_eF]; *)
     (* the skipped-var head clause is trivial on both sides.                *)

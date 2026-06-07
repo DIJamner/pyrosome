@@ -7633,6 +7633,22 @@ Section WithVar.
         a.(atom_fn) = sort_of ->
         exists nm x', a.(atom_args) = [x'] /\ In (nm, x') (fst res).
 
+    (* [_gen] post: like [ctx_sortof_frame_post] but additionally certifies the
+       recovered companion var [nm] is NON-skipped ([no_sort nm = false]).
+       Sound because a skipped var emits no sort_of atom, so any sort_of atom's
+       companion is non-skip. Consumed by the eq-adapter's sort_of-branch to
+       feed [ctx_readback_eF_lookup_gen]. *)
+    Definition ctx_sortof_frame_post_gen (no_sort : V -> bool) (c0 : ctx)
+        (e_in : instance X)
+        (res : named_list V * instance X) : Prop :=
+      (exists roots, union_find_ok lt (Defs.equiv e_in) roots) ->
+      db_ctx_inv e_in ->
+      (forall a, atom_in_egraph a e_in -> a.(atom_fn) <> sort_of) ->
+      forall a, atom_in_egraph a (snd res) ->
+        a.(atom_fn) = sort_of ->
+        exists nm x', a.(atom_args) = [x'] /\ In (nm, x') (fst res)
+                   /\ no_sort nm = false.
+
     Lemma assum_sortof_frame_pre c
       : wf_ctx l c ->
         vc (add_ctx succ sort_of l false false c) (ctx_sortof_frame_post c).
@@ -8053,7 +8069,7 @@ Section WithVar.
 
     Lemma assum_sortof_frame_pre_gen (no_sort : V -> bool) c
       : wf_ctx l c ->
-        vc (add_ctx_gen succ sort_of l false false no_sort c) (ctx_sortof_frame_post c).
+        vc (add_ctx_gen succ sort_of l false false no_sort c) (ctx_sortof_frame_post_gen no_sort c).
     Proof.
       intros Hctx.
       unfold add_ctx_gen.
@@ -8061,7 +8077,7 @@ Section WithVar.
       - (* nil case: snd res = e_in, and a sort_of atom contradicts Hnosof *)
         cbn [list_Mfoldr].
         unfold vc, Mret. cbn [StateMonad.state_monad].
-        unfold ctx_sortof_frame_post.
+        unfold ctx_sortof_frame_post_gen.
         intros e_in Hok Hdb Hnosof.
         cbn [fst snd].
         intros a Ha Hsof_a.
@@ -8077,7 +8093,7 @@ Section WithVar.
         2:{
         cbn [Mbind StateMonad.state_monad Mret].
         unfold vc; intros e_inner Hcombined.
-        unfold ctx_sortof_frame_post.
+        unfold ctx_sortof_frame_post_gen.
         intros Hok Hdb Hnosof.
         destruct Hcombined as [Hrb_post Hframe_sortof].
         assert (Hwfc' : wf_ctx l c') by (inversion Hctx; assumption).
@@ -8087,7 +8103,7 @@ Section WithVar.
         unfold ctx_readback_post_gen in Hrb_post.
         specialize (Hrb_post Hok Hdb).
         destruct Hrb_post as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hrb_tail).
-        unfold ctx_sortof_frame_post in Hframe_sortof.
+        unfold ctx_sortof_frame_post_gen in Hframe_sortof.
         specialize (Hframe_sortof Hok Hdb Hnosof).
         destruct t as [nt st].
         (* Step 1: add_open_sort_new_atoms_are_nodes (roots + atom_tree_sort + new=node) *)
@@ -8213,22 +8229,22 @@ Section WithVar.
           specialize (Hnosof_pull Ha_alloc Ha_sof).   (* a in e_inner.db *)
           assert (Ha_inner : atom_in_egraph a e_inner)
             by (unfold atom_in_egraph; exact Hnosof_pull).
-          destruct (Hframe_sortof a Ha_inner Ha_sof) as (nm & xx & Hargs & Hin_base).
-          exists nm, xx. split; [ exact Hargs | right; exact Hin_base ].
+          destruct (Hframe_sortof a Ha_inner Ha_sof) as (nm & xx & Hargs & Hin_base & Hns_nm).
+          exists nm, xx. split; [ exact Hargs | split; [ right; exact Hin_base | exact Hns_nm ] ].
         + (* NEW atom: a = Build_atom sort_of [x'] tx', companion x' is the new sub entry *)
           subst a. cbn [atom_args atom_fn].
-          exists name, x'. split; [ reflexivity | left; reflexivity ].
+          exists name, x'. split; [ reflexivity | split; [ left; reflexivity | exact Hns ] ].
         }
         (* SKIP branch: only alloc_opaque runs, db unchanged, no new sort_of atom. *)
         cbn [Mbind StateMonad.state_monad Mret].
         unfold vc; intros e_inner Hcombined.
-        unfold ctx_sortof_frame_post.
+        unfold ctx_sortof_frame_post_gen.
         intros Hok Hdb Hnosof.
         destruct Hcombined as [Hrb_post Hframe_sortof].
         unfold ctx_readback_post_gen in Hrb_post.
         specialize (Hrb_post Hok Hdb).
         destruct Hrb_post as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hrb_tail).
-        unfold ctx_sortof_frame_post in Hframe_sortof.
+        unfold ctx_sortof_frame_post_gen in Hframe_sortof.
         specialize (Hframe_sortof Hok Hdb Hnosof).
         pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ
                       V V_map V_map V_map_ok V_trie X H
@@ -8249,8 +8265,8 @@ Section WithVar.
         rewrite <- Hdb_alloc_eq in Ha_in.
         assert (Ha_inner : atom_in_egraph a e_inner)
           by (unfold atom_in_egraph; exact Ha_in).
-        destruct (Hframe_sortof a Ha_inner Ha_sof) as (nm & xx & Hargs & Hin_base).
-        exists nm, xx. split; [ exact Hargs | right; exact Hin_base ].
+        destruct (Hframe_sortof a Ha_inner Ha_sof) as (nm & xx & Hargs & Hin_base & Hns_nm).
+        exists nm, xx. split; [ exact Hargs | split; [ right; exact Hin_base | exact Hns_nm ] ].
     Qed.
 
     (* ================================================================ *)
