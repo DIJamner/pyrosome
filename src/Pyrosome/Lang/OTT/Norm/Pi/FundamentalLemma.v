@@ -1813,6 +1813,126 @@ Proof.
     repeat first [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects | progress ott_build | eassumption ].
 Qed.
 
+(* ====================================================================== *)
+(* MACHINERY-CONGRUENCE LEAVES for cod_at_machinery_cong.  In the          *)
+(* escape-at-Pi codomain IH the SECOND code is the MIXED instantiation     *)
+(*   cod_at (machinery built over El F) F' C' (hd over El F)               *)
+(* whose substitution machinery (wkn/hd/ext/act_code) is built from F but  *)
+(* whose pushed code is F'/C'.  cod_at_wkn_hd_eq needs machinery AND code   *)
+(* to be the SAME X, so it does not collapse this directly.  The fix is to  *)
+(* SWAP the machinery F -> F' (legitimate because El F ~ El F'), then       *)
+(* cod_at_wkn_hd_eq at F' collapses to C'.  These leaves are the per-former *)
+(* congruences (driven by F ~ F') the swap is assembled from. *)
+(* ====================================================================== *)
+
+(* weakening is congruent in its decoded-code argument: El F ~ El F' =>     *)
+(* wkn (El F) ~ wkn (El F').                                                *)
+Lemma wkn_cong rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : eq_term ott [] (s_sub (oext (oEl rF lF G F') (term_info rF lF) G) G)
+      (owkn (oEl rF lF G F) (term_info rF lF) G)
+      (owkn (oEl rF lF G F') (term_info rF lF) G).
+Proof.
+  pose proof ott_wf as Hwf.
+  pose proof (El_cong rF lF G F F' HG HrF HlF HFF') as HElFF'.
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons.
+    2:{ exact HElFF'. }
+    eapply eq_args_refl.
+    1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+    repeat first [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects | progress ott_build | eassumption ].
+Qed.
+
+(* the bound variable is congruent in its decoded-code argument.  Its       *)
+(* natural sort is the WEAKENED domain (ty_subst wkn (El F')), not the      *)
+(* El(act_code) form. *)
+Lemma hd_cong rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : eq_term ott []
+      (s_exp (oext (oEl rF lF G F') (term_info rF lF) G) (term_info rF lF)
+        (con "ty_subst" [oEl rF lF G F'; term_info rF lF;
+            owkn (oEl rF lF G F') (term_info rF lF) G; G;
+            oext (oEl rF lF G F') (term_info rF lF) G]))
+      (ohd (oEl rF lF G F) (term_info rF lF) G)
+      (ohd (oEl rF lF G F') (term_info rF lF) G).
+Proof.
+  pose proof ott_wf as Hwf.
+  pose proof (El_cong rF lF G F F' HG HrF HlF HFF') as HElFF'.
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons.
+    2:{ exact HElFF'. }
+    eapply eq_args_refl.
+    1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+    repeat first [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects | progress ott_build | eassumption ].
+Qed.
+
+(* act_code with the F-machinery (g := wkn over El F, target := ext G (El F)) *)
+(* but pushing the OTHER code F' is congruent to act_code with the matching  *)
+(* F'-machinery (lands at the clean U-code sort via "U subst"). *)
+Lemma act_code_mach_cong rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : let iF := term_info rF lF in
+    let extGF := oext (oEl rF lF G F) iF G in
+    let extGF' := oext (oEl rF lF G F') iF G in
+    let wknF := owkn (oEl rF lF G F) iF G in
+    let wknF' := owkn (oEl rF lF G F') iF G in
+    eq_term ott [] (s_exp extGF' (code_info lF) (oU rF lF extGF'))
+      (act_code rF lF wknF G extGF F')
+      (act_code rF lF wknF' G extGF' F').
+Proof.
+  pose proof ott_wf as Hwf.
+  intros iF extGF extGF' wknF wknF'.
+  pose proof (El_cong rF lF G F F' HG HrF HlF HFF') as HElFF'.
+  pose proof (ext_cong rF lF G (oEl rF lF G F) (oEl rF lF G F') HG HrF HlF HElFF') as HextGG'.
+  pose proof (wkn_cong rF lF G F F' HG HrF HlF HF HF' HFF') as HwknFF'.
+  assert (HextGF' : wf_term ott [] extGF' s_env).
+  { unfold extGF', iF. ott_build. }
+  assert (HwknF'wf : wf_term ott [] wknF' (s_sub extGF' G)).
+  { unfold wknF', extGF', iF. ott_build. }
+  unfold act_code.
+  eapply eq_term_conv with
+    (t := s_exp extGF' (code_info lF)
+            (con "ty_subst" [oU rF lF G; code_info lF; wknF'; G; extGF'])).
+  - eapply term_con_congruence.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + right; cbn [with_names_from]; reflexivity.
+    + exact ott_wf.
+    + cbn [with_names_from].
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; exact HF'. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ exact HwknFF'. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ exact HextGG'. }
+      eapply eq_args_nil.
+  - unfold s_exp; sort_cong; cbn [Model.eq_term core_model];
+      try solve [ eapply eq_term_refl; ott_build ].
+    apply U_subst_eq; try eassumption.
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
