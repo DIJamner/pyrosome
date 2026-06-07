@@ -1,5 +1,57 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07v — OTT-CONCRETE Kripke RedTy LANDED in LogicalRelation.v (GREEN + axiom-free, committed+pushed). Builders verified vs built Base/Pi/Nat.vo; snoc-order corrected; base members concrete. NEXT = file 4 FundamentalLemma (where the deferred codomain under'-lift correctness gets checked).
+
+THIS SESSION (committed+pushed on `gluing-nbe`):
+1. **Built Pi.vo + Nat.vo** (were unbuilt; the Pi/ foundation is generic so the
+   OTT lang .vo were never compiled). `make -f Makefile.coq /ABS/PATH.vo`.
+2. **Verified ALL subst con-arg orders empirically** (WIP/ProbeSubst.v, deleted)
+   against the built Base.vo `subst_ott`. KEY CORRECTION to memory
+   ott-con-arg-orders: **`snoc` = [v; g; A; i; G'; G]** — the underlying subst
+   `g` is at IDX 1, NOT idx 3 (the prior staged value was WRONG).
+   `cmp` = [g; f; G3; G2; G1] (cmp g f : sub G1 G3; g:sub G2 G3, f:sub G1 G2).
+   `exp_subst` [v;A;i;g;G';G] confirmed (v in G'=SOURCE, result G=TARGET,
+   g:sub G G').
+3. **OTT-CONCRETE RedTy_tot landed** in `src/.../Pi/LogicalRelation.v`,
+   REPLACING the generic `RedTyDef` (the act/cod/mapp:term->term->term interface
+   was too thin). Lives OUTSIDE `Section WithVar` (V fixed = string, pa = ott_pa;
+   l still abstract w/ wf_lang l). Inlined Kripke operations, all from the
+   verified builders:
+     - `act_code rF lF g G D F` = exp_subst F (U rF lF G)(code_info lF) g G D.
+     - `extc` = ext (El(act_code)) (info rF (iota lF)) D  [binder info is the
+       TERM info `info rF (iota lF)`, NOT code_info — UPDATE-u said code_info,
+       that was wrong; corrected here].
+     - `act_member` (pushes f : El(Pi_rel..) along g; uses the El-of-Pi type +
+       info rel (iota lG), NOT the code annotations).
+     - `ounder` = snoc (cmp g wkn) hd, fully annotated (the under'-lift).
+     - `act_cod` = exp_subst C (U rel lG extG)(code_info lG) ounder extG extD.
+     - `cod_at` = exp_subst act_cod (U rel lG extD)(code_info lG)(snoc a id ..) extD D.
+     - `mapp` = app_rel rF lF lG (act_code)(act_cod)(act_member) a D.
+   `rtt_pi` carries G A B rF lF lG F C F' C' + the two reds-to-Pi_rel witnesses
+   (single rF/lF/lG shared by both sides). Sig packaging + RedTy_nat/ne/pi smart
+   ctors + custom RedTy_rect (threads Kripke dom+cod IHs) all GREEN + Closed
+   under the global context.
+4. **Base members concrete**: `RedNatMem` (rnm_zero / rnm_suc / rnm_ne) replaces
+   the placeholder; `RedNe` wraps ne_eq. `nat_sort G` = exp sort of El(Nat) at L0.
+   Empty members deferred (proof-irrelevant; trivial PER) — add when needed.
+
+**NEXT = file 4 `FundamentalLemma.v`.** This is where the DEFERRED correctness of
+the builders gets exercised: assemble `ott := ott_pi ++ ott_nat ++ ott_base ++
+subst_ott ++ ott_info`, get `wf_lang ott` (from the Derive `*_wf` lemmas:
+ott_pi_wf : wf_lang_ext (ott_base++subst_ott++ott_info) ott_pi, etc. — chain
+wf_lang_ext into a single wf_lang), instantiate `l := ott`. Then prove
+`wf_term ott [] e t -> RedTy/RedTm ...` by Pyrosome cut-elim
+(Theory/CutElim/CutFreeInd/WfCutElim) on canonical derivations. The hard sub-
+goals: (a) the act_code/cod_at/under' terms are well-typed (the under'-lift
+direction + annotations — check vs Pi.v "Pi_rel subst" line 120 + the elaborated
+under' in pi_rel_eta_rule lines 47-49); (b) reflect/reify adequacy at Pi (the
+eta crux — type-directed, NOT via whstep, since `step` orients the eta rule too;
+may need `redex` to exclude "Pi_rel eta" by name). Then file 5 Decidable =
+decidability of eq_term for OTT.
+
+(Superseded: UPDATE-u's "carry rF/lF/lG/G/D in rtt_pi" plan — DONE this session.
+G/D are not stored in rtt_pi: G is an index, D is bound per-Kripke-instance.)
+
 ## UPDATE 2026-06-07u — KRIPKE RedTy LR LANDED in LogicalRelation.v (GREEN + axiom-free, committed+pushed `dc83735`). Build repaired, con-orders verified, ott_pa + builders staged (WIP/LRProto3.v `e1634ca`). NEXT = rewrite RedTy OTT-CONCRETE (option b: inline builders, carry rF/lF/lG/G/D in rtt_pi), then base member relations, then file 4.
 
 THIS SESSION'S RESULTS (all committed+pushed on `gluing-nbe`):
