@@ -624,4 +624,35 @@ Section RedTyConcrete.
       | apply ne_eq_refl; assumption ].
   Qed.
 
+  (* ---- TWO-SIDED reflect leaves (the PER form) ---- *)
+  (* The fundamental lemma's neutral/variable cases compare two DISTINCT terms
+     `a`,`b` that are `ne_eq` (both stuck + declaratively equal), not a term with
+     itself.  Each such pair is directly a reducible member of its fiber: both
+     sides are already whnf (a neutral is whnf), so `reds_refl` discharges the
+     reduction witnesses and the `ne_eq` is carried verbatim.  The reflexive
+     leaves above are the `a = b` instances of these (via `ne_eq_refl`). *)
+  Lemma RedNe_reflect t a b : ne_eq t a b -> RedNe t a b.
+  Proof.
+    intros (Ha & Hb & Hab); eapply red_ne;
+      [ apply reds_refl; apply neutral_whnf; exact Ha
+      | apply reds_refl; apply neutral_whnf; exact Hb
+      | exact (conj Ha (conj Hb Hab)) ].
+  Qed.
+
+  Lemma RedNatMem_reflect G a b : ne_eq (nat_sort G) a b -> RedNatMem G a b.
+  Proof.
+    intros (Ha & Hb & Hab); eapply rnm_ne;
+      [ apply reds_refl; apply neutral_whnf; exact Ha
+      | apply reds_refl; apply neutral_whnf; exact Hb
+      | exact (conj Ha (conj Hb Hab)) ].
+  Qed.
+
+  Lemma RedTy_ne_reflect G A B t : ne_eq t A B -> RedTy G A B.
+  Proof.
+    intros (Ha & Hb & Hab); eapply (RedTy_ne A B t);
+      [ apply reds_refl; apply neutral_whnf; exact Ha
+      | apply reds_refl; apply neutral_whnf; exact Hb
+      | exact (conj Ha (conj Hb Hab)) ].
+  Qed.
+
 End RedTyConcrete.
