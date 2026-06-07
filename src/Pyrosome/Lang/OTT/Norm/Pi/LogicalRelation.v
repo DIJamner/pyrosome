@@ -472,4 +472,23 @@ Section RedTyConcrete.
     : star whstep B B' -> RedTy G A B' -> RedTy G A B.
   Proof. intros H [R r]; exists R; eapply RedTy_tot_anti_r; eassumption. Qed.
 
+  (* ---- whnf of the canonical (non-eliminator) formers ---- *)
+  (* A `con` whose head is not an eliminator (`ott_pa _ = None`) is a whnf;
+     the canonical type/term formers below all qualify. *)
+  Lemma whnf_Nat G : whnf ott_pa (oNat G).
+  Proof. right; exists "Nat", [G]; split; reflexivity. Qed.
+
+  Lemma whnf_Empty G : whnf ott_pa (oEmpty G).
+  Proof. right; exists "Empty", [G]; split; reflexivity. Qed.
+
+  Lemma whnf_Pi_rel rF lF lG F C G : whnf ott_pa (oPi_rel rF lF lG F C G).
+  Proof. right; eexists "Pi_rel", _; split; reflexivity. Qed.
+
+  (* ---- leaf reducibility: the closed base type Nat is reducible ---- *)
+  Lemma RNat_Nat G : RNat G (oNat G).
+  Proof. unfold RNat; apply reds_refl, whnf_Nat. Qed.
+
+  Definition RedTy_Nat G : RedTy G (oNat G) (oNat G) :=
+    RedTy_nat (RNat_Nat G) (RNat_Nat G).
+
 End RedTyConcrete.
