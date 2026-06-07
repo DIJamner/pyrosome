@@ -40,8 +40,22 @@ Section WithVar.
      for non-eliminators it is `None`. *)
   Context (pa : V -> option nat).
 
+  (* The head constructor of the CwF/explicit-substitution bound VARIABLE (the
+     "last variable" projection).  For OTT this is instantiated with `"hd"`.  It
+     is recognized STRUCTURALLY by `neutral` (NOT via `pa` — it is not an
+     eliminator: `pa hd_name = None`). *)
+  Context (hd_name : V).
+
   Inductive neutral : term -> Prop :=
   | neutral_var : forall x, neutral (var x)
+  (* The CwF/explicit-substitution bound VARIABLE is the projection
+     `hd = con hd_name [A; i; G]`, NOT a meta `var x`.  It is whnf (its head is
+     not an eliminator: `pa hd_name = None`) but it is the canonical neutral
+     that NbE reflects (the zero variable).  In the metamltt-style direct syntax
+     the variable rule is `neutral_var`; in OTT's categorical syntax the
+     variable IS this projection, so it gets its own neutral base case.
+     See WIP/NEXT_SESSION.md z18/z19. *)
+  | neutral_hd : forall A i G, neutral (con hd_name [A; i; G])
   | neutral_elim : forall name args i a,
       pa name = Some i ->
       nth_error args i = Some a ->
@@ -63,12 +77,16 @@ Section WithVar.
   Lemma var_whnf x : whnf (var x).
   Proof. apply neutral_whnf, var_neutral. Qed.
 
-  (* Inversion: a neutral is never a non-eliminator former. *)
+  (* Inversion: a neutral `con` is either the bound-variable projection
+     `hd_name` (the `neutral_hd` base case), or an eliminator whose principal
+     argument is itself neutral.  (Pre-`neutral_hd` this returned only the
+     eliminator disjunct; the variable-projection clause adds the left case.) *)
   Lemma neutral_inv name args
     : neutral (con name args) ->
-      exists i a, pa name = Some i /\ nth_error args i = Some a /\ neutral a.
+      (exists A i G, name = hd_name /\ args = [A; i; G]) \/
+      (exists i a, pa name = Some i /\ nth_error args i = Some a /\ neutral a).
   Proof.
-    inversion 1; subst; eauto.
+    inversion 1; subst; eauto 10.
   Qed.
 
   (* The two whnf cases are mutually exclusive on `con`: an eliminator-headed
@@ -85,5 +103,5 @@ Section WithVar.
 
 End WithVar.
 
-Arguments neutral {V}%_type_scope pa%_function_scope _.
+Arguments neutral {V}%_type_scope pa%_function_scope hd_name _.
 Arguments whnf {V}%_type_scope pa%_function_scope _.

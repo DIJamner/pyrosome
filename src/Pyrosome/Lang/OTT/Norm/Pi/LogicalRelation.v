@@ -71,10 +71,12 @@ Section WithVar.
   Section WithLang.
     Context (l : lang) (wfl : wf_lang l).
     Context (pa : V -> option nat).
+    (* head of the CwF bound-variable projection; instantiated with "hd". *)
+    Context (hd_name : V).
 
     Notation whstep := (whstep V l pa).
-    Notation whnf := (whnf pa).
-    Notation neutral := (neutral pa).
+    Notation whnf := (whnf pa hd_name).
+    Notation neutral := (neutral pa hd_name).
 
     (* ------------------------------------------------------------------ *)
     (* Reduction to weak-head normal form.                                 *)
@@ -302,14 +304,14 @@ Definition mapp (rF lF lG g G D F C f a : tm) : tm :=
    reflect-at-Pi case: a neutral function applied to any argument is neutral, so
    it lands back in the neutral fiber of the codomain. *)
 Lemma act_member_neutral rF lF lG g G D F C f
-  : neutral ott_pa f -> neutral ott_pa (act_member rF lF lG g G D F C f).
+  : neutral ott_pa "hd" f -> neutral ott_pa "hd" (act_member rF lF lG g G D F C f).
 Proof.
   intro Hf; unfold act_member, oexp_subst.
   eapply neutral_elim with (i:=0); [ reflexivity | reflexivity | exact Hf ].
 Qed.
 
 Lemma mapp_neutral rF lF lG g G D F C f a
-  : neutral ott_pa f -> neutral ott_pa (mapp rF lF lG g G D F C f a).
+  : neutral ott_pa "hd" f -> neutral ott_pa "hd" (mapp rF lF lG g G D F C f a).
 Proof.
   intro Hf; unfold mapp, oapp_rel.
   eapply neutral_elim with (i:=1); [ reflexivity | reflexivity | ].
@@ -319,8 +321,8 @@ Qed.
 Section RedTyConcrete.
   Context (l : Rule.lang string) (wfl : wf_lang l).
 
-  Notation reds    := (reds string l ott_pa).
-  Notation ne_eq   := (ne_eq string l ott_pa).
+  Notation reds    := (reds string l ott_pa "hd").
+  Notation ne_eq   := (ne_eq string l ott_pa "hd").
 
   (* A reduces to the Nat code in env G. *)
   Definition RNat (G A : tm) : Prop := reds A (oNat G).
@@ -527,13 +529,13 @@ Section RedTyConcrete.
   (* ---- whnf of the canonical (non-eliminator) formers ---- *)
   (* A `con` whose head is not an eliminator (`ott_pa _ = None`) is a whnf;
      the canonical type/term formers below all qualify. *)
-  Lemma whnf_Nat G : whnf ott_pa (oNat G).
+  Lemma whnf_Nat G : whnf ott_pa "hd" (oNat G).
   Proof. right; exists "Nat", [G]; split; reflexivity. Qed.
 
-  Lemma whnf_Empty G : whnf ott_pa (oEmpty G).
+  Lemma whnf_Empty G : whnf ott_pa "hd" (oEmpty G).
   Proof. right; exists "Empty", [G]; split; reflexivity. Qed.
 
-  Lemma whnf_Pi_rel rF lF lG F C G : whnf ott_pa (oPi_rel rF lF lG F C G).
+  Lemma whnf_Pi_rel rF lF lG F C G : whnf ott_pa "hd" (oPi_rel rF lF lG F C G).
   Proof. right; eexists "Pi_rel", _; split; reflexivity. Qed.
 
   (* ---- leaf reducibility: the closed base type Nat is reducible ---- *)
@@ -615,8 +617,8 @@ Section RedTyConcrete.
     : RedNe t a b -> wf_term l [] a t -> wf_term l [] b t -> eq_term l [] t a b.
   Proof.
     intros [na nb ra rb h] Hwfa Hwfb.
-    pose proof (@reds_sound string _ _ _ l wfl ott_pa a na t Hwfa ra) as H1.
-    pose proof (@reds_sound string _ _ _ l wfl ott_pa b nb t Hwfb rb) as H2.
+    pose proof (@reds_sound string _ _ l wfl ott_pa "hd" a na t Hwfa ra) as H1.
+    pose proof (@reds_sound string _ _ l wfl ott_pa "hd" b nb t Hwfb rb) as H2.
     eapply eq_term_trans; [ exact H1 | ].
     eapply eq_term_trans; [ | eapply eq_term_sym; exact H2 ].
     exact (proj2 (proj2 h)).
@@ -629,7 +631,7 @@ Section RedTyConcrete.
      (`reds_refl` on the whnf neutral + `ne_eq_refl`), hence abstract over `l`.
      Reflect AT Π (a neutral function is a reducible Π-member) is the eta crux
      and is NOT a leaf — it lands with the Pi case of the fundamental lemma. *)
-  Lemma RedNe_refl t a : neutral ott_pa a -> wf_term l [] a t -> RedNe t a a.
+  Lemma RedNe_refl t a : neutral ott_pa "hd" a -> wf_term l [] a t -> RedNe t a a.
   Proof.
     intros Hn Hwf.
     eapply red_ne; [ apply reds_refl; apply neutral_whnf; exact Hn
@@ -638,7 +640,7 @@ Section RedTyConcrete.
   Qed.
 
   Lemma RedNatMem_refl_ne G a
-    : neutral ott_pa a -> wf_term l [] a (nat_sort G) -> RedNatMem G a a.
+    : neutral ott_pa "hd" a -> wf_term l [] a (nat_sort G) -> RedNatMem G a a.
   Proof.
     intros Hn Hwf.
     eapply rnm_ne; [ apply reds_refl; apply neutral_whnf; exact Hn
@@ -647,7 +649,7 @@ Section RedTyConcrete.
   Qed.
 
   Lemma RedTy_ne_refl G A rN lN
-    : neutral ott_pa A -> wf_term l [] A (code_sort rN lN G) -> RedTy G A A.
+    : neutral ott_pa "hd" A -> wf_term l [] A (code_sort rN lN G) -> RedTy G A A.
   Proof.
     intros Hn Hwf.
     eapply (RedTy_ne A A rN lN);
