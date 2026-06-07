@@ -103,6 +103,21 @@ Section WithVar.
       eapply star_whstep_wf; eauto.
     Qed.
 
+    (* Determinism UP TO CONVERSION: the two whnfs reached from one well-typed
+       term are `eq_term`-equal.  This is the Pyrosome-native replacement for
+       metamltt's syntactic `whnf_det` — it needs only soundness (reduction ⊆
+       eq_term), never confluence of `whstep`.  The LR inversions that metamltt
+       does by `whnf_det` we do by combining this with sort/term constructor
+       INJECTIVITY on `b1 = b2` (up to eq_term). *)
+    Lemma reds_eq a b1 b2 t
+      : wf_term l [] a t -> reds a b1 -> reds a b2 -> eq_term l [] t b1 b2.
+    Proof.
+      intros Hwf Hr1 Hr2.
+      eapply eq_term_trans.
+      - eapply eq_term_sym; eapply reds_sound; eauto.
+      - eapply reds_sound; eauto.
+    Qed.
+
     (* ------------------------------------------------------------------ *)
     (* Neutral equality.  Two terms are "neutral-equal" at sort `t` when    *)
     (* both are stuck (neutral) and they are `eq_term`-equal.  This is the   *)
