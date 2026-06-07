@@ -1076,6 +1076,59 @@ Proof.
     apply El_act_cod_subst_eq; assumption.
 Qed.
 
+(* ====================================================================== *)
+(* act_code_code_cong (z21) — `act_code` is congruent in its CODE argument  *)
+(* (the substituted domain code F), at FIXED machinery (g/G/D).  Leaf of    *)
+(* the `mapp_code_cong` family that closes esc_tm@Pi / reflect@Pi: the       *)
+(* RedAtPi member relates `mapp F C t a` with `mapp F' C' u a'` over the     *)
+(* SAME world, so bridging to the eta law needs F'/C'->F/C code congruences  *)
+(* on act_code/act_cod/act_member (NOT the function-position `act_member_    *)
+(* cong`).  `act_code F` = `exp_subst F (U rF lF G) (code_info lF) g G D`;    *)
+(* congruence the v=F position (HFF'), result sort via the "U subst" rule    *)
+(* (`U_subst_eq`).  Same-env (env D unchanged), so no heterogeneous move.    *)
+(* ====================================================================== *)
+Lemma act_code_code_cong rF lF g G D F F'
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : eq_term ott [] (s_exp D (code_info lF) (oU rF lF D))
+      (act_code rF lF g G D F) (act_code rF lF g G D F').
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold act_code, oexp_subst, s_exp.
+  eapply eq_term_conv.
+  - eapply term_con_congruence.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + right. cbn [with_names_from]. reflexivity.
+    + exact ott_wf.
+    + cbn [with_names_from].
+      eapply eq_args_cons.
+      2: exact HFF'.
+      eapply eq_args_refl.
+      1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+      repeat first
+        [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+        | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+        | eassumption
+        | (eapply Elab.wf_term_by';
+             [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - cbn [with_names_from sort_subst apply_subst substable_sort
+         Substable.apply_subst0 term_substable].
+    sort_cong.
+    all: cbn [Model.eq_term core_model].
+    all: try solve [ eapply eq_term_refl; ott_build ].
+    change (eq_term ott []
+      (s_ty D (code_info lF))
+      (con "ty_subst" [oU rF lF G; code_info lF; g; G; D])
+      (oU rF lF D)).
+    apply U_subst_eq; assumption.
+Qed.
+
 (* The GENERAL two-sided reflect-at-Pi bridge: a pair of DISTINCT neutral
    functions `na ~ nb` sends a related argument pair `a ~ a'` to an `ne_eq`
    pair of member applications `mapp na a ~ mapp nb a'`, at the instantiated

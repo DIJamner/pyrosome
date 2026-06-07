@@ -1,5 +1,106 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z21 — body_sort_transport (1) + RedTm_Pi_eta_sound2 (2) LANDED+pushed (green, axiom-clean). esc_ty@Pi FULLY VALIDATED *inside* `RedTy_fund` (the RedTy_rect, paste-ready). esc_tm@Pi VALIDATED up to ONE residual: a `mapp` CODE/MACHINERY congruence (`mapp_F F' C' b hdF ~ mapp_F F C b hdF`, same F-world env extGF). reflect@Pi NOT yet attempted (same residual). `RedTy_fund` NOT yet Qed-able (needs that congruence). DETAILS + paste-ready scripts below.
+
+### LANDED + pushed (FundamentalLemma.v, 2 commits)
+- **`body_sort_transport`** (1): the heterogeneous body-sort `eq_sort`
+  `El (ext G (El F)) C ~ El (ext G (El F')) C'` from F~F'/C~C'. Mirrors
+  `cod_collapse_both`'s `HSS'` (ext_cong on El F~El F' for the env) + a
+  heterogeneous `El` congruence (term_con_congruence on El, output sort from the
+  RHS env so the code-position lands at the B-side U-sort = HCC').
+- **`RedTm_Pi_eta_sound2`** (2): mixed eta `t,u@A-Pi, F~F', C~C', Hbody : mapp F C
+  t hd ~ mapp F' C' u hd => t~u`.  **GOTCHA discovered in z21**: its `Hbody`
+  SECOND mapp I phrased with the **F'-machinery** `owkn(El..F')/oext(El..F')/
+  ohd(El..F')`.  But the RedAtPi MEMBER relation produces BOTH mapps over the
+  SAME world (the F-machinery wknF/extGF/hdF), only the CODES F/C vs F'/C' (and
+  the function) differ — see `at_pi_app` (g,D,a SAME on both mapps).  So
+  `RedTm_Pi_eta_sound2` as committed does NOT directly accept the member's body
+  equality; the closing of esc_tm needs ONE of (see residual).
+
+### esc_ty@Pi — FULLY VALIDATED inside `RedTy_fund` (paste-ready RedTy_rect)
+`Theorem RedTy_fund : forall G A B (r : RedTy ott G A B), Pmot G A B r.`
+`apply RedTy_rect`; the 3 leaves close with `intros ...; apply leaf_nat/empty/ne`.
+Pi case: `intros G A B rF lF lG F C F' C' hA hB DomRed CodRed IHDom IHCod`,
+`unfold Pmot,esc_ty,esc_tm,reflect_at; rewrite !(elt_sort_pi ...)`, `Horel` by
+`Elab.wf_term_by'`, `split;[split|]`.  **esc_ty goal** (validated end-to-end):
+- `intros S HA HB`; `reds_wf` hA/hB + `Pi_rel_inv` (×2) => all Pi-data typings.
+- `HidG : osub ott G G (oid G)` by `unfold osub,oid; ott_build`.
+- `destruct (IHDom G (oid G) HidG) as [[IHDom_ty _] _]`; `act_code_id_eq` ×2;
+  `act_code_wf` ×2 (id world, D=G, g=oid G) `change scon"exp".. with s_exp..`;
+  `HFF' := eq_term_trans (eq_term_sym HidF)(eq_term_trans (IHDom_ty _ HactF HactF') HidF')`.
+- bound-var world: `osub_wknF`; `set extGF/wknF/hdF`; `HextGFwf` by ott_build;
+  `destruct (IHDom extGF wknF HoswF) as [[IHDomW_ty _] IHDomW_rfl]`;
+  `bound_var_typed` (cbn zeta, change ohd/owkn/oext/DomRed.. to the let-vars);
+  `Hhdne` by `neutral_hd`; `act_code_wf` on F' at the bound-var world => `HactWF'`
+  (change to s_exp); **the bound-var member** `Hraa' := IHDomW_rfl _ HactWF' hdF
+  hdF Hhdne Hhdne Hhdty Hhdty (eq_term_refl Hhdty)` (the strengthened motive's
+  extra Sb0 = HactWF').  This is the UNIFORM-across-fibers domain-reflect-at-hd.
+- `destruct (IHCod extGF wknF HoswF hdF hdF Hraa') as [[IHCodW_ty _] _]`.
+- two cod_at typings: `HactWFcode` (act_code F @ code_sort, change); `HbridgeF :=
+  elt_sort_eq_El_gen extGF (act_code F)(act_code F')(DomRed..) rF lF ..`;
+  `HhdAtF := wf_term_conv Hhdty HbridgeF`; `HcodatF := cod_at_wf .. F C hdF`
+  (change to s_exp).  `IHDomW_ty _ HactWFcode HactWF'` => `act_code F ~ F'`;
+  `El_cong` => `Hsb_hd` (sort_cong: refl env, refl info, El); `HhdAtF' :=
+  wf_term_conv HhdAtF Hsb_hd`; `HcodatF' := cod_at_wf .. F' C' hdF`.
+- `HCodEsc := IHCodW_ty _ HcodatF HcodatF'`; `Hcc := cod_collapse_both ..`
+  (cbv zeta); change owkn/oext/ohd to wknF/extGF/hdF in HCodEsc; `HCC' := Hcc HCodEsc`.
+- finish: `exact (RedTy_Pi_sound rF lF lG G F C F' C' A B S HG HrF HlF HlG HF HF'
+  HC HC' HFF' HCC' hA hB HA HB)` (ALL args explicit).
+
+### esc_tm@Pi — VALIDATED up to ONE residual (the mapp code/machinery cong)
+Same preamble (recover A-data via `El_Pi_member_inv` on Ha; B-data via reds_wf hB
++ Pi_rel_inv; then the IDENTICAL HFF'/bound-var/HCC' block as esc_ty).  Then:
+`unfold RedTy_R,RedTy_pi,projT1 in Hm; cbn[projT1]; destruct Hm as [Happ]`;
+`Hbodymem := Happ extGF wknF HoswF hdF hdF Hraa'` gives `RCod (mapp_F F C a hdF)
+(mapp_F F' C' b hdF)` (BOTH over the F-world!).  `mapp_wf` ×2 (a@A-Pi, b@B-Pi via
+oPi_rel_code_cong+El_cong+`HABeq`+conv) gives the two mapps @ `El(cod_at..)`;
+`elt_sort_eq_El_gen extGF (cod_at F C hd)(cod_at F' C' hd)(CodRed..) orel lG` =>
+`HbridgeCod`; convert mapp_A (sym HbridgeCod) and mapp_B (sym (trans HbridgeCod
+(El_cong on HCodEsc))) to `elt_sort(CodRed)`; `Hbody_elt := IHCodW_tm _ HcodatF'
+(..)(..) Hbodymem HmappA_elt HmappB_elt`; `eq_term_conv Hbody_elt HbridgeCod`
+then collapse cod_at F C hd -> C (`cod_at_wkn_hd_eq`+El_cong) => **`Hbody_AC :
+mapp_F F C a hdF ~ mapp_F F' C' b hdF` @ body sort `El C`** (A-side, F-world).
+**THE RESIDUAL**: closing `a~b` from `Hbody_AC` needs to bridge the SECOND mapp's
+CODES (F'/C') back to the lam-cong's expected form.  Either:
+  (R-a) a `mapp_code_cong`: `mapp_F F' C' b hdF ~ mapp_F F C b hdF` at the SAME
+        F-world (env extGF unchanged!), sort fixed via HCodEsc.  Then `a ~
+        lam_A(mapp_F F C a hdF) ~ lam_A(mapp_F F C b hdF) ~ b` (a/b A-eta + lam_A
+        cong on Hbody_AC∘R-a).  NO B-side eta, NO env change — this is the
+        SIMPLEST.  `mapp_code_cong` = `term_con_congruence` on `app_rel`
+        (`mapp = con"app_rel"[a;act_member F C f;act_cod F C;act_code F;lG;lF;rF;D]`)
+        with eq_args: a refl; `act_member F' C' b ~ act_member F C b`;
+        `act_cod F' C' ~ act_cod F C`; `act_code F' ~ act_code F` (= sym of the
+        act_code/act_cod/act_member CODE-congruences, driven by F'~F (sym HFF')
+        and C'~C (sym HCC')).  These code-congs are exp_subst congruences in the
+        substituted-term arg — build 3 small `act_*_code_cong` leaves (mirror
+        `act_member_cong` but congruence the F/C arg, NOT the function).  The
+        result sort is at `El(cod_at F C ..)` (LEFT codes) — heterogeneous in the
+        info/U annotations, reconcile like mapp_cong's tail `El_act_cod_subst_eq`.
+  (R-b) re-prove `RedTm_Pi_eta_sound2` to take `Hbody` in the F-world/F'-codes
+        member form, and inside use the EXISTING `act_code_mach_cong`/
+        `act_cod_mach_cong` to swap F-world->F'-world for the Heta_u body (the
+        machinery swap, env extGF->extGF').  More machinery but reuses landed
+        `*_mach_cong`.
+  RECOMMEND **(R-a)** — same-env, 3 tiny code-cong leaves + one app_rel cong;
+  avoids the B-side eta and the env change entirely.  Then DROP the committed
+  `RedTm_Pi_eta_sound2` (its F'-machinery Hbody form is unused under R-a) or keep
+  it for R-b.
+
+### reflect@Pi — SAME residual (not yet attempted)
+`at_pi_app` per `D g os a a' raa'`: codomain member from `mapp_ne_eq2` (ne_eq @
+`El(cod_at..a')`, both F,C) + CodRed reflect IH (transported across
+`elt_sort_eq_El_gen` ∘ CodRed esc_ty IH); domain `a~a'` from DomRed esc_tm IH on
+raa'.  The second mapp's F'/C'->F/C alignment is the SAME `mapp_code_cong` (R-a).
+
+### z21 NEXT (in order)
+1. Build `mapp_code_cong` (R-a): 3 code-cong leaves (`act_code_code_cong`,
+   `act_cod_code_cong`, `act_member_code_cong` — exp_subst cong in the F/C/f arg,
+   NOT the function position `act_member_cong` already does) + `app_rel` cong.
+2. Close esc_tm@Pi inside `RedTy_fund` (the validated block above + R-a).
+3. reflect@Pi (at_pi_app + mapp_ne_eq2 + R-a).
+4. `Qed` `RedTy_fund`; `Print Assumptions` = only egraph_sound.
+5. Hard direction by `wf_judge_ind` (z15 motive).
+
 ## UPDATE 2026-06-07z20 — esc_ty@Pi FULLY VALIDATED (interactively); esc_tm/reflect motive STRENGTHENED with a B-side typing presupposition + 2 reusable Pi-case helpers LANDED (1 commit, green + axiom-clean, pushed). esc_tm@Pi / reflect@Pi reduced to ONE remaining sort-transport (the eq_args body-sort move in the lam_rel congruence); RedTm_Pi_eta_sound2 plan fully worked out interactively.
 
 ### What LANDED + pushed (FundamentalLemma.v, 1 commit)
