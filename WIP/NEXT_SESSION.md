@@ -1,5 +1,53 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z3 — REFLECT-AT-Pi MEMBER COMBINATORS LANDED (3 commits, GREEN). NEXT = assemble the mutual reflect/escape induction (the eta crux) + the escape-at-Pi id-collapse builder.
+
+THIS SESSION (committed+pushed on `gluing-nbe`): the self-contained combinators
+the reflect-at-Pi case's MEMBER-relation obligation consumes — proving that a
+neutral function maps a related pair of domain members to a related pair of
+codomain members.
+- **`act_member_neutral` / `mapp_neutral`** (LogicalRelation.v, abstract, axiom-free):
+  neutral preservation along the Kripke ops.  `act_member` (= `exp_subst`, pa-arg 0)
+  and `mapp` (= `app_rel`, pa-arg 1) keep the principal arg neutral, so a neutral
+  function applied to ANY argument stays neutral.  Pure `neutral_elim`.
+- **`mapp_cong`** (FundamentalLemma.v, only egraph_sound): app_rel congruence in
+  the ARGUMENT — `a ~ a'` ⇒ `mapp f a ~ mapp f a'` at the RHS-instantiated codomain
+  `El(cod_at C a')`.  Reuses `mapp_wf`'s exact eq_args+conversion machinery; the
+  only non-reflexive eq_args position is the head `a` (`Heqa`), rest by
+  `eq_args_refl (core_model_ok _ ott_wf) <shared builder wf_args>`; final sort
+  conversion is `El_act_cod_subst_eq` at `a'`.
+- **`mapp_ne_eq`** (FundamentalLemma.v, only egraph_sound): the bridge — neutral
+  `n` + `a ~ a'` ⇒ `ne_eq (codomain El-sort) (mapp n a)(mapp n a')` (both neutral
+  via `mapp_neutral`, equal via `mapp_cong`).  This is EXACTLY the input the
+  recursive (codomain) reflect call consumes.
+
+KEY RECIPES (reuse): for an n-ary con CONGRUENCE where one arg differs,
+`term_con_congruence` with `right; cbn[with_names_from]; reflexivity` for the sort
+disjunct (gives the s2-substituted raw sort), then `eapply eq_args_cons; 2: exact
+<head eq>; eapply eq_args_refl; [apply (@ModelImpls.core_model_ok string _);[typeclasses
+eauto|exact ott_wf] | <mapp_wf's wf_args builder>]`; then convert the raw result
+sort with the relevant `*_subst_eq` lemma.  NB the interactive PET worker caches
+imported `.vo`s — after editing+rebuilding a dependency (LogicalRelation.vo),
+`rocq_start` with `force_restart:true` or the new symbol won't be visible
+([[rocq-mcp-stale-assumptions]]).
+
+NEXT = the mutual **reflect ↔ escape** adequacy (the eta crux), by `RedTy_rect`
+with `P G A B r` bundling: (escape_ty) `RedTy ⇒ eq_term A B`, (escape_tm) `RedTm r
+t u ⇒ eq_term (El A) t u` (given member typing), and (reflect) two neutrals
+`ne_eq`-related ⇒ `RedTm r`.  The two directions are MUTUALLY recursive:
+- escape-at-Pi needs reflect at the DOMAIN for the bound variable `hd` to
+  instantiate `CodRed` at `(D:=ext G (El F), g:=wkn, a=a':=hd)`; this ALSO needs a
+  new **id/var-collapse builder** `cod_at(wkn,hd) ≡ C` (the analogue of
+  `ty_subst_id_El_eq`/`El_act_cod_subst_eq` but for the variable instantiation) —
+  build it with the same checker-free `change`→`eq_term_subst` recipe.
+- reflect-at-Pi needs escape at the domain (`a ~ a'` from `raa'`) → `mapp_ne_eq`
+  (DONE this session) → recursive reflect at the codomain.
+Leaf cases: escape_ty = `RedTy_Nat/Empty_sound` + `RedNe_sound_at`; escape_tm =
+`RedNatMem_sound`/`RedNe_sound`; reflect leaves = `RedNe_reflect`/
+`RedNatMem_reflect`/`RedTy_ne_reflect`.  Once reflect/escape close, `RedTy_sound`
+total follows and the fundamental lemma proper (`wf_term ott [] e t -> reducible`)
+is the cut-elim induction with these in hand.
+
 ## UPDATE 2026-06-07z2 — TYPE-LEVEL ESCAPE LEAVES + TWO-SIDED REFLECT LEAVES LANDED (2 commits, GREEN). NEXT = the Pi-escape crux (gated on reflect adequacy) / the fundamental lemma proper.
 
 ALSO this session (LogicalRelation.v, abstract `l`, axiom-free — `Closed under the
