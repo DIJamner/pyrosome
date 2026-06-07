@@ -956,11 +956,11 @@ Lemma mapp_ne_eq rF lF lG g G D F C n a a'
   (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
                                 (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
   (Hn : wf_term ott [] n (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
-  (Hnn : neutral ott_pa n)
+  (Hnn : neutral ott_pa "hd" n)
   (Ha : wf_term ott [] a (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
   (Ha' : wf_term ott [] a' (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
   (Heqa : eq_term ott [] (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))) a a')
-  : ne_eq string ott ott_pa
+  : ne_eq string ott ott_pa "hd"
       (s_exp D (term_info orel lG) (oEl orel lG D (cod_at rF lF lG g G D F C a')))
       (mapp rF lF lG g G D F C n a) (mapp rF lF lG g G D F C n a').
 Proof.
@@ -1097,12 +1097,12 @@ Lemma mapp_ne_eq2 rF lF lG g G D F C na nb a a'
   (Hna : wf_term ott [] na (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
   (Hnb : wf_term ott [] nb (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
   (Heqf : eq_term ott [] (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))) na nb)
-  (Hnna : neutral ott_pa na)
-  (Hnnb : neutral ott_pa nb)
+  (Hnna : neutral ott_pa "hd" na)
+  (Hnnb : neutral ott_pa "hd" nb)
   (Ha : wf_term ott [] a (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
   (Ha' : wf_term ott [] a' (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
   (Heqa : eq_term ott [] (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))) a a')
-  : ne_eq string ott ott_pa
+  : ne_eq string ott ott_pa "hd"
       (s_exp D (term_info orel lG) (oEl orel lG D (cod_at rF lF lG g G D F C a')))
       (mapp rF lF lG g G D F C na a) (mapp rF lF lG g G D F C nb a').
 Proof.
@@ -1159,17 +1159,17 @@ Lemma RedNatMem_sound G a b
 Proof.
   intros HM; induction HM; intros Hwfa Hwfb.
   - (* zero *)
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfa r) as H1.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfb r0) as H2.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ Hwfa r) as H1.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ Hwfb r0) as H2.
     eapply eq_term_trans; [ exact H1 | eapply eq_term_sym; exact H2 ].
   - (* suc *)
-    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ Hwfa r) as Hwa.
-    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ Hwfb r0) as Hwb.
+    pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ Hwfa r) as Hwa.
+    pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ Hwfb r0) as Hwb.
     destruct (suc_inv _ _ Hwa) as [Hwa' HwG].
     destruct (suc_inv _ _ Hwb) as [Hwb' _].
     pose proof (IHHM Hwa' Hwb') as Hab'.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfa r) as Hra.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfb r0) as Hrb.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ Hwfa r) as Hra.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ Hwfb r0) as Hrb.
     eapply eq_term_trans; [ exact Hra | ].
     eapply eq_term_trans; [ | eapply eq_term_sym; exact Hrb ].
     (* eq_term (osuc G a') (osuc G b') by `suc` congruence on a' ~ b' *)
@@ -1187,8 +1187,8 @@ Proof.
       * constructor; [ constructor | eapply eq_term_refl; exact HwG ].
       * exact Hab'.
   - (* ne *)
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfa r) as H1.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfb r0) as H2.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ Hwfa r) as H1.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ Hwfb r0) as H2.
     eapply eq_term_trans; [ exact H1 | ].
     eapply eq_term_trans; [ | eapply eq_term_sym; exact H2 ].
     exact (proj2 (proj2 n)).
@@ -1220,8 +1220,8 @@ Lemma RedTy_Nat_sound G A B S
     eq_term ott [] S A B.
 Proof.
   intros Ha Hb HwfA HwfB.
-  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfA Ha) as H1.
-  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfB Hb) as H2.
+  pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HwfA Ha) as H1.
+  pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HwfB Hb) as H2.
   eapply eq_term_trans; [ exact H1 | eapply eq_term_sym; exact H2 ].
 Qed.
 
@@ -1232,8 +1232,8 @@ Lemma RedTy_Empty_sound G A B S
     eq_term ott [] S A B.
 Proof.
   intros Ha Hb HwfA HwfB.
-  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfA Ha) as H1.
-  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfB Hb) as H2.
+  pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HwfA Ha) as H1.
+  pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HwfB Hb) as H2.
   eapply eq_term_trans; [ exact H1 | eapply eq_term_sym; exact H2 ].
 Qed.
 
@@ -1249,10 +1249,10 @@ Lemma RedNe_sound_at (t S : osort) a b
     eq_term ott [] S a b.
 Proof.
   intros [na nb ra rb h] HwfA HwfB.
-  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfA ra) as H1.
-  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfB rb) as H2.
+  pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HwfA ra) as H1.
+  pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HwfB rb) as H2.
   destruct h as (Hna & Hnb & Heq).
-  pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HwfA ra) as HwfNaS.
+  pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HwfA ra) as HwfNaS.
   pose proof (eq_term_wf_l ott_wf wf_ctx_ott_nil Heq) as HnaT.
   pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HnaT HwfNaS) as Hsorts.
   pose proof (eq_term_conv Heq Hsorts) as HeqS.
@@ -2551,16 +2551,16 @@ Lemma RedTy_Pi_sound rF lF lG G F C F' C' A B S
             (s_exp (oext (oEl rF lF G F') (term_info rF lF) G) (code_info lG)
                    (oU orel lG (oext (oEl rF lF G F') (term_info rF lF) G)))
             C C')
-  (HrdA : reds string ott ott_pa A (oPi_rel rF lF lG F C G))
-  (HrdB : reds string ott ott_pa B (oPi_rel rF lF lG F' C' G))
+  (HrdA : reds string ott ott_pa "hd" A (oPi_rel rF lF lG F C G))
+  (HrdB : reds string ott ott_pa "hd" B (oPi_rel rF lF lG F' C' G))
   (HA : wf_term ott [] A S)
   (HB : wf_term ott [] B S)
   : eq_term ott [] S A B.
 Proof.
   pose proof ott_wf as Hwf.
-  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HA HrdA) as HrA.
-  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HB HrdB) as HrB.
-  pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HA HrdA) as HPiS.
+  pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HA HrdA) as HrA.
+  pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HB HrdB) as HrB.
+  pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HA HrdA) as HPiS.
   assert (HPiCong : eq_term ott [] (s_exp G (code_info lG) (oU orel lG G))
             (oPi_rel rF lF lG F C G) (oPi_rel rF lF lG F' C' G)).
   { unfold oPi_rel, s_exp.
@@ -3423,15 +3423,15 @@ Lemma elt_sort_empty (G A B : tm) (ra : REmpty ott G A) (rb : REmpty ott G B)
   : elt_sort (RedTy_empty ott ra rb) = empty_sort G.
 Proof. reflexivity. Qed.
 
-Lemma elt_sort_ne (G A B na nb rN lN : tm) (ra : reds string ott ott_pa A na)
-  (rb : reds string ott ott_pa B nb)
-  (h : ne_eq string ott ott_pa (code_sort rN lN G) na nb)
+Lemma elt_sort_ne (G A B na nb rN lN : tm) (ra : reds string ott ott_pa "hd" A na)
+  (rb : reds string ott ott_pa "hd" B nb)
+  (h : ne_eq string ott ott_pa "hd" (code_sort rN lN G) na nb)
   : elt_sort (@RedTy_ne ott G A B na nb rN lN ra rb h) = el_sort rN lN G na.
 Proof. reflexivity. Qed.
 
 Lemma elt_sort_pi (G A B rF lF lG F C F' C' : tm)
-  (hA : reds string ott ott_pa A (oPi_rel rF lF lG F C G))
-  (hB : reds string ott ott_pa B (oPi_rel rF lF lG F' C' G))
+  (hA : reds string ott ott_pa "hd" A (oPi_rel rF lF lG F C G))
+  (hB : reds string ott ott_pa "hd" B (oPi_rel rF lF lG F' C' G))
   (DomRed : forall D g (os : osub ott G D g),
       RedTy ott D (act_code rF lF g G D F) (act_code rF lF g G D F'))
   (CodRed : forall D g (os : osub ott G D g) a a',
@@ -3451,7 +3451,7 @@ Definition esc_tm {G A B} (r : RedTy ott G A B) : Prop :=
     eq_term ott [] (elt_sort r) a b.
 
 Definition reflect_at {G A B} (r : RedTy ott G A B) : Type :=
-  forall a b, neutral ott_pa a -> neutral ott_pa b ->
+  forall a b, neutral ott_pa "hd" a -> neutral ott_pa "hd" b ->
     wf_term ott [] a (elt_sort r) -> wf_term ott [] b (elt_sort r) ->
     eq_term ott [] (elt_sort r) a b -> RedTy_R ott r a b.
 
@@ -3489,9 +3489,9 @@ Proof.
 Qed.
 
 (* ---- LEAF: neutral code ---- *)
-Lemma leaf_ne (G A B na nb rN lN : tm) (ra : reds string ott ott_pa A na)
-  (rb : reds string ott ott_pa B nb)
-  (h : ne_eq string ott ott_pa (code_sort rN lN G) na nb)
+Lemma leaf_ne (G A B na nb rN lN : tm) (ra : reds string ott ott_pa "hd" A na)
+  (rb : reds string ott ott_pa "hd" B nb)
+  (h : ne_eq string ott ott_pa "hd" (code_sort rN lN G) na nb)
   : Pmot G A B (@RedTy_ne ott G A B na nb rN lN ra rb h).
 Proof.
   unfold Pmot, esc_ty, esc_tm, reflect_at; rewrite !elt_sort_ne.
@@ -3658,7 +3658,7 @@ Qed.
 (* A pushed neutral code stays neutral: `act_code` is `exp_subst` with the code
    at principal arg 0, so `neutral_elim i=0` preserves neutrality. *)
 Lemma act_code_neutral rF lF g G D F
-  : neutral ott_pa F -> neutral ott_pa (act_code rF lF g G D F).
+  : neutral ott_pa "hd" F -> neutral ott_pa "hd" (act_code rF lF g G D F).
 Proof.
   intro HF; unfold act_code, oexp_subst.
   eapply neutral_elim with (i:=0); [ reflexivity | reflexivity | exact HF ].
@@ -3737,9 +3737,9 @@ Lemma RNe_act g G D A B na nb rN lN
   (Hg : wf_term ott [] g (s_sub D G))
   (Hna : wf_term ott [] na (code_sort rN lN G))
   (Hnb : wf_term ott [] nb (code_sort rN lN G))
-  (ra : reds string ott ott_pa A na)
-  (rb : reds string ott ott_pa B nb)
-  (h : ne_eq string ott ott_pa (code_sort rN lN G) na nb)
+  (ra : reds string ott ott_pa "hd" A na)
+  (rb : reds string ott ott_pa "hd" B nb)
+  (h : ne_eq string ott ott_pa "hd" (code_sort rN lN G) na nb)
   : RedTy ott D (act_code rN lN g G D A) (act_code rN lN g G D B).
 Proof.
   destruct h as (Hnna & Hnnb & Hconv).
@@ -3817,7 +3817,7 @@ Proof.
   unfold elt_sort. cbn [projT2].
   destruct r.
   - (* Nat: lX pinned to oL0 by canonicity; El-cong on oNat G ~ A *)
-    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfNat.
+    pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HwfNat.
     assert (HNatcanon : wf_term ott [] (oNat G) (code_sort orel oL0 G)).
     { unfold oNat, code_sort, oU, code_info, oinfo, onext, orel, oL0.
       eapply Elab.wf_term_by';
@@ -3827,7 +3827,7 @@ Proof.
     pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HwfNat HNatcanon) as Hss.
     apply code_sort_rel_lvl_eq in Hss. destruct Hss as [_ HlX0]. subst lX.
     unfold nat_sort, s_exp.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HAred.
     assert (HNatA : eq_term ott [] (code_sort orel oL0 G) (oNat G) A)
       by (eapply eq_term_sym; exact HAred).
     pose proof (El_cong orel oL0 G (oNat G) A HG Horel HlX HNatA) as HElNatA.
@@ -3837,7 +3837,7 @@ Proof.
     + cbn [Model.eq_term core_model]. exact HElNatA.
   - (* Empty: vacuous (relevance mismatch with a relevant code) *)
     exfalso.
-    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfEmpty.
+    pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HwfEmpty.
     assert (HEmptycanon : wf_term ott [] (oEmpty G) (code_sort oirr oL0 G)).
     { unfold oEmpty, code_sort, oU, code_info, oinfo, onext, orel, oirr, oL0.
       eapply Elab.wf_term_by';
@@ -3848,12 +3848,12 @@ Proof.
     exact (code_sort_rel_neq_irr _ _ _ _ _ (eq_sort_sym Hss)).
   - (* Ne: rN=orel, lN=lX pinned by canonicity; El-cong on na ~ A *)
     destruct n as (Hnna & Hnnb & Heqnanb).
-    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfNaS.
+    pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HwfNaS.
     pose proof (eq_term_wf_l ott_wf wf_ctx_ott_nil Heqnanb) as HnaT.
     pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HnaT HwfNaS) as Hss.
     apply code_sort_rel_lvl_eq in Hss. destruct Hss as [HrN HlN]. subst rN lN.
     unfold el_sort, s_exp.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HAred.
     assert (HnaA : eq_term ott [] (code_sort orel lX G) na A)
       by (eapply eq_term_sym; exact HAred).
     pose proof (El_cong orel lX G na A HG Horel HlX HnaA) as HElnaA.
@@ -3862,7 +3862,7 @@ Proof.
     + cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
     + cbn [Model.eq_term core_model]. exact HElnaA.
   - (* Pi: lX=lG pinned via Pi_rel-rule inversion; El-cong on oPi_rel ~ A *)
-    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfPi.
+    pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HwfPi.
     unfold oPi_rel in HwfPi.
     apply WfCutElim.invert_wf_term_con in HwfPi
       as (c' & cargs & t' & Hin & Hwfargs & Hsort).
@@ -3884,7 +3884,7 @@ Proof.
       - vm_compute in Hs. unfold code_sort, oU in Hs. inversion Hs. reflexivity. }
     subst lX.
     unfold s_exp.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HAred.
     assert (HPiA : eq_term ott [] (code_sort orel lG G) (oPi_rel rF lF lG F C G) A)
       by (eapply eq_term_sym; exact HAred).
     pose proof (El_cong orel lG G (oPi_rel rF lF lG F C G) A HG Horel HlX HPiA) as HElPiA.
@@ -4008,7 +4008,7 @@ Proof.
   unfold elt_sort. cbn [projT2].
   destruct r.
   - (* Nat: rX/lX pinned to orel/oL0 by canonicity; El-cong on oNat G ~ A *)
-    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfNat.
+    pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HwfNat.
     assert (HNatcanon : wf_term ott [] (oNat G) (code_sort orel oL0 G)).
     { unfold oNat, code_sort, oU, code_info, oinfo, onext, orel, oL0.
       eapply Elab.wf_term_by';
@@ -4018,7 +4018,7 @@ Proof.
     pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HwfNat HNatcanon) as Hss.
     apply code_sort_rel_lvl_eq in Hss. destruct Hss as [HrX0 HlX0]. subst rX lX.
     unfold nat_sort, s_exp.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HAred.
     assert (HNatA : eq_term ott [] (code_sort orel oL0 G) (oNat G) A)
       by (eapply eq_term_sym; exact HAred).
     pose proof (El_cong orel oL0 G (oNat G) A HG Horel HlX HNatA) as HElNatA.
@@ -4027,7 +4027,7 @@ Proof.
     + cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
     + cbn [Model.eq_term core_model]. exact HElNatA.
   - (* Empty: rX/lX pinned to oirr/oL0; El-cong on oEmpty G ~ A *)
-    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfEmpty.
+    pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HwfEmpty.
     assert (HEmptycanon : wf_term ott [] (oEmpty G) (code_sort oirr oL0 G)).
     { unfold oEmpty, code_sort, oU, code_info, oinfo, onext, orel, oirr, oL0.
       eapply Elab.wf_term_by';
@@ -4037,7 +4037,7 @@ Proof.
     pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HwfEmpty HEmptycanon) as Hss.
     apply code_sort_rel_lvl_eq in Hss. destruct Hss as [HrXi HlX0]. subst rX lX.
     unfold empty_sort, s_exp.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HAred.
     assert (HEmptyA : eq_term ott [] (code_sort oirr oL0 G) (oEmpty G) A)
       by (eapply eq_term_sym; exact HAred).
     pose proof (El_cong oirr oL0 G (oEmpty G) A HG Hoirr HlX HEmptyA) as HElEmptyA.
@@ -4047,12 +4047,12 @@ Proof.
     + cbn [Model.eq_term core_model]. exact HElEmptyA.
   - (* Ne: rX=rN, lX=lN pinned by canonicity; El-cong on na ~ A *)
     destruct n as (Hnna & Hnnb & Heqnanb).
-    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfNaS.
+    pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HwfNaS.
     pose proof (eq_term_wf_l ott_wf wf_ctx_ott_nil Heqnanb) as HnaT.
     pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HnaT HwfNaS) as Hss.
     apply code_sort_rel_lvl_eq in Hss. destruct Hss as [HrN HlN]. subst rN lN.
     unfold el_sort, s_exp.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HAred.
     assert (HnaA : eq_term ott [] (code_sort rX lX G) na A)
       by (eapply eq_term_sym; exact HAred).
     pose proof (El_cong rX lX G na A HG HrX HlX HnaA) as HElnaA.
@@ -4061,13 +4061,13 @@ Proof.
     + cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
     + cbn [Model.eq_term core_model]. exact HElnaA.
   - (* Pi: rX=orel, lX=lG pinned via Pi_rel-rule inversion; El-cong on oPi_rel ~ A *)
-    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfPi.
+    pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HwfPi.
     pose proof (Pi_rel_inv rF lF lG F C G (code_sort rX lX G) HwfPi) as
       (_ & _ & _ & _ & _ & _ & HeqS).
     apply eq_sort_sym in HeqS.
     apply code_sort_rel_lvl_eq in HeqS. destruct HeqS as [HrXr HlXg]. subst rX lX.
     unfold s_exp.
-    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    pose proof (@reds_sound string _ _ ott ott_wf ott_pa "hd" _ _ _ HX r) as HAred.
     assert (HPiA : eq_term ott [] (code_sort orel lG G) (oPi_rel rF lF lG F C G) A)
       by (eapply eq_term_sym; exact HAred).
     pose proof (El_cong orel lG G (oPi_rel rF lF lG F C G) A HG Horel HlX HPiA) as HElPiA.
