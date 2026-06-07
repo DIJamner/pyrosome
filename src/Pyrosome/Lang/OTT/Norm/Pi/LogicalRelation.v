@@ -154,6 +154,153 @@ Section WithVar.
       intros Hn Hwf; repeat split; eauto using eq_term_refl with lang_core.
     Qed.
 
+    (* ================================================================== *)
+    (* The reducibility logical relation over TYPE CODES.                  *)
+    (*                                                                    *)
+    (* This is the concrete-for-OTT analog of the validated Kripke         *)
+    (* encoding (WIP/LRProto2.v): a SINGLE plain inductive `RedTy_tot`      *)
+    (* carrying the member relation as an OUTPUT index (the Sig trick), so  *)
+    (* no Small/Large universe tower and no LogRel2-style PolyRedPack +     *)
+    (* adequacy split is needed.  The Pi case is KRIPKE from the start      *)
+    (* (UPDATE-s item 3): domain/codomain reducibility is quantified over   *)
+    (* every object substitution `g : osub G D` into a future env `D`.     *)
+    (*                                                                    *)
+    (* GENERIC over the OTT type-former interface below; the concrete OTT   *)
+    (* instantiation (the verified `ott_pa` selector + the `Pi_rel`/`Nat`/  *)
+    (* `exp_subst`/... con builders, memory ott-con-arg-orders) plugs these *)
+    (* in downstream.  Everything is at Pyrosome ctx = []; the object env   *)
+    (* `G : term` (sort `env`) carries object open-ness.                    *)
+    (* ================================================================== *)
+    Section RedTyDef.
+
+      (* `RNat G A`     : A weak-head reduces to the `Nat` code in env G.    *)
+      (* `RPi G A F C`  : A reduces to a `Pi_rel` code with domain code F     *)
+      (*                  and codomain code C, in env G.                      *)
+      Context (RNat : term -> term -> Prop)
+              (RPi  : term -> term -> term -> term -> Prop).
+      (* members of `Nat` in env G (zero/suc/neutral); abstract for now.     *)
+      Context (RNatMem : term -> term -> term -> Type).
+      (* `osub G D g` : g is an object substitution from home env G to a      *)
+      (* future env D (g : sub G D).                                          *)
+      Context (osub : term -> term -> term -> Prop).
+      (* `act g F`   : push a code F along object subst g.                    *)
+      (* `extc D F'` : extend env D by the (decoded) domain code F'.          *)
+      (* `cod g a C` : codomain code C pushed under g and instantiated at a.  *)
+      (* `mapp f a`  : member application (f applied to a).                   *)
+      Context (act  : term -> term -> term)
+              (extc : term -> term -> term)
+              (cod  : term -> term -> term -> term)
+              (mapp : term -> term -> term).
+
+      (* Neutral-code member relation (Type-valued wrapper over `ne_eq`). *)
+      Inductive RedNe (t : sort) (a b : term) : Type :=
+      | red_ne : ne_eq t a b -> RedNe t a b.
+
+      (* Kripke Pi member relation: functions t,u are related at the home env
+         G iff, under every object subst g into a future env D and every
+         domain-related (a,a'), the applications are codomain-related. *)
+      Inductive RedAtPi
+        (G F C F' C' : term)
+        (RDom : forall D g, osub G D g -> term -> term -> Type)
+        (RCod : forall D g (os : osub G D g) a a',
+            RDom D g os a a' -> term -> term -> Type)
+        (t u : term) : Type :=
+      | at_pi_app :
+          (forall D g (os : osub G D g) a a' (raa' : RDom D g os a a'),
+              RCod D g os a a' raa' (mapp (act g t) a) (mapp (act g u) a'))
+          -> RedAtPi G F C F' C' RDom RCod t u.
+
+      Inductive RedTy_tot
+        : term -> term -> term -> (term -> term -> Type) -> Type :=
+      | rtt_nat : forall G A B,
+          RNat G A -> RNat G B ->
+          RedTy_tot G A B (RNatMem G)
+      | rtt_ne : forall G A B na nb (t : sort),
+          reds A na -> reds B nb -> ne_eq t na nb ->
+          RedTy_tot G A B (RedNe t)
+      | rtt_pi : forall G A B F C F' C',
+          RPi G A F C -> RPi G B F' C' ->
+          forall (RDom : forall D g, osub G D g -> term -> term -> Type)
+                 (DomRed : forall D g (os : osub G D g),
+                     RedTy_tot D (act g F) (act g F') (RDom D g os))
+                 (RCod : forall D g (os : osub G D g) a a',
+                     RDom D g os a a' -> term -> term -> Type)
+                 (CodRed : forall D g (os : osub G D g) a a'
+                                  (raa' : RDom D g os a a'),
+                     RedTy_tot (extc D (act g F)) (cod g a C) (cod g a' C')
+                       (RCod D g os a a' raa')),
+          RedTy_tot G A B (RedAtPi G F C F' C' RDom RCod).
+
+      (* Sig packaging: the member relation is the first projection. *)
+      Definition RedTy (G A B : term) : Type :=
+        { R : term -> term -> Type & RedTy_tot G A B R }.
+      Definition RedTy_R {G A B} (r : RedTy G A B) : term -> term -> Type :=
+        projT1 r.
+      Definition RedTm {G A B} (r : RedTy G A B) (t u : term) : Type :=
+        RedTy_R r t u.
+
+      (* Smart constructors. *)
+      Definition RedTy_nat {G A B} (ra : RNat G A) (rb : RNat G B) : RedTy G A B :=
+        existT _ _ (rtt_nat G A B ra rb).
+
+      Definition RedTy_ne {G A B} na nb t
+        (ra : reds A na) (rb : reds B nb) (h : ne_eq t na nb) : RedTy G A B :=
+        existT _ _ (rtt_ne G A B na nb t ra rb h).
+
+      Definition RedTy_pi {G A B F C F' C'}
+        (hA : RPi G A F C) (hB : RPi G B F' C')
+        (DomRed : forall D g (os : osub G D g), RedTy D (act g F) (act g F'))
+        (CodRed : forall D g (os : osub G D g) a a',
+            RedTm (DomRed D g os) a a' ->
+            RedTy (extc D (act g F)) (cod g a C) (cod g a' C'))
+        : RedTy G A B.
+      Proof.
+        unshelve eexists.
+        - exact (RedAtPi G F C F' C'
+                   (fun D g os => RedTy_R (DomRed D g os))
+                   (fun D g os a a' raa' => RedTy_R (CodRed D g os a a' raa'))).
+        - eapply rtt_pi; try eassumption.
+          + intros D g os. exact (projT2 (DomRed D g os)).
+          + intros D g os a a' raa'. exact (projT2 (CodRed D g os a a' raa')).
+      Defined.
+
+      (* Custom eliminator threading the Kripke domain + codomain IHs. *)
+      Theorem RedTy_rect
+        (P : forall G A B, RedTy G A B -> Type)
+        (Hnat : forall G A B (ra : RNat G A) (rb : RNat G B),
+            P G A B (RedTy_nat ra rb))
+        (Hne : forall G A B na nb t (ra : reds A na) (rb : reds B nb)
+                      (h : ne_eq t na nb),
+            P G A B (RedTy_ne na nb t ra rb h))
+        (Hpi : forall G A B F C F' C'
+                 (hA : RPi G A F C) (hB : RPi G B F' C')
+                 (DomRed : forall D g (os : osub G D g), RedTy D (act g F) (act g F'))
+                 (CodRed : forall D g (os : osub G D g) a a',
+                     RedTm (DomRed D g os) a a' ->
+                     RedTy (extc D (act g F)) (cod g a C) (cod g a' C')),
+              (forall D g (os : osub G D g), P D _ _ (DomRed D g os)) ->
+              (forall D g (os : osub G D g) a a'
+                      (raa' : RedTm (DomRed D g os) a a'),
+                  P _ _ _ (CodRed D g os a a' raa')) ->
+              P G A B (RedTy_pi hA hB DomRed CodRed))
+        : forall G A B (r : RedTy G A B), P G A B r.
+      Proof.
+        intros G A B [R r].
+        induction r as [ G A B ra rb
+                       | G A B na nb t ra rb h
+                       | G A B F C F' C' hA hB RDom DomRed IHDom RCod CodRed IHCod ].
+        - apply Hnat.
+        - apply Hne.
+        - apply (Hpi G A B F C F' C' hA hB
+                   (fun D g os => existT _ (RDom D g os) (DomRed D g os))
+                   (fun D g os a a' raa' =>
+                      existT _ (RCod D g os a a' raa') (CodRed D g os a a' raa'))).
+          + intros D g os. exact (IHDom D g os).
+          + intros D g os a a' raa'. exact (IHCod D g os a a' raa').
+      Defined.
+
+    End RedTyDef.
+
   End WithLang.
 
 End WithVar.
