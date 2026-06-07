@@ -1,5 +1,59 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z14 — R1 LANDED: relevance/level-preservation metatheorem discharges the Pi bound-var distinctness obligation (NO model, NO target lang D), axiom-clean, committed+pushed. NEXT = step 3 (VR/valid-context + typing-induction fundamental lemma), wiring the bound-var reflect through these distinctness facts.
+
+Dustin's chosen R1 is DONE. All in `FundamentalLemma.v`, green, `Print Assumptions`
+on the distinctness lemmas = only `egraph_sound` (via `ott_wf`).
+
+### What landed (FundamentalLemma.v)
+- **`code_rel` / `sort_rel`** — read the buried RELEVANCE constant off a `ty`-term /
+  an #"exp" sort, LOOKING THROUGH `ty_subst` (and reading the `r` of `U`/`El`
+  heads). **`code_lvl` / `sort_lvl`** — the LEVEL analogue (reads the `l`).
+- **`cut_code_rel_invariant (c : ctx string)`** — the trans-stable invariant,
+  proven by `CutElim.cut_ind` (the combined 4-judgment scheme) over ANY ctx `c`:
+  sort `sort_rel` preserved by cut-free `eq_sort` (cong at #"exp" descends to the
+  type-component position 0; trans/sym free, an option equality); term `code_rel`
+  preserved by cut-free `eq_term` at #"ty"; subst/args positional carrier motives
+  (keyed `named_list_lookup_err c' x` for subst / `nth_error` for args) feeding the
+  eq_by/cong cases — #"relevance" positions become SYNTACTICALLY equal (via the
+  already-landed `cut_eq_term_ott_rl_syntactic`), #"ty" positions equal under
+  `code_rel`. The eq_term_by cases are exactly {U subst, El subst, ty_subst_cmp,
+  ty_subst_id} (pinned by `filter`+`vm_compute`), ALL keep the buried relevance;
+  the cong cases are {U, El, ty_subst}.
+- **`cut_code_lvl_invariant`** — same proof reading the LEVEL (the syntactic leaf
+  covers BOTH #"relevance" and #"lvl"; use its `right; reflexivity` disjunct).
+- **`core_sort_rel_invariant` / `core_sort_lvl_invariant`** — bridge to declarative
+  `Core.eq_sort` via `CutElim.core_implies_cut` (+ `wf_lang_iff_cut` on `ott_wf`).
+- **`code_sort_rel_neq_irr`** : `~ eq_sort ott c (code_sort oirr lF G)(code_sort orel lG G')`
+  **`code_sort_lvl_neq_L1_L0`** : `~ eq_sort ott c (code_sort rF L1 G)(code_sort rG L0 G')`
+  — THE z11/z13 WALL, discharged (sort_rel/sort_lvl force `oirr=orel`/`L1=L0`,
+  discriminate).
+- helpers: `ott_all_fresh` (= `use_compute_all_fresh; vm_compute; reflexivity` —
+  NOT `vm_compute; tauto`, that TIMES OUT), `exp_in_ott`.
+
+### GOTCHAS for reuse / step 3
+- `code_rel`/`sort_rel` use explicit `String.eqb n "U"` (NOT literal-pattern
+  match) so non-matching cases reason cleanly (a literal match `cbn`s into nested
+  Ascii tests).
+- `cut_ind` → 14 goals; develop with `1:{ ... }`. The rocq-MCP loses unfocused-goal
+  accessibility BETWEEN calls, so assemble the proof as ONE body (build up
+  incrementally re-running from a fixed base). DON'T drop the term-cong goal
+  (cut_ind goal 6) or the var-case lands on cong (batch: "cannot be unfocused").
+- `term_subst_lookup s n` = `subst_lookup s n` definitionally; bridge via `change`.
+
+### NEXT = step 3 (unchanged plan, now UNBLOCKED)
+Build the VR / reducible-substitution + valid-context layer, then the fundamental
+lemma by induction on the TYPING derivation, wiring the Pi bound-var reflect: at a
+Nat/Empty-domain Pi the bound var's relevance is `rF`; `relevance_canon` gives
+`rF ∈ {orel,oirr}`; for `oirr` the type-uniqueness `eq_sort (code_sort oirr lF G)
+(code_sort orel oL0 G)` is now refuted by **`code_sort_rel_neq_irr`** (and the
+level analogue by `code_sort_lvl_neq_L1_L0`), so `rF ≡ orel`, `lF ≡ oL0`, and the
+canonical `nat_sort` bridge closes. Escape side stays a `RedTy_rect` corollary
+(`RedTy_Pi_sound`/`RedTm_Pi_eta_sound` done); reflect/reducibility from the typing
+induction. WIP/MutualFund.v motive (elt_sort triple) + leaves carry over.
+
+(Below: z13 and earlier.)
+
 ## UPDATE 2026-06-07z13 — Dustin's "syntactic-uniqueness, no model/no D" directive: STEP 2 STRENGTHENED + LANDED (full syntactic equality at relevance/lvl, trans-stable, axiom-clean, committed+pushed). But the NARROW-TRIGGER fired: directive STEP 1 ("eq_sort ==> full syntactic equality") is **FALSE for #"exp"/#"ty" sorts** (verified against the real defs). The obligation needs the refinement Dustin predicted, but that refinement is **NOT a one-line fix** — it is a relevance-preservation metatheorem on ty/exp. QUESTION below.
 
 ### LANDED this session (FundamentalLemma.v, green, only egraph_sound, committed+pushed)
