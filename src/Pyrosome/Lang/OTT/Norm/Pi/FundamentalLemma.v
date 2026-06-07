@@ -969,6 +969,112 @@ Proof.
   - apply mapp_cong; eassumption.
 Qed.
 
+(* Member-push congruence in the FUNCTION: declaratively equal Π members `f ~ f'`
+   push to equal pushed members `act_member f ~ act_member f'` (an `exp_subst`
+   congruence; conversion `El_Pi_subst_eq`).  With `mapp_cong` (argument side)
+   this gives the GENERAL two-sided application congruence by transitivity:
+   `mapp f a ~ mapp f a' ~ mapp f' a'` -- needed for reflecting a pair of
+   DISTINCT neutral functions (the PER side, where the two neutrals differ). *)
+Lemma act_member_cong rF lF lG g G D F C f f'
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (Hf : wf_term ott [] f (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  (Hf' : wf_term ott [] f' (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  (Heqf : eq_term ott [] (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))) f f')
+  : eq_term ott []
+      (s_exp D (term_info orel lG)
+             (oEl orel lG D (oPi_rel rF lF lG (act_code rF lF g G D F) (act_cod rF lF lG g G D F C) D)))
+      (act_member rF lF lG g G D F C f) (act_member rF lF lG g G D F C f').
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold act_member, oexp_subst, s_exp.
+  eapply eq_term_conv.
+  - eapply term_con_congruence.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + right. cbn [with_names_from]. reflexivity.
+    + exact ott_wf.
+    + cbn [with_names_from].
+      eapply eq_args_cons.
+      2: exact Heqf.
+      eapply eq_args_refl.
+      1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+      repeat first
+        [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+        | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+        | (apply El_act_code_ty; eassumption)
+        | (apply act_code_wf; eassumption)
+        | eassumption
+        | (eapply Elab.wf_term_by';
+             [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - cbn [with_names_from sort_subst apply_subst substable_sort
+         Substable.apply_subst0 term_substable].
+    sort_cong.
+    all: cbn [Model.eq_term core_model].
+    all: try solve [ eapply eq_term_refl; ott_build ].
+    apply El_Pi_subst_eq; assumption.
+Qed.
+
+(* App congruence in the FUNCTION position (argument fixed): `f ~ f'` ⇒
+   `mapp f a ~ mapp f' a` at `El(cod_at C a)`.  The function-position arg is the
+   pushed member, handled by `act_member_cong`; the head `a` is reflexive.
+   Composing with `mapp_cong` (argument side) by `eq_term_trans` gives the full
+   two-sided application congruence
+   `mapp f a ~ mapp f a' ~ mapp f' a'`. *)
+Lemma mapp_cong_fun rF lF lG g G D F C f f' a
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (Hf : wf_term ott [] f (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  (Hf' : wf_term ott [] f' (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  (Heqf : eq_term ott [] (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))) f f')
+  (Ha : wf_term ott [] a (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  : eq_term ott [] (s_exp D (term_info orel lG) (oEl orel lG D (cod_at rF lF lG g G D F C a)))
+      (mapp rF lF lG g G D F C f a) (mapp rF lF lG g G D F C f' a).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold mapp, oapp_rel, s_exp.
+  eapply eq_term_conv.
+  - eapply term_con_congruence.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + right. cbn [with_names_from]. reflexivity.
+    + exact ott_wf.
+    + cbn [with_names_from].
+      eapply eq_args_cons.
+      2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons.
+      2:{ apply act_member_cong; eassumption. }
+      eapply eq_args_refl.
+      1: apply (@ModelImpls.core_model_ok string _); [ typeclasses eauto | exact ott_wf ].
+      repeat first
+        [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+        | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+        | (apply act_cod_wf; eassumption)
+        | (apply act_code_wf; eassumption)
+        | (apply El_act_code_ty; eassumption)
+        | eassumption
+        | (eapply Elab.wf_term_by';
+             [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - cbn [with_names_from sort_subst apply_subst substable_sort
+         Substable.apply_subst0 term_substable].
+    sort_cong.
+    all: cbn [Model.eq_term core_model].
+    all: try solve [ eapply eq_term_refl; ott_build ].
+    apply El_act_cod_subst_eq; assumption.
+Qed.
+
 (* ====================================================================== *)
 (* LR ESCAPE (soundness) at the CONCRETE language `l := ott`.               *)
 (*                                                                        *)
