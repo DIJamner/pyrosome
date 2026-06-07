@@ -1,5 +1,52 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07w — FILE 4 BODY STARTED: first Kripke-builder typing `act_code_wf` LANDED (GREEN, coqc-verified, only `egraph_sound`). NEXT = the remaining builder typings (extc/act_member/act_cod/cod_at/mapp), then the fundamental lemma proper.
+
+THIS SESSION (in `src/.../Norm/Pi/FundamentalLemma.v`, committed+pushed):
+1. **`act_code_wf`** — the first deferred Kripke-builder correctness (UPDATE-v
+   subgoal (a)): `act_code rF lF g G D F` (= `exp_subst F (U rF lF G) g`, pushing
+   a domain code along `g : sub D G`) is well-typed as a code `exp D _ (U rF lF D)`
+   in the future env `D`.  Proven `wf_term_conv` + `wf_term_by` (exp_subst) +
+   a sort-congruence conversion whose only non-reflexive component is "U subst".
+2. **`U_subst_eq`** — the "U subst" computation rule (`ty_subst g (U rF lF G) =
+   U rF lF D`) under an EXPLICIT variable-only substitution.  The KEY GOTCHA this
+   session: the project's `eredex_steps_with` / `cleanup_auto_elab` close their
+   `wf_subst`/`eq_subst` side-goals with the COMPUTATIONAL wf checker
+   (`compute_noconv_term_wf` → `compute_wf_term'`), which CANNOT evaluate the free
+   env/level/sub VARIABLES (`D : env` ⇒ `Is_Some None` ⇒ "I : True expected
+   Is_Some …").  So `eredex_steps_with` is UNUSABLE on open builder terms.  Fix:
+   `change` the goal into the rule's `t[/s/] e1[/s/] e2[/s/]` form (so
+   `eq_term_subst` applies without inverting the subst), then discharge the
+   `wf_subst` from the variable hypotheses by `wf_subst_cons` + `compute_wf_subjects`
+   + `assumption` (NO checker), and the rule-ctx `wf_ctx` via `rule_in_ctx_wf`.
+3. **Reusable driver `ott_wf_args`** (peel `wf_args`, expose `Model.wf_term`,
+   compute the `with_names_from` subst, close var leaves by `assumption` and con
+   leaves by `Elab.wf_term_by'`) — the standard "hand-build a `wf_term` over open
+   OTT terms" tactic; will be reused for every remaining builder.
+
+GOTCHAS (will recur):
+- **Stale rocq-mcp worker gives FALSE proof success**: `eredex_steps_with ott "U
+  subst"` reported "No goals remaining" in coq-lsp but FAILED under coqc (the
+  checker issue above).  TRUST coqc (`make -f Makefile.coq /ABS/PATH.vo`), not the
+  MCP, for anything touching `compute_*_wf`.  `force_restart:true` on `rocq_start`
+  fixed an earlier "imports not loaded" staleness.
+- `Elab.wf_term_by'` (Elab.v) is REQUIRED transitively but NOT imported by file 4;
+  use the qualified name.  `wf_term_by` alone can't be `eapply`'d at a con leaf
+  (the `t[/with_names_from c' s/]` conclusion blocks unification); `wf_term_by'`
+  keeps the type flexible with a `= … \/ eq_sort …` side-goal (`left; compute;
+  reflexivity` for exact leaves).
+- make's `.Makefile.coq.d` uses ABSOLUTE target paths; build with the abs `.vo`
+  path.  If "No rule"/"Nothing to be done", `rm Makefile.coq Makefile.coq.conf
+  .Makefile.coq.d; make Makefile.coq` then build the abs path.
+
+**NEXT (continue subgoal (a), same file):** `extc_wf` (just `ext (El act_code) …`
+over `act_code_wf`), then `act_member`/`act_cod`/`cod_at`/`mapp` — `cod_at` needs
+the `ounder` under'-lift correctness (the genuinely fiddly one; its statement is
+the OTT "Pi_rel subst" under' annotation — check vs Pi.v:120 + pi_rel_eta_rule
+lines 47-49).  Each builder type will reuse `ott_wf_args` + a per-rule
+`*_subst_eq` companion in the `U_subst_eq` style.  Then the fundamental lemma
+proper (wf_term ⇒ reducible) by cut-elim; the Pi reflect/reify eta crux.
+
 ## UPDATE 2026-06-07v — OTT-CONCRETE Kripke RedTy LANDED in LogicalRelation.v (GREEN + axiom-free, committed+pushed). Builders verified vs built Base/Pi/Nat.vo; snoc-order corrected; base members concrete. NEXT = file 4 FundamentalLemma (where the deferred codomain under'-lift correctness gets checked).
 
 THIS SESSION (committed+pushed on `gluing-nbe`):
