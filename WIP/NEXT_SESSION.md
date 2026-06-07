@@ -1,5 +1,58 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z — LR ESCAPE + REFLECT-LEAVES LANDED (2 commits, pushed). NEXT = type-level escape (Pi crux) / the fundamental lemma proper.
+
+THIS SESSION (both committed+pushed on `gluing-nbe`):
+- **`LogicalRelation.v` (abstract `l`, axiom-free):**
+  - `RedNe_sound` — ESCAPE for the neutral fiber: `RedNe t a b` + member
+    typing ⇒ `eq_term l [] t a b` (reds_sound both sides + the `ne_eq`
+    conversion).  Members are raw terms (LR carries no typing), so the two wf
+    hypotheses are supplied externally — exactly what the fundamental lemma
+    threads.
+  - `RedNe_refl` / `RedNatMem_refl_ne` / `RedTy_ne_refl` — REFLECT leaves: a
+    well-typed neutral is a reducible member (neutral/Nat fiber) and a
+    well-typed neutral type code is reducible.  All constructors
+    (`reds_refl` on the whnf neutral + `ne_eq_refl`).
+- **`FundamentalLemma.v` (concrete `l := ott`, only `egraph_sound`):**
+  - `suc_inv` — invert a well-typed `suc`: argument is a Nat element in the
+    same env, env itself wf.  KEY RECIPE (reusable for the fundamental lemma's
+    many inversion obligations): `WfCutElim.invert_wf_term_con` gives an
+    ABSTRACT rule ctx `c'`; PIN it concrete via
+    `in_all_fresh_same (wf_lang_ext_all_fresh ott_wf) Hin Hin2` where
+    `Hin2 : In ("suc", <typed-out rule>) ott` is built by
+    `apply named_list_lookup_err_in; vm_compute; reflexivity`.  Then
+    `safe_invert Hwfargs`; the head wf lands at the substituted sort which is
+    DEFINITIONALLY `nat_sort G` (`exact`/`assumption` close it).
+  - `RedNatMem_sound` — Nat-fiber ESCAPE: `RedNatMem ott G a b` + member typing
+    ⇒ `eq_term ott [] (nat_sort G) a b`.  zero/ne = leaf; suc recurses (IH after
+    re-typing predecessors with `suc_inv`) then re-assembles by `suc`
+    congruence (`term_con_congruence`, sort-side `right;vm_compute;reflexivity`,
+    eq_args = IH on the predecessor + refl on the shared env).
+
+WHY here vs there: the neutral-fiber escape is non-recursive ⇒ abstract `l`.
+The Nat-fiber escape's `rnm_suc` case must re-derive the predecessor's typing by
+subject reduction (`reds_wf`) + inversion of the CONCRETE `suc` rule ⇒ needs
+`l := ott` ⇒ `FundamentalLemma.v`.
+
+REMAINING ESCAPE / PER work (all hit a real crux — NOT quick):
+- **Type-level escape** `RedTy_sound : RedTy ott G A B -> wf A (U-sort) ->
+  wf B (U-sort) -> eq_term (U-sort) A B`.  nat/empty/ne cases are LEAF
+  (reds_sound + the fiber conversion; the `ne` case needs a sort-uniqueness
+  `term_sorts_eq` bridge because `rtt_ne` carries an arbitrary `t`).  The **Pi
+  case is the Kripke/eta crux**: from `DomRed`/`CodRed` (instantiated at `id G`
+  + a fresh var) extract `F≡F'` / `C≡C'` then `Pi_rel` congruence — entangled
+  with the file-4 builder equalities (`ty_subst_id_El_eq`, `El_subst_eq`, …).
+  Can't be stated total without discharging Pi (no `admit`).
+- **PER symmetry** `RedTy_sym` and **transitivity** `RedNatMem_trans` /
+  `RedTy_trans`: symmetry at Pi needs IRRELEVANCE (the swapped member relation
+  differs); transitivity needs reds-determinism + ott constructor disjointness
+  (zero/suc/neutral mutually distinct + injective up to `eq_term`).  Both
+  deferred, as flagged in UPDATE-y.
+
+NEXT (pick one): (i) the type-level escape leaf cases + attempt the Pi crux via
+the builders; or (ii) jump to the fundamental lemma proper (cut-elim induction;
+leaf cases now have escape+reflect in hand, Pi is the same crux).
+
 ## UPDATE 2026-06-07y — LR META-THEORY SCAFFOLDING LANDED (4 commits, all GREEN + axiom-free, pushed). NEXT = the fundamental lemma proper (the Pi-Kripke crux) — but two LR-design gaps must be settled first (see below).
 
 THIS SESSION (in `src/.../Norm/Pi/LogicalRelation.v`, committed+pushed on `gluing-nbe`):
