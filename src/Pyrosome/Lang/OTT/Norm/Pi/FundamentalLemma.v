@@ -3445,13 +3445,24 @@ Proof. reflexivity. Qed.
 Definition esc_ty {G A B} (r : RedTy ott G A B) : Prop :=
   forall S, wf_term ott [] A S -> wf_term ott [] B S -> eq_term ott [] S A B.
 
+(* z20: `esc_tm` / `reflect_at` carry a B-side typing presupposition
+   `wf_term [] B Sb`.  For the leaves it is ignored.  For the Pi case it is
+   load-bearing: the member sort `elt_sort r` reads only the A-side Pi data
+   (F, C), but the two-sided `RedAtPi` member relates `mapp .. F C t a` with
+   `mapp .. F' C' u a'` (B-side F', C' on the right).  Bridging the two needs
+   F~F' / C~C' (escape@Pi), which in turn needs the B-side F'/C' typings —
+   recovered from `wf_term [] B Sb` via `reds_wf` (on `hB`) + `Pi_rel_inv`.
+   The hard direction always has both codes' typings in hand, so this is a
+   free presupposition there. *)
 Definition esc_tm {G A B} (r : RedTy ott G A B) : Prop :=
-  forall a b, RedTy_R ott r a b ->
+  forall Sb, wf_term ott [] B Sb ->
+    forall a b, RedTy_R ott r a b ->
     wf_term ott [] a (elt_sort r) -> wf_term ott [] b (elt_sort r) ->
     eq_term ott [] (elt_sort r) a b.
 
 Definition reflect_at {G A B} (r : RedTy ott G A B) : Type :=
-  forall a b, neutral ott_pa "hd" a -> neutral ott_pa "hd" b ->
+  forall Sb, wf_term ott [] B Sb ->
+    forall a b, neutral ott_pa "hd" a -> neutral ott_pa "hd" b ->
     wf_term ott [] a (elt_sort r) -> wf_term ott [] b (elt_sort r) ->
     eq_term ott [] (elt_sort r) a b -> RedTy_R ott r a b.
 
@@ -3465,10 +3476,10 @@ Proof.
   unfold Pmot, esc_ty, esc_tm, reflect_at; rewrite !elt_sort_nat.
   repeat split.
   - (* escape_ty *) intros S HA HB. eapply RedTy_Nat_sound; eassumption.
-  - (* escape_tm *) intros a b Hm Ha Hb.
+  - (* escape_tm *) intros Sb HB a b Hm Ha Hb.
     change (RedTy_R ott (RedTy_nat ott ra rb) a b) with (RedNatMem ott G a b) in Hm.
     eapply RedNatMem_sound; eassumption.
-  - (* reflect *) intros a b Hna Hnb Ha Hb Heq.
+  - (* reflect *) intros Sb HB a b Hna Hnb Ha Hb Heq.
     change (RedTy_R ott (RedTy_nat ott ra rb) a b) with (RedNatMem ott G a b).
     apply RedNatMem_reflect; repeat split; eassumption.
 Qed.
@@ -3480,10 +3491,10 @@ Proof.
   unfold Pmot, esc_ty, esc_tm, reflect_at; rewrite !elt_sort_empty.
   repeat split.
   - intros S HA HB. eapply RedTy_Empty_sound; eassumption.
-  - intros a b Hm Ha Hb.
+  - intros Sb HB a b Hm Ha Hb.
     change (RedTy_R ott (RedTy_empty ott ra rb) a b) with (RedNe ott (empty_sort G) a b) in Hm.
     eapply RedNe_sound_at; eassumption.
-  - intros a b Hna Hnb Ha Hb Heq.
+  - intros Sb HB a b Hna Hnb Ha Hb Heq.
     change (RedTy_R ott (RedTy_empty ott ra rb) a b) with (RedNe ott (empty_sort G) a b).
     apply RedNe_reflect; repeat split; eassumption.
 Qed.
@@ -3500,12 +3511,12 @@ Proof.
     intros S HA HB. eapply RedNe_sound_at with (t:=code_sort rN lN G);
       [ eapply red_ne; eassumption | eassumption | eassumption ].
   - (* escape_tm: members reduce to ne_eq neutrals at El na *)
-    intros a b Hm Ha Hb.
+    intros Sb HB a b Hm Ha Hb.
     change (RedTy_R ott (@RedTy_ne ott G A B na nb rN lN ra rb h) a b)
       with (RedNe ott (el_sort rN lN G na) a b) in Hm.
     eapply RedNe_sound_at; eassumption.
   - (* reflect: a neutral pair at El na is a neutral member *)
-    intros a b Hna Hnb Ha Hb Heq.
+    intros Sb HB a b Hna Hnb Ha Hb Heq.
     change (RedTy_R ott (@RedTy_ne ott G A B na nb rN lN ra rb h) a b)
       with (RedNe ott (el_sort rN lN G na) a b).
     apply RedNe_reflect; repeat split; eassumption.
@@ -4225,6 +4236,107 @@ Proof.
   - apply (RedNe_reflect ott), ne_eq_refl; assumption.
   - apply (RedNe_reflect ott), ne_eq_refl; assumption.
   - apply Hpi; assumption.
+Qed.
+
+(* ====================================================================== *)
+(* z20: invert a MEMBER typed at the El-Pi sort `El orel lG G (Pi rF lF lG *)
+(* F C G)` to recover the Pi-data typings (G/rF/lF/lG/F/C).  The `esc_tm`  *)
+(* and `reflect_at` components of the Pi case have their term arguments     *)
+(* typed at this El-Pi sort (not at the Pi CODE sort), so the typing        *)
+(* premises `RedTm_Pi_eta_sound` / `mapp_ne_eq2` need are recovered HERE     *)
+(* (whereas `esc_ty` recovers them from `Pi_rel_inv` on the code's typing). *)
+(* Recipe: presupposition (`eq_term_wf_sort` on `eq_term_refl`) types the   *)
+(* sort, invert #"exp" -> the El type at #"ty", invert #"El" -> the Pi code *)
+(* at the U code-sort, then `Pi_rel_inv`.                                   *)
+(* ====================================================================== *)
+Lemma El_Pi_member_inv rF lF lG F C G i e
+  (Hwf : wf_term ott [] e (s_exp G i (oEl orel lG G (oPi_rel rF lF lG F C G))))
+  : wf_term ott [] G s_env
+    /\ wf_term ott [] rF (scon "relevance" [])
+    /\ wf_term ott [] lF (scon "lvl" [])
+    /\ wf_term ott [] lG (scon "lvl" [])
+    /\ wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G))
+    /\ wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))).
+Proof.
+  pose proof ott_wf as Hwf'.
+  pose proof (eq_term_wf_sort ott_wf wf_ctx_ott_nil (eq_term_refl Hwf)) as Hwsort.
+  unfold s_exp in Hwsort.
+  safe_invert Hwsort.
+  assert (Hall : all_fresh ott) by exact (wf_lang_ext_all_fresh ott_wf).
+  assert (Hexp2 : In ("exp", sort_rule
+     [("A", {{s #"ty" "G" "i"}}); ("i", {{s #"tyinfo"}}); ("G", {{s #"env"}})]
+     ["A"; "i"; "G"]) ott) by (apply named_list_lookup_err_in; vm_compute; reflexivity).
+  pose proof (in_all_fresh_same _ _ _ _ Hall H2 Hexp2) as Heqr; safe_invert Heqr.
+  cbn [with_names_from] in H3.
+  repeat match goal with
+  | H : wf_args _ (_ :: _) _ |- _ => safe_invert H
+  | H : wf_args _ [] _ |- _ => clear H
+  end.
+  cbn [with_names_from named_list_lookup] in H4.
+  cbn [Model.wf_term core_model] in H4.
+  unfold oEl in H4.
+  apply WfCutElim.invert_wf_term_con in H4 as (c'' & cargs'' & t'' & HinEl & HwfargsEl & HsortEl).
+  assert (HinEl2 : In ("El", term_rule
+     [("e", {{s #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" "G" "r" "l")}});
+      ("l", {{s #"lvl"}}); ("r", {{s #"relevance"}}); ("G", {{s #"env"}})]
+     ["e"]
+     {{s #"ty" "G" (#"info" "r" (#"iota" "l"))}}) ott)
+    by (apply named_list_lookup_err_in; vm_compute; reflexivity).
+  pose proof (in_all_fresh_same _ _ _ _ Hall HinEl HinEl2) as HeqEl; safe_invert HeqEl.
+  cbn [with_names_from] in HwfargsEl.
+  repeat match goal with
+  | H : wf_args _ (_ :: _) _ |- _ => safe_invert H
+  | H : wf_args _ [] _ |- _ => clear H
+  end.
+  cbn [with_names_from named_list_lookup] in H4.
+  cbn [Model.wf_term core_model] in H4.
+  change ({{s #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" "G" "r" "l")}}
+            [/[("l", lG); ("r", orel); ("G", G)] /])
+    with (code_sort orel lG G) in H4.
+  pose proof (Pi_rel_inv rF lF lG F C G _ H4) as (HG & HrF & HlF & HlG & HF & HC & _).
+  repeat split; assumption.
+Qed.
+
+(* ====================================================================== *)
+(* z20: Pi-code congruence at the CODE sort `code_sort orel lG G`.  From   *)
+(* F~F' (domain code) and C~C' (codomain code, at the F'-env sort)         *)
+(* conclude `oPi_rel rF lF lG F C G ~ oPi_rel rF lF lG F' C' G`.  Used in   *)
+(* the esc_tm / reflect Pi cases to bridge the two-sided member relation's  *)
+(* B-side data (F', C') back to the A-side (F, C) via `El_cong` on the Pi   *)
+(* codes (the member sorts El(Pi F C) vs El(Pi F' C') differ only by this   *)
+(* congruence).  Inline Pi_rel con-congruence, mirroring `RedTy_Pi_sound`.  *)
+(* ====================================================================== *)
+Lemma oPi_rel_code_cong rF lF lG G F C F' C'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  (HCC' : eq_term ott []
+            (s_exp (oext (oEl rF lF G F') (term_info rF lF) G) (code_info lG)
+                   (oU orel lG (oext (oEl rF lF G F') (term_info rF lF) G)))
+            C C')
+  : eq_term ott [] (code_sort orel lG G)
+      (oPi_rel rF lF lG F C G) (oPi_rel rF lF lG F' C' G).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold code_sort, oU, code_info, oinfo, onext, orel.
+  unfold oPi_rel.
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons. 2:{ exact HCC'. }
+    eapply eq_args_cons. 2:{ exact HFF'. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_nil.
 Qed.
 
 (* TODO (file 4 body, continued) — STEP 3 remaining (the typing-induction
