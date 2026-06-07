@@ -19,6 +19,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
+From Pyrosome.Theory Require CutElim.
 From Pyrosome.Tools Require Import Matches.
 From Pyrosome.Lang.OTT Require Import Base Nat Pi.
 From Pyrosome.Lang.OTT.Norm.Pi Require Import Reduction Neutral LogicalRelation.
@@ -2805,6 +2806,114 @@ Proof.
     destruct Hfin as [He | [He | []]]; inversion He; subst.
     + inversion Hwfargs; subst s. right. reflexivity.
     + inversion Hwfargs; subst s. left. reflexivity.
+Qed.
+
+(* ====================================================================== *)
+(* RELEVANCE / LEVEL DISTINCTNESS under eq_term (plan (A) step 2).         *)
+(*                                                                        *)
+(* The Pi REFLECT case must rule out the *bad* relevance/level of a        *)
+(* relevant (Nat/Empty) binder: #"rel" /= #"irr" and #"L0" /= #"L1" as     *)
+(* closed terms, even up to declarative `eq_term`.  Like the canonicity    *)
+(* above, this is SYNTACTIC and model-free — `ott` contains NO             *)
+(* `term_eq_rule` whose conclusion sort is #"relevance" or #"lvl"          *)
+(* (`ott_no_term_eq_rule_rl`, by computation), so a closed `eq_term` at     *)
+(* either sort never changes a term's head constructor.                    *)
+(*                                                                        *)
+(* The argument runs over the CUT-FREE judgments (CutElim): the cut-free   *)
+(* `eq_term` has no `eq_term_subst` constructor (it is admissible), so a    *)
+(* head-invariance induction goes through (the open-variable subst case    *)
+(* that breaks the direct `Core.eq_term` induction simply does not arise). *)
+(* We bridge back via `CutElim.core_implies_cut`.                          *)
+(* ====================================================================== *)
+
+(* Cut-free eq_sort over `ott` preserves the head name (no sort_eq_rule). *)
+Lemma cut_eq_sort_ott_same_name : forall c t1 t2,
+  @CutElim.eq_sort string _ ott c t1 t2 -> sort_name t1 = sort_name t2.
+Proof.
+  intros c t1 t2 H.
+  induction H.
+  - exfalso. eapply ott_no_sort_eq_rule; eassumption.
+  - reflexivity.
+  - congruence.
+  - congruence.
+Qed.
+
+(* `ott` has NO term-equality rule with conclusion sort #"relevance"/#"lvl". *)
+Lemma ott_no_term_eq_rule_rl : forall name c e1 e2 t,
+  In (name, term_eq_rule c e1 e2 t) ott ->
+  sort_name t <> "relevance" /\ sort_name t <> "lvl".
+Proof.
+  assert (Hall : List.forallb
+    (fun p => match snd p with
+       | term_eq_rule _ _ _ t =>
+           negb (orb (String.eqb (sort_name t) "relevance")
+                     (String.eqb (sort_name t) "lvl"))
+       | _ => true end) ott = true)
+    by (vm_compute; reflexivity).
+  rewrite List.forallb_forall in Hall.
+  intros name c e1 e2 t Hin.
+  apply Hall in Hin. cbn in Hin.
+  apply Bool.negb_true_iff, Bool.orb_false_iff in Hin.
+  destruct Hin as [H1 H2].
+  split; intro Hc; rewrite Hc in *; cbn in *; discriminate.
+Qed.
+
+(* The head constructor of a term (None for a var). *)
+Definition tm_head (e : tm) : option string :=
+  match e with con n _ => Some n | var _ => None end.
+
+(* Cut-free eq_term at sort #"relevance"/#"lvl" preserves the term head. *)
+Lemma cut_eq_term_ott_same_head : forall c t a b,
+  @CutElim.eq_term string _ ott c t a b ->
+  (sort_name t = "relevance" \/ sort_name t = "lvl") ->
+  tm_head a = tm_head b.
+Proof.
+  intros c t a b H.
+  induction H; intro Hs.
+  - (* eq_term_by: vacuous (no such term_eq_rule) *)
+    exfalso.
+    destruct (ott_no_term_eq_rule_rl _ _ _ _ _ H) as [Hr Hl].
+    destruct t as [tn ts]. cbn in Hs.
+    destruct Hs as [Hs|Hs]; [apply Hr|apply Hl]; exact Hs.
+  - (* eq_term_cong: same head con *) reflexivity.
+  - (* eq_term_var *) reflexivity.
+  - (* eq_term_trans *)
+    rewrite IHeq_term1 by assumption. apply IHeq_term2; assumption.
+  - (* eq_term_sym *) symmetry. apply IHeq_term; assumption.
+  - (* eq_term_conv: sort head preserved by cut_eq_sort_ott_same_name *)
+    apply IHeq_term.
+    apply cut_eq_sort_ott_same_name in H0. rewrite H0. exact Hs.
+Qed.
+
+(* Bridge back to declarative `Core.eq_term` at the empty context. *)
+Lemma core_eq_term_ott_same_head : forall t a b,
+  eq_term ott [] t a b ->
+  (sort_name t = "relevance" \/ sort_name t = "lvl") ->
+  tm_head a = tm_head b.
+Proof.
+  intros t a b Hcore Hs.
+  assert (Hcut : CutElim.wf_lang _ ott).
+  { apply CutElim.wf_lang_iff_cut; [ typeclasses eauto | typeclasses eauto | exact ott_wf ]. }
+  pose proof (CutElim.core_implies_cut _ ott Hcut) as Himpl.
+  destruct Himpl as [_ [Hterm _]].
+  apply Hterm in Hcore.
+  eapply cut_eq_term_ott_same_head; eassumption.
+Qed.
+
+(* RELEVANCE DISTINCTNESS: #"rel" and #"irr" are NOT eq_term-equal. *)
+Lemma rel_neq_irr :
+  ~ eq_term ott [] (scon "relevance" []) (con "rel" []) (con "irr" []).
+Proof.
+  intro H.
+  apply core_eq_term_ott_same_head in H; [ cbn in H; discriminate | left; reflexivity ].
+Qed.
+
+(* LEVEL DISTINCTNESS: #"L0" and #"L1" are NOT eq_term-equal. *)
+Lemma L0_neq_L1 :
+  ~ eq_term ott [] (scon "lvl" []) (con "L0" []) (con "L1" []).
+Proof.
+  intro H.
+  apply core_eq_term_ott_same_head in H; [ cbn in H; discriminate | right; reflexivity ].
 Qed.
 
 (* TODO (file 4 body, continued):
