@@ -371,6 +371,8 @@ Section RedTyConcrete.
     (t u : tm) : Type :=
   | at_pi_app :
       (forall D g (os : osub G D g) a a' (raa' : RDom D g os a a'),
+          wf_term l [] a  (el_sort rF lF D (act_code rF lF g G D F)) ->
+          wf_term l [] a' (el_sort rF lF D (act_code rF lF g G D F)) ->
           RCod D g os a a' raa'
             (mapp rF lF lG g G D F C t a)
             (mapp rF lF lG g G D F' C' u a'))
