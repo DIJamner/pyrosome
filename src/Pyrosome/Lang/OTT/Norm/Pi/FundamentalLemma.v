@@ -187,10 +187,290 @@ Proof.
          [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
 Qed.
 
+(* ====================================================================== *)
+(* THE under'-LIFT CLUSTER (NEXT_SESSION UPDATE-w).                         *)
+(*                                                                        *)
+(* The Kripke codomain code (`act_cod`/`cod_at`) is pushed along the       *)
+(* under'-lift `ounder = snoc (cmp g wkn) hd : sub (extc ..) (ext G (El F))`.*)
+(* Typing `ounder` is the genuinely fiddly obligation: its `hd` leaf lands  *)
+(* at `ty_subst wkn (El (act_code))`, but the `snoc` rule demands it at     *)
+(* `ty_subst (cmp g wkn) (El F)`.  Those agree only via the OTT             *)
+(* "ty_subst_cmp" + "El subst" computation rules (`ty_subst_g0_El_eq`).     *)
+(* This section discharges that chain, then `ounder_wf`.                    *)
+(* ====================================================================== *)
+
+(* Sort abbreviations: `s_sub tgt src` is the rule's `sub tgt src` (tgt the
+   target env, src the source env); `s_exp G i A` / `s_ty G i` likewise. *)
+Definition s_env : osort := scon "env" [].
+Definition s_sub (tgt src : tm) : osort := scon "sub" [src; tgt].
+Definition s_exp (G i A : tm) : osort := scon "exp" [A; i; G].
+Definition s_ty (G i : tm) : osort := scon "ty" [i; G].
+
+(* `El (act_code ..) : ty D (term_info rF lF)` — the decoded pushed domain
+   code, used as the extension type of `extc` and the `A` of `wkn`/`hd`. *)
+Lemma El_act_code_ty rF lF g G D F
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  : wf_term ott [] (oEl rF lF D (act_code rF lF g G D F))
+                   (s_ty D (term_info rF lF)).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold oEl, s_ty, term_info.
+  eapply Elab.wf_term_by'.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - cbn [Model.wf_term core_model].
+    repeat first
+      [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+      | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+      | (apply act_code_wf; eassumption)
+      | eassumption
+      | (eapply Elab.wf_term_by';
+           [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - left; compute; reflexivity.
+Qed.
+
+(* `wkn : sub (extc ..) D` — weaken out of the domain-extended env. *)
+Lemma wkn_extc_wf rF lF g G D F
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  : wf_term ott []
+      (owkn (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)
+      (s_sub (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D) D).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold owkn, oext, s_sub.
+  eapply Elab.wf_term_by'.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - cbn [Model.wf_term core_model].
+    repeat first
+      [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+      | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+      | (apply El_act_code_ty; eassumption)
+      | eassumption
+      | (eapply Elab.wf_term_by';
+           [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - left; compute; reflexivity.
+Qed.
+
+(* `g0 = cmp g wkn : sub (extc ..) G` — the under'-lift's underlying subst. *)
+Lemma cmp_g0_wf rF lF g G D F
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  : wf_term ott []
+      (ocmp g (owkn (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)
+            G D (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D))
+      (s_sub (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D) G).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold ocmp, oext, s_sub.
+  eapply Elab.wf_term_by'.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - cbn [Model.wf_term core_model].
+    repeat first
+      [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+      | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+      | (apply wkn_extc_wf; eassumption)
+      | (apply El_act_code_ty; eassumption)
+      | eassumption
+      | (eapply Elab.wf_term_by';
+           [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - left; compute; reflexivity.
+Qed.
+
+(* The "El subst" computation rule under an explicit variable substitution:
+   `ty_subst g (El F) = El (exp_subst g F) = El (act_code ..)`.  Same
+   checker-free packaging as `U_subst_eq` (the `wf_subst` side-goal is closed
+   from the variable hypotheses, not the computational wf checker). *)
+Lemma El_subst_eq rF lF g G D F
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  : eq_term ott [] (s_ty D (term_info rF lF))
+      (con "ty_subst" [oEl rF lF G F; term_info rF lF; g; G; D])
+      (oEl rF lF D (act_code rF lF g G D F)).
+Proof.
+  pose proof ott_wf as Hwf.
+  pose (s := [("e", F); ("l", lF); ("r", rF); ("g", g); ("G'", G); ("G", D)] : subst string).
+  change (eq_term ott []
+    ({{s #"ty" "G" (#"info" "r" (#"iota" "l")) }} [/s/])
+    ({{e #"ty_subst" "G" "G'" "g" (#"info" "r" (#"iota" "l")) (#"El" "G'" "r" "l" "e") }} [/s/])
+    ({{e #"El" "G" "r" "l" (#"exp_subst" "G" "G'" "g" (#"info" #"rel" (#"next" "l")) (#"U" "G'" "r" "l") "e") }} [/s/])).
+  eapply eq_term_subst.
+  - eapply eq_term_by with (name := "El subst").
+    apply named_list_lookup_err_in; compute; reflexivity.
+  - apply eq_subst_refl. unfold s.
+    repeat first
+      [ simple apply wf_subst_nil | simple eapply wf_subst_cons
+      | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+      | eassumption ].
+  - eapply rule_in_ctx_wf with (name := "El subst").
+    + exact Hwf.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + compute; reflexivity.
+Qed.
+
+(* The checker-free "hand-build a wf_term/wf_subst/wf_args over open OTT terms"
+   driver, extended with the cluster's already-typed builders as leaves. *)
+Ltac ott_build :=
+  repeat first
+    [ simple apply wf_subst_nil | simple eapply wf_subst_cons
+    | simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+    | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+    | (apply act_code_wf; eassumption)
+    | (apply El_act_code_ty; eassumption)
+    | (apply wkn_extc_wf; eassumption)
+    | (apply cmp_g0_wf; eassumption)
+    | eassumption
+    | (eapply Elab.wf_term_by';
+         [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+
+(* THE CRUX: the under'-lift's `hd` leaf type-mismatch resolves to this single
+   convertibility.  `ty_subst (cmp g wkn) (El F) = ty_subst wkn (El (act_code))`
+   via "ty_subst_cmp" (split the composite subst) then "El subst" (push g into
+   the code) under a `ty_subst wkn` congruence (`term_con_congruence`). *)
+Lemma ty_subst_g0_El_eq rF lF g G D F
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  : eq_term ott []
+      (s_ty (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D) (term_info rF lF))
+      (con "ty_subst"
+         [oEl rF lF G F; term_info rF lF;
+          ocmp g (owkn (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)
+               G D (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D);
+          G; oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D])
+      (con "ty_subst"
+         [oEl rF lF D (act_code rF lF g G D F); term_info rF lF;
+          owkn (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D;
+          D; oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D]).
+Proof.
+  pose proof ott_wf as Hwf.
+  eapply eq_term_trans with
+    (e12 := con "ty_subst"
+       [con "ty_subst" [oEl rF lF G F; term_info rF lF; g; G; D];
+        term_info rF lF;
+        owkn (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D;
+        D; oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D]).
+  - eapply eq_term_sym.
+    pose (s := [("A", oEl rF lF G F); ("i", term_info rF lF); ("g", g);
+                ("f", owkn (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D);
+                ("G3", G); ("G2", D);
+                ("G1", oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)] : subst string).
+    change (eq_term ott []
+      ({{s #"ty" "G1" "i" }} [/s/])
+      ({{e #"ty_subst" "G1" "G2" "f" "i" (#"ty_subst" "G2" "G3" "g" "i" "A") }} [/s/])
+      ({{e #"ty_subst" "G1" "G3" (#"cmp" "G1" "G2" "G3" "f" "g") "i" "A" }} [/s/])).
+    eapply eq_term_subst.
+    + eapply eq_term_by with (name := "ty_subst_cmp").
+      apply named_list_lookup_err_in; compute; reflexivity.
+    + apply eq_subst_refl. unfold s. ott_build.
+    + eapply rule_in_ctx_wf with (name := "ty_subst_cmp").
+      * exact Hwf.
+      * apply named_list_lookup_err_in; compute; reflexivity.
+      * compute; reflexivity.
+  - eapply term_con_congruence.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + right; compute; reflexivity.
+    + exact Hwf.
+    + do 5 (simple eapply eq_args_cons;
+            [ | try (apply El_subst_eq; eassumption);
+                try (eapply eq_term_refl; ott_build) ]);
+      apply eq_args_nil.
+Qed.
+
+(* `hd : exp (extc ..) (term_info rF lF) (ty_subst (cmp g wkn) (El F))` — the
+   `snoc` rule's `v` leaf for `ounder`, i.e. `hd` converted (via the crux above)
+   from its native `ty_subst wkn (El (act_code))` type to the `cmp`-form `snoc`
+   demands. *)
+Lemma hd_extc_wf rF lF g G D F
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  : wf_term ott []
+      (ohd (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)
+      (s_exp (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)
+             (term_info rF lF)
+             (con "ty_subst"
+                [oEl rF lF G F; term_info rF lF;
+                 ocmp g (owkn (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)
+                      G D (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D);
+                 G; oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D])).
+Proof.
+  pose proof ott_wf as Hwf.
+  eapply wf_term_conv.
+  - eapply wf_term_by.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + ott_build.
+  - cbn [with_names_from sort_subst apply_subst substable_sort
+         Substable.apply_subst0 term_substable].
+    unfold s_exp.
+    sort_cong.
+    all: cbn [Model.eq_term core_model].
+    all: first
+      [ solve [ eapply eq_term_refl; ott_build ]
+      | solve [ eapply eq_term_sym; apply ty_subst_g0_El_eq; assumption ]
+      | solve [ apply ty_subst_g0_El_eq; assumption ] ].
+Qed.
+
+(* `ounder rF lF g G D F : sub (extc ..) (ext G (El F))` — the under'-lift of
+   `g` over the domain binder, well-typed.  This is the fiddliest builder
+   typing; it composes `cmp_g0_wf` (the `snoc`'s subst) with `hd_extc_wf` (the
+   converted `hd` leaf). *)
+Lemma ounder_wf rF lF g G D F
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  : wf_term ott [] (ounder rF lF g G D F)
+      (s_sub (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)
+             (oext (oEl rF lF G F) (term_info rF lF) G)).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold ounder, dom_info, s_sub.
+  eapply Elab.wf_term_by'.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - cbn [Model.wf_term core_model].
+    repeat first
+      [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+      | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+      | (apply hd_extc_wf; eassumption)
+      | (apply cmp_g0_wf; eassumption)
+      | (apply El_act_code_ty; eassumption)
+      | (apply act_code_wf; eassumption)
+      | eassumption
+      | (eapply Elab.wf_term_by';
+           [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - left; compute; reflexivity.
+Qed.
+
 (* TODO (file 4 body, continued):
-   - remaining builder typings: `act_member`, `act_cod`, `cod_at`,
-     `mapp` (the `ounder` under'-lift is the genuinely fiddly one — its
-     correctness is exactly the OTT "Pi_rel subst" under' annotation).
+   - remaining under'-lift cluster: `act_cod` / `cod_at` (codomain code over
+     `ounder`, reusing `ounder_wf`), then `act_member` (naive `exp_subst` type
+     converted via a "Pi_rel subst" analogue) and `mapp` (`app_rel` over the
+     three).
    - then the fundamental lemma proper:
        wf_term ott [] e t -> reducible e   (and the eq_term -> RedTm PER side),
      by Pyrosome cut-elimination on canonical derivations; discharges the
