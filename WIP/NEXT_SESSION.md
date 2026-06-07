@@ -39,13 +39,40 @@ GOTCHAS (will recur):
   path.  If "No rule"/"Nothing to be done", `rm Makefile.coq Makefile.coq.conf
   .Makefile.coq.d; make Makefile.coq` then build the abs path.
 
-**NEXT (continue subgoal (a), same file):** `extc_wf` (just `ext (El act_code) …`
-over `act_code_wf`), then `act_member`/`act_cod`/`cod_at`/`mapp` — `cod_at` needs
-the `ounder` under'-lift correctness (the genuinely fiddly one; its statement is
-the OTT "Pi_rel subst" under' annotation — check vs Pi.v:120 + pi_rel_eta_rule
-lines 47-49).  Each builder type will reuse `ott_wf_args` + a per-rule
-`*_subst_eq` companion in the `U_subst_eq` style.  Then the fundamental lemma
-proper (wf_term ⇒ reducible) by cut-elim; the Pi reflect/reify eta crux.
+**`extc_wf` also LANDED this session** (committed+pushed): `extc = ext D (El
+(act_code …))` is a well-formed env; composes `act_code_wf` via the El-argument
+leaf, same checker-free driver + an `(apply act_code_wf; eassumption)` leaf.  So
+the reusable pattern for "builder typing" is now: drive with the checker-free
+`first[… | (apply <prev-builder-wf>; eassumption) | Elab.wf_term_by' …]`, adding
+one leaf per already-typed builder.
+
+**KEY ENTANGLEMENT FINDING — the remaining builders are NOT independent; they
+cluster around the `ounder` under'-lift.**  `mapp = app_rel rF lF lG (act_code)
+(act_cod)(act_member) a D` requires `act_member : exp D _ (El (Pi_rel rF lF lG
+(act_code)(act_cod) D))`.  But `act_member` is `exp_subst f g` whose NAIVE type is
+`exp D _ (ty_subst g (El (Pi_rel … F C G)))`; converting that to the
+`El (Pi_rel (act_code)(act_cod) D)` form `mapp` wants goes through "El subst" THEN
+"Pi_rel subst", and **"Pi_rel subst" is exactly the rule whose codomain uses
+`under'` (Pi.v:118-123: `exp_subst g (Pi_rel F B) = Pi_rel (exp_subst g F)
+(exp_subst (under' g) B)`)**.  So `act_member`'s useful typing, `act_cod`, and
+`cod_at` are all blocked on the SAME `ounder`/`under'` correctness — do them as
+ONE cluster, not separately.
+
+**NEXT (the under'-lift cluster, same file):**
+1. **`ounder_wf`** — `ounder rF lF g G D F : sub (extc …) (ext G (El F))` is a
+   well-typed object substitution.  This is THE fiddly one; `ounder = snoc (cmp g
+   wkn) hd` (LogicalRelation.v:253-261).  Cross-check its annotations against the
+   ELABORATED `under'` in `pi_rel_eta_rule` (Pi.v:47-49) and the "Pi_rel subst"
+   RHS (Pi.v:120).  Likely needs `snoc`/`cmp`/`wkn`/`hd` companion typings (each a
+   small `wf_term_by` like `act_code_wf`).
+2. **`Pi_rel_subst_eq`** (U_subst_eq style) — `exp_subst g (Pi_rel rF lF lG F C G)
+   = Pi_rel rF lF lG (act_code …)(act_cod …) D`, via the "Pi_rel subst" rule under
+   an explicit variable subst (reuses `ounder_wf` for the codomain `act_cod`).
+3. **`act_cod_wf`** / **`cod_at_wf`** — codomain code typings over `ounder`.
+4. **`act_member_wf`** (naive type via `exp_subst`, then convert via
+   `Pi_rel_subst_eq`) and **`mapp_wf`** (app_rel over the three).
+Then the fundamental lemma proper (wf_term ⇒ reducible) by cut-elim; Pi
+reflect/reify eta crux.
 
 ## UPDATE 2026-06-07v — OTT-CONCRETE Kripke RedTy LANDED in LogicalRelation.v (GREEN + axiom-free, committed+pushed). Builders verified vs built Base/Pi/Nat.vo; snoc-order corrected; base members concrete. NEXT = file 4 FundamentalLemma (where the deferred codomain under'-lift correctness gets checked).
 
