@@ -961,6 +961,72 @@ Proof.
     exact (proj2 (proj2 n)).
 Qed.
 
+(* ====================================================================== *)
+(* TYPE-LEVEL ESCAPE, LEAF CASES (the non-recursive constructors of         *)
+(* `RedTy_tot`).  Reducibility of a type-code pair `A`/`B`, given both codes *)
+(* well typed at a common code-sort `S`, escapes to declarative `eq_term S A *)
+(* B`.  These are the nat/empty/neutral cases of the eventual total          *)
+(* `RedTy_sound`; the `rtt_pi` case is the Kripke/eta crux (it needs the     *)
+(* fundamental lemma's reflect adequacy at the domain to instantiate the     *)
+(* codomain at a fresh variable) and is NOT a leaf, so the total statement   *)
+(* must wait on Π.  Each leaf is `reds_sound` on both sides + transitivity;  *)
+(* the neutral case additionally bridges the `ne_eq` sort `t` to the typing  *)
+(* sort `S` via `term_sorts_eq` (the reduct `na` is well typed at both).     *)
+(* ====================================================================== *)
+
+(* The empty Pyrosome context is well formed under `ott` (used by the
+   presupposition / sort-uniqueness lemmas below). *)
+Lemma wf_ctx_ott_nil : wf_ctx (Model := core_model ott) [].
+Proof. constructor. Qed.
+
+(* Nat code: A,B both weak-head reduce to `Nat G`, so each is `eq_term`-equal
+   to `Nat G` at whatever code-sort it is typed at. *)
+Lemma RedTy_Nat_sound G A B S
+  : RNat ott G A -> RNat ott G B ->
+    wf_term ott [] A S -> wf_term ott [] B S ->
+    eq_term ott [] S A B.
+Proof.
+  intros Ha Hb HwfA HwfB.
+  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfA Ha) as H1.
+  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfB Hb) as H2.
+  eapply eq_term_trans; [ exact H1 | eapply eq_term_sym; exact H2 ].
+Qed.
+
+(* Empty code: identical to Nat, with `Empty G` the common reduct. *)
+Lemma RedTy_Empty_sound G A B S
+  : REmpty ott G A -> REmpty ott G B ->
+    wf_term ott [] A S -> wf_term ott [] B S ->
+    eq_term ott [] S A B.
+Proof.
+  intros Ha Hb HwfA HwfB.
+  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfA Ha) as H1.
+  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfB Hb) as H2.
+  eapply eq_term_trans; [ exact H1 | eapply eq_term_sym; exact H2 ].
+Qed.
+
+(* Neutral code: like `RedNe_sound`, but the codes may be typed at a sort `S`
+   DIFFERENT from the sort `t` carried by the `ne_eq` (the type-level `rtt_ne`
+   carries an arbitrary `t`).  The two are bridged by `term_sorts_eq`: the
+   common reduct `na` is well typed at `t` (presupposition of the `ne_eq`'s
+   `eq_term`) and at `S` (subject reduction from `A : S`), hence `eq_sort t S`,
+   so the neutral equation transports to `S` by `eq_term_conv`. *)
+Lemma RedNe_sound_at (t S : osort) a b
+  : RedNe ott t a b ->
+    wf_term ott [] a S -> wf_term ott [] b S ->
+    eq_term ott [] S a b.
+Proof.
+  intros [na nb ra rb h] HwfA HwfB.
+  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfA ra) as H1.
+  pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HwfB rb) as H2.
+  destruct h as (Hna & Hnb & Heq).
+  pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HwfA ra) as HwfNaS.
+  pose proof (eq_term_wf_l ott_wf wf_ctx_ott_nil Heq) as HnaT.
+  pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HnaT HwfNaS) as Hsorts.
+  pose proof (eq_term_conv Heq Hsorts) as HeqS.
+  eapply eq_term_trans; [ exact H1 | ].
+  eapply eq_term_trans; [ exact HeqS | eapply eq_term_sym; exact H2 ].
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
