@@ -2683,6 +2683,130 @@ Proof.
   exact (eq_term_trans (eq_term_sym Heta_t) (eq_term_trans Hlamcong Heta_u)).
 Qed.
 
+(* ====================================================================== *)
+(* CLOSED-TERM CANONICITY for the finite info-layer sorts (#"relevance",   *)
+(* #"lvl"), and the SORT-DISTINCTNESS foundation it rests on.              *)
+(*                                                                        *)
+(* These discharge step (1)/(2) of plan (A) (NEXT_SESSION z9): the Pi      *)
+(* REFLECT case (typing-induction fundamental lemma) must rule out the     *)
+(* bad relevance/level (oirr / L1) of a Nat/Empty-domain binder.  Because  *)
+(* #"relevance" / #"lvl" are RIGID inductive sorts with exactly two        *)
+(* nullary constructors and NO equational rules, a closed well-typed term  *)
+(* of either sort is canonical — a FINITE enumeration, NOT normalization.  *)
+(*                                                                        *)
+(* The whole development is SYNTACTIC and model-free.  Its engine is       *)
+(* `eq_sort_ott_same_name`: `ott` contains no `sort_eq_rule` (checked by    *)
+(* computation), so `Core.eq_sort` over `ott` can never change the head    *)
+(* constructor of a sort (the `eq_sort_by` constructor is vacuous, and     *)
+(* `eq_sort_subst` preserves the head).  This is exactly the sort          *)
+(* DISTINCTNESS the wall needs (e.g. `scon "lvl" _ ~/~ scon "relevance" _`).*)
+(* ====================================================================== *)
+
+(* `ott` has NO sort-equality rules. *)
+Lemma ott_no_sort_eq_rule : forall name c t1 t2,
+  ~ In (name, sort_eq_rule c t1 t2) ott.
+Proof.
+  assert (Hall : List.forallb
+            (fun p => match snd p with sort_eq_rule _ _ _ => false | _ => true end)
+            ott = true)
+    by (vm_compute; reflexivity).
+  rewrite List.forallb_forall in Hall.
+  intros name c t1 t2 Hin.
+  apply Hall in Hin. cbn in Hin. discriminate.
+Qed.
+
+(* The head constructor name of a sort. *)
+Definition sort_name (s : osort) : string := match s with scon n _ => n end.
+
+(* SORT DISTINCTNESS: eq_sort over `ott` never changes a sort's head. *)
+Lemma eq_sort_ott_same_name : forall c t1 t2,
+  eq_sort ott c t1 t2 -> sort_name t1 = sort_name t2.
+Proof.
+  intros c t1 t2 H.
+  induction H.
+  - (* eq_sort_by: vacuous, ott has no sort_eq_rule *)
+    exfalso. eapply ott_no_sort_eq_rule; eassumption.
+  - (* eq_sort_subst: substitution preserves the head *)
+    destruct t1', t2'; cbn in *; congruence.
+  - (* eq_sort_refl *) reflexivity.
+  - (* eq_sort_trans *) congruence.
+  - (* eq_sort_sym *) congruence.
+Qed.
+
+(* No closed `var` is well typed (the empty context has no variables).
+   Stated via `remember`+`induction` so the wf_term CONV rule is handled by
+   the IH — naive `inversion` loops through CONV. *)
+Lemma no_wf_var_nil : forall n t, wf_term ott [] (var n) t -> False.
+Proof.
+  intros n t Hwf.
+  remember (var n) as e eqn:He; remember (@nil (string*osort)) as cc eqn:Hcc.
+  revert n He.
+  induction Hwf; intros m He; try discriminate.
+  - (* conv *) eapply IHHwf; eauto.
+  - (* var *) subst. inversion H.
+Qed.
+
+(* RELEVANCE CANONICITY: a closed well-typed term of sort #"relevance" is
+   #"rel" or #"irr".  No `inversion` on the typing (CONV loops); instead
+   `WfCutElim.invert_wf_term_con` (the term is a `con`, not a `var`, by
+   `no_wf_var_nil`) hands the rule, whose conclusion-sort head must be
+   "relevance" (by `eq_sort_ott_same_name` for the eq-sort disjunct, or
+   directly for the syntactic one), and a `filter` enumerates the only two
+   such rules. *)
+Lemma relevance_canon : forall r,
+  wf_term ott [] r (scon "relevance" []) ->
+  r = con "rel" [] \/ r = con "irr" [].
+Proof.
+  intros r Hwf.
+  destruct r as [n | n s].
+  - exfalso. eapply no_wf_var_nil; eassumption.
+  - apply WfCutElim.invert_wf_term_con in Hwf
+      as (c' & args & t' & Hin & Hwfargs & Hsort).
+    assert (Hhead : sort_name t' = "relevance").
+    { destruct t' as [tn ts]. destruct Hsort as [Heq | Heq].
+      - apply eq_sort_ott_same_name in Heq. cbn in Heq. exact Heq.
+      - cbn in Heq |- *. congruence. }
+    clear Hsort.
+    pose (f := fun p : string * rule string =>
+      match snd p with
+      | term_rule _ _ t' => String.eqb (sort_name t') "relevance"
+      | _ => false end).
+    assert (Hfin : In (n, term_rule c' args t') (filter f ott)).
+    { apply filter_In. split; [exact Hin|]. subst f; cbn. rewrite Hhead. reflexivity. }
+    vm_compute in Hfin.
+    destruct Hfin as [He | [He | []]]; inversion He; subst.
+    + inversion Hwfargs; subst s. right. reflexivity.
+    + inversion Hwfargs; subst s. left. reflexivity.
+Qed.
+
+(* LEVEL CANONICITY: a closed well-typed term of sort #"lvl" is #"L0" or
+   #"L1".  Identical structure to `relevance_canon`. *)
+Lemma lvl_canon : forall r,
+  wf_term ott [] r (scon "lvl" []) ->
+  r = con "L0" [] \/ r = con "L1" [].
+Proof.
+  intros r Hwf.
+  destruct r as [n | n s].
+  - exfalso. eapply no_wf_var_nil; eassumption.
+  - apply WfCutElim.invert_wf_term_con in Hwf
+      as (c' & args & t' & Hin & Hwfargs & Hsort).
+    assert (Hhead : sort_name t' = "lvl").
+    { destruct t' as [tn ts]. destruct Hsort as [Heq | Heq].
+      - apply eq_sort_ott_same_name in Heq. cbn in Heq. exact Heq.
+      - cbn in Heq |- *. congruence. }
+    clear Hsort.
+    pose (f := fun p : string * rule string =>
+      match snd p with
+      | term_rule _ _ t' => String.eqb (sort_name t') "lvl"
+      | _ => false end).
+    assert (Hfin : In (n, term_rule c' args t') (filter f ott)).
+    { apply filter_In. split; [exact Hin|]. subst f; cbn. rewrite Hhead. reflexivity. }
+    vm_compute in Hfin.
+    destruct Hfin as [He | [He | []]]; inversion He; subst.
+    + inversion Hwfargs; subst s. right. reflexivity.
+    + inversion Hwfargs; subst s. left. reflexivity.
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
