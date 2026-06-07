@@ -1,5 +1,61 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z23 — *** MILESTONE: `RedTy_fund` Qed'd AXIOM-CLEAN *** (commit 2f287f5, pushed). The escape+reflect FUNDAMENTAL LEMMA — the central payoff of the whole OTT pivot — is closed. `Print Assumptions RedTy_fund` = only `egraph_sound`. It now lives in the REAL `FundamentalLemma.v` (not WIP).
+
+### What landed (3 commits, all green + only egraph_sound, pushed)
+1. **`RedAtPi` amendment (Q-c)** — commit 6395a37, `LogicalRelation.v`.
+   `at_pi_app`'s member quantifier now carries two arg-typing premises
+   `wf_term [] a0/a' (el_sort rF lF D (act_code rF lF g G D F))` (the
+   LogicalRelation-level form of `mapp_wf`'s argument sort).  Most-local fix:
+   Pi fiber only; Nat/Empty/Ne untouched.  `RedTy_tot`/`RedTy_pi`/`RedTy_rect`
+   recompile; `FundamentalLemma.vo` rebuilds green (the ONLY `RedAtPi` consumer
+   in that file is `bound_var_redtm`'s `Hpi` premise, which stays well-typed).
+2. **`cod_at_member_cong`** (NEW, `FundamentalLemma.v`) — `cod_at F C a0 ~
+   cod_at F C a'` from `a0 ~ a'`.  `cod_at` is an `exp_subst` of `act_cod F C`
+   along `snoc a (oid D)`, so varying `a` only touches the snoc's v-position; an
+   `exp_subst` con-cong with a snoc con-cong (`a0 ~ a'`) at the v-slot closes it.
+   GOTCHAS captured: the snoc result-sort is `s_sub D (extc ..)` (src/tgt: tgt=D,
+   so `scon "sub" [extc; D]` — the `right` reflexivity disjunct needs THIS order,
+   NOT `s_sub (extc) D`); the snoc v-position member sort carries a
+   `ty_subst .. (oid D)` so `a0~a'` must be conv'd across `ty_subst_id_El_eq`
+   before feeding it.  This is the reflect@Pi residual that esc_ty/esc_tm dodge
+   (their arg is `hd`, so a0 = a' and no transport needed).
+3. **`RedTy_fund` Qed** — commit 2f287f5.  `apply RedTy_rect`; 3 leaves
+   (`leaf_nat/empty/ne`) + the Pi case (esc_ty / esc_tm / reflect, each a `+`).
+   esc_ty/esc_tm are the z22 paste-ready scripts.  **reflect@Pi recipe**:
+   - same preamble (HFF' via DomRed esc_ty IH @ `oid G`; bound-var block → HCC'
+     via `cod_collapse_both`←CodRed esc_ty IH @ hd — needed for HABeq /
+     `mapp_code_cong` / `oPi_rel_code_cong`).
+   - `unfold RedTy_R, RedTy_pi, projT1; cbn [projT1]; apply at_pi_app; intros D g
+     os a0 a' raa' Ha0 Ha0'` — the amended ctor HANDS you `Ha0`/`Ha0'`.
+   - `HDwf` (D is a wf env) from the presupposition of `os` (`eq_term_wf_sort`
+     on `eq_term_refl os` → invert `sub`; args `["G'";"G"]`).
+   - domain escape `a0 ~ a'` = `IHDom`'s esc_tm at `raa'` (conv `Ha0/Ha0'` to
+     `elt_sort(DomRed)` via `elt_sort_eq_El_gen` first, conv result back).
+   - member equation at `cod_at F C a'`: `mapp_ne_eq2` (na:=a, nb:=b, args a0,a')
+     gives `mapp F C a a0 ~ mapp F C b a'`; `mapp_code_cong` (b,a') gives
+     `mapp F C b a' ~ mapp F' C' b a'`; `eq_term_trans`.
+   - transport `cod_at F C a' → cod_at F C a0` via `cod_at_member_cong` (a0~a',
+     El_cong, sym); bridge `elt_sort(CodRed) ≈ El(cod_at F C a0)` via
+     `elt_sort_eq_El_gen`; `eq_term_conv`.
+   - close with `IHC_rfl` (B-side typing arg = `Hcodata'` at the U-code sort
+     `s_exp D (code_info lG)(oU orel lG D)`, NOT an El-sort); members neutral via
+     `mapp_neutral` (RHS member is `mapp F' C' b a'` — re-prove neutrality from
+     `Hnb`, NOT `mapp_ne_eq2`'s `Hne_b` which is at codes F,C); members typed via
+     `mapp_wf` (b retyped at Pi-(F',C') via HABeq).
+
+### NEXT (z24): THE HARD DIRECTION (the fundamental theorem's other half)
+`RedTy_fund` gives escape/reflect for ANY RedTy witness; now BUILD the witnesses
+from typing derivations.  By `wf_judge_ind` with the substitution-generalized
+env-keyed motive (z15-forced): `P [] e (code_sort r l G') := forall D g, osub G'
+D g -> RedTy D e[g] e[g]` (and the term/sort-eq motives).  The bound var enters
+from the env; `RedTy_fund` supplies escape/reflect at the leaves.  Pi case builds
+DomRed/CodRed from the args-IH on F/C; bound-var reflect discharges rF=orel /
+lF=oL0 via `relevance_canon`/`lvl_canon` (or proof-irr for irrelevant domain).
+Kripke action soundness for Nat/Empty/Ne leaves uses `star_act_code` + the
+per-former subst redex.  WIP/RedTy_fund_partial.v is now SUPERSEDED (its content
+is the real `RedTy_fund`); safe to delete.
+
 ## UPDATE 2026-06-07z22 — the mapp CODE-CONGRUENCE FAMILY LANDED+pushed (green, axiom-clean: commit dbf4e6c). esc_ty@Pi AND esc_tm@Pi BOTH FULLY VALIDATED inside `RedTy_fund` (interactively; paste-ready script in WIP/RedTy_fund_partial.v). reflect@Pi BLOCKED on a genuine STRUCTURAL question (domain-argument typing) — QUESTION below; `RedTy_fund` is NOT yet Qed-able.
 
 ### LANDED + pushed (FundamentalLemma.v, commit dbf4e6c)
