@@ -1,5 +1,74 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z4 — id/var-collapse builder `sub_collapse` PROVEN **modulo ONE scoped `admit`** (the v-equality). Lives in `WIP/SubCollapse.v` (NOT in src, not built by `make`). NEXT = discharge that single v-equality `admit`, then port `sub_collapse` into `FundamentalLemma.v`, then the `cod_at(wkn,hd) ≡ C` collapse + escape-at-Pi.
+
+THE id/var-collapse SUBSTITUTION IDENTITY is the escape-at-Pi prerequisite (UPDATE-z3):
+  `cmp (ounder wkn) (snoc hd (id extG)) ≡ id extG`   (at sort `sub extG extG`,
+  extG := ext G (El F)).  This is `sub_collapse` in `WIP/SubCollapse.v` (a verbatim
+  copy of FundamentalLemma.v + the new lemma appended).  It is proved EXCEPT for a
+  single `admit` (the snoc v-position equality); the file COMPILES
+  (`make -f Makefile.coq /ABS/.../WIP-not-in-src` — actually it was built once as
+  `src/.../FLScratch.vo` before being moved to WIP; to rebuild, copy back under
+  `src/.../Pi/` and `make` the abs `.vo`).  `FundamentalLemma.v` itself is UNTOUCHED
+  (still GREEN, only egraph_sound).
+
+WHAT IS VALIDATED (all closed interactively + in the compiled file, axiom-free
+modulo the one admit):
+- **The math.**  `cmp snoc_a ounder` (ounder = `snoc g0 hdD`, snoc_a = `snoc hd (id)`)
+  collapses by: `cmp_snoc` ⇒ `snoc (cmp snoc_a g0) (exp_subst snoc_a hdD)`; then
+  the g-position `cmp snoc_a g0 ≡ wkn` and the v-position `exp_subst snoc_a hdD ≡ hd`;
+  then `snoc_wkn_hd` ⇒ `id`.  con-arg orders: cmp con = `[g;f;G3;G2;G1]` (first
+  stored = the `sub G2 G3`/"later" map), snoc con = `[v;g;A;i;G';G]`.
+- **cmp_snoc link** (Step 1): the change→eq_term_subst→eq_term_by recipe with the
+  full `eq_subst_refl` wf-discharge.  KEY closer for the eq_subst_refl obligations:
+  `repeat first [ progress ott_build | apply hd_extc_wf;eassumption | apply
+  cmp_g0_wf;eassumption | simple apply snoc_a_wf;eassumption | apply
+  El_act_code_ty;eassumption | apply act_code_wf;eassumption | eassumption |
+  (eapply wf_term_conv;[exact Hhd | unfold s_exp; sort_cong; cbn[Model.eq_term
+  core_model]; try solve[eapply eq_term_refl; ott_build]; eapply eq_term_sym; apply
+  ty_subst_id_El_eq; eassumption]) ]`.  The last branch converts the original `hd`
+  (at `ty_subst id (El act_code)`) — snoc_a_wf's internal conversion leaks one leaf.
+  REMEMBER `rule_in_ctx_wf` and `eq_term_by` BOTH need `with (name := "...")`.
+- **g-equality** `cmp snoc_a g0 ≡ wkn` (the `Hgeq` assert): `cmp_assoc` (instance
+  G1=G3=extG,G2=extc,G4=G,f=snoc_a,g=wknD,h=wkn) ⇒ `cmp (cmp snoc_a wknD) wkn`;
+  then a `term_con_congruence` on the outer cmp rewriting the inner `cmp snoc_a
+  wknD ≡ id extG` by `wkn_snoc`; then `id_left`.  FULLY CLOSED.
+- **snoc_wkn_hd link** (Step 2 tail) + the Step-2 `term_con_congruence` over `snoc`
+  (g-position discharged by `Hgeq`, refl tail wf_args needs the El builder branch
+  `eapply Elab.wf_term_by'; [...]` + `ott_build`): CLOSED.
+
+THE ONE REMAINING `admit` = the snoc **v-position** equality
+  `exp_subst snoc_a hdD ≡ hd`  at sort `exp extG iF (ty_subst wkn (El F))` (SORT_wkn).
+OBSTACLE (well understood, just tedious — 3 sorts + nested congruences):
+- `e1 := exp_subst snoc_a hdD` carries the annotation `ANNOT1 = ty_subst g0 (El F)`
+  that `cmp_snoc`'s RHS hard-codes (`ty_subst G2 G3 g i A`).  `snoc_hd` expects the
+  annotation `ANNOT2 = ty_subst wknD (El act_code)`.  They are eq_term but NOT
+  convertible, so `snoc_hd` does NOT apply to `e1` directly.
+PLAN (each step is a pattern already used elsewhere in the file):
+  1. `eq_term_trans` through `e1' := exp_subst snoc_a hdD` **with annotation ANNOT2**.
+  2. `e1 ≡ e1'`: `term_con_congruence` on `exp_subst`, rewriting only the A-position
+     `ANNOT1 ≡ ANNOT2` via `ty_subst_cmp` (`ty_subst g0 (El F) ≡ ty_subst wknD
+     (ty_subst wkn (El F))`, g0 = cmp wkn wknD) then a `ty_subst`-congruence with
+     `El_subst_eq` (`ty_subst wkn (El F) ≡ El act_code`).  This eq_term lands at
+     `SORT_A1 = exp extG iF (ty_subst snoc_a ANNOT1)`; `eq_term_conv` it to SORT_wkn
+     via `ty_subst_cmp` (`ty_subst snoc_a (ty_subst g0 (El F)) ≡ ty_subst (cmp
+     snoc_a g0)(El F)`) then `Hgeq` (`cmp snoc_a g0 ≡ wkn`).
+  3. `e1' ≡ hd`: `snoc_hd` (now the annotation matches), landing at
+     `SORT_id = exp extG iF (ty_subst (id extG)(El act_code))`; `eq_term_conv` to
+     SORT_wkn via `ty_subst_id_El_eq` (SORT_id → El act_code) + sym `El_subst_eq`
+     (SORT_wkn → El act_code).
+  Both trans branches must be brought to SORT_wkn (the eq_args-demanded sort) by
+  `eq_term_conv`.  Develop it as a standalone `v_collapse` lemma taking `Hgeq` as a
+  hypothesis (cheap iteration; no Hgeq re-proof), then inline.
+
+AFTER sub_collapse closes: (a) `cod_at_wkn_hd_eq` (`cod_at(wkn,hd) ≡ C`): one
+`exp_subst_cmp` (cod_at = `exp_subst (cmp snoc_a ounder) C`) + `sub_collapse`
+under the exp_subst-subst congruence + `exp_subst_id`; (b) escape-at-Pi instantiates
+CodRed at (D:=ext G (El F), g:=wkn, a:=hd), escapes via RedTy_sound's codomain IH +
+`cod_at_wkn_hd_eq` to `C ≡ C'`, then Pi_rel congruence with `F≡F'` (DomRed at id).
+
+(everything below is the prior z3 status, still accurate.)
+
 ## UPDATE 2026-06-07z3 — REFLECT-AT-Pi MEMBER COMBINATORS **COMPLETE** (6 commits, GREEN). NEXT = the escape-at-Pi id/var-collapse builder + assemble the mutual reflect/escape induction (the eta crux).
 
 THE MEMBER-RELATION SIDE OF reflect-at-Pi IS NOW FULLY DISCHARGED.  The full set
