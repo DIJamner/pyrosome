@@ -1,5 +1,92 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z26 — *** P1c PROTOTYPED: the El-A-indexed Prop LR VALIDATES as an inductive (positivity OK, Prop sort OK, elt_sort GONE), BUT the Prop re-sort hits a FOUNDATIONAL choice/positivity wall that the Type Sig-output design specifically dodges. QUESTION before migrating the real tree. *** (built tree UNTOUCHED + green/axiom-clean; two WIP protos compiled)
+
+### What was validated (cheap, on protos — NO real-tree edits)
+The P1c idea (member sort = a SYNTACTIC INDEX, not read off the derivation) is
+SOUND and was prototyped:
+- **`WIP/LRPropProto.v` (compiles, exit 0)**: the El-A-indexed `Prop` inductive
+  `RedTy_totP : tm->tm->tm-> osort(S) -> (tm->tm->Prop) -> Prop` where the 4th
+  index `S` (the MEMBER SORT) is filled SYNTACTICALLY by each constructor from
+  its own index args (`rttP_nat .. (nat_sort G) ..`, `rttP_ne .. (el_sort rN lN
+  G na) ..`, `rttP_pi .. (pi_sort = el_sort orel lG G (oPi_rel ..)) ..`).
+  POSITIVITY OK, Prop sort accepted, EL-A indexing typechecks.  **`elt_sort`
+  DISAPPEARS** — every site that read `elt_sort r` now takes the index `S` +
+  `RedTy_totP G A B S R`.  The three NON-Pi smart constructors typecheck.
+- **`member_det` (validated minus 1 leaf, in session)**: the member relation IS
+  determined by `(G,A,B,S)`.  Cross-fiber overlaps (e.g. `nat_sort G` reached via
+  both `rttP_nat` and `rttP_ne`) are KILLED by NEUTRALITY CONTRADICTION (`oNat
+  G`/`oPi_rel ..` are not `neutral` — `neutral_inv`: not `hd`, `ott_pa _ = None`),
+  so no real ambiguity.  Same-fiber Pi leaf reduces to `reds_eq`+`oPi_rel` inj
+  (available: `Pi_rel_inv`).  Recorded in the proto.
+
+### *** THE WALL (foundational, NOT tactical) — surfaced as a QUESTION ***
+Re-sorting to `Prop` forces the member relation `R` to be `tm->tm->Prop` (so the
+hard-direction motive `forall D g, osub -> RedTy D e[g] e[g]` is `Prop` and
+`wf_judge_ind` applies).  But the member relation `R` must then be supplied to the
+Pi constructor.  TWO encodings, BOTH blocked:
+- **(E1) keep `R` as a Prop OUTPUT INDEX (Sig = `ex`)**, as now but Prop.  Then
+  building `rttP_pi` needs a SINGLE `RDom : forall D g os, tm->tm->Prop` from the
+  F-arg IH `forall D g os, exists R, RedTy_totP .. R` — **that is CHOICE** (z24-P3).
+  Canonicalizing (`RDom := RedTmP`, the "exists-R-and-R-a-b" predicate) needs to
+  TRANSPORT `RedTy_totP .. R` to `RedTy_totP .. RedTmP` along a POINTWISE-IFF on the
+  member-relation index.  **VERIFIED in the proto this transport is NOT derivable
+  without funext/propext**: `rttP_nat` produces the index FIXED at `RedNatMemP G`,
+  and changing it to a pointwise-equal `R'` needs `RedNatMemP G = R'` propositionally.
+  => would add an axiom beyond `egraph_sound`.  REJECT.
+- **(E2) carry `R` as a MUTUAL Prop INDEX (no Sig)** — `RedTyIn`/`RedTmIn` mutually
+  inductive, member sort `S` an index, members a separate inductive.  **VERIFIED in
+  `WIP/LRPropMutual.v` this FAILS POSITIVITY**: `RedTmIn` occurs non-strictly-
+  positively in `in_pi`'s codomain clause (`RedTmIn .. a a' -> RedTyIn ..`).  This
+  is the SAME reason metamltt/LogRel2 carry the member relation as a **Type**
+  Record-of-functions (`PolyRedPack` + `PolyRedPackAdequate`), NOT a Prop index.
+
+So: the Type Sig-output trick (current built LR) is EXACTLY what dodges both the
+choice obstruction (E1) and the positivity obstruction (E2) — and it is
+fundamentally a Type construction.  The El-A member-sort redesign (P1c) REMOVES
+`elt_sort`'s large-elim, but it does NOT by itself make the LR `Prop`-able: the
+member RELATION (not the sort) is the irreducibly-Type-or-choice/positivity-bound
+part.
+
+### *** QUESTION FOR DUSTIN (z26) — the hard direction's Prop motive, given the wall ***
+The hard direction needs `wf_judge_ind` (Prop motive).  Given that the LR's member
+relation cannot be `Prop` without funext (E1) or losing positivity (E2):
+
+  (D1) **Add `functional_extensionality` + `propositional_extensionality`** (or
+       just the pointwise-iff transport as a single small axiom) to enable (E1)'s
+       canonicalization, KEEPING the El-A member-sort redesign.  COST: a NEW AXIOM
+       beyond `egraph_sound` (the project has been strict axiom-clean).  This is the
+       SMALLEST code path to a Prop LR but breaks the axiom-clean invariant.
+       Funext/propext are CONSISTENT (validated by the standard model), so this is
+       "morally fine" but a policy call.  RECOMMEND ONLY IF the axiom-clean bar can
+       bend for funext/propext.
+  (D2) **Keep the LR in Type; build the hard direction WITHOUT `wf_judge_ind`** —
+       i.e. get a TYPE-valued typing recursor.  This is z24-P2: a separate
+       Type/Set algorithmic typing judgement + a checker returning the derivation
+       (so the Prop⇒Type reflection is constructive, no large-elim).  COST: a new
+       typing inductive + soundness/completeness vs `wf_term ott`; LR + RedTy_fund
+       stay AS-IS (z23 milestone untouched).  HEAVIER infra; axiom-clean preserved.
+  (D3) **Prop-truncate the hard-direction CONCLUSION only, supply the Type witness
+       by a bespoke fixpoint over a Type-typing** — a hybrid of (D2): keep the LR
+       Type, but feed it a Type-typing built from `ComputeWf`/TypeInference.  Same
+       infra cost as (D2).
+  (D4) **Reconsider whether the hard direction NEEDS `RedTy` Type-or-Prop at all**:
+       if the END GOAL (canonicity / normalization-as-eq_term) can be phrased so the
+       Type LR is only ever CONSUMED (escape ⇒ eq_term, all Prop conclusions) and
+       the witnesses are built by a Type recursor over a Type-typing (D2), then no
+       Prop LR is needed.  This is really D2 framed as "the LR stays Type forever;
+       only the typing-induction recursor must be Type."
+
+MY READ: the cleanest AXIOM-CLEAN route is **(D2)** — a Type-valued cut-free OTT
+typing judgement + checker, induct on THAT.  It keeps the z23 `RedTy_fund` milestone
+and the whole Type LR intact, and the El-A redesign (P1c) becomes UNNECESSARY (it was
+only motivated by making the LR Prop).  If the axiom-clean bar can bend for
+funext/propext, **(D1)** is far less code (finish the El-A redesign + canonicalize via
+the transport axiom).  Either way the El-A member-sort idea is validated and reusable.
+NO real-tree edits made; both protos in WIP; tree green + only `egraph_sound`.
+
+(Below: z25 and earlier.)
+
 ## UPDATE 2026-06-07z25 — *** P1 (re-sort LR to Prop) HITS A SECOND, DEEPER Prop→Set elimination wall: `elt_sort` ***  (NO build attempted; obstruction confirmed with a minimal Coq test; tree UNTOUCHED + still green/axiom-clean)
 
 Dustin chose P1 (re-sort the whole LR to `Prop`). On execution, BEFORE making any
