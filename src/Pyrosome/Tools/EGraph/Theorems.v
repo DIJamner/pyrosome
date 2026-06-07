@@ -2157,6 +2157,323 @@ Section WithVar.
           econstructor. eapply eq_term_refl; eauto with lang_core.
     Qed.
 
+    (* ===============================================================  *)
+    (* [add_ctx_gen] port of [add_ctx_sound].  This is the forward      *)
+    (* (model-soundness) direction: [s : wf_subst l [] s c] is a GIVEN, *)
+    (* so the skip branch (which emits no sort_of/sort/union, only      *)
+    (* [alloc_opaque]) can extend the interpretation [i] with the       *)
+    (* fresh companion node [x'] mapped to the var's value [inl e] and  *)
+    (* re-establish [args_in_instance] directly from the wf_subst cons  *)
+    (* (no sort_of atom needed).  The non-skip branch is the cons case  *)
+    (* of [add_ctx_sound] verbatim.                                     *)
+    (* ===============================================================  *)
+    Lemma add_ctx_gen_sound (no_sort : V -> bool) s c
+      : wf_subst l [] s c ->
+        wf_ctx l c ->
+        forall i,
+        vc (add_ctx_gen succ sort_of l with_sorts false no_sort c)
+           (ctx_post s c i).
+    Proof.
+      intros Hsubst Hctx i.
+      unfold add_ctx_gen.
+      induction Hsubst.
+      - (* nil case: identical to add_ctx_sound *)
+        cbn [list_Mfoldr].
+        unfold vc, Mret. cbn.
+        unfold ctx_post. intros e_in Hok Hsound.
+        exists i. split; [apply extending_sound_refl; auto|].
+        split; [reflexivity|].
+        cbn. unfold args_in_instance. cbn. constructor.
+      - (* cons case *)
+        cbn [list_Mfoldr].
+        eapply vc_bind.
+        { apply IHHsubst. inversion Hctx; assumption. }
+        intros e_pre base'.
+        cbn [Mbind StateMonad.state_monad Mret].
+        destruct (no_sort name) eqn:Hns.
+        2:{
+        (* ---- non-skip branch: add_ctx_sound cons verbatim ---- *)
+        unfold vc; intros e_inner Hpost_tail.
+        unfold ctx_post. intros Hok Hsound.
+        unfold ctx_post in Hpost_tail.
+        specialize (Hpost_tail Hok Hsound).
+        destruct Hpost_tail as [i_tail Hpa]. destruct Hpa as [Hext_tail Hpa'].
+        destruct Hpa' as [Hfst_tail Hai_tail].
+        pose proof Hext_tail as Hext_tail_save.
+        destruct Hext_tail as (Hok_tail & Hexti_tail & Hsnd_tail & Hkeys_tail).
+        cbn [fst snd] in *.
+        (* Step 1: add_open_sort_sound on t *)
+        pose proof (add_open_sort_sound c' base' (map snd s) t
+                      (wf_args_from_wf_subst _ _ _ _ Hsubst)) as Hsort_snd.
+        assert (Hwfc' : wf_ctx l c') by (inversion Hctx; assumption).
+        assert (Hwfst : wf_sort l c' t) by (inversion Hctx; assumption).
+        specialize (Hsort_snd Hwfc' Hwfst).
+        assert (Hmaps_t : map fst c' = map fst base') by (symmetry; exact Hfst_tail).
+        specialize (Hsort_snd Hmaps_t i_tail).
+        unfold vc in Hsort_snd. specialize (Hsort_snd e_inner).
+        unfold open_sort_post in Hsort_snd.
+        specialize (Hsort_snd Hok_tail Hsnd_tail Hai_tail).
+        destruct (add_open_sort succ sort_of l with_sorts false base' t e_inner)
+          as [t_v e_sort] eqn:Heq_sort.
+        cbn [fst snd] in Hsort_snd.
+        destruct Hsort_snd as [i_sort Hi_sort]. destruct Hi_sort as [Hext_sort Hdom_sort].
+        pose proof Hext_sort as Hext_sort_save.
+        destruct Hext_sort as (Hok_sort & Hexti_sort & Hsnd_sort & Hkeys_sort).
+        cbn [fst snd] in *.
+        (* Step 2: alloc_opaque_sound with d := inl e *)
+        pose proof (@alloc_opaque_sound V V_Eqb V_Eqb_ok lt succ V_default V
+                       V_map V_map V_map_ok V_trie X _ lang_model
+                       lt_asymmetric lt_succ lt_trans
+                       i_sort (inl e : domain V lang_model)) as Halloc_snd.
+        assert (Hwfd : domain_wf V lang_model (inl e)).
+        { unfold domain_wf. cbn. econstructor.
+          eapply eq_term_refl; eauto with lang_core. }
+        specialize (Halloc_snd Hwfd Hwfd).
+        unfold vc in Halloc_snd. specialize (Halloc_snd e_sort).
+        specialize (Halloc_snd Hok_sort Hsnd_sort).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_sort) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc_snd.
+        destruct Halloc_snd as (Hok_alloc & Hsnd_alloc & Hinone_x' & Hx'_fresh
+                                & Hx'_key & Hkeys_alloc & Hdb_alloc & Hpar_alloc
+                                & Hwl_alloc).
+        cbn [fst snd] in *.
+        (* Step 3: hash_entry_sound on sort_of [x'] *)
+        pose proof (@hash_entry_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+                      V_map V_map_ok V_map V_map_ok V_trie V_trie_ok X _ lang_model
+                      (lang_model_ok l Hsof Hwf) lt_asymmetric lt_succ lt_trans
+                      (map.put i_sort x' (inl e : domain V lang_model))
+                      sort_of [x'] (inr (t[/s/]) : domain V lang_model)) as Hhe.
+        unfold vc in Hhe. specialize (Hhe e_alloc).
+        assert (Hkeys_args : forall y, In y [x'] -> Sep.has_key y (parent (equiv e_alloc))).
+        { intros y Hy. cbn in Hy. destruct Hy as [Hy|]; [|contradiction]. subst y. exact Hx'_key. }
+        assert (Hint_wit : exists arg_doms,
+                  list_Mmap (map.get (map.put i_sort x' (inl e : domain V lang_model))) [x']
+                  = Some arg_doms
+                  /\ interprets_to V lang_model sort_of arg_doms
+                       (inr (t[/s/]) : domain V lang_model)).
+        { exists [inl e]. split.
+          - cbn. rewrite map.get_put_same. reflexivity.
+          - cbn. eapply interprets_to_sort_of. exact H0. }
+        specialize (Hhe Hok_alloc Hsnd_alloc Hkeys_args Hint_wit).
+        destruct Hhe as [Hok_he Hex_he].
+        destruct Hex_he as [i_he Hi_he].
+        destruct Hi_he as (Hexti_he & Hsnd_he & Hkeys_he & Hkey_he_res & Hdom_he).
+        destruct (hash_entry succ sort_of [x'] e_alloc) as [tx' e_he] eqn:Heq_he.
+        cbn [fst snd] in *.
+        (* Step 4: union_sound on (t_v, tx') *)
+        assert (Hkey_tv_he : Sep.has_key t_v (parent (equiv e_he))).
+        { apply Hkeys_he. apply Hkeys_alloc.
+          pose proof Hsnd_sort as Hsnd_sort_copy.
+          destruct Hsnd_sort_copy as [_ Hsnd_exact _ _].
+          apply Hsnd_exact.
+          destruct (map.get i_sort t_v) as [d|]; cbn in Hdom_sort;
+            [constructor|discriminate]. }
+        pose proof (@union_sound V V_Eqb V_Eqb_ok lt succ V_default V
+                      V_map V_map V_map_ok V_trie X _ t_v tx') as Hu.
+        unfold vc in Hu. specialize (Hu e_he).
+        pose proof Hok_he as Hok_he_save.
+        destruct Hok_he as [Heqok_he Hwlok_he Hparok_he Hdbkok_he].
+        destruct Heqok_he as [roots_he Hroots_he].
+        specialize (Hu (ex_intro _ roots_he Hroots_he)).
+        specialize (Hu Hkey_tv_he Hkey_he_res).
+        destruct (union t_v tx' e_he) as [v_u e_u] eqn:Heq_union.
+        cbn [fst snd] in Hu.
+        destruct Hu as (Hdb_u & [roots_u Hroots_u] & Hper_u & Hpar_u
+                       & Hwl_rel_u & Hper_tv_u).
+        cbn [fst snd] in *.
+        assert (Heq_subst : with_names_from c' (map snd s) = s).
+        { pose proof (wf_subst_dom_eq Hsubst) as Hdom.
+          revert Hdom. clear -s c'. revert s.
+          induction c' as [|[n0 t0] c_rest IH]; destruct s as [|[n1 e1] s_rest];
+            cbn; intros Hdom; auto; try discriminate.
+          inversion Hdom; subst. f_equal. apply IH. exact H1. }
+        rewrite Heq_subst in Hdom_sort.
+        assert (Hext_put : map.extends (map.put i_sort x' (inl e : domain V lang_model)) i_sort).
+        { intros k v Hgk.
+          eqb_case k x'.
+          - rewrite Hgk in Hinone_x'. discriminate.
+          - rewrite map.get_put_diff by congruence. exact Hgk. }
+        assert (Hext_he_sort : map.extends i_he i_sort).
+        { intros k v Hgk. apply Hexti_he. apply Hext_put. exact Hgk. }
+        assert (Hdom_sort_he : option_relation (domain_eq V lang_model)
+                                  (map.get i_he t_v) (Some (inr t[/s/]))).
+        { destruct (map.get i_sort t_v) as [d|] eqn:Hgts; cbn in Hdom_sort;
+            [|discriminate].
+          apply Hext_he_sort in Hgts. rewrite Hgts. cbn. exact Hdom_sort. }
+        assert (Heqs_tv_tx : eq_sound_for_model V V V_map lang_model i_he t_v tx').
+        { unfold eq_sound_for_model.
+          destruct (map.get i_he t_v) as [d_tv|] eqn:Hgtv; cbn in Hdom_sort_he;
+            [|discriminate].
+          destruct (map.get i_he tx') as [d_tx|] eqn:Hgtx; cbn in Hdom_he;
+            [|discriminate].
+          cbn.
+          pose proof (lang_model_ok l Hsof Hwf) as Hmok.
+          assert (Hsym : Symmetric (domain_eq V lang_model))
+            by (apply Hmok).
+          assert (Htrans : Transitive (domain_eq V lang_model))
+            by (apply Hmok).
+          eapply Htrans; [exact Hdom_sort_he|].
+          apply Hsym. exact Hdom_he. }
+        assert (Hkey_pres_he_u : forall x, Sep.has_key x (parent (equiv e_he)) ->
+                                            Sep.has_key x (parent (equiv e_u))).
+        { intros x Hx. unfold Sep.has_key in *.
+          destruct (map.get (parent (equiv e_u)) x) eqn:Hgx; [constructor|].
+          exfalso.
+          destruct (map.get (parent (equiv e_he)) x) eqn:Hgx_he; [|tauto].
+          assert (Hxx : uf_rel_PER V (V_map V) (V_map nat) (equiv e_he) x x).
+          { unfold uf_rel_PER.
+            eapply PER_clo_trans;
+              [apply PER_clo_base; exact Hgx_he
+              |apply PER_clo_sym; apply PER_clo_base; exact Hgx_he]. }
+          assert (Hxx' : uf_rel_PER V (V_map V) (V_map nat) (equiv e_u) x x).
+          { apply Hper_u. unfold Relations.union_closure_PER.
+            apply PER_clo_base. left. exact Hxx. }
+          edestruct (@uf_rel_PER_has_key V V_Eqb V_Eqb_ok lt V_default V_map V_map_ok
+                       (equiv e_u) roots_u x x Hroots_u Hxx') as [Hkx _].
+          unfold Sep.has_key in Hkx. rewrite Hgx in Hkx. tauto. }
+        assert (Hper_lift : forall i1 i2,
+                            uf_rel_PER V (V_map V) (V_map nat) (equiv e_he) i1 i2 ->
+                            uf_rel_PER V (V_map V) (V_map nat) (equiv e_u) i1 i2).
+        { intros i1 i2 Hi12. apply Hper_u.
+          unfold Relations.union_closure_PER. apply PER_clo_base. left. exact Hi12. }
+        assert (Hrel_new : forall i1 i2,
+                            uf_rel_PER V (V_map V) (V_map nat) (equiv e_u) i1 i2 ->
+                            eq_sound_for_model V V V_map lang_model i_he i1 i2).
+        { intros i1 i2 Hi12. apply Hper_u in Hi12.
+          induction Hi12 as [a b H1 | a b c2 IHab Hab IHbc Hbc | a b IHab Hab].
+          - destruct H1 as [Hold | Hnew];
+              [destruct Hsnd_he as [_ _ _ Hi_rel]; apply Hi_rel; exact Hold
+              |destruct Hnew as [Hpa Hpb]; subst; exact Heqs_tv_tx].
+          - pose proof (lang_model_ok l Hsof Hwf) as Hmok_t.
+            eapply (eq_sound_for_model_trans V V V_map lang_model);
+              [exact Hab|exact Hbc].
+          - pose proof (lang_model_ok l Hsof Hwf) as Hmok_s.
+            eapply (eq_sound_for_model_Symmetric V V V_map lang_model); exact Hab. }
+        assert (Hok_u : egraph_ok e_u).
+        { constructor.
+          1:{ exists roots_u. exact Hroots_u. }
+          1:{ destruct Hwl_rel_u as [Hwl_same | Hwl_new].
+              { rewrite Hwl_same. eapply all_wkn; [|exact Hwlok_he].
+                intros ent _ Hp. destruct ent as [old new improved | x_a];
+                  cbn in *; [apply Hper_lift; exact Hp | exact I]. }
+              { destruct Hwl_new as [v_old Hwln1]. destruct Hwln1 as [v_new Hwln2].
+                destruct Hwln2 as [improved Hwln3]. destruct Hwln3 as [Hwl_eq Hwln4].
+                destruct Hwln4 as [Hper_old Hper_new].
+                rewrite Hwl_eq. cbn. split.
+                1:{ assert (Hr_ar : uf_rel_PER V (V_map V) (V_map nat) (equiv e_u) t_v tx').
+                    { apply Hper_u. apply PER_clo_base. right. unfold Relations.singleton_rel.
+                      split; reflexivity. }
+                    unfold uf_rel_PER in *.
+                    eapply PER_clo_trans; [exact Hper_old|].
+                    eapply PER_clo_trans; [exact Hr_ar|].
+                    apply PER_clo_sym. exact Hper_new. }
+                eapply all_wkn; [|exact Hwlok_he].
+                intros ent2 _ Hp2. destruct ent2 as [old2 new2 improved2 | x_a2];
+                  cbn in *; [apply Hper_lift; exact Hp2 | exact I]. } }
+          1:{ rewrite <- Hpar_u. intros x_p s_p Hgs.
+              specialize (Hparok_he _ _ Hgs).
+              eapply all_wkn; [|exact Hparok_he].
+              intros b _ Hbup.
+              destruct Hbup as [bb Hbb]. destruct Hbb as [Hca Hbain].
+              destruct Hca as [Hfn Hargs_ret]. destruct Hargs_ret as [Hargs Hret].
+              exists bb. split.
+              1:{ unfold atom_canonical_equiv. split; [exact Hfn|]. split.
+                  1:{ clear -Hargs Hper_lift.
+                      revert Hargs. generalize (atom_args b), (atom_args bb).
+                      intros l1 l2. revert l2.
+                      induction l1 as [|y ys IH']; destruct l2 as [|z zs];
+                        cbn; auto; try tauto.
+                      intros [Hy Hys]. split.
+                      { apply Hper_lift. exact Hy. }
+                      { apply IH'. exact Hys. } }
+                  apply Hper_lift. exact Hret. }
+              unfold atom_in_egraph. rewrite <- Hdb_u. exact Hbain. }
+          rewrite <- Hdb_u. intros b Hb. specialize (Hdbkok_he _ Hb).
+          destruct Hdbkok_he as [Hka Hkr]. split.
+          1:{ eapply all_wkn; [|exact Hka].
+              intros j _ Hj. apply Hkey_pres_he_u. exact Hj. }
+          apply Hkey_pres_he_u. exact Hkr. }
+        assert (Hsnd_u : egraph_sound_for_interpretation lang_model i_he e_u).
+        { constructor.
+          1:{ destruct Hsnd_he as [Hi_wf _ _ _]. exact Hi_wf. }
+          1:{ intros y Hy. destruct Hsnd_he as [_ Hi_exact _ _].
+              apply Hkey_pres_he_u. apply Hi_exact. exact Hy. }
+          1:{ destruct Hsnd_he as [_ _ Hi_atom _].
+              unfold atom_in_egraph. rewrite <- Hdb_u. exact Hi_atom. }
+          exact Hrel_new. }
+        exists i_he.
+        split.
+        1:{ unfold extending_sound.
+            split. 1: exact Hok_u.
+            split.
+            1:{ intros k v Hgv. apply Hext_he_sort. apply Hexti_sort.
+                apply Hexti_tail. exact Hgv. }
+            split. 1: exact Hsnd_u.
+            intros k Hk. apply Hkey_pres_he_u. apply Hkeys_he.
+            apply Hkeys_alloc. apply Hkeys_sort. apply Hkeys_tail. exact Hk. }
+        split.
+        1:{ cbn. f_equal. exact Hfst_tail. }
+        cbn [map snd].
+        apply args_in_instance_cons.
+        + eapply args_in_instance_monotone; [|exact Hai_tail].
+          intros k v Hgv. apply Hext_he_sort. apply Hexti_sort. exact Hgv.
+        + assert (Hgx'_put : map.get (map.put i_sort x' (inl e : domain V lang_model)) x'
+                            = Some (inl e)) by (rewrite map.get_put_same; reflexivity).
+          apply Hexti_he in Hgx'_put.
+          rewrite Hgx'_put. cbn.
+          econstructor. eapply eq_term_refl; eauto with lang_core.
+        }
+        (* ---- skip branch: alloc_opaque only ---- *)
+        unfold vc; intros e_inner Hpost_tail.
+        unfold ctx_post. intros Hok Hsound.
+        unfold ctx_post in Hpost_tail.
+        specialize (Hpost_tail Hok Hsound).
+        destruct Hpost_tail as [i_tail Hpa]. destruct Hpa as [Hext_tail Hpa'].
+        destruct Hpa' as [Hfst_tail Hai_tail].
+        pose proof Hext_tail as Hext_tail_save.
+        destruct Hext_tail as (Hok_tail & Hexti_tail & Hsnd_tail & Hkeys_tail).
+        cbn [fst snd] in *.
+        (* alloc_opaque_sound with d := inl e (the var's value from wf_subst) *)
+        pose proof (@alloc_opaque_sound V V_Eqb V_Eqb_ok lt succ V_default V
+                       V_map V_map V_map_ok V_trie X _ lang_model
+                       lt_asymmetric lt_succ lt_trans
+                       i_tail (inl e : domain V lang_model)) as Halloc_snd.
+        assert (Hwfd : domain_wf V lang_model (inl e)).
+        { unfold domain_wf. cbn. econstructor.
+          eapply eq_term_refl; eauto with lang_core. }
+        specialize (Halloc_snd Hwfd Hwfd).
+        unfold vc in Halloc_snd. specialize (Halloc_snd e_inner).
+        specialize (Halloc_snd Hok_tail Hsnd_tail).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_inner) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc_snd.
+        destruct Halloc_snd as (Hok_alloc & Hsnd_alloc & Hinone_x' & Hx'_fresh
+                                & Hx'_key & Hkeys_alloc & Hdb_alloc & Hpar_alloc
+                                & Hwl_alloc).
+        cbn [fst snd] in *.
+        (* result interpretation: map.put i_tail x' (inl e) *)
+        exists (map.put i_tail x' (inl e : domain V lang_model)).
+        assert (Hext_put : map.extends (map.put i_tail x' (inl e : domain V lang_model)) i_tail).
+        { intros k v Hgk.
+          eqb_case k x'.
+          - rewrite Hgk in Hinone_x'. discriminate.
+          - rewrite map.get_put_diff by congruence. exact Hgk. }
+        split.
+        1:{ unfold extending_sound.
+            split. 1: exact Hok_alloc.
+            split.
+            1:{ intros k v Hgv. apply Hext_put. apply Hexti_tail. exact Hgv. }
+            split. 1: exact Hsnd_alloc.
+            intros k Hk. apply Hkeys_alloc. apply Hkeys_tail. exact Hk. }
+        split.
+        1:{ cbn. f_equal. exact Hfst_tail. }
+        cbn [map snd].
+        apply args_in_instance_cons.
+        + eapply args_in_instance_monotone; [|exact Hai_tail].
+          exact Hext_put.
+        + rewrite map.get_put_same. cbn.
+          econstructor. eapply eq_term_refl; eauto with lang_core.
+    Qed.
+
     (* =============================================================== *)
     (* Model-faithful representation (the (I)-side workhorse for the    *)
     (* source-rule soundness adapter).  See [[project-source-rule-      *)
