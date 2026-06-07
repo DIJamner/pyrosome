@@ -24,17 +24,16 @@ All `Closed under the global context` (rocq_assumptions).
    (mirroring `rtt_nat` with a trivial/empty member relation) OR drop Empty from
    `ott` for the Π-normalization payoff.  (Members were already deferred as
    "proof-irrelevant"; the TYPE case is the actual hole.)
-2. **`RedNe` requires BOTH members already NEUTRAL** (`ne_eq t a b` = neutral a /\
-   neutral b /\ eq_term) with NO `reds`-to-neutral witnesses.  So term-level
-   BACKWARD closure at a NEUTRAL TYPE is FALSE as-is (a well-typed term of
-   neutral type may reduce before becoming neutral).  The fundamental lemma's
-   term direction at neutral types will need `RedNe` to instead carry
-   `reds a na /\ reds b nb /\ ne_eq t na nb` (metamltt-style, like `RedNatMem`'s
-   `rnm_ne`).  This is an inductive change to `RedNe` (+ rtt_ne's member) — do it
-   together with gap 1 in one LR-shape revision, then re-prove the anti-closure
-   (the `rtt_ne` case of `RedTy_tot_anti_*` becomes trivially closable too).
-   NB also: `RedNatMem_trans` / whole-LR transitivity needs reds-determinism +
-   ott constructor injectivity (zero/suc/neutral disjoint) — lang-specific, deferred.
+2. **[RESOLVED this session]** `RedNe` previously required BOTH members already
+   NEUTRAL (`ne_eq t a b`) with no `reds` witnesses ⇒ term-level backward closure
+   at a neutral type was FALSE.  FIXED: `RedNe t a b` now carries
+   `forall na nb, reds a na -> reds b nb -> ne_eq t na nb` (metamltt-style, like
+   `rnm_ne`).  Isolated change — nothing constructs `red_ne` yet; `rtt_ne`'s
+   type-level signature (which already had its own reds witnesses for the TYPE
+   codes) is unaffected.  Added `RedNe_sym` + `RedNe_back_l/_r` (neutral fiber is
+   now a backward-closed PER, matching the Nat fiber).  GREEN + axiom-free.
+   NB still open: `RedNatMem_trans` / whole-LR transitivity needs reds-determinism
+   + ott constructor injectivity (zero/suc/neutral disjoint) — lang-specific, deferred.
 
 **NEXT = fundamental lemma proper** (`wf_term ott [] e t -> RedTy/RedTm`,
 + the eq_term PER side), by Pyrosome cut-elimination on canonical derivations.
