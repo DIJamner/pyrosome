@@ -881,6 +881,86 @@ Proof.
     apply El_act_cod_subst_eq; assumption.
 Qed.
 
+(* ====================================================================== *)
+(* LR ESCAPE (soundness) at the CONCRETE language `l := ott`.               *)
+(*                                                                        *)
+(* The abstract-`l` neutral-fiber escape `RedNe_sound` lives in            *)
+(* LogicalRelation.v.  The Nat-fiber escape recurses through `rnm_suc`,    *)
+(* so its sub-member typing must be re-derived by subject reduction        *)
+(* (`reds_wf`) + inversion of the CONCRETE `suc` rule -- hence it lands     *)
+(* here, where `ott` is in scope.                                          *)
+(* ====================================================================== *)
+
+(* Invert a well-typed `suc`: the argument is a Nat element in the same env,
+   and the env itself is well-formed.  The `suc` rule is pinned out of the
+   abstract `In` via `all_fresh` uniqueness against the computed lookup. *)
+Lemma suc_inv G x
+  : wf_term ott [] (osuc G x) (nat_sort G) ->
+    wf_term ott [] x (nat_sort G) /\ wf_term ott [] G (scon "env" []).
+Proof.
+  intro Hwf.
+  apply WfCutElim.invert_wf_term_con in Hwf as (c' & cargs & t' & Hin & Hwfargs & Hsort).
+  assert (Hall : all_fresh ott) by exact (wf_lang_ext_all_fresh ott_wf).
+  assert (Hin2 : In ("suc",
+     term_rule
+       [("n", {{s #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" "G" #"rel" #"L0" (#"Nat" "G")) }});
+        ("G", {{s #"env"}})]
+       ["n"]
+       {{s #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" "G" #"rel" #"L0" (#"Nat" "G")) }}) ott)
+    by (apply named_list_lookup_err_in; vm_compute; reflexivity).
+  pose proof (in_all_fresh_same _ _ _ _ Hall Hin Hin2) as Heq; safe_invert Heq.
+  safe_invert Hwfargs.
+  safe_invert H5.
+  split; assumption.
+Qed.
+
+(* Nat-fiber escape: a reducible Nat pair, given both members well typed,
+   escapes to declarative `eq_term`.  zero/ne are leaf (reds_sound + the
+   ne-fiber conversion); the suc case recurses via the IH after re-typing the
+   predecessors with `suc_inv`, then re-assembles by `suc` congruence. *)
+Lemma RedNatMem_sound G a b
+  : RedNatMem ott G a b ->
+    wf_term ott [] a (nat_sort G) ->
+    wf_term ott [] b (nat_sort G) ->
+    eq_term ott [] (nat_sort G) a b.
+Proof.
+  intros HM; induction HM; intros Hwfa Hwfb.
+  - (* zero *)
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfa r) as H1.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfb r0) as H2.
+    eapply eq_term_trans; [ exact H1 | eapply eq_term_sym; exact H2 ].
+  - (* suc *)
+    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ Hwfa r) as Hwa.
+    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ Hwfb r0) as Hwb.
+    destruct (suc_inv _ _ Hwa) as [Hwa' HwG].
+    destruct (suc_inv _ _ Hwb) as [Hwb' _].
+    pose proof (IHHM Hwa' Hwb') as Hab'.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfa r) as Hra.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfb r0) as Hrb.
+    eapply eq_term_trans; [ exact Hra | ].
+    eapply eq_term_trans; [ | eapply eq_term_sym; exact Hrb ].
+    (* eq_term (osuc G a') (osuc G b') by `suc` congruence on a' ~ b' *)
+    assert (HinS : In ("suc",
+       term_rule
+         [("n", {{s #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" "G" #"rel" #"L0" (#"Nat" "G")) }});
+          ("G", {{s #"env"}})]
+         ["n"]
+         {{s #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" "G" #"rel" #"L0" (#"Nat" "G")) }}) ott)
+      by (apply named_list_lookup_err_in; vm_compute; reflexivity).
+    unfold osuc.
+    eapply term_con_congruence; [ exact HinS | | exact ott_wf | ].
+    + right. vm_compute. reflexivity.
+    + constructor.
+      * constructor; [ constructor | eapply eq_term_refl; exact HwG ].
+      * exact Hab'.
+  - (* ne *)
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfa r) as H1.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ Hwfb r0) as H2.
+    eapply eq_term_trans; [ exact H1 | ].
+    eapply eq_term_trans; [ | eapply eq_term_sym; exact H2 ].
+    exact (proj2 (proj2 n)).
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
