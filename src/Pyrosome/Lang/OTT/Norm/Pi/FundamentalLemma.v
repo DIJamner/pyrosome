@@ -3760,6 +3760,140 @@ Proof.
     + apply eq_term_act_code; assumption.
 Qed.
 
+(* ====================================================================== *)
+(* STEP 1 (z17): the codomain MEMBER-SORT BRIDGE.                          *)
+(*                                                                        *)
+(* `elt_sort r` reads the canonical member sort off the LEFT whnf reduct   *)
+(* of the type `X` (Nat/Empty/Ne/Pi giving El of the respective reduct).   *)
+(* For a RELEVANT code `X : U orel lX G` (which the Pi codomain always is), *)
+(* that canonical member sort is `eq_sort`-equal to `El orel lX G X`       *)
+(* (El of the bare type itself), since the reduct is `eq_term X` at the    *)
+(* code sort (`reds_sound`) and `El` is a congruence.  This is the missing *)
+(* "self-escape" transport for reflect@Pi: the `mapp_ne_eq2` engine        *)
+(* delivers `ne_eq` at `El (cod_at .. a')`, while the codomain reflect IH   *)
+(* demands the pair at `elt_sort (CodRed)` — the two reconcile by this      *)
+(* bridge (composed with the codomain `esc_ty` IH that relates the LEFT and *)
+(* RIGHT codomain codes).                                                  *)
+(*                                                                        *)
+(* The per-constructor LEVEL/RELEVANCE reconciliation is discharged by      *)
+(* subject reduction (`reds_wf`) + the rel/lvl sort invariants: a relevant  *)
+(* code can only reduce to a relevant whnf (Empty is at `oirr`, ruled out   *)
+(* by `code_sort_rel_neq_irr`), and the buried level matches by             *)
+(* `code_sort_rel_lvl_eq` (Nat pins lX=oL0; Ne pins rN=orel,lN=lX; Pi pins  *)
+(* lX=lG via Pi_rel-rule inversion).                                       *)
+(* ====================================================================== *)
+
+(* From an `eq_sort` between two code sorts, the buried relevance and level
+   are syntactically equal.  Engine: the `sort_rel`/`sort_lvl` invariants
+   (`core_sort_rel_invariant`/`core_sort_lvl_invariant`) read the relevance/
+   level off the U-head and are preserved by `eq_sort`. *)
+Lemma code_sort_rel_lvl_eq c r1 l1 G1 r2 l2 G2
+  : eq_sort ott c (code_sort r1 l1 G1) (code_sort r2 l2 G2) ->
+    r1 = r2 /\ l1 = l2.
+Proof.
+  intro H.
+  pose proof (core_sort_rel_invariant _ _ _ H) as Hr.
+  pose proof (core_sort_lvl_invariant _ _ _ H) as Hl.
+  unfold code_sort, sort_rel, sort_lvl, oU, code_rel, code_lvl in Hr, Hl.
+  cbn in Hr, Hl.
+  split; congruence.
+Qed.
+
+(* The bridge: `elt_sort r` (the canonical member sort of `r`, read off the
+   LEFT type `X`'s whnf reduct) is `eq_sort`-equal to `El orel lX G X` when
+   `X` is a relevant code at level `lX`. *)
+Lemma elt_sort_eq_El G X Y (r : RedTy ott G X Y) lX
+  (HG : wf_term ott [] G s_env)
+  (HlX : wf_term ott [] lX (scon "lvl" []))
+  (HX : wf_term ott [] X (code_sort orel lX G))
+  : eq_sort ott [] (elt_sort r) (s_exp G (term_info orel lX) (oEl orel lX G X)).
+Proof.
+  pose proof ott_wf as Hwf.
+  assert (Horel : wf_term ott [] orel (scon "relevance" [])) by
+    (unfold orel; eapply Elab.wf_term_by';
+       [apply named_list_lookup_err_in; compute; reflexivity
+       | cbn [Model.wf_term core_model]; ott_build | left; compute; reflexivity]).
+  destruct r as [R r].
+  unfold elt_sort. cbn [projT2].
+  destruct r.
+  - (* Nat: lX pinned to oL0 by canonicity; El-cong on oNat G ~ A *)
+    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfNat.
+    assert (HNatcanon : wf_term ott [] (oNat G) (code_sort orel oL0 G)).
+    { unfold oNat, code_sort, oU, code_info, oinfo, onext, orel, oL0.
+      eapply Elab.wf_term_by';
+        [ apply named_list_lookup_err_in; compute; reflexivity
+        | cbn [Model.wf_term core_model]; ott_build
+        | left; compute; reflexivity ]. }
+    pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HwfNat HNatcanon) as Hss.
+    apply code_sort_rel_lvl_eq in Hss. destruct Hss as [_ HlX0]. subst lX.
+    unfold nat_sort, s_exp.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    assert (HNatA : eq_term ott [] (code_sort orel oL0 G) (oNat G) A)
+      by (eapply eq_term_sym; exact HAred).
+    pose proof (El_cong orel oL0 G (oNat G) A HG Horel HlX HNatA) as HElNatA.
+    sort_cong.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. exact HG.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
+    + cbn [Model.eq_term core_model]. exact HElNatA.
+  - (* Empty: vacuous (relevance mismatch with a relevant code) *)
+    exfalso.
+    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfEmpty.
+    assert (HEmptycanon : wf_term ott [] (oEmpty G) (code_sort oirr oL0 G)).
+    { unfold oEmpty, code_sort, oU, code_info, oinfo, onext, orel, oirr, oL0.
+      eapply Elab.wf_term_by';
+        [ apply named_list_lookup_err_in; compute; reflexivity
+        | cbn [Model.wf_term core_model]; ott_build
+        | left; compute; reflexivity ]. }
+    pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HwfEmpty HEmptycanon) as Hss.
+    exact (code_sort_rel_neq_irr _ _ _ _ _ (eq_sort_sym Hss)).
+  - (* Ne: rN=orel, lN=lX pinned by canonicity; El-cong on na ~ A *)
+    destruct n as (Hnna & Hnnb & Heqnanb).
+    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfNaS.
+    pose proof (eq_term_wf_l ott_wf wf_ctx_ott_nil Heqnanb) as HnaT.
+    pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HnaT HwfNaS) as Hss.
+    apply code_sort_rel_lvl_eq in Hss. destruct Hss as [HrN HlN]. subst rN lN.
+    unfold el_sort, s_exp.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    assert (HnaA : eq_term ott [] (code_sort orel lX G) na A)
+      by (eapply eq_term_sym; exact HAred).
+    pose proof (El_cong orel lX G na A HG Horel HlX HnaA) as HElnaA.
+    sort_cong.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. exact HG.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
+    + cbn [Model.eq_term core_model]. exact HElnaA.
+  - (* Pi: lX=lG pinned via Pi_rel-rule inversion; El-cong on oPi_rel ~ A *)
+    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfPi.
+    unfold oPi_rel in HwfPi.
+    apply WfCutElim.invert_wf_term_con in HwfPi
+      as (c' & cargs & t' & Hin & Hwfargs & Hsort).
+    assert (Hall : all_fresh ott) by exact (wf_lang_ext_all_fresh ott_wf).
+    assert (Hin2 : In ("Pi_rel",
+      term_rule
+        [("B", {{s #"exp" (#"ext" "G" (#"info" "rF" (#"iota" "lF")) (#"El" "G" "rF" "lF" "F")) (#"info" #"rel" (#"next" "lG")) (#"U" (#"ext" "G" (#"info" "rF" (#"iota" "lF")) (#"El" "G" "rF" "lF" "F")) #"rel" "lG")}});
+         ("F", {{s #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" "G" "rF" "lF")}});
+         ("lG", {{s #"lvl"}}); ("lF", {{s #"lvl"}}); ("rF", {{s #"relevance"}}); ("G", {{s #"env"}})]
+        ["B"; "F"; "lG"; "lF"; "rF"]
+        {{s #"exp" "G" (#"info" #"rel" (#"next" "lG")) (#"U" "G" #"rel" "lG")}}) ott)
+      by (apply named_list_lookup_err_in; vm_compute; reflexivity).
+    pose proof (in_all_fresh_same _ _ _ _ Hall Hin Hin2) as Heqr; safe_invert Heqr.
+    cbn [with_names_from] in Hsort.
+    assert (HlXlG : lX = lG).
+    { destruct Hsort as [Hs | Hs].
+      - vm_compute in Hs.
+        apply code_sort_rel_lvl_eq in Hs. destruct Hs as [_ Hl]. congruence.
+      - vm_compute in Hs. unfold code_sort, oU in Hs. inversion Hs. reflexivity. }
+    subst lX.
+    unfold s_exp.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    assert (HPiA : eq_term ott [] (code_sort orel lG G) (oPi_rel rF lF lG F C G) A)
+      by (eapply eq_term_sym; exact HAred).
+    pose proof (El_cong orel lG G (oPi_rel rF lF lG F C G) A HG Horel HlX HPiA) as HElPiA.
+    sort_cong.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. exact HG.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
+    + cbn [Model.eq_term core_model]. exact HElPiA.
+Qed.
+
 (* TODO (file 4 body, continued) — STEP 3 remaining (the typing-induction
    fundamental lemma):
    - The mutual ESCAPE/REFLECT lemma (Pmot) Pi case + the hard direction
