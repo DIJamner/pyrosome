@@ -1,5 +1,57 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z10 — plan (A) steps 1 AND 2 DONE, **fully SYNTACTIC (no model)**. The U-injectivity wall DISSOLVES syntactically. 2 commits, pushed, axiom-clean. NEXT = step 3 (VR/valid-context + typing-induction fundamental lemma).
+
+All in `FundamentalLemma.v` (`l := ott`), GREEN, `Print Assumptions` clean
+(step-1 lemmas = `Closed under the global context`; step-2 distinctness =
+only `egraph_sound`, via `ott_wf`).
+
+**Step 1 — CANONICITY (commit 1):**
+- `relevance_canon : wf_term ott [] r (scon "relevance" []) -> r = con "rel" [] \/ r = con "irr" []`
+- `lvl_canon`      : same for `"lvl"` -> `L0`/`L1`.
+- Foundation `eq_sort_ott_same_name` (the SORT-DISTINCTNESS engine): `ott` has
+  NO `sort_eq_rule` (`ott_no_sort_eq_rule`, by `vm_compute`), so `Core.eq_sort`
+  over `ott` never changes a sort's head constructor (`eq_sort_by` vacuous;
+  `eq_sort_subst` preserves the head). Plus `no_wf_var_nil` (no closed var is wf;
+  proven by `remember`+`induction` so the wf_term CONV rule is handled by the IH).
+- Canonicity recipe (CONV-loop-safe): `destruct` con/var (`no_wf_var_nil` kills
+  var); `WfCutElim.invert_wf_term_con` (qualified, NOT imported — shadows
+  `wf_term`) hands the rule; its conclusion-sort head is the target by
+  `eq_sort_ott_same_name`; a `filter f ott` + `vm_compute` enumerates the only
+  two matching rules; `inversion Hwfargs` forces `s = []`.
+
+**Step 2 — DISTINCTNESS under eq_term (commit 2) — NO MODEL NEEDED:**
+- `rel_neq_irr : ~ eq_term ott [] (scon "relevance" []) (con "rel" []) (con "irr" [])`
+- `L0_neq_L1`  : same for `"lvl"` / `L0` vs `L1`.
+- **KEY FINDING:** the z9 "small relevance/level MODEL (eq_term-soundness)"
+  is UNNECESSARY. `ott` has NO `term_eq_rule` with conclusion sort
+  `"relevance"`/`"lvl"` (`ott_no_term_eq_rule_rl`, by `vm_compute`), so a closed
+  `eq_term` at either sort never changes a term's head. The argument runs over
+  the CUT-FREE `eq_term` (`CutElim.eq_term`): it has NO `eq_term_subst`
+  constructor (admissible), so the head-invariance induction goes through — the
+  open-variable subst case that breaks a direct `Core.eq_term` induction never
+  arises. Bridge back via `CutElim.core_implies_cut` (needs `CutElim.wf_lang ott`
+  from `CutElim.wf_lang_iff_cut` on `ott_wf`; `wf_lang_iff_cut` needs
+  `Eqb_ok`/`WithDefault` discharged by `typeclasses eauto`).
+  - chain: `cut_eq_sort_ott_same_name`, `ott_no_term_eq_rule_rl`, `tm_head`,
+    `cut_eq_term_ott_same_head`, `core_eq_term_ott_same_head`, then the two
+    `_neq_` corollaries.
+  - NB added `From Pyrosome.Theory Require CutElim.` to FundamentalLemma.v
+    (Require, NOT Import — CutElim shadows eq_term/wf_term like WfCutElim).
+
+### NEXT = step 3 (the remaining real work): the VR/valid-context layer + the
+fundamental lemma by induction on the TYPING derivation. The bound-var REFLECT
+at a Nat/Empty-domain Pi now has ALL its distinctness inputs in hand:
+`relevance_canon`/`lvl_canon` (rF,lF canonical) + `rel_neq_irr`/`L0_neq_L1`
+(rule out oirr/L1). For an IRRELEVANT domain (`rF = irr` legitimately), the
+bound-var member is handled by PROOF IRRELEVANCE, no reflect needed. Escape
+stays a `RedTy_rect` corollary (RedTy_Pi_sound / RedTm_Pi_eta_sound, both done);
+reflect/reducibility come from the typing induction. WIP/MutualFund.v motive
+(elt_sort triple) + 3 leaves carry over. CAUTION: confirm the EXACT shape of
+the rel/lvl obligation the typing-inversion produces at the Pi (eq_term vs
+eq_sort vs a raw `= con "irr" []`), and re-orient the `_neq_` lemmas if needed
+(they are stated for the eq_term form, which is the strongest).
+
 ## UPDATE 2026-06-07z9 — MUTUAL-FUND motive + 3 LEAVES validated (WIP/MutualFund.v, green, axiom-free); rtt_ne TIGHTENED (LogicalRelation.v, committed); but the Pi-case REFLECT hits a U-INJECTIVITY / circularity wall. **DECISION NEEDED (see fork below).**
 
 This session (3 commits, all pushed):
