@@ -1,5 +1,83 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z25 — *** P1 (re-sort LR to Prop) HITS A SECOND, DEEPER Prop→Set elimination wall: `elt_sort` ***  (NO build attempted; obstruction confirmed with a minimal Coq test; tree UNTOUCHED + still green/axiom-clean)
+
+Dustin chose P1 (re-sort the whole LR to `Prop`). On execution, BEFORE making any
+edits, I found that P1 does NOT port "nearly verbatim" — there is a second
+large-elimination wall the P1 analysis (z24) did not account for:
+
+- `elt_sort {G A B} (r : RedTy ott G A B) : osort` (FundamentalLemma.v:3933) is a
+  FUNCTION defined by **large elimination of `RedTy_tot`**:
+  `match projT2 r with rtt_nat .. => nat_sort G | rtt_empty .. => empty_sort G
+   | rtt_ne .. na .. => el_sort rN lN G na | rtt_pi .. => s_exp .. end`.
+  It produces an `osort` (a `tm`, which lives in `Set`/`Type`) by matching on the
+  *structure* of the reducibility derivation. The member sort genuinely DEPENDS on
+  which constructor `r` is (Nat vs Empty vs Ne vs Pi give different sorts), AND on
+  the carried data (`na`, the Pi codes) — it is NOT a function of `A`/`B` alone.
+- Under P1, `RedTy_tot` becomes a multi-constructor `Prop`, and Coq FORBIDS
+  large-eliminating a multi-ctor `Prop` to build a `Set`/`Type` value. Confirmed
+  with a minimal repro: `Inductive FooP:Prop:=AP|BP.  Definition f(x:FooP):nat:=
+  match x with AP=>0|BP=>1 end.` → *"Incorrect elimination of x ... the return type
+  has sort Set while it should be SProp or Prop. ... proofs can be eliminated only
+  to build proofs."* This is EXACTLY `elt_sort`'s shape.
+- `elt_sort` is load-bearing and pervasive: 47 uses in FundamentalLemma.v; it is
+  the sort at which `esc_tm`/`reflect_at`/`Pmot` and the ENTIRE escape/reflect
+  tower are stated (`wf_term [] a (elt_sort r)`, `eq_term [] (elt_sort r) a b`,
+  `RedTy_R r a b` at that sort). The `elt_sort_nat/empty/ne/pi` reflexivity lemmas
+  (used via `rewrite`) and `elt_sort_eq_El_gen` (the symbolic-relevance bridge,
+  itself a `destruct r; ... ` over `RedTy_tot`) all rest on it.
+- There is NO purely-syntactic `member_sort_of : tm -> osort` in the codebase
+  (`nf_info` is the value-domain normal-form thing, unrelated). So `elt_sort`
+  cannot simply be re-expressed as a function of `A`.
+
+### *** QUESTION FOR DUSTIN — P1 has a hidden cost; pick the recovery ***
+P1 as scoped is NOT a `Type`→`Prop`/`projT`→`destruct` mechanical port. To make
+the LR `Prop` we must ALSO eliminate `elt_sort`'s large elimination. Options:
+
+  (P1a) **Relationalize the member sort.** Replace the FUNCTION `elt_sort r : osort`
+        with a RELATION `elt_sort_rel {G A B} (r : RedTy ott G A B) (S : osort) :
+        Prop`, defined by induction on `RedTy_tot` (allowed: target `Prop` is a
+        Prop). Then restate `esc_tm`/`reflect_at`/`Pmot` to quantify the sort
+        relationally: `forall S, elt_sort_rel r S -> ... a S ...`. COST: every one
+        of the 47 `elt_sort` sites + the `elt_sort_*` rewrite lemmas + `cbn
+        [projT2]`/`cbn [projT1 projT2]` sites + `elt_sort_eq_El_gen` must be
+        reworked to thread the relational sort (and the leaves must DERIVE the sort
+        from the relation, not read it off). This is the genuine, NON-verbatim
+        re-green: substantially more than z24's "Sig→ex" estimate, but mechanical-
+        ish and self-contained. RECOMMEND IF staying with P1.
+
+  (P1b) **Build a syntactic member-sort function `member_sort_of : tm -> osort`**
+        that reads the sort off `A`'s whnf reduct (the head former), prove it
+        agrees with the LR (`reds A w -> RedTy_tot G A B R -> member_sort_of w =
+        <the right sort>`), and state the tower at `member_sort_of A`. Keeps a
+        FUNCTION (no relational threading downstream), but needs a normalizer-ish
+        head function + an agreement lemma per former, and `elt_sort_eq_El_gen`
+        must be re-proved against it. Heavier new infra; cleaner statements.
+
+  (P1c) **Keep `RedTy`/the member relation in `Type` but FACTOR the sort out of the
+        induction.** The reason the LR must be `Prop` is `wf_judge_ind`. But note:
+        the hard direction's CONCLUSION (`forall D g, osub -> RedTy D e[g] e[g]`)
+        only needs `RedTy` to be a `Prop` *as a whole* (the env-keyed motive is a
+        Prop). If `RedTy G A B` is repackaged so the member relation is NOT a
+        Type-output index but an inductively-defined `Prop` family AND the member
+        SORT is a separate syntactic input (not read off the derivation), the
+        large elimination disappears AND `wf_judge_ind` applies. This is really
+        P1a+P1b combined and is the cleanest end state, at the most up-front
+        design cost. (≈ the metamltt design where the member sort is `A` itself
+        and members are typed at `El A`.)
+
+  (P2/P3) the z24 alternatives (separate Type-typing derivation / hybrid) remain;
+        they keep the LR in Type and dodge `elt_sort` entirely, at the cost of a
+        Prop⇒Type typing reflection (z24's analysis stands).
+
+My READ: P1a is the smallest path that honors Dustin's P1 choice — relationalize
+`elt_sort`, accept the threading churn, re-green the tower. But it is NOT the
+"verbatim" port z24 promised, so I am surfacing it before sinking the re-green.
+P1c is the mathematically cleanest (member sort = `El A`, no derivation-keyed
+sort) but is the largest redesign. NO edits made; tree is green + axiom-clean.
+
+(Below: z24 and earlier.)
+
 ## UPDATE 2026-06-07z24 — *** BLOCKER / QUESTION before the hard direction: Prop→Type elimination wall ***  (NO build attempted; orientation only)
 
 The hard direction as planned (`wf_judge_ind` with the env-keyed motive `P [] e
