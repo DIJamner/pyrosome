@@ -1933,6 +1933,140 @@ Proof.
     apply U_subst_eq; try eassumption.
 Qed.
 
+(* id is congruent in its env argument. *)
+Lemma id_cong rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : let iF := term_info rF lF in
+    let extGF := oext (oEl rF lF G F) iF G in
+    let extGF' := oext (oEl rF lF G F') iF G in
+    eq_term ott [] (s_sub extGF' extGF') (oid extGF) (oid extGF').
+Proof.
+  pose proof ott_wf as Hwf.
+  intros iF extGF extGF'.
+  pose proof (El_cong rF lF G F F' HG HrF HlF HFF') as HElFF'.
+  pose proof (ext_cong rF lF G (oEl rF lF G F) (oEl rF lF G F') HG HrF HlF HElFF') as HextGG'.
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons. 2:{ exact HextGG'. }
+    eapply eq_args_nil.
+Qed.
+
+(* El of the pushed domain code (over the extended env) is congruent:        *)
+(* swapping the F-machinery to F' (env extG and act_code both move). *)
+Lemma ElaF_mach_cong rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : let iF := term_info rF lF in
+    let extGF := oext (oEl rF lF G F) iF G in
+    let extGF' := oext (oEl rF lF G F') iF G in
+    let wknF := owkn (oEl rF lF G F) iF G in
+    let wknF' := owkn (oEl rF lF G F') iF G in
+    eq_term ott [] (s_ty extGF' (term_info rF lF))
+      (oEl rF lF extGF (act_code rF lF wknF G extGF F'))
+      (oEl rF lF extGF' (act_code rF lF wknF' G extGF' F')).
+Proof.
+  pose proof ott_wf as Hwf.
+  intros iF extGF extGF' wknF wknF'.
+  pose proof (El_cong rF lF G F F' HG HrF HlF HFF') as HElFF'.
+  pose proof (ext_cong rF lF G (oEl rF lF G F) (oEl rF lF G F') HG HrF HlF HElFF') as HextGG'.
+  pose proof (act_code_mach_cong rF lF G F F' HG HrF HlF HF HF' HFF') as Hac.
+  cbv zeta in Hac.
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons. 2:{ exact Hac. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_cons. 2:{ exact HextGG'. }
+    eapply eq_args_nil.
+Qed.
+
+(* the doubly-extended env extc is congruent under the F->F' machinery swap. *)
+Lemma extc_mach_cong rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : let iF := term_info rF lF in
+    let extGF := oext (oEl rF lF G F) iF G in
+    let extGF' := oext (oEl rF lF G F') iF G in
+    let wknF := owkn (oEl rF lF G F) iF G in
+    let wknF' := owkn (oEl rF lF G F') iF G in
+    eq_term ott [] s_env
+      (extc rF lF wknF G extGF F')
+      (extc rF lF wknF' G extGF' F').
+Proof.
+  pose proof ott_wf as Hwf.
+  intros iF extGF extGF' wknF wknF'.
+  pose proof (El_cong rF lF G F F' HG HrF HlF HFF') as HElFF'.
+  pose proof (ext_cong rF lF G (oEl rF lF G F) (oEl rF lF G F') HG HrF HlF HElFF') as HextGG'.
+  pose proof (ElaF_mach_cong rF lF G F F' HG HrF HlF HF HF' HFF') as Hel.
+  cbv zeta in Hel.
+  unfold extc, dom_info.
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons. 2:{ exact Hel. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+    eapply eq_args_cons. 2:{ exact HextGG'. }
+    eapply eq_args_nil.
+Qed.
+
+(* U over the extc env is congruent (the U-code annotation of act_cod). *)
+Lemma U_env_cong rF lF lG G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  : let iF := term_info rF lF in
+    let extGF := oext (oEl rF lF G F) iF G in
+    let extGF' := oext (oEl rF lF G F') iF G in
+    let wknF := owkn (oEl rF lF G F) iF G in
+    let wknF' := owkn (oEl rF lF G F') iF G in
+    eq_term ott [] (s_ty (extc rF lF wknF' G extGF' F') (code_info lG))
+      (oU orel lG (extc rF lF wknF G extGF F'))
+      (oU orel lG (extc rF lF wknF' G extGF' F')).
+Proof.
+  pose proof ott_wf as Hwf.
+  intros iF extGF extGF' wknF wknF'.
+  pose proof (extc_mach_cong rF lF G F F' HG HrF HlF HF HF' HFF') as Hextc.
+  cbv zeta in Hextc.
+  assert (Horel : wf_term ott [] orel (scon "relevance" [])).
+  { unfold orel. eapply Elab.wf_term_by';
+      [ apply named_list_lookup_err_in; compute; reflexivity
+      | cbn [Model.wf_term core_model]; ott_build | left; compute; reflexivity ]. }
+  eapply term_con_congruence.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - right; cbn [with_names_from]; reflexivity.
+  - exact ott_wf.
+  - cbn [with_names_from].
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; eassumption. }
+    eapply eq_args_cons. 2:{ eapply eq_term_refl; eassumption. }
+    eapply eq_args_cons. 2:{ exact Hextc. }
+    eapply eq_args_nil.
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
