@@ -1831,24 +1831,33 @@ Qed.
 (* COVERING LEMMA (the genuine remaining content; ADMITTED).
 
    If a list of arguments [args] is well-formed in [c'] against an operator
-   argument context [cA], and its [s]-image is well-formed in [c] against the
-   SAME [cA], then every context variable occurring in [args] is well-formed
-   (in [c]) at its [s]-substituted declared sort.
+   argument context [cA], its [s]-image is well-formed in [c] against the SAME
+   [cA], and every context variable that does NOT occur in [args] is already
+   shown well-formed (in [c]) at its [s]-substituted sort, then every variable
+   that DOES occur in [args] is likewise well-formed at its substituted declared
+   sort.
 
-   This is true (and false for a bare-variable term, which is why the e-graph
-   minimization never drops the sort of a bare-LHS variable): inside a [con],
-   each argument's required sort is pinned by the operator, so a well-formed
-   instantiation forces every variable occurrence to be well-formed at its
-   declared sort.
+   This is a restriction of the standard substitution-inversion (well-formedness
+   reflection) metatheorem, split by [fv_args].  It is true (and the analogue is
+   false for a bare-variable term, which is why the e-graph minimization never
+   drops the sort of a bare-LHS variable): inside a [con], each argument's
+   required sort is pinned by the operator, so a well-formed instantiation forces
+   every variable occurrence to be well-formed at its declared sort.
+
+   The non-occurring-variable witnesses are needed because an occurring
+   variable's declared sort may itself mention variables that do not occur in
+   [args]; those are supplied here (they are the kept [sort_of] atoms on the
+   e-graph side).
 
    PROOF STRATEGY (deferred): induction on [wf_args l c' args cA] (structural,
    recursing on the tail).  The head argument [e0]'s required sort
    [tA[/with_names_from cArest rest/]] mentions only variables of the later
-   arguments [rest], whose well-formedness is already established by the IH;
-   that partial information is exactly what is needed to substitute the
-   "use-sort = declared-sort" conversion at each variable leaf of [e0] (the
-   step that, taken globally, would require [s] to be known well-formed).
-   Variable leaves with no conversion are immediate; [con] leaves recurse. *)
+   arguments [rest], whose well-formedness is established by the IH; combined
+   with the supplied witnesses this is exactly the partial substitution needed
+   to discharge the "use-sort = declared-sort" conversion at each variable leaf
+   of [e0] (the step that, taken globally, would require [s] to be known well
+   formed).  Variable leaves with no conversion are immediate; [con] leaves
+   recurse into the term structure. *)
 Lemma wf_args_covers_fv (l : lang) c' cA args
   : wf_lang l ->
     wf_ctx l c' ->
@@ -1856,6 +1865,8 @@ Lemma wf_args_covers_fv (l : lang) c' cA args
     forall c s,
       map fst s = map fst c' ->
       wf_args l c args[/s/] cA ->
+      (forall y t'', In (y,t'') c' -> ~ In y (fv_args args) ->
+                     wf_term l c (subst_lookup s y) t''[/s/]) ->
       forall x t', In (x,t') c' -> In x (fv_args args) ->
                    wf_term l c (subst_lookup s x) t'[/s/].
 Proof.
@@ -1898,7 +1909,8 @@ Proof.
     pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh wfl) Hrule Hrule') as Heqr.
     safe_invert Heqr.
     eapply wf_args_covers_fv;
-      [exact wfl | exact Hwfc | exact Hargs | exact Hmap | exact Hargs' | exact Hin | exact Hfv].
+      [exact wfl | exact Hwfc | exact Hargs | exact Hmap | exact Hargs' | exact Hwit
+       | exact Hin | exact Hfv].
   - (* x does not occur: explicit witness *)
     apply Hwit; auto.
     intro Hcontra.
@@ -1937,7 +1949,8 @@ Proof.
     match goal with
     | Hargs : wf_args l c' s0 ?cA, Hargs' : wf_args l c s0[/s/] ?cA |- _ =>
         eapply wf_args_covers_fv;
-          [exact wfl | exact Hwfc | exact Hargs | exact Hmap | exact Hargs' | exact Hin | exact Hfv]
+          [exact wfl | exact Hwfc | exact Hargs | exact Hmap | exact Hargs' | exact Hwit
+           | exact Hin | exact Hfv]
     end.
   - apply Hwit; auto.
     intro Hcontra.
