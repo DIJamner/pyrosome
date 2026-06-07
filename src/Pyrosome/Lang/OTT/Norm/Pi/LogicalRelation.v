@@ -387,7 +387,7 @@ Section RedTyConcrete.
                  RDom D g os a a' -> tm -> tm -> Type)
              (CodRed : forall D g (os : osub G D g) a a'
                               (raa' : RDom D g os a a'),
-                 RedTy_tot (extc rF lF g G D F)
+                 RedTy_tot D
                    (cod_at rF lF lG g G D F C a)
                    (cod_at rF lF lG g G D F' C' a')
                    (RCod D g os a a' raa')),
@@ -417,7 +417,7 @@ Section RedTyConcrete.
         RedTy D (act_code rF lF g G D F) (act_code rF lF g G D F'))
     (CodRed : forall D g (os : osub G D g) a a',
         RedTm (DomRed D g os) a a' ->
-        RedTy (extc rF lF g G D F)
+        RedTy D
           (cod_at rF lF lG g G D F C a)
           (cod_at rF lF lG g G D F' C' a'))
     : RedTy G A B.
@@ -448,7 +448,7 @@ Section RedTyConcrete.
                  RedTy D (act_code rF lF g G D F) (act_code rF lF g G D F'))
              (CodRed : forall D g (os : osub G D g) a a',
                  RedTm (DomRed D g os) a a' ->
-                 RedTy (extc rF lF g G D F)
+                 RedTy D
                    (cod_at rF lF lG g G D F C a)
                    (cod_at rF lF lG g G D F' C' a')),
           (forall D g (os : osub G D g), P D _ _ (DomRed D g os)) ->
