@@ -1,6 +1,77 @@
 # Next-session kickoff — OTT two-sided PER migration
 
-## UPDATE 2026-06-06r — `whstep` LANDED in `Reduction.v`, GREEN + axiom-free. NEXT = file 3 LogicalRelation over `star whstep`.
+## UPDATE 2026-06-07s — file 3 `LogicalRelation.v` FOUNDATION landed (GREEN+axiom-free, committed+pushed); LR inductive ENCODING validated in WIP/LRProto.v. NEXT = instantiate the type-LR for OTT (exact con-arg orders + Kripke object-subs).
+
+Two things landed this session.
+
+**(1) `src/Pyrosome/Lang/OTT/Norm/Pi/LogicalRelation.v` — FOUNDATION, committed
++ pushed, GREEN + axiom-free** (`bash scripts/vbuild.sh <file>`).  Generic over
+`wf_lang l` + `pa`:
+- `reds a b := star whstep a b /\ whnf b` — the Pyrosome-native analog of
+  metamltt `WfRedTy`/`WfRedTm`.  KEY: whnf carried EXISTENTIALLY, NO
+  deterministic normalizer baked in.  `reds_sound` (⊆ eq_term) is FREE from
+  `star_whstep_sound`; `reds_wf` from `star_whstep_wf`; `reds_refl` for whnfs.
+  Where metamltt uses `whnf_det`, we will instead use Pyrosome constructor
+  INJECTIVITY on the common reduct (two whnfs of one term are eq_term-equal ⇒
+  same head by sort/term injectivity) — so confluence of whstep is NEVER needed.
+- `ne_eq t a b := neutral a /\ neutral b /\ eq_term l [] t a b` — RESOLVES
+  UPDATE-n open Q2: neutrals compared by `eq_term` (the pivot's declarative
+  equality) + a "both stuck" gate, NOT a separate `~ne` inductive.  Proven a PER
+  (`ne_eq_sym`/`_trans` from eq_term; `ne_eq_refl` for well-typed neutrals).
+
+**(2) `WIP/LRProto.v` — the reducibility-inductive ENCODING is VALIDATED**
+(builds; only axioms are the deliberate abstract-substrate `Parameter`s).  This
+de-risks THE central design step.  CONFIRMED facts about the encoding:
+- **NO universe tower.**  OTT's Tarski universe has NO universe CODE (`U` is a
+  `ty`, never an `exp` — checked Base.v), so type codes are only
+  `Nat`/`Empty`/`Pi_*`/neutrals.  The impredicative recursion that forces
+  metamltt's Small/Large stratification is ABSENT ⇒ the type-LR is a SINGLE
+  PLAIN inductive `RedTy_tot`, not a level-indexed tower.  Big simplification vs
+  the value-domain dev.
+- **metamltt's `Rel_tot`+`Sig` member-relation trick PORTS.**  `RedTy_tot A B R`
+  carries the member relation `R : tm->tm->Type` as an OUTPUT index; package
+  `RedTy A B := { R & RedTy_tot A B R }`, project `RedTy_R`.  This avoids
+  indexing the term-member relation by a type derivation (the thing that breaks
+  naive mutual inductives).  Strict positivity of the DEPENDENT-CODOMAIN Pi
+  premise (`forall a a', RDom a a' -> ... RedTy_tot (cod C a) (cod C' a') ...`)
+  is ACCEPTED.  Smart constructors (`RedTy_nat`/`RedTy_pi`) + a custom
+  `RedTy_rect` that threads the domain IH and the (a,a')-indexed codomain IH all
+  type-check, `Type`-valued.
+- Member records ported: `RedAtNat`/`RedAtNe` (carry `ne_eq`), `RedAtPi F C F'
+  C' RDom RCod t u` (reduce to f,g; `forall a a' (raa':RDom a a'), RCod ...
+  (app f a)(app g a')`).
+
+**NEXT (instantiate the validated encoding for OTT, in the real file):**
+1. **Pin the exact con-arg orders.**  The injectivity lists in the Lang files
+   are NOT reliable full-arity (e.g. `ty_subst`→`["i";"G"]` is short; `app_rel`→
+   8 entries is full).  VERIFY by elaborating/printing a real term (rocq MCP, or
+   inspect `ott_pi`/`subst_ott` values).  Needed: `Pi_rel`/`Pi_irr` (domain code
+   F, codomain code B, levels, env), `Nat`/`Empty`, `app_rel`/`app_irr` (for the
+   member `app` term + `pa` index = function position), `lam_rel`,
+   `ty_subst (snoc id a) (El B)` (= the `cod_subst` for the Pi member, straight
+   from app_rel's OUTPUT type in Pi.v:172), `exp_subst`/`ty_subst` (`pa`→Some,
+   the always-reducing formers).
+2. **Instantiate `pa`** for OTT (UPDATE-r's standing NEXT): app_rel/app_irr →
+   function index, Emptyrec → Empty-proof index, exp_subst/ty_subst → substituted
+   -term index; all else `None`.  Build a `pa`-specialised corollary file or fold
+   into LogicalRelation.
+3. **Decide Kripke now vs later.**  LRProto's Pi case is NON-Kripke (closed
+   args only) — enough to STATE the LR and for the fundamental lemma's forward
+   direction, but reflect/reify (under-binder, fresh neutral var) NEED the
+   object-substitution Kripke quantification: `forall (G':env)(g:sub G' G),
+   RedTy (F[/g/]) (F'[/g/])` for the domain, codomain similarly with `under g`.
+   RECOMMENDATION: build the object-sub Kripke into the Pi case FROM THE START
+   (adding it later = inductive change = rebuild; the value dev's pain was partly
+   bolt-on renaming).  This replaces metamltt's `forall Δ wf ρ` with object subs.
+4. Then file 4 FundamentalLemma, 5 Decidable.
+
+Note: `step`/`redex` orient EVERY `term_eq_rule` incl. "Pi_rel eta" (Pi.v:39-65)
+— eta is NOT meant to be a reduction.  Eta-as-contraction only fires on the
+exact eta-expanded shape so it is mostly harmless for soundness, but the LR must
+handle eta TYPE-DIRECTED at the Pi member (not via `whstep`).  Watch this when
+instantiating; may want `redex` to exclude the eta rule by name.
+
+
 
 Did exactly the UPDATE-q NEXT step.  Everything in
 `src/Pyrosome/Lang/OTT/Norm/Pi/Reduction.v` (build: `bash scripts/vbuild.sh
