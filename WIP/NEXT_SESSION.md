@@ -1,5 +1,66 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z15 — STEP 3 STARTED: ported the mutual-fund motive + 3 leaves into FundamentalLemma.v, landed the VR-layer reduction-congruence groundwork + the Nat/Empty Kripke action-soundness leaves (the Pi DomRed building blocks). 3 commits, all green + axiom-clean (egraph_sound / closed-under-global). The hard direction (typing-induction fundamental lemma + the Pi case of Pmot) is the remaining work; structure decided (substitution-generalized motive keyed on sort env).
+
+### What landed this session (FundamentalLemma.v, all pushed)
+1. **Motive + 3 LEAVES ported** (commit 1): `elt_sort` (+ `elt_sort_{nat,empty,ne,pi}`
+   computation lemmas) + the motive components `esc_ty` / `esc_tm` / `reflect_at`
+   + `Pmot`, and `leaf_nat` / `leaf_empty` / `leaf_ne` (the non-Pi cases of the
+   mutual escape/reflect fundamental lemma).  Direct port of the validated
+   WIP/MutualFund.v with `l := ott`.  Only egraph_sound.
+2. **VR reduction-congruence groundwork** (commit 2): `whstep_exp_subst_cong`
+   (whstep is a congruence at index 0 of `exp_subst`) + `star_act_code` /
+   `star_act_member` (the Kripke pushes preserve reds prefixes).  `star_act_code`
+   is CLOSED UNDER GLOBAL CONTEXT (axiom-free).
+3. **Nat/Empty Kripke action-soundness leaves** (commit 3): `whstep_Nat_subst` /
+   `whstep_Empty_subst` (the `exp_subst`-of-Nat/Empty redex fires to `Nat D` /
+   `Empty D`) + `RNat_act` / `REmpty_act` (RNat/REmpty closed under the object
+   push `act_code g`).  `RNat_act` / `REmpty_act` AXIOM-FREE (closed under global).
+   These are the Pi case's `DomRed` field when the domain is Nat / Empty.
+
+### KEY STRUCTURAL FINDING (decided, no question)
+The `RedTy_pi` constructor quantifies `DomRed`/`CodRed` over **every** `g : osub G D g`
+(NO reducible-sub premise).  Combined with the object env `G` being an OPAQUE `tm`
+(no per-variable telescope expressible), this FORCES the standard substitution-
+generalized fundamental lemma: induct on the TYPING derivation (`wf_judge_ind`,
+the Core combined wf scheme), with motive keyed on the sort's object env, e.g.
+  `P [] e (code_sort r l G') := forall D g, osub G' D g -> RedTy D e[g] e[g]`
+(and the `el_sort` analogue for term reducibility, relative to a code's `RedTy`).
+The Pi case builds `DomRed`/`CodRed` from the args-IH on the domain `F` / codomain
+`C` instantiated at the specific `g` (resp. `under' g`), NOT from a standalone
+monotonicity lemma and NOT from a `RedSub` telescope.  CRITICAL DETAIL confirmed
+this session: `act_code rF lF g G D (oNat G)` is a "Nat subst" redex ONLY when
+`rF=orel, lF=oL0` (the wrapper relevance/level must match the code's) — so the Pi
+DomRed at a Nat domain inherently needs `rF≡orel`/`lF≡oL0`, exactly what the z14
+distinctness lemmas (`code_sort_rel_neq_irr`/`code_sort_lvl_neq_L1_L0` +
+`relevance_canon`/`lvl_canon`) discharge.  The `RNat_act`/`REmpty_act` leaves are
+stated at the matched `orel/oL0` (resp `oirr/oL0`); the reconciliation `rF≡orel`
+happens where the Pi typing is inverted.
+
+### NEXT (the remaining hard direction)
+- **Ne Kripke action-soundness leaf**: `act_code rF lF g (neutral code)` stays
+  neutral (`act_member_neutral`-style: exp_subst at index-0-neutral is neutral),
+  so the neutral code's reds-to-whnf is preserved with the SYMBOLIC `rF/lF`
+  (no redex fires — the pushed code is a neutral whnf).  Easier than Nat/Empty
+  (no subst-rule match needed); plus the `ne_eq` is preserved by the
+  exp_subst-congruence on both sides + `eq_term_subst`.
+- **The Pi case of `Pmot` (escape@Pi via RedTy_rect)**: assemble from the EXISTING
+  `RedTy_Pi_sound` / `RedTm_Pi_eta_sound` / `cod_collapse_both`, fed by the
+  codomain escape-IH at the bound var, whose `RedTm (DomRed) hd hd` witness is the
+  domain reflect-IH at `hd` (bridged to the canonical fiber sort via the z14
+  distinctness lemmas + `relevance_canon`/`lvl_canon`).  This is the z9 reflect@Pi
+  crux, now unblocked.
+- **The hard direction proper** (`wf_term ott [] e (code_sort r l G) -> forall D g,
+  osub G D g -> RedTy D e[g] e[g]` and the term analogue): `wf_judge_ind` typing
+  induction.  Nat/Empty/neutral/var leaves from the *_act lemmas + the reflect
+  leaves; Pi case builds `RedTy_pi` with `DomRed` from the F-IH (via `*_act`) and
+  `CodRed` from the C-IH (via the `under' g`/`cod_at` machinery already typed in
+  this file).  GOTCHA: the Kripke `forall D g` must thread through the motive
+  (Pyrosome ctx stays `[]`; the object subst is the term-level `g`, so the motive
+  reads `G'` off the conclusion sort's env component).
+
+(Below: z14 and earlier.)
+
 ## UPDATE 2026-06-07z14 — R1 LANDED: relevance/level-preservation metatheorem discharges the Pi bound-var distinctness obligation (NO model, NO target lang D), axiom-clean, committed+pushed. NEXT = step 3 (VR/valid-context + typing-induction fundamental lemma), wiring the bound-var reflect through these distinctness facts.
 
 Dustin's chosen R1 is DONE. All in `FundamentalLemma.v`, green, `Print Assumptions`
