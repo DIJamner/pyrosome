@@ -517,11 +517,124 @@ Proof.
       first [ (apply ounder_wf; eassumption) | eassumption | ott_build ].
 Qed.
 
+(* The "ty_subst_id" computation rule on the pushed domain code, under an
+   explicit substitution: `ty_subst (id D) (El (act_code)) = El (act_code)`.
+   Needed to type the `snoc a id` instantiation substitution `snoc_a`. *)
+Lemma ty_subst_id_El_eq rF lF g G D F
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  : eq_term ott [] (s_ty D (term_info rF lF))
+      (con "ty_subst" [oEl rF lF D (act_code rF lF g G D F); term_info rF lF; oid D; D; D])
+      (oEl rF lF D (act_code rF lF g G D F)).
+Proof.
+  pose proof ott_wf as Hwf.
+  pose (s := [("A", oEl rF lF D (act_code rF lF g G D F)); ("i", term_info rF lF); ("G", D)] : subst string).
+  change (eq_term ott []
+    ({{s #"ty" "G" "i" }} [/s/])
+    ({{e #"ty_subst" "G" "G" (#"id" "G") "i" "A" }} [/s/])
+    ({{e "A" }} [/s/])).
+  eapply eq_term_subst.
+  - eapply eq_term_by with (name := "ty_subst_id").
+    apply named_list_lookup_err_in; compute; reflexivity.
+  - apply eq_subst_refl. unfold s. ott_build.
+  - eapply rule_in_ctx_wf with (name := "ty_subst_id").
+    + exact Hwf.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + compute; reflexivity.
+Qed.
+
+(* `snoc_a = snoc a id : sub D (extc ..)` — the substitution that instantiates
+   the domain binder at the argument `a`.  Its `v`-leaf is `a`, which lands at
+   `El (act_code)` but `snoc` demands `ty_subst (id D) (El (act_code))`; the two
+   agree via `ty_subst_id_El_eq`. *)
+Lemma snoc_a_wf rF lF g G D F a
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (Ha : wf_term ott [] a (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  : wf_term ott []
+      (osnoc a (oid D) (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D D)
+      (s_sub D (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D)).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold osnoc, oext, s_sub.
+  eapply Elab.wf_term_by'.
+  - apply named_list_lookup_err_in; compute; reflexivity.
+  - cbn [Model.wf_term core_model].
+    simple eapply wf_args_cons2.
+    + ott_build.
+    + eapply wf_term_conv.
+      * unfold s_exp in Ha. apply Ha.
+      * cbn [with_names_from sort_subst apply_subst substable_sort
+             Substable.apply_subst0 term_substable].
+        sort_cong.
+        all: cbn [Model.eq_term core_model].
+        all: try solve [ eapply eq_term_refl; ott_build ].
+        eapply eq_term_sym; apply ty_subst_id_El_eq; assumption.
+    + ott_build.
+  - left; compute; reflexivity.
+Qed.
+
+(* `cod_at rF lF lG g G D F C a : exp D (code_info lG) (U ! lG D)` — the pushed
+   codomain code `act_cod` instantiated at the argument `a` (i.e. pulled back
+   along `snoc_a` to env `D`).  `act_cod_wf`-over-`snoc_a` plus a "U subst"
+   conversion (`U_subst_eq` at `snoc_a`/`extc`/`D`). *)
+Lemma cod_at_wf rF lF lG g G D F C a
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (Ha : wf_term ott [] a (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  : wf_term ott [] (cod_at rF lF lG g G D F C a)
+      (s_exp D (code_info lG) (oU orel lG D)).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold cod_at, dom_info, extc, oexp_subst, s_exp.
+  eapply wf_term_conv.
+  - eapply wf_term_by.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + repeat first
+        [ simple apply wf_args_nil | simple eapply wf_args_cons2 | simple eapply wf_args_cons
+        | progress cbn [Model.wf_term core_model] | progress compute_wf_subjects
+        | (apply act_cod_wf; eassumption)
+        | (apply snoc_a_wf; eassumption)
+        | (apply El_act_code_ty; eassumption)
+        | (apply act_code_wf; eassumption)
+        | eassumption
+        | (eapply Elab.wf_term_by';
+             [ apply named_list_lookup_err_in; compute; reflexivity | | left; compute; reflexivity ]) ].
+  - cbn [with_names_from sort_subst apply_subst substable_sort
+         Substable.apply_subst0 term_substable].
+    sort_cong.
+    all: cbn [Model.eq_term core_model].
+    all: try solve [ eapply eq_term_refl; ott_build ].
+    change (eq_term ott []
+      (s_ty D (code_info lG))
+      (con "ty_subst"
+         [oU orel lG (oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D); code_info lG;
+          osnoc a (oid D) (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D D;
+          oext (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D;
+          D])
+      (oU orel lG D)).
+    apply U_subst_eq;
+      first [ (apply snoc_a_wf; eassumption) | eassumption | ott_build ].
+Qed.
+
 (* TODO (file 4 body, continued):
-   - remaining under'-lift cluster: `cod_at` (instantiate `act_cod` at the
-     argument via `snoc a id`, reusing `act_cod_wf` + a "ty_subst_id"
-     conversion), then `act_member` (naive `exp_subst` type converted via a
-     "Pi_rel subst" analogue) and `mapp` (`app_rel` over the three).
+   - `act_member` (naive `exp_subst` type converted via a "Pi_rel subst"
+     analogue) and `mapp` (`app_rel` over act_code/act_cod/act_member).
    - then the fundamental lemma proper:
        wf_term ott [] e t -> reducible e   (and the eq_term -> RedTm PER side),
      by Pyrosome cut-elimination on canonical derivations; discharges the
