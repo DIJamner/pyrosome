@@ -304,11 +304,16 @@ Section RedTyConcrete.
 
   (* A reduces to the Nat code in env G. *)
   Definition RNat (G A : tm) : Prop := reds A (oNat G).
+  (* A reduces to the Empty code in env G (Empty is at relevance irr, level L0). *)
+  Definition REmpty (G A : tm) : Prop := reds A (oEmpty G).
   (* object substitution g : sub D G (home G, future D). *)
   Definition osub (G D g : tm) : Prop := wf_term l [] g (scon "sub" [G; D]).
   (* the sort of Nat-typed elements in env G. *)
   Definition nat_sort (G : tm) : osort :=
     scon "exp" [oEl orel oL0 G (oNat G); term_info orel oL0; G].
+  (* the sort of Empty-typed elements in env G. *)
+  Definition empty_sort (G : tm) : osort :=
+    scon "exp" [oEl oirr oL0 G (oEmpty G); term_info oirr oL0; G].
 
   (* ---- base member relations ---- *)
   (* Neutral-code members: each side weak-head reduces to a neutral, and the
@@ -347,6 +352,8 @@ Section RedTyConcrete.
   Inductive RedTy_tot : tm -> tm -> tm -> (tm -> tm -> Type) -> Type :=
   | rtt_nat : forall G A B,
       RNat G A -> RNat G B -> RedTy_tot G A B (RedNatMem G)
+  | rtt_empty : forall G A B,
+      REmpty G A -> REmpty G B -> RedTy_tot G A B (RedNe (empty_sort G))
   | rtt_ne : forall G A B na nb (t : osort),
       reds A na -> reds B nb -> ne_eq t na nb -> RedTy_tot G A B (RedNe t)
   | rtt_pi : forall G A B rF lF lG F C F' C',
@@ -375,6 +382,9 @@ Section RedTyConcrete.
   (* Smart constructors. *)
   Definition RedTy_nat {G A B} (ra : RNat G A) (rb : RNat G B) : RedTy G A B :=
     existT _ _ (rtt_nat G A B ra rb).
+
+  Definition RedTy_empty {G A B} (ra : REmpty G A) (rb : REmpty G B) : RedTy G A B :=
+    existT _ _ (rtt_empty G A B ra rb).
 
   Definition RedTy_ne {G A B} na nb t
     (ra : reds A na) (rb : reds B nb) (h : ne_eq t na nb) : RedTy G A B :=
@@ -406,6 +416,8 @@ Section RedTyConcrete.
     (P : forall G A B, RedTy G A B -> Type)
     (Hnat : forall G A B (ra : RNat G A) (rb : RNat G B),
         P G A B (RedTy_nat ra rb))
+    (Hempty : forall G A B (ra : REmpty G A) (rb : REmpty G B),
+        P G A B (RedTy_empty ra rb))
     (Hne : forall G A B na nb t (ra : reds A na) (rb : reds B nb)
                   (h : ne_eq t na nb),
         P G A B (RedTy_ne na nb t ra rb h))
@@ -428,10 +440,12 @@ Section RedTyConcrete.
   Proof.
     intros G A B [R r].
     induction r as [ G A B ra rb
+                   | G A B ra rb
                    | G A B na nb t ra rb h
                    | G A B rF lF lG F C F' C' hA hB
                      RDom DomRed IHDom RCod CodRed IHCod ].
     - apply Hnat.
+    - apply Hempty.
     - apply Hne.
     - apply (Hpi G A B rF lF lG F C F' C' hA hB
                (fun D g os => existT _ (RDom D g os) (DomRed D g os))
@@ -453,6 +467,7 @@ Section RedTyConcrete.
   Proof.
     intros Hred Hr; destruct Hr.
     - apply rtt_nat; [ eapply reds_back; eassumption | assumption ].
+    - apply rtt_empty; [ eapply reds_back; eassumption | assumption ].
     - eapply rtt_ne; [ eapply reds_back; eassumption | eassumption | eassumption ].
     - eapply rtt_pi; [ eapply reds_back; eassumption | eassumption
                      | eassumption | eassumption ].
@@ -463,6 +478,7 @@ Section RedTyConcrete.
   Proof.
     intros Hred Hr; destruct Hr.
     - apply rtt_nat; [ assumption | eapply reds_back; eassumption ].
+    - apply rtt_empty; [ assumption | eapply reds_back; eassumption ].
     - eapply rtt_ne; [ eassumption | eapply reds_back; eassumption | eassumption ].
     - eapply rtt_pi; [ eassumption | eapply reds_back; eassumption
                      | eassumption | eassumption ].
@@ -494,6 +510,12 @@ Section RedTyConcrete.
 
   Definition RedTy_Nat G : RedTy G (oNat G) (oNat G) :=
     RedTy_nat (RNat_Nat G) (RNat_Nat G).
+
+  Lemma REmpty_Empty G : REmpty G (oEmpty G).
+  Proof. unfold REmpty; apply reds_refl, whnf_Empty. Qed.
+
+  Definition RedTy_Empty G : RedTy G (oEmpty G) (oEmpty G) :=
+    RedTy_empty (REmpty_Empty G) (REmpty_Empty G).
 
   (* ---- the Nat fiber is a (backward-closed) PER ---- *)
   (* Nat members never recurse into `RedTy`, so symmetry and backward closure

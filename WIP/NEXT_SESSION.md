@@ -17,13 +17,17 @@ self-contained (no induction on typing yet):
   PER (Nat members never recurse into RedTy ⇒ pure inductions on `RedNatMem`).
 All `Closed under the global context` (rocq_assumptions).
 
-**TWO LR-DESIGN GAPS discovered (settle BEFORE the fundamental lemma body):**
-1. **`RedTy_tot` has NO Empty case** — only `rtt_nat`/`rtt_ne`/`rtt_pi`.  So the
-   Empty TYPE code cannot be classified by the LR; Empty FORMATION in the
-   fundamental lemma has nowhere to land.  DECISION NEEDED: add `rtt_empty`
-   (mirroring `rtt_nat` with a trivial/empty member relation) OR drop Empty from
-   `ott` for the Π-normalization payoff.  (Members were already deferred as
-   "proof-irrelevant"; the TYPE case is the actual hole.)
+**TWO LR-DESIGN GAPS discovered — BOTH RESOLVED this session:**
+1. **[RESOLVED this session]** `RedTy_tot` had NO Empty case.  Confirmed `Empty`
+   IS a type former in `ott_nat` (Nat.v:36, same block as Nat; at relevance irr,
+   level L0, no intro forms — only the `Emptyrec` eliminator), so the LR MUST
+   classify it.  Added `rtt_empty G A B : REmpty G A -> REmpty G B -> RedTy_tot
+   G A B (RedNe (empty_sort G))` — members reuse `RedNe` (Empty members are
+   exactly stuck neutrals) at `empty_sort G = exp (El irr L0 (Empty G)) (info
+   irr (iota L0)) G`.  Threaded through RedTy_rect (new `Hempty` branch, ctor
+   order = nat/empty/ne/pi), `RedTy_empty` smart ctor, both anti-closure lemmas,
+   and `RedTy_Empty`/`REmpty_Empty` leaf reducibility.  GREEN + axiom-free
+   (RedTy_rect re-verified Closed under the global context).
 2. **[RESOLVED this session]** `RedNe` previously required BOTH members already
    NEUTRAL (`ne_eq t a b`) with no `reds` witnesses ⇒ term-level backward closure
    at a neutral type was FALSE.  FIXED: `RedNe t a b` now carries
