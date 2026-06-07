@@ -5046,3 +5046,424 @@ Qed.
    - Kripke action soundness for the Nat/Empty/Ne leaves uses
      star_act_code (above) + the per-former subst redex (Nat subst / Empty
      subst / exp_subst-of-neutral). *)
+
+(* ====================================================================== *)
+(* cod_at_member_cong (z23) -- congruence of the instantiated codomain in   *)
+(* the MEMBER ARGUMENT: `cod_at F C a0 ~ cod_at F C a'` from `a0 ~ a'`.       *)
+(* `cod_at F C a` is `exp_subst (act_cod F C) .. (snoc a (oid D) ..) ..`, so  *)
+(* varying `a` only touches the snoc's v-position; an `exp_subst`            *)
+(* con-congruence with all args reflexive except the snoc (a snoc           *)
+(* con-congruence on `a0 ~ a'`) closes it.  This is the reflect@Pi residual: *)
+(* the two member-applications relate at `cod_at F C a'` but `elt_sort`      *)
+(* reads the LEFT reduct `cod_at F C a0`, so the equation is transported by  *)
+(* this lemma (the bound-var esc_tm/esc_ty dodge it since a0 = a' = hd).     *)
+(* ====================================================================== *)
+Lemma cod_at_member_cong rF lF lG g G D F C a0 a'
+  (HG : wf_term ott [] G s_env)
+  (HD : wf_term ott [] D s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (Hg : wf_term ott [] g (s_sub D G))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (Ha0 : wf_term ott [] a0 (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  (Ha' : wf_term ott [] a' (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))))
+  (Heqa : eq_term ott [] (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))) a0 a')
+  : eq_term ott [] (s_exp D (code_info lG) (oU orel lG D))
+      (cod_at rF lF lG g G D F C a0) (cod_at rF lF lG g G D F C a').
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold cod_at, oexp_subst, osnoc, oid, dom_info. cbv zeta.
+  assert (Horel : wf_term ott [] orel (scon "relevance" [])).
+  { unfold orel. eapply Elab.wf_term_by';
+      [ apply named_list_lookup_err_in; compute; reflexivity
+      | cbn [Model.wf_term core_model]; ott_build | left; compute; reflexivity ]. }
+  assert (HactFwf : wf_term ott [] (act_code rF lF g G D F)
+            (s_exp D (code_info lF) (oU rF lF D))) by (apply act_code_wf; assumption).
+  assert (HextcF : wf_term ott [] (extc rF lF g G D F) s_env)
+    by (unfold extc, dom_info; ott_build).
+  pose proof (act_cod_wf rF lF lG g G D F C HG HD HrF HlF HlG Hg HF HC) as HactcodWf.
+  (* the snoc-member sort carries a `ty_subst .. (oid D)`; bridge it to El via
+     ty_subst_id_El_eq so the v-position eq_term (a0 ~ a') typechecks. *)
+  pose proof (ty_subst_id_El_eq rF lF g G D F HG HD HrF HlF Hg HF) as Hidel.
+  assert (HmemSb : eq_sort ott []
+     (s_exp D (term_info rF lF)
+        (con "ty_subst" [oEl rF lF D (act_code rF lF g G D F); term_info rF lF; oid D; D; D]))
+     (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F)))).
+  { unfold s_exp. sort_cong; cbn [Model.eq_term core_model];
+      try solve [ eapply eq_term_refl; ott_build ]. exact Hidel. }
+  pose proof (eq_term_conv Heqa (eq_sort_sym HmemSb)) as Heqa_sub.
+  (* snoc congruence in the v-position from a0 ~ a' (same env extc) *)
+  assert (Hsnoc : eq_term ott []
+     (s_sub D (extc rF lF g G D F))
+     (osnoc a0 (oid D) (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D D)
+     (osnoc a' (oid D) (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D D)).
+  { unfold extc, dom_info, osnoc.
+    eapply term_con_congruence.
+    - apply named_list_lookup_err_in; compute; reflexivity.
+    - right; cbn [with_names_from]; reflexivity.
+    - exact ott_wf.
+    - cbn [with_names_from].
+      eapply eq_args_cons. 2:{ unfold oid in Heqa_sub. exact Heqa_sub. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; exact HD. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; exact HD. }
+      eapply eq_args_nil. }
+  pose proof (snoc_a_wf rF lF g G D F a' HG HD HrF HlF Hg HF Ha') as Hsnoc'wf.
+  unfold osnoc, oid, dom_info in Hsnoc'wf.
+  pose proof (U_subst_eq orel lG
+                (osnoc a' (oid D) (oEl rF lF D (act_code rF lF g G D F)) (term_info rF lF) D D)
+                (extc rF lF g G D F) D HextcF HD Horel HlG Hsnoc'wf) as HUs.
+  unfold osnoc, oid in HUs.
+  eapply eq_term_conv.
+  - eapply term_con_congruence.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + right; cbn [with_names_from]; reflexivity.
+    + exact ott_wf.
+    + cbn [with_names_from].
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; exact HactcodWf. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; ott_build. }
+      eapply eq_args_cons. 2:{ unfold osnoc, oid in Hsnoc. exact Hsnoc. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; exact HextcF. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; exact HD. }
+      eapply eq_args_nil.
+  - cbn [with_names_from named_list_lookup String.eqb Ascii.eqb Bool.eqb].
+    unfold s_exp. sort_cong; cbn [Model.eq_term core_model];
+      try solve [ eapply eq_term_refl; ott_build ].
+    unfold dom_info. exact HUs.
+Qed.
+
+(* ====================================================================== *)
+(* RedTy_fund — the escape+reflect FUNDAMENTAL LEMMA (z23).               *)
+(* For EVERY RedTy witness r: esc_ty r (the two codes, typed at a common   *)
+(* sort, are eq_term), esc_tm r (related members, typed, are eq_term), and *)
+(* reflect_at r (ne_eq members reflect back into the LR).  Proved by the    *)
+(* custom RedTy_rect: 3 first-order leaves + the Pi case (esc_ty via        *)
+(* RedTy_Pi_sound, esc_tm via the eta law, reflect via at_pi_app +          *)
+(* mapp_ne_eq2 + the codomain reflect IH).  The Pi case threads the Kripke  *)
+(* domain/codomain IHs at the bound variable `hd`.                          *)
+(* ====================================================================== *)
+Theorem RedTy_fund : forall G A B (r : RedTy ott G A B), Pmot G A B r.
+Proof.
+  apply RedTy_rect.
+  - intros G A B ra rb. apply leaf_nat.
+  - intros G A B ra rb. apply leaf_empty.
+  - intros G A B na nb rN lN ra rb h. apply leaf_ne.
+  - intros G A B rF lF lG F C F' C' hA hB DomRed CodRed IHDom IHCod.
+    unfold Pmot, esc_ty, esc_tm, reflect_at.
+    rewrite !(elt_sort_pi G A B rF lF lG F C F' C' hA hB DomRed CodRed).
+    split;[split|].
+    (* ===================== esc_ty@Pi (CLOSED) ===================== *)
+    + intros S HA HB.
+      pose proof ott_wf as Hwf.
+      pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HA hA) as HPiAwf.
+      pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HB hB) as HPiBwf.
+      pose proof (Pi_rel_inv rF lF lG F C G _ HPiAwf) as (HG & HrF & HlF & HlG & HF & HC & _).
+      pose proof (Pi_rel_inv rF lF lG F' C' G _ HPiBwf) as (_ & _ & _ & _ & HF' & HC' & _).
+      assert (HidG : osub ott G G (oid G)).
+      { unfold osub, oid. change (scon "sub" [G; G]) with (s_sub G G). unfold s_sub. ott_build. }
+      destruct (IHDom G (oid G) HidG) as [[IHDom_ty _] _].
+      pose proof (act_code_id_eq rF lF G F HG HrF HlF HF) as HactF.
+      pose proof (act_code_id_eq rF lF G F' HG HrF HlF HF') as HactF'.
+      pose proof (act_code_wf rF lF (oid G) G G F HG HG HrF HlF HidG HF) as HactFwf.
+      pose proof (act_code_wf rF lF (oid G) G G F' HG HG HrF HlF HidG HF') as HactF'wf.
+      pose proof (eq_term_trans (eq_term_sym HactF) (eq_term_trans (IHDom_ty _ HactFwf HactF'wf) HactF')) as HFF'.
+      pose proof (osub_wknF rF lF G F HG HrF HlF HF) as HoswF.
+      set (extGF := oext (oEl rF lF G F) (term_info rF lF) G) in *.
+      set (wknF := owkn (oEl rF lF G F) (term_info rF lF) G) in *.
+      set (hdF := ohd (oEl rF lF G F) (term_info rF lF) G) in *.
+      destruct (IHDom extGF wknF HoswF) as [[IHDomW_ty _] IHDomW_rfl].
+      pose proof (bound_var_typed rF lF G F F' HG HrF HlF HF DomRed HoswF) as Hhdty.
+      cbn zeta in Hhdty.
+      change (owkn (oEl rF lF G F) (term_info rF lF) G) with wknF in Hhdty.
+      change (oext (oEl rF lF G F) (term_info rF lF) G) with extGF in Hhdty.
+      change (ohd (oEl rF lF G F) (term_info rF lF) G) with hdF in Hhdty.
+      assert (Hhdne : neutral ott_pa "hd" hdF) by (unfold hdF, ohd; apply neutral_hd).
+      assert (HextGFwf : wf_term ott [] extGF s_env) by (unfold extGF, oext, dom_info; ott_build).
+      pose proof (act_code_wf rF lF wknF G extGF F' HG HextGFwf HrF HlF HoswF HF') as HactWF'.
+      change (scon "exp" [oU rF lF extGF; code_info lF; extGF])
+        with (s_exp extGF (code_info lF) (oU rF lF extGF)) in HactWF'.
+      pose proof (IHDomW_rfl _ HactWF' hdF hdF Hhdne Hhdne Hhdty Hhdty (eq_term_refl Hhdty)) as Hraa'.
+      change (RedTy_R ott (DomRed extGF wknF HoswF) hdF hdF) with (RedTm ott (DomRed extGF wknF HoswF) hdF hdF) in Hraa'.
+      destruct (IHCod extGF wknF HoswF hdF hdF Hraa') as [[IHCodW_ty _] _].
+      pose proof (act_code_wf rF lF wknF G extGF F HG HextGFwf HrF HlF HoswF HF) as HactWFcode.
+      change (scon "exp" [oU rF lF extGF; code_info lF; extGF])
+        with (s_exp extGF (code_info lF) (oU rF lF extGF)) in HactWFcode.
+      pose proof (elt_sort_eq_El_gen extGF (act_code rF lF wknF G extGF F) (act_code rF lF wknF G extGF F')
+                    (DomRed extGF wknF HoswF) rF lF HextGFwf HrF HlF HactWFcode) as HbridgeF.
+      pose proof (wf_term_conv Hhdty HbridgeF) as HhdAtF.
+      pose proof (cod_at_wf rF lF lG wknF G extGF F C hdF HG HextGFwf HrF HlF HlG HoswF HF HC HhdAtF) as HcodatF.
+      pose proof (IHDomW_ty _ HactWFcode HactWF') as HactWcodeEq.
+      pose proof (El_cong rF lF extGF (act_code rF lF wknF G extGF F) (act_code rF lF wknF G extGF F')
+                    HextGFwf HrF HlF HactWcodeEq) as HElhdcong.
+      assert (Hsb_hd : eq_sort ott []
+         (s_exp extGF (term_info rF lF) (oEl rF lF extGF (act_code rF lF wknF G extGF F)))
+         (s_exp extGF (term_info rF lF) (oEl rF lF extGF (act_code rF lF wknF G extGF F')))).
+      { unfold s_exp. sort_cong; cbn [Model.eq_term core_model];
+          try solve [ eapply eq_term_refl; ott_build ]. exact HElhdcong. }
+      pose proof (wf_term_conv HhdAtF Hsb_hd) as HhdAtF'.
+      pose proof (cod_at_wf rF lF lG wknF G extGF F' C' hdF HG HextGFwf HrF HlF HlG HoswF HF' HC' HhdAtF') as HcodatF'.
+      pose proof (IHCodW_ty _ HcodatF HcodatF') as HCodEsc.
+      pose proof (cod_collapse_both rF lF lG G F C F' C' HG HrF HlF HlG HF HF' HFF' HC HC') as Hcc.
+      cbv zeta in Hcc.
+      change (owkn (oEl rF lF G F) (term_info rF lF) G) with wknF in HCodEsc.
+      change (oext (oEl rF lF G F) (term_info rF lF) G) with extGF in HCodEsc.
+      change (ohd (oEl rF lF G F) (term_info rF lF) G) with hdF in HCodEsc.
+      pose proof (Hcc HCodEsc) as HCC'.
+      exact (RedTy_Pi_sound rF lF lG G F C F' C' A B S HG HrF HlF HlG HF HF' HC HC' HFF' HCC' hA hB HA HB).
+    (* ===================== esc_tm@Pi (CLOSED) ===================== *)
+    + intros Sb HBwf a b Hm Ha Hb.
+      pose proof ott_wf as Hwf.
+      pose proof (El_Pi_member_inv rF lF lG F C G _ a Ha) as (HG & HrF & HlF & HlG & HF & HC).
+      pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HBwf hB) as HPiBwf.
+      pose proof (Pi_rel_inv rF lF lG F' C' G _ HPiBwf) as (_ & _ & _ & _ & HF' & HC' & _).
+      assert (HidG : osub ott G G (oid G)).
+      { unfold osub, oid. change (scon "sub" [G; G]) with (s_sub G G). unfold s_sub. ott_build. }
+      destruct (IHDom G (oid G) HidG) as [[IHDom_ty _] _].
+      pose proof (act_code_id_eq rF lF G F HG HrF HlF HF) as HactF.
+      pose proof (act_code_id_eq rF lF G F' HG HrF HlF HF') as HactF'.
+      pose proof (act_code_wf rF lF (oid G) G G F HG HG HrF HlF HidG HF) as HactFwf.
+      pose proof (act_code_wf rF lF (oid G) G G F' HG HG HrF HlF HidG HF') as HactF'wf.
+      pose proof (eq_term_trans (eq_term_sym HactF) (eq_term_trans (IHDom_ty _ HactFwf HactF'wf) HactF')) as HFF'.
+      pose proof (osub_wknF rF lF G F HG HrF HlF HF) as HoswF.
+      set (extGF := oext (oEl rF lF G F) (term_info rF lF) G) in *.
+      set (wknF := owkn (oEl rF lF G F) (term_info rF lF) G) in *.
+      set (hdF := ohd (oEl rF lF G F) (term_info rF lF) G) in *.
+      destruct (IHDom extGF wknF HoswF) as [[IHDomW_ty _] IHDomW_rfl].
+      pose proof (bound_var_typed rF lF G F F' HG HrF HlF HF DomRed HoswF) as Hhdty.
+      cbn zeta in Hhdty.
+      change (owkn (oEl rF lF G F) (term_info rF lF) G) with wknF in Hhdty.
+      change (oext (oEl rF lF G F) (term_info rF lF) G) with extGF in Hhdty.
+      change (ohd (oEl rF lF G F) (term_info rF lF) G) with hdF in Hhdty.
+      assert (Hhdne : neutral ott_pa "hd" hdF) by (unfold hdF, ohd; apply neutral_hd).
+      assert (HextGFwf : wf_term ott [] extGF s_env) by (unfold extGF, oext, dom_info; ott_build).
+      pose proof (act_code_wf rF lF wknF G extGF F' HG HextGFwf HrF HlF HoswF HF') as HactWF'.
+      change (scon "exp" [oU rF lF extGF; code_info lF; extGF])
+        with (s_exp extGF (code_info lF) (oU rF lF extGF)) in HactWF'.
+      pose proof (IHDomW_rfl _ HactWF' hdF hdF Hhdne Hhdne Hhdty Hhdty (eq_term_refl Hhdty)) as Hraa'.
+      change (RedTy_R ott (DomRed extGF wknF HoswF) hdF hdF) with (RedTm ott (DomRed extGF wknF HoswF) hdF hdF) in Hraa'.
+      destruct (IHCod extGF wknF HoswF hdF hdF Hraa') as [[IHCodW_ty IHCodW_tm] _].
+      pose proof (act_code_wf rF lF wknF G extGF F HG HextGFwf HrF HlF HoswF HF) as HactWFcode.
+      change (scon "exp" [oU rF lF extGF; code_info lF; extGF])
+        with (s_exp extGF (code_info lF) (oU rF lF extGF)) in HactWFcode.
+      pose proof (elt_sort_eq_El_gen extGF (act_code rF lF wknF G extGF F) (act_code rF lF wknF G extGF F')
+                    (DomRed extGF wknF HoswF) rF lF HextGFwf HrF HlF HactWFcode) as HbridgeF.
+      pose proof (wf_term_conv Hhdty HbridgeF) as HhdAtF.
+      pose proof (cod_at_wf rF lF lG wknF G extGF F C hdF HG HextGFwf HrF HlF HlG HoswF HF HC HhdAtF) as HcodatF.
+      pose proof (IHDomW_ty _ HactWFcode HactWF') as HactWcodeEq.
+      pose proof (El_cong rF lF extGF (act_code rF lF wknF G extGF F) (act_code rF lF wknF G extGF F')
+                    HextGFwf HrF HlF HactWcodeEq) as HElhdcong.
+      assert (Hsb_hd : eq_sort ott []
+         (s_exp extGF (term_info rF lF) (oEl rF lF extGF (act_code rF lF wknF G extGF F)))
+         (s_exp extGF (term_info rF lF) (oEl rF lF extGF (act_code rF lF wknF G extGF F')))).
+      { unfold s_exp. sort_cong; cbn [Model.eq_term core_model];
+          try solve [ eapply eq_term_refl; ott_build ]. exact HElhdcong. }
+      pose proof (wf_term_conv HhdAtF Hsb_hd) as HhdAtF'.
+      pose proof (cod_at_wf rF lF lG wknF G extGF F' C' hdF HG HextGFwf HrF HlF HlG HoswF HF' HC' HhdAtF') as HcodatF'.
+      pose proof (IHCodW_ty _ HcodatF HcodatF') as HCodEsc.
+      pose proof (cod_collapse_both rF lF lG G F C F' C' HG HrF HlF HlG HF HF' HFF' HC HC') as Hcc.
+      cbv zeta in Hcc.
+      change (owkn (oEl rF lF G F) (term_info rF lF) G) with wknF in HCodEsc.
+      change (oext (oEl rF lF G F) (term_info rF lF) G) with extGF in HCodEsc.
+      change (ohd (oEl rF lF G F) (term_info rF lF) G) with hdF in HCodEsc.
+      pose proof (Hcc HCodEsc) as HCC'.
+      unfold RedTy_R, RedTy_pi, projT1 in Hm. cbn [projT1] in Hm.
+      destruct Hm as [Happ].
+      pose proof (Happ extGF wknF HoswF hdF hdF Hraa' HhdAtF HhdAtF) as Hbodymem.
+      cbn beta in Hbodymem.
+      pose proof (mapp_wf rF lF lG wknF G extGF F C a hdF HG HextGFwf HrF HlF HlG HoswF HF HC Ha HhdAtF) as HmappA.
+      assert (Horel : wf_term ott [] orel (scon "relevance" [])).
+      { unfold orel. eapply Elab.wf_term_by';
+          [ apply named_list_lookup_err_in; compute; reflexivity
+          | cbn [Model.wf_term core_model]; ott_build | left; compute; reflexivity ]. }
+      pose proof (oPi_rel_code_cong rF lF lG G F C F' C' HG HrF HlF HlG HF HF' HFF' HCC') as HPiCong.
+      pose proof (El_cong orel lG G (oPi_rel rF lF lG F C G) (oPi_rel rF lF lG F' C' G) HG Horel HlG HPiCong) as HElPiCong.
+      assert (HABeq : eq_sort ott []
+         (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G)))
+         (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F' C' G)))).
+      { unfold s_exp. sort_cong; cbn [Model.eq_term core_model];
+          try solve [ eapply eq_term_refl; ott_build ]. exact HElPiCong. }
+      pose proof (wf_term_conv Hb HABeq) as Hb_BPi.
+      pose proof (mapp_wf rF lF lG wknF G extGF F' C' b hdF HG HextGFwf HrF HlF HlG HoswF HF' HC' Hb_BPi HhdAtF') as HmappB.
+      pose proof (elt_sort_eq_El_gen extGF (cod_at rF lF lG wknF G extGF F C hdF)
+                    (cod_at rF lF lG wknF G extGF F' C' hdF)
+                    (CodRed extGF wknF HoswF hdF hdF Hraa') orel lG HextGFwf Horel HlG HcodatF) as HbridgeCod.
+      pose proof (wf_term_conv HmappA (eq_sort_sym HbridgeCod)) as HmappA_elt.
+      pose proof (El_cong orel lG extGF (cod_at rF lF lG wknF G extGF F C hdF)
+                    (cod_at rF lF lG wknF G extGF F' C' hdF) HextGFwf Horel HlG HCodEsc) as HElCodEsc.
+      assert (HsbCod : eq_sort ott []
+         (s_exp extGF (term_info orel lG) (oEl orel lG extGF (cod_at rF lF lG wknF G extGF F C hdF)))
+         (s_exp extGF (term_info orel lG) (oEl orel lG extGF (cod_at rF lF lG wknF G extGF F' C' hdF)))).
+      { unfold s_exp. sort_cong; cbn [Model.eq_term core_model];
+          try solve [ eapply eq_term_refl; ott_build ]. exact HElCodEsc. }
+      pose proof (wf_term_conv HmappB (eq_sort_sym (eq_sort_trans HbridgeCod HsbCod))) as HmappB_elt.
+      pose proof (IHCodW_tm _ HcodatF' _ _ Hbodymem HmappA_elt HmappB_elt) as Hbody_elt.
+      pose proof (eq_term_conv Hbody_elt HbridgeCod) as Hbody_ElCod.
+      pose proof (mapp_code_cong rF lF lG wknF G extGF F C F' C' b hdF HG HextGFwf HrF HlF HlG HoswF HF HF' HFF' HC HC' HCC' Hb HhdAtF) as HmappCong.
+      pose proof (eq_term_trans Hbody_ElCod (eq_term_sym HmappCong)) as Hbody_AC.
+      eapply (RedTm_Pi_eta_sound rF lF lG G F C a b HG HrF HlF HlG HF HC Ha Hb).
+      change (owkn (oEl rF lF G F) (term_info rF lF) G) with wknF.
+      change (oext (oEl rF lF G F) (term_info rF lF) G) with extGF.
+      change (ohd (oEl rF lF G F) (term_info rF lF) G) with hdF.
+      exact Hbody_AC.
+    (* ===================== reflect@Pi (CLOSED) ===================== *)
+    + intros Sb HBwf a b Hna Hnb Ha Hb Heq.
+      pose proof ott_wf as Hwf.
+      pose proof (El_Pi_member_inv rF lF lG F C G _ a Ha) as (HG & HrF & HlF & HlG & HF & HC).
+      pose proof (@reds_wf string _ _ ott ott_wf ott_pa "hd" _ _ _ HBwf hB) as HPiBwf.
+      pose proof (Pi_rel_inv rF lF lG F' C' G _ HPiBwf) as (_ & _ & _ & _ & HF' & HC' & _).
+      assert (HidG : osub ott G G (oid G)).
+      { unfold osub, oid. change (scon "sub" [G; G]) with (s_sub G G). unfold s_sub. ott_build. }
+      destruct (IHDom G (oid G) HidG) as [[IHDom_ty _] _].
+      pose proof (act_code_id_eq rF lF G F HG HrF HlF HF) as HactF.
+      pose proof (act_code_id_eq rF lF G F' HG HrF HlF HF') as HactF'.
+      pose proof (act_code_wf rF lF (oid G) G G F HG HG HrF HlF HidG HF) as HactFwf.
+      pose proof (act_code_wf rF lF (oid G) G G F' HG HG HrF HlF HidG HF') as HactF'wf.
+      pose proof (eq_term_trans (eq_term_sym HactF) (eq_term_trans (IHDom_ty _ HactFwf HactF'wf) HactF')) as HFF'.
+      (* --- bound-var world: derive HCC' (C ~ C') as in esc, used for the
+             B-side code retyping (HABeq / mapp_code_cong / oPi_rel_code_cong) --- *)
+      pose proof (osub_wknF rF lF G F HG HrF HlF HF) as HoswF.
+      set (extGF := oext (oEl rF lF G F) (term_info rF lF) G) in *.
+      set (wknF := owkn (oEl rF lF G F) (term_info rF lF) G) in *.
+      set (hdF := ohd (oEl rF lF G F) (term_info rF lF) G) in *.
+      destruct (IHDom extGF wknF HoswF) as [[IHDomW_ty _] IHDomW_rfl].
+      pose proof (bound_var_typed rF lF G F F' HG HrF HlF HF DomRed HoswF) as Hhdty.
+      cbn zeta in Hhdty.
+      change (owkn (oEl rF lF G F) (term_info rF lF) G) with wknF in Hhdty.
+      change (oext (oEl rF lF G F) (term_info rF lF) G) with extGF in Hhdty.
+      change (ohd (oEl rF lF G F) (term_info rF lF) G) with hdF in Hhdty.
+      assert (Hhdne : neutral ott_pa "hd" hdF) by (unfold hdF, ohd; apply neutral_hd).
+      assert (HextGFwf : wf_term ott [] extGF s_env) by (unfold extGF, oext, dom_info; ott_build).
+      pose proof (act_code_wf rF lF wknF G extGF F' HG HextGFwf HrF HlF HoswF HF') as HactWFw'.
+      change (scon "exp" [oU rF lF extGF; code_info lF; extGF])
+        with (s_exp extGF (code_info lF) (oU rF lF extGF)) in HactWFw'.
+      pose proof (IHDomW_rfl _ HactWFw' hdF hdF Hhdne Hhdne Hhdty Hhdty (eq_term_refl Hhdty)) as Hraahd.
+      change (RedTy_R ott (DomRed extGF wknF HoswF) hdF hdF) with (RedTm ott (DomRed extGF wknF HoswF) hdF hdF) in Hraahd.
+      destruct (IHCod extGF wknF HoswF hdF hdF Hraahd) as [[IHCodW_ty _] _].
+      pose proof (act_code_wf rF lF wknF G extGF F HG HextGFwf HrF HlF HoswF HF) as HactWFwcode.
+      change (scon "exp" [oU rF lF extGF; code_info lF; extGF])
+        with (s_exp extGF (code_info lF) (oU rF lF extGF)) in HactWFwcode.
+      pose proof (elt_sort_eq_El_gen extGF (act_code rF lF wknF G extGF F) (act_code rF lF wknF G extGF F')
+                    (DomRed extGF wknF HoswF) rF lF HextGFwf HrF HlF HactWFwcode) as HbridgeFw.
+      pose proof (wf_term_conv Hhdty HbridgeFw) as HhdAtF.
+      pose proof (cod_at_wf rF lF lG wknF G extGF F C hdF HG HextGFwf HrF HlF HlG HoswF HF HC HhdAtF) as HcodatFw.
+      pose proof (IHDomW_ty _ HactWFwcode HactWFw') as HactWcodeEqw.
+      pose proof (El_cong rF lF extGF (act_code rF lF wknF G extGF F) (act_code rF lF wknF G extGF F')
+                    HextGFwf HrF HlF HactWcodeEqw) as HElhdcongw.
+      assert (Hsb_hdw : eq_sort ott []
+         (s_exp extGF (term_info rF lF) (oEl rF lF extGF (act_code rF lF wknF G extGF F)))
+         (s_exp extGF (term_info rF lF) (oEl rF lF extGF (act_code rF lF wknF G extGF F')))).
+      { unfold s_exp. sort_cong; cbn [Model.eq_term core_model];
+          try solve [ eapply eq_term_refl; ott_build ]. exact HElhdcongw. }
+      pose proof (wf_term_conv HhdAtF Hsb_hdw) as HhdAtF'.
+      pose proof (cod_at_wf rF lF lG wknF G extGF F' C' hdF HG HextGFwf HrF HlF HlG HoswF HF' HC' HhdAtF') as HcodatFw'.
+      pose proof (IHCodW_ty _ HcodatFw HcodatFw') as HCodEscw.
+      pose proof (cod_collapse_both rF lF lG G F C F' C' HG HrF HlF HlG HF HF' HFF' HC HC') as Hccw.
+      cbv zeta in Hccw.
+      change (owkn (oEl rF lF G F) (term_info rF lF) G) with wknF in HCodEscw.
+      change (oext (oEl rF lF G F) (term_info rF lF) G) with extGF in HCodEscw.
+      change (ohd (oEl rF lF G F) (term_info rF lF) G) with hdF in HCodEscw.
+      pose proof (Hccw HCodEscw) as HCC'.
+      (* === reflect-specific: instantiate at_pi_app at a typed argument pair === *)
+      unfold RedTy_R, RedTy_pi, projT1. cbn [projT1].
+      apply at_pi_app.
+      intros D g os a0 a' raa' Ha0 Ha0'.
+      change (el_sort rF lF D (act_code rF lF g G D F))
+        with (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F))) in Ha0, Ha0'.
+      destruct (IHCod D g os a0 a' raa') as [[IHC_ty IHC_tm] IHC_rfl].
+      unfold reflect_at in IHC_rfl.
+      assert (Horel : wf_term ott [] orel (scon "relevance" [])).
+      { unfold orel. eapply Elab.wf_term_by';
+          [ apply named_list_lookup_err_in; compute; reflexivity
+          | cbn [Model.wf_term core_model]; ott_build | left; compute; reflexivity ]. }
+      (* D is a well-formed env (presupposition of the sub typing `os`) *)
+      assert (HDwf : wf_term ott [] D s_env).
+      { pose proof (eq_term_wf_sort ott_wf wf_ctx_ott_nil (eq_term_refl os)) as Hgsort.
+        safe_invert Hgsort.
+        assert (Hall : all_fresh ott) by exact (wf_lang_ext_all_fresh ott_wf).
+        assert (Hin2 : In ("sub", sort_rule [("G'", {{s #"env"}}); ("G", {{s #"env"}})] ["G'"; "G"]) ott)
+          by (apply named_list_lookup_err_in; vm_compute; reflexivity).
+        pose proof (in_all_fresh_same _ _ _ _ Hall H2 Hin2) as Heqr; safe_invert Heqr.
+        cbn [with_names_from] in H3.
+        repeat match goal with
+        | H : wf_args _ (_ :: _) _ |- _ => safe_invert H
+        | H : wf_args _ [] _ |- _ => clear H end.
+        cbn [Model.wf_term core_model named_list_lookup] in *. assumption. }
+      (* osub G D g and act_code-F' typing at the world D (for IHCod's domain) *)
+      assert (HactWF' : wf_term ott [] (act_code rF lF g G D F')
+                (s_exp D (code_info lF) (oU rF lF D))) by (apply act_code_wf; assumption).
+      (* the B-side function `b` retyped at the Pi-(F',C') sort via HCC' *)
+      destruct (IHDom D g os) as [[_ IHDom_tmW] _].
+      assert (HactWFcode : wf_term ott [] (act_code rF lF g G D F)
+                (s_exp D (code_info lF) (oU rF lF D))) by (apply act_code_wf; assumption).
+      pose proof (elt_sort_eq_El_gen D (act_code rF lF g G D F) (act_code rF lF g G D F')
+                    (DomRed D g os) rF lF HDwf HrF HlF HactWFcode) as HbridgeDom.
+      pose proof (wf_term_conv Ha0 (eq_sort_sym HbridgeDom)) as Ha0_dom.
+      pose proof (wf_term_conv Ha0' (eq_sort_sym HbridgeDom)) as Ha0'_dom.
+      change (RedTy_R ott (DomRed D g os) a0 a') with (RedTm ott (DomRed D g os) a0 a') in raa'.
+      pose proof (IHDom_tmW _ HactWF' a0 a' raa' Ha0_dom Ha0'_dom) as Heqa_dom.
+      pose proof (eq_term_conv Heqa_dom HbridgeDom) as Heqa.
+      (* bound A/B-data congruence at this world *)
+      pose proof (act_code_code_cong rF lF g G D F F' HG HDwf HrF HlF os HF HF' HFF') as HactCC'.
+      pose proof (El_cong rF lF D (act_code rF lF g G D F) (act_code rF lF g G D F')
+                    HDwf HrF HlF HactCC') as HElactcong.
+      assert (HsbAct : eq_sort ott []
+         (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F)))
+         (s_exp D (term_info rF lF) (oEl rF lF D (act_code rF lF g G D F')))).
+      { unfold s_exp. sort_cong; cbn [Model.eq_term core_model];
+          try solve [ eapply eq_term_refl; ott_build ]. exact HElactcong. }
+      pose proof (wf_term_conv Ha0' HsbAct) as Ha0'_F'.
+      (* codomain typings at this world *)
+      pose proof (cod_at_wf rF lF lG g G D F C a0 HG HDwf HrF HlF HlG os HF HC Ha0) as Hcodata0.
+      pose proof (cod_at_wf rF lF lG g G D F' C' a' HG HDwf HrF HlF HlG os HF' HC' Ha0'_F') as Hcodata'.
+      (* member typings: mapp F C a a0 and mapp F' C' b a' (b retyped via HABeq) *)
+      pose proof (mapp_wf rF lF lG g G D F C a a0 HG HDwf HrF HlF HlG os HF HC Ha Ha0) as HmappAa0.
+      pose proof (oPi_rel_code_cong rF lF lG G F C F' C' HG HrF HlF HlG HF HF' HFF' HCC') as HPiCong.
+      pose proof (El_cong orel lG G (oPi_rel rF lF lG F C G) (oPi_rel rF lF lG F' C' G) HG Horel HlG HPiCong) as HElPiCong.
+      assert (HABeq : eq_sort ott []
+         (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G)))
+         (s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F' C' G)))).
+      { unfold s_exp. sort_cong; cbn [Model.eq_term core_model];
+          try solve [ eapply eq_term_refl; ott_build ]. exact HElPiCong. }
+      pose proof (wf_term_conv Hb HABeq) as Hb_BPi.
+      pose proof (mapp_wf rF lF lG g G D F' C' b a' HG HDwf HrF HlF HlG os HF' HC' Hb_BPi Ha0'_F') as HmappBb'.
+      (* the member equation `mapp F C a a0 ~ mapp F' C' b a'` at sort `cod_at F C a'` *)
+      pose proof (mapp_ne_eq2 rF lF lG g G D F C a b a0 a' HG HDwf HrF HlF HlG os HF HC Ha Hb Heq Hna Hnb Ha0 Ha0' Heqa) as Hne2.
+      destruct Hne2 as (Hne_a & Hne_b & Heq_AC_a').
+      pose proof (mapp_code_cong rF lF lG g G D F C F' C' b a' HG HDwf HrF HlF HlG os HF HF' HFF' HC HC' HCC' Hb Ha0') as HmappCC'.
+      (* compose: mapp F C a a0 ~ mapp F C b a' ~ mapp F' C' b a' at cod_at F C a' *)
+      pose proof (eq_term_trans Heq_AC_a' HmappCC') as Heq_AB_a'.
+      (* transport from cod_at F C a' to cod_at F C a0 via the member-arg cong *)
+      pose proof (cod_at_member_cong rF lF lG g G D F C a0 a' HG HDwf HrF HlF HlG os HF HC Ha0 Ha0' Heqa) as Hcodmem.
+      pose proof (El_cong orel lG D (cod_at rF lF lG g G D F C a0) (cod_at rF lF lG g G D F C a')
+                    HDwf Horel HlG Hcodmem) as HElcodmem.
+      assert (HsbCod : eq_sort ott []
+         (s_exp D (term_info orel lG) (oEl orel lG D (cod_at rF lF lG g G D F C a0)))
+         (s_exp D (term_info orel lG) (oEl orel lG D (cod_at rF lF lG g G D F C a')))).
+      { unfold s_exp. sort_cong; cbn [Model.eq_term core_model];
+          try solve [ eapply eq_term_refl; ott_build ]. exact HElcodmem. }
+      pose proof (eq_term_conv Heq_AB_a' (eq_sort_sym HsbCod)) as Heq_AB_a0.
+      (* bridge elt_sort(CodRed) to the A-side El(cod_at F C a0) *)
+      pose proof (elt_sort_eq_El_gen D (cod_at rF lF lG g G D F C a0)
+                    (cod_at rF lF lG g G D F' C' a')
+                    (CodRed D g os a0 a' raa') orel lG HDwf Horel HlG Hcodata0) as HbridgeCod.
+      pose proof (eq_term_conv Heq_AB_a0 (eq_sort_sym HbridgeCod)) as Heq_elt.
+      (* the two members are neutral and typed at elt_sort(CodRed) *)
+      pose proof (wf_term_conv HmappAa0 (eq_sort_sym HbridgeCod)) as HmappAa0_elt.
+      pose proof (wf_term_conv (eq_term_wf_r ott_wf wf_ctx_ott_nil Heq_AB_a0) (eq_sort_sym HbridgeCod)) as HmappBb'_elt.
+      (* close with the codomain reflect IH *)
+      change (RedTy_R ott (CodRed D g os a0 a' raa'))
+        with (RedTm ott (CodRed D g os a0 a' raa')).
+      eapply (IHC_rfl (s_exp D (code_info lG) (oU orel lG D))).
+      * exact Hcodata'.
+      * exact Hne_a.
+      * apply mapp_neutral; exact Hnb.
+      * exact HmappAa0_elt.
+      * exact HmappBb'_elt.
+      * exact Heq_elt.
+Qed.
