@@ -3392,15 +3392,129 @@ Proof.
   cbn in H. discriminate.
 Qed.
 
+(* ====================================================================== *)
+(* STEP 3 (plan (A)): the mutual ESCAPE/REFLECT lemma + the VR layer.       *)
+(*                                                                        *)
+(* The motive `Pmot` (= esc_ty * esc_tm * reflect_at), validated in        *)
+(* WIP/MutualFund.v, is ported here where `l := ott`.  `elt_sort` reads the *)
+(* canonical MEMBER sort off the `RedTy_tot` constructor; esc_ty/esc_tm/   *)
+(* reflect_at are stated at that sort.  The three non-Pi LEAVES are        *)
+(* discharged by the standalone escape/reflect leaves above.  The Pi case  *)
+(* of the mutual lemma is entangled with the bound-variable reflect (z9)   *)
+(* and is built in the VR / typing-induction layer below.                  *)
+(* ====================================================================== *)
+
+(* The canonical element sort of a reducible type, read off the constructor.
+   reflect / escape_tm are stated at this sort. *)
+Definition elt_sort {G A B} (r : RedTy ott G A B) : osort :=
+  match projT2 r with
+  | rtt_nat _ G _ _ _ _ => nat_sort G
+  | rtt_empty _ G _ _ _ _ => empty_sort G
+  | rtt_ne _ G _ _ na _ rN lN _ _ _ => el_sort rN lN G na
+  | rtt_pi _ G _ _ rF lF lG F C _ _ _ _ _ _ _ _ =>
+      s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G))
+  end.
+
+Lemma elt_sort_nat (G A B : tm) (ra : RNat ott G A) (rb : RNat ott G B)
+  : elt_sort (RedTy_nat ott ra rb) = nat_sort G.
+Proof. reflexivity. Qed.
+
+Lemma elt_sort_empty (G A B : tm) (ra : REmpty ott G A) (rb : REmpty ott G B)
+  : elt_sort (RedTy_empty ott ra rb) = empty_sort G.
+Proof. reflexivity. Qed.
+
+Lemma elt_sort_ne (G A B na nb rN lN : tm) (ra : reds string ott ott_pa A na)
+  (rb : reds string ott ott_pa B nb)
+  (h : ne_eq string ott ott_pa (code_sort rN lN G) na nb)
+  : elt_sort (@RedTy_ne ott G A B na nb rN lN ra rb h) = el_sort rN lN G na.
+Proof. reflexivity. Qed.
+
+Lemma elt_sort_pi (G A B rF lF lG F C F' C' : tm)
+  (hA : reds string ott ott_pa A (oPi_rel rF lF lG F C G))
+  (hB : reds string ott ott_pa B (oPi_rel rF lF lG F' C' G))
+  (DomRed : forall D g (os : osub ott G D g),
+      RedTy ott D (act_code rF lF g G D F) (act_code rF lF g G D F'))
+  (CodRed : forall D g (os : osub ott G D g) a a',
+      RedTm ott (DomRed D g os) a a' ->
+      RedTy ott D (cod_at rF lF lG g G D F C a) (cod_at rF lF lG g G D F' C' a'))
+  : elt_sort (RedTy_pi ott hA hB DomRed CodRed)
+    = s_exp G (term_info orel lG) (oEl orel lG G (oPi_rel rF lF lG F C G)).
+Proof. reflexivity. Qed.
+
+(* ---- the three components of the motive ---- *)
+Definition esc_ty {G A B} (r : RedTy ott G A B) : Prop :=
+  forall S, wf_term ott [] A S -> wf_term ott [] B S -> eq_term ott [] S A B.
+
+Definition esc_tm {G A B} (r : RedTy ott G A B) : Prop :=
+  forall a b, RedTy_R ott r a b ->
+    wf_term ott [] a (elt_sort r) -> wf_term ott [] b (elt_sort r) ->
+    eq_term ott [] (elt_sort r) a b.
+
+Definition reflect_at {G A B} (r : RedTy ott G A B) : Type :=
+  forall a b, neutral ott_pa a -> neutral ott_pa b ->
+    wf_term ott [] a (elt_sort r) -> wf_term ott [] b (elt_sort r) ->
+    eq_term ott [] (elt_sort r) a b -> RedTy_R ott r a b.
+
+Definition Pmot (G A B : tm) (r : RedTy ott G A B) : Type :=
+  (esc_ty r * esc_tm r * reflect_at r)%type.
+
+(* ---- LEAF: Nat ---- *)
+Lemma leaf_nat (G A B : tm) (ra : RNat ott G A) (rb : RNat ott G B)
+  : Pmot G A B (RedTy_nat ott ra rb).
+Proof.
+  unfold Pmot, esc_ty, esc_tm, reflect_at; rewrite !elt_sort_nat.
+  repeat split.
+  - (* escape_ty *) intros S HA HB. eapply RedTy_Nat_sound; eassumption.
+  - (* escape_tm *) intros a b Hm Ha Hb.
+    change (RedTy_R ott (RedTy_nat ott ra rb) a b) with (RedNatMem ott G a b) in Hm.
+    eapply RedNatMem_sound; eassumption.
+  - (* reflect *) intros a b Hna Hnb Ha Hb Heq.
+    change (RedTy_R ott (RedTy_nat ott ra rb) a b) with (RedNatMem ott G a b).
+    apply RedNatMem_reflect; repeat split; eassumption.
+Qed.
+
+(* ---- LEAF: Empty ---- *)
+Lemma leaf_empty (G A B : tm) (ra : REmpty ott G A) (rb : REmpty ott G B)
+  : Pmot G A B (RedTy_empty ott ra rb).
+Proof.
+  unfold Pmot, esc_ty, esc_tm, reflect_at; rewrite !elt_sort_empty.
+  repeat split.
+  - intros S HA HB. eapply RedTy_Empty_sound; eassumption.
+  - intros a b Hm Ha Hb.
+    change (RedTy_R ott (RedTy_empty ott ra rb) a b) with (RedNe ott (empty_sort G) a b) in Hm.
+    eapply RedNe_sound_at; eassumption.
+  - intros a b Hna Hnb Ha Hb Heq.
+    change (RedTy_R ott (RedTy_empty ott ra rb) a b) with (RedNe ott (empty_sort G) a b).
+    apply RedNe_reflect; repeat split; eassumption.
+Qed.
+
+(* ---- LEAF: neutral code ---- *)
+Lemma leaf_ne (G A B na nb rN lN : tm) (ra : reds string ott ott_pa A na)
+  (rb : reds string ott ott_pa B nb)
+  (h : ne_eq string ott ott_pa (code_sort rN lN G) na nb)
+  : Pmot G A B (@RedTy_ne ott G A B na nb rN lN ra rb h).
+Proof.
+  unfold Pmot, esc_ty, esc_tm, reflect_at; rewrite !elt_sort_ne.
+  repeat split.
+  - (* escape_ty: type codes A,B reduce to ne_eq codes na,nb at the U code-sort *)
+    intros S HA HB. eapply RedNe_sound_at with (t:=code_sort rN lN G);
+      [ eapply red_ne; eassumption | eassumption | eassumption ].
+  - (* escape_tm: members reduce to ne_eq neutrals at El na *)
+    intros a b Hm Ha Hb.
+    change (RedTy_R ott (@RedTy_ne ott G A B na nb rN lN ra rb h) a b)
+      with (RedNe ott (el_sort rN lN G na) a b) in Hm.
+    eapply RedNe_sound_at; eassumption.
+  - (* reflect: a neutral pair at El na is a neutral member *)
+    intros a b Hna Hnb Ha Hb Heq.
+    change (RedTy_R ott (@RedTy_ne ott G A B na nb rN lN ra rb h) a b)
+      with (RedNe ott (el_sort rN lN G na) a b).
+    apply RedNe_reflect; repeat split; eassumption.
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
      LogicalRelation.v RedTy_tot Pi case is fully discharged on the syntax side.
-   - NEXT: the fundamental lemma proper:
-       wf_term ott [] e t -> reducible e   (and the eq_term -> RedTm PER side),
-     by Pyrosome cut-elimination on canonical derivations; discharges the
-     Pi reflect/reify eta crux.
-   - then the fundamental lemma proper:
-       wf_term ott [] e t -> reducible e   (and the eq_term -> RedTm PER side),
-     by Pyrosome cut-elimination on canonical derivations; discharges the
-     Pi reflect/reify eta crux. *)
+   - NEXT: the VR / valid-context + typing-induction fundamental lemma; the Pi
+     case of `Pmot` is built there (it needs the bound-var reflect, which is
+     discharged via the distinctness lemmas above). *)
