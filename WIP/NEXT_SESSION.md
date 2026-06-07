@@ -1,5 +1,57 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z8 — escape-at-Pi BOTH SIDES COMPLETE + rtt_pi env-index bug FIXED (4 commits, all GREEN, only `egraph_sound`). NEXT = reflect@Pi + wire the mutual `RedTy_rect` (escape_ty * escape_tm * reflect).
+
+This session landed the entire ESCAPE side at Pi, modulo the bound-variable reflect:
+1. **`rtt_pi` CodRed env-index bug FIXED** (`LogicalRelation.v`): `cod_at` lives in env `D`
+   (`cod_at_wf : s_exp D ...`), not `extc`. Changed `extc rF lF g G D F` -> `D` in all three
+   CodRed `RedTy_tot`/`RedTy` index positions (rtt_pi, RedTy_pi smart ctor, RedTy_rect). The
+   index is a raw tm so the smart-ctor/eliminator wiring still typechecks. This was the z7
+   concern — RESOLVED; escape_ty now delivers at the D-env sort matching the collapse toolkit.
+2. **`cod_collapse_both`** (FundamentalLemma.v) — from HFF' (F~F') + HCodEsc (codomain escape at
+   the bound var, `cod_at(wknF,hdF,F,C) ~ cod_at(wknF,hdF,F',C')` at the F-env sort Sf) produce
+   C~C' at the F'-env sort Sf'. LHS->C (cod_at_wkn_hd_eq@F); RHS is MIXED -> machinery swap
+   (cod_at_machinery_cong F->F') then cod_at_wkn_hd_eq@F' ->C'; envs reconcile via
+   ext_cong/El_cong+U_cong = eq_sort Sf Sf', threaded by eq_term_conv.
+3. **`RedTy_Pi_sound`** — escape_ty@Pi: A,B reds to Pi F C G / Pi F' C' G, wf at S, + HFF' + HCC'
+   (from cod_collapse_both) => eq_term S A B. reds_sound both + Pi_rel con-congruence
+   (eq_args HCC'@C, HFF'@F, refl else) at natural sort, transported to S via term_sorts_eq.
+4. **`RedTm_Pi_eta_sound`** — escape_tm@Pi (THE ETA LAW): t,u agree on the bound var
+   (Hbody: mapp t hd ~ mapp u hd) => t~u. The "Pi_rel eta" rule body IS mapp at the bound var
+   (syntactically; see memory [[ott-eta-body-equals-mapp]]), so eq_term_subst of the rule at the
+   closed subst gives lam_rel(mapp f0 hd) ~ f0 BY CONVERSION (no 14KB template). Parametric Heta
+   (applied to t,u) + lam_rel con-congruence (body sort El(cod_at) reconciled to El C via El_cong
+   of cod_at_wkn_hd_eq). KEY INFRA RECIPES (reuse for any closed rule application):
+   - wf_subst of a rule's closed instance = `repeat first [simple apply wf_subst_nil | simple apply
+     wf_subst_cons]` then close the 7 leaves with the per-slot wf hyps (conversion handles the subst).
+   - wf_ctx of a rule's context = `use_rule_in_wf; rewrite invert_wf_term_eq_rule in H; destruct;
+     exact`. NOT `with_rule_in_wf_crush` — it TIMES OUT on the big eta rule.
+   - apply the rule: `eassert (Hrule : eq_term ott _ _ _ _) by (eapply eq_term_by; exact Hin)` then
+     `exact (eq_term_subst Hrule (eq_subst_refl Hws) Hwfc)` — eq_term_subst as a TERM. Do NOT
+     `eapply eq_term_subst` on the goal (errors eagerly on the substitution evar); close the
+     concrete goal by conversion via `exact`.
+   - rocq MCP brace gotcha: a trailing bare `}` in a body isn't executed; put post-block tactics
+     in the SAME body after the `}`, or use `assert ... by (...)`.
+
+**NEXT = the mutual fundamental lemma** (one `RedTy_rect`; motive = escape_ty * escape_tm * reflect,
+all entangled). Plan:
+- reflect@Pi: assemble `RedAtPi` via `at_pi_app` — for all D g os a a' raa', produce
+  `RCod ...(mapp n a)(mapp n' a')` from codomain-reflect-IH applied to the neutral pair
+  (mapp_neutral both) with their ne_eq (`mapp_ne_eq2`, DONE), which consumes a~a' = domain
+  escape_tm-IH on raa'. Inherently needs both IHs => belongs IN the RedTy_rect (hard to state
+  standalone; if standalone, quantify over RDom/RCod and take the two IH outputs as hyps).
+- escape_ty@Pi in the induction: HCC' comes from cod_collapse_both fed by CodRed escape_ty@(D:=ext
+  G(El F), g:=wkn, a=a'=hd), where the bound-var member `RedTm (DomRed ext wkn os) hd hd` is the
+  REFLEXIVE reflect of hd (domain reflect-IH at the bound var). HFF' from DomRed escape_ty@(id G)
+  + act_code_id_eq.
+- escape_tm@Pi in the induction: Hbody from CodRed escape_tm@bound-var (same instantiation),
+  fed to RedTm_Pi_eta_sound.
+- leaves: escape_ty = RedTy_Nat_sound/RedTy_Empty_sound/RedNe_sound_at; escape_tm =
+  RedNatMem_sound/RedNe_sound_at; reflect = rnm_ne / red_ne constructors.
+- member-sort dodge: state escape_ty/escape_tm "for any sort S where both terms wf" (as the
+  RedTy_*_sound leaves already do) to avoid the heterogeneous El A vs El B sorts.
+See memory [[ott-escape-ty-pi-done]] for the full remaining-work breakdown.
+
 ## UPDATE 2026-06-07z7 — MIXED-instantiation machinery swap `cod_at_machinery_cong` **COMPLETE** (GREEN, axiom-free modulo `egraph_sound`, in `FundamentalLemma.v`). The escape-at-Pi collapse toolkit is now TOTAL (both cod_ats in the codomain IH collapse to C / C'). NEXT = escape-at-Pi proper assembly + the mutual reflect/escape adequacy induction (the eta crux) — but FIRST resolve the `rtt_pi` env-index concern below.
 
 This session landed the **entire `F -> F'` machinery-swap congruence tree** (15 lemmas,
