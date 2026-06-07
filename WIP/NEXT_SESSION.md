@@ -1,5 +1,123 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07u — KRIPKE RedTy LR LANDED in LogicalRelation.v (GREEN + axiom-free, committed+pushed `dc83735`). Build repaired, con-orders verified, ott_pa + builders staged (WIP/LRProto3.v `e1634ca`). NEXT = rewrite RedTy OTT-CONCRETE (option b: inline builders, carry rF/lF/lG/G/D in rtt_pi), then base member relations, then file 4.
+
+THIS SESSION'S RESULTS (all committed+pushed on `gluing-nbe`):
+1. **Kripke RedTy LR landed** — `src/.../Pi/LogicalRelation.v` now has the file-3
+   core: a single plain inductive `RedTy_tot : term(env G) -> term -> term ->
+   (term->term->Type) -> Type` with the member relation as OUTPUT index (Sig
+   trick) — NO universe tower, NO PolyRedPack+adequacy split.  Pi case KRIPKE
+   over object subs from the start.  Sig packaging + smart ctors
+   (RedTy_nat/RedTy_ne/RedTy_pi) + custom `RedTy_rect` (threads Kripke dom+cod
+   IHs); `RedTy_rect` Closed under the global context (axiom-free).  Currently
+   GENERIC over a type-former interface (RNat/RPi/RNatMem + osub/act/extc/cod/
+   mapp).  Validated first in WIP/LRProto2.v (`c4fc2e7`).
+2. **Build repaired** — Makefile.coq regenerated; Base.vo built (the EGraph
+   Theory cascade was stale).  Use `make -f Makefile.coq /ABS/PATH.vo` (.d uses
+   absolute paths).
+3. **All con-arg orders VERIFIED empirically** → memory `ott-con-arg-orders`.
+4. **ott_pa + con builders + base recognizers staged** — WIP/LRProto3.v (GREEN).
+
+**KEY DESIGN FINDING — the generic interface is too thin; go OTT-CONCRETE
+(option b).**  Instantiating the committed RedTy for OTT showed `act`/`cod`/`mapp
+: term->term->term` cannot be defined: OTT `exp_subst` con-terms = [v; A; i; g;
+src; tgt] need the SOURCE/TARGET envs AND the code's U-type `A`=U_{rF,lF} + info
+`i`=info rel (next lF), which live ONLY in the rtt_pi telescope (rF lF lG G D).
+And act-on-code vs act-on-member need different annotations.  So a generic
+interface buys little.  **NEXT-SESSION PLAN: rewrite `RedTy_tot` OTT-concrete**
+(V:=string, l/wfl/ott_pa fixed or l abstract), carrying rF lF lG in `rtt_pi` and
+inlining the WIP/LRProto3.v builders:
+  - domain action: `act g F = oexp_subst F (oU rF lF G)(code_info lF) g G D`
+    (g : sub G D, src=G home, tgt=D future; result code in env D).
+  - extended env: `extc = oext (oEl rF lF D (act g F)) (code_info lF) D`.
+  - codomain under g + at arg a: compose `exp_subst (under' g)` (codomain code C
+    lives in `ext G (El F)`; lift g over the binder via `under'` = snoc (cmp wkn
+    g) hd — CHECK against Pi.v:120 "Pi_rel subst" / the snoc/cmp/wkn/hd builders
+    and verify `cmp` full con-order, injectivity ["G3";"G1"] is SHORT) then
+    `exp_subst (snoc id a)`.  This is the genuinely fiddly part — direction +
+    under'-lifting; correctness only checkable once the OTT subst lemmas/ott_full
+    + wf_lang are available (so build Pi.vo/Nat.vo + assemble ott_full first, OR
+    land the definition and defer correctness to file 4).
+  - member app: `mapp f a = oapp_rel rF lF lG (act g F)(cod_code...) (act_member g f) a`
+    (NB act on a MEMBER f : exp G (El(Pi ...)) uses info `rel (iota lG)` and type
+    `El(Pi_rel ...)`, NOT the code annotations — separate builder).
+  - base member relations to refine: Nat members = real zero/suc/neutral
+    inductive (RNatMem placeholder now); Empty members (proof-irrelevant —
+    trivial PER); the Ne (RedNe) wrapper over ne_eq is fine.
+Then file 4 FundamentalLemma (needs ott_full + wf proof + the OTT subst lemmas),
+file 5 Decidable.
+
+(Superseded view: UPDATE-t's plan to keep a generic interface — the thinness
+finding above redirects to OTT-concrete.)
+
+## UPDATE 2026-06-07t — KRIPKE RedTy encoding VALIDATED (WIP/LRProto2.v, committed+pushed); build-repair of Base.vo/Pi.vo IN FLIGHT; con-arg orders mostly pinned. NEXT = finish build, verify subst con-orders, write the CONCRETE OTT RedTy in LogicalRelation.v.
+
+**(1) Kripke encoding VALIDATED — `WIP/LRProto2.v` (committed `c4fc2e7`).**
+Extends LRProto.v with the object-substitution Kripke quantification in the Pi
+case (item 3 below — "build Kripke in from the START").  CONFIRMED: the clean
+single-inductive + Sig-trick (member relation as OUTPUT index) STAYS strictly
+positive when domain/codomain reducibility is quantified `forall G' (g : osub
+G' G)`, with member relations `RDom`/`RCod` Kripke-indexed by `(G',g)`.  So we
+do NOT need LogRel2's heavyweight `PolyRedPack`+adequacy split — a plain
+`Inductive RedTy_tot : env -> tm -> tm -> (tm->tm->Type) -> Type` works.  Smart
+ctors `RedTy_nat`/`RedTy_pi` + custom `RedTy_rect` (threads Kripke dom + cod
+IHs) all typecheck; only axioms are the deliberate abstract substrate.  The Pi
+member `RedAtPi G F C F' C' RDom RCod t u` quantifies `forall G' (g:osub G' G) a
+a' (raa':RDom G' g a a'), RCod ... (app (act g t) a)(app (act g u) a')` —
+mirrors LogRel2 `PiRedTmEq` but carries the relation as a param, not a pack.
+
+**(2) Build repair IN FLIGHT.**  The OTT Pi/*.vo foundation files are all
+GENERIC (no OTT-lang dep), so Base.vo/Pi.vo were NEVER built and are needed for
+the concrete instantiation (+ all downstream).  Tools/EGraph {Defs, TypeInference,
+ComputeWf, Theorems, ...} are STALE vs the Jun-4 rebuilt Theory (ClosedTerm) +
+Utils/EGraph/Defs ⇒ "inconsistent assumptions" load errors.  FIX: regenerated
+Makefile.coq/_CoqProject (`rm Makefile.coq Makefile.coq.conf .Makefile.coq.d;
+make Makefile.coq`), then `make -f Makefile.coq <ABSOLUTE path>.vo` (the .d uses
+ABSOLUTE paths — relative target = "No rule").  Build of Base.vo running
+(rebuilds the EGraph Theorems/Semantics cascade — slow, ~30-60min).  After
+Base.vo: `bash scripts/vbuild.sh` for the rest.
+
+**(3) CON-ARG ORDERS pinned (reverse-of-declaration; FULL-arity injectivity
+lists are reliable, SHORT ones are NOT).**  Verified rule: `con name s` has `s`
+= the rule ctx in REVERSE declaration order (e.g. app_rel ctx
+[G;rF;lF;lG;F;B;f;a] ⇒ s=[a;f;B;F;lG;lF;rF;G] = its injectivity list).
+RELIABLE (full-arity injectivity in the Lang files):
+  - `Pi_rel`  = [B;F;lG;lF;rF;G]            (5 expl + G)
+  - `Pi_irr`  = [B;F;lF;rF;G]
+  - `app_rel` = [a;f;B;F;lG;lF;rF;G]        ⇒ FUNCTION `f` at index 1
+  - `app_irr` = [a;f;B;F;lF;rF;G]           ⇒ `f` at index 1
+  - `lam_rel` = [t;B;F;lG;lF;rF;G], `lam_irr`=[t;B;F;lF;rF;G]
+  - `Emptyrec`= [e;A;lA;rA;G]               ⇒ Empty-proof `e` at index 0
+  - `Nat`=[G], `Empty`=[G], `zero`=[G], `suc`=[n;G]
+  - `snoc` = [v;A;i;g;G';G] (full), `id`=[G], `ext`=[A;G], `El`=[e;l;r;G],
+    `U`=[l;r;G], `exp`=[A;i;G]
+NOT YET VERIFIED (short injectivity `ty_subst`/`exp_subst`=["i";"G"]) — must
+`Compute (named_list_lookup dflt subst_ott "exp_subst")` once Base.vo builds.
+INFERENCE (from base Subst.v decl order + tyinfo param insertion): unparam
+exp_subst ctx [G;G';g;A;v]→+i→ likely [v;A;i;g;G';G] (term `v` at idx 0);
+ty_subst [G;G';g;A]→+i→ likely [A;i;g;G';G] (type `A` at idx 0).  CONFIRM before
+trusting.
+
+**(4) pa selector for OTT (eliminators → principal-arg index; else None):**
+  app_rel↦Some 1, app_irr↦Some 1, Emptyrec↦Some 0, exp_subst↦Some 0,
+  ty_subst↦Some 0 (confirm idx 0 after (3)).  All canonical formers/intro
+  (Nat,Empty,Pi_rel,Pi_irr,zero,suc,lam_rel,lam_irr,U,El,snoc,id,cmp,wkn,hd,
+  ext,emp,forget,info,...) ↦ None.
+
+**(5) CONCRETE instantiation plan for LogicalRelation.v (port LRProto2 with the
+file's real `reds`/`ne_eq`):** type codes = exps at sort `U`; LR indexed by
+object env `G:term` (sort `env`) + two codes A,B.
+  - `is_nat B`   := `reds B nb` ∧ nb whnf-headed `Nat`.
+  - `is_pi A F C`:= A whnf= `Pi_rel`/`Pi_irr` w/ domain code F, codomain code C.
+  - `act g X`    := `exp_subst g X` (with the verified con order).
+  - `cod_subst C a` := `exp_subst (snoc id a) C` (codomain code instantiated).
+  - member `app f a` := `app_rel rF lF lG (act g F)(act g B)(act g f) a` (needs
+    the Pi data F,B,levels,relevance in scope — exposed by `is_pi`).
+  - `ext G F`    := `ext G (El F)` ; `osub G' G g` := `wf_term l [] g (scon
+    "sub" [G';G])` (object subst as a typed term).
+  Then file 4 FundamentalLemma, 5 Decidable.
+
+---
 ## UPDATE 2026-06-07s — file 3 `LogicalRelation.v` FOUNDATION landed (GREEN+axiom-free, committed+pushed); LR inductive ENCODING validated in WIP/LRProto.v. NEXT = instantiate the type-LR for OTT (exact con-arg orders + Kripke object-subs).
 
 Two things landed this session.
