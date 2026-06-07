@@ -2985,6 +2985,413 @@ Proof.
   eapply cut_eq_term_ott_rl_syntactic; eassumption.
 Qed.
 
+(* ====================================================================== *)
+(* R1 — RELEVANCE-PRESERVATION METATHEOREM on the #"ty"/#"exp" sub-language *)
+(* (NEXT_SESSION z14; Dustin's chosen route — NO model, NO target lang D).  *)
+(*                                                                        *)
+(* The Pi bound-var distinctness obligation is a BARE `eq_sort` between two *)
+(* code sorts                                                              *)
+(*   eq_sort ott extG (code_sort oirr lF G) (code_sort orel oL0 G) -> False *)
+(* i.e. between `scon "exp" [oU oirr lF G; ..]` and `scon "exp" [oU orel    *)
+(* oL0 G; ..]`.  A naive cong descent fails on `eq_sort_trans` (the         *)
+(* intermediate #"exp" sort's type-component need not be `U`-headed).  The  *)
+(* fix is a TRANS-STABLE invariant: a `code_rel` READING that extracts the  *)
+(* relevance constant a ty-term denotes, LOOKING THROUGH `ty_subst`/`El`,   *)
+(* and is preserved by every #"ty"/#"exp" rule + congruence + conv.  The    *)
+(* load-bearing empirical fact (verified by enumerating the rules):  NO     *)
+(* ty/exp rule alters a relevance constant — U subst / El subst /           *)
+(* ty_subst_cmp / ty_subst_id all keep the buried relevance, and the        *)
+(* congruences relate the relevance argument at sort #"relevance", which is  *)
+(* SYNTACTIC by `core_eq_term_ott_rl_syntactic`.  Bottoming out there gives  *)
+(* `oirr = orel`, contradiction (`rel_neq_irr` syntactically).              *)
+(* ====================================================================== *)
+
+(* The relevance reading on a ty-term: the `r` in its U/El head, seen
+   through `ty_subst` (which never changes it).  `None` off the ty layer. *)
+Fixpoint code_rel (A : tm) : option tm :=
+  match A with
+  | con n args =>
+      if String.eqb n "U"
+      then match args with _ :: r :: _ => Some r | _ => None end
+      else if String.eqb n "El"
+      then match args with _ :: _ :: r :: _ => Some r | _ => None end
+      else if String.eqb n "ty_subst"
+      then match args with A' :: _ => code_rel A' | _ => None end
+      else None
+  | var _ => None
+  end.
+
+(* The relevance reading lifted to a sort: the type-component of an #"exp". *)
+Definition sort_rel (t : osort) : option tm :=
+  match t with
+  | scon n (A :: _) => if String.eqb n "exp" then code_rel A else None
+  | _ => None
+  end.
+
+(* The LEVEL reading on a ty-term: the `l` in its U/El head, same recursion
+   through `ty_subst`.  (U stores [l;r;G], so l is the head arg; El stores
+   [e;l;r;G], so l is the 2nd arg.)  No ty/exp rule alters a level constant. *)
+Fixpoint code_lvl (A : tm) : option tm :=
+  match A with
+  | con n args =>
+      if String.eqb n "U"
+      then match args with l :: _ => Some l | _ => None end
+      else if String.eqb n "El"
+      then match args with _ :: l :: _ => Some l | _ => None end
+      else if String.eqb n "ty_subst"
+      then match args with A' :: _ => code_lvl A' | _ => None end
+      else None
+  | var _ => None
+  end.
+
+Definition sort_lvl (t : osort) : option tm :=
+  match t with
+  | scon n (A :: _) => if String.eqb n "exp" then code_lvl A else None
+  | _ => None
+  end.
+
+(* `all_fresh ott` (fast; the e-graph `compute_all_fresh` decision proc). *)
+Lemma ott_all_fresh : all_fresh ott.
+Proof. apply use_compute_all_fresh; vm_compute; reflexivity. Qed.
+
+(* The unique `exp` sort rule of ott, pinned by membership. *)
+Lemma exp_in_ott :
+  In ("exp", sort_rule [("A", {{s #"ty" "G" "i"}}); ("i", {{s #"tyinfo"}});
+                        ("G", {{s #"env"}})] ["A"; "i"; "G"]) ott.
+Proof. vm_compute. tauto. Qed.
+
+(* THE INVARIANT (mutual over the four cut-free judgments):                  *)
+(*  - sort: `sort_rel` is preserved by `eq_sort` at #"exp" (cong descends to  *)
+(*    the type-component; trans/sym free because it's an equality of options); *)
+(*  - term: `code_rel` is preserved by `eq_term` at #"ty" — the eq_term_by     *)
+(*    cases (U/El subst, ty_subst_cmp/id) keep the buried relevance/ty-reading; *)
+(*    cong reads the U/El relevance arg at #"relevance" (SYNTACTIC by           *)
+(*    `core_eq_term_ott_rl_syntactic`) or the ty_subst A-arg (recursively);    *)
+(*  - subst/args: positional carriers feeding the eq_term_by/cong cases (the   *)
+(*    relevance positions become syntactically equal, the ty positions equal   *)
+(*    under `code_rel`).  No ty/exp rule alters a relevance constant, which is  *)
+(*    what makes the reading TRANS-STABLE (the z11/z13 wall). *)
+Lemma cut_code_rel_invariant (c : ctx string) :
+  (forall (t1 t2 : osort),
+     @CutElim.eq_sort string _ ott c t1 t2 -> sort_rel t1 = sort_rel t2)
+  /\ (forall (t : osort) (a b : tm),
+     @CutElim.eq_term string _ ott c t a b ->
+     sort_name t = "ty" -> code_rel a = code_rel b)
+  /\ (forall (c' : ctx string) (s1 s2 : subst string),
+     @CutElim.eq_subst string _ ott c c' s1 s2 ->
+     forall x t, named_list_lookup_err c' x = Some t ->
+       (sort_name t = "relevance" -> subst_lookup s1 x = subst_lookup s2 x)
+       /\ (sort_name t = "ty" ->
+           code_rel (subst_lookup s1 x) = code_rel (subst_lookup s2 x)))
+  /\ (forall (c' : ctx string) (s1 s2 : list tm),
+     @CutElim.eq_args string _ ott c c' s1 s2 ->
+     forall n name t a b, nth_error c' n = Some (name,t) ->
+       nth_error s1 n = Some a -> nth_error s2 n = Some b ->
+       (sort_name t = "relevance" -> a = b)
+       /\ (sort_name t = "ty" -> code_rel a = code_rel b)).
+Proof.
+  pose proof ott_all_fresh as Hfresh.
+  apply CutElim.cut_ind.
+  (* sort eq_by: vacuous *)
+  1:{ intros name c' t1 t2 s1 s2 Hin _ _. exfalso. eapply ott_no_sort_eq_rule; eassumption. }
+  (* sort cong: at #"exp", descend to the type-component (position 0) *)
+  1:{ intros name c' args s1 s2 Hin Hargs IHargs.
+      unfold sort_rel.
+      destruct (String.eqb name "exp") eqn:Hn.
+      2:{ destruct s1; destruct s2; reflexivity. }
+      apply String.eqb_eq in Hn. subst name.
+      pose proof exp_in_ott as Hexp.
+      pose proof (in_all_fresh_same _ _ _ _ Hfresh Hin Hexp) as Heq.
+      inversion Heq; subst c' args; clear Heq Hexp Hin.
+      inversion Hargs; subst.
+      destruct (IHargs 0 "A" {{s #"ty" "G" "i"}} e1 e2 eq_refl eq_refl eq_refl) as [_ Hty0].
+      apply (Hty0 eq_refl). }
+  (* sort trans / sym *)
+  1:{ intros t1 t12 t2 _ H1 _ H2. congruence. }
+  1:{ intros t1 t2 _ H. congruence. }
+  (* term eq_by: the four #"ty" rewrite rules all preserve `code_rel` *)
+  1:{ intros name c' t e1 e2 s1 s2 Hin Hsub IHsub Hty.
+      assert (Htyt : sort_name t = "ty") by (destruct t; cbn in Hty |- *; exact Hty).
+      pose (f := fun p : string * rule string =>
+        match snd p with
+        | term_eq_rule _ _ _ t' => String.eqb (sort_name t') "ty"
+        | _ => false end).
+      assert (Hfin : In (name, term_eq_rule c' e1 e2 t) (filter f ott)).
+      { apply filter_In. split; [exact Hin|]. subst f; cbn. rewrite Htyt. reflexivity. }
+      vm_compute in Hfin.
+      destruct Hfin as [He|[He|[He|[He|[]]]]]; inversion He; subst name c' e1 e2 t; clear He.
+      - (* El subst: relevance arg "r" *)
+        cbn -[subst_lookup]. f_equal.
+        change (term_subst_lookup s1 "r") with (subst_lookup s1 "r").
+        change (term_subst_lookup s2 "r") with (subst_lookup s2 "r").
+        destruct (IHsub "r" {{s #"relevance"}} eq_refl) as [Hrel _].
+        apply Hrel. reflexivity.
+      - (* U subst: relevance arg "r" *)
+        cbn -[subst_lookup]. f_equal.
+        change (term_subst_lookup s1 "r") with (subst_lookup s1 "r").
+        change (term_subst_lookup s2 "r") with (subst_lookup s2 "r").
+        destruct (IHsub "r" {{s #"relevance"}} eq_refl) as [Hrel _].
+        apply Hrel. reflexivity.
+      - (* ty_subst_cmp: look through both ty_subst to the ty arg "A" *)
+        cbn -[subst_lookup].
+        change (term_subst_lookup s1 "A") with (subst_lookup s1 "A").
+        change (term_subst_lookup s2 "A") with (subst_lookup s2 "A").
+        destruct (IHsub "A" {{s #"ty" "G3" "i"}} eq_refl) as [_ Hty0].
+        apply Hty0. reflexivity.
+      - (* ty_subst_id: look through ty_subst to the ty arg "A" *)
+        cbn -[subst_lookup].
+        change (term_subst_lookup s1 "A") with (subst_lookup s1 "A").
+        change (term_subst_lookup s2 "A") with (subst_lookup s2 "A").
+        destruct (IHsub "A" {{s #"ty" "G" "i"}} eq_refl) as [_ Hty0].
+        apply Hty0. reflexivity. }
+  (* term cong: at #"ty" the rule is U/El/ty_subst; read the relevance/A arg *)
+  1:{ intros name c' args t s1 s2 Hin Hargs IHargs Hty.
+      assert (Htyt : sort_name t = "ty") by (destruct t; cbn in Hty |- *; exact Hty).
+      pose (f := fun p : string * rule string =>
+        match snd p with
+        | term_rule _ _ t' => String.eqb (sort_name t') "ty"
+        | _ => false end).
+      assert (Hfin : In (name, term_rule c' args t) (filter f ott)).
+      { apply filter_In. split; [exact Hin|]. subst f; cbn. rewrite Htyt. reflexivity. }
+      vm_compute in Hfin.
+      destruct Hfin as [He|[He|[He|[]]]]; inversion He; subst name c' args t; clear He;
+        repeat (match goal with
+                | H : CutElim.eq_args _ _ _ (_ :: _) _ _ |- _ => inversion H; subst; clear H
+                end);
+        cbn [code_rel].
+      - (* El: relevance arg via the syntactic leaf *)
+        match goal with
+        | H : CutElim.eq_term _ _ _ {{s #"relevance"}} [/_/] ?a ?b |- _ =>
+            assert (Hr : a = b) by
+              (eapply cut_eq_term_ott_rl_syntactic; [ exact H | left; reflexivity ]); rewrite Hr
+        end. reflexivity.
+      - (* U: relevance arg *)
+        match goal with
+        | H : CutElim.eq_term _ _ _ {{s #"relevance"}} [/_/] ?a ?b |- _ =>
+            assert (Hr : a = b) by
+              (eapply cut_eq_term_ott_rl_syntactic; [ exact H | left; reflexivity ]); rewrite Hr
+        end. reflexivity.
+      - (* ty_subst: A arg via the args-IH ty-clause at position 0 *)
+        destruct (IHargs 0 "A" {{s #"ty" "G'" "i"}} e1 e2 eq_refl eq_refl eq_refl) as [_ Hty0].
+        rewrite (Hty0 eq_refl). reflexivity. }
+  (* term var: both sides are `code_rel (var n)` *)
+  1:{ intros n t Hin Hty. reflexivity. }
+  (* term trans / sym *)
+  1:{ intros t e1 e12 e2 _ H1 _ H2 Hty. rewrite H1 by assumption. apply H2; assumption. }
+  1:{ intros t e1 e2 _ H Hty. symmetry. apply H; assumption. }
+  (* term conv: eq_sort preserves the sort head, so #"ty" transports *)
+  1:{ intros e1 e2 t t' _ IH Hsort _ Hty'.
+      apply IH. apply cut_eq_sort_ott_same_name in Hsort.
+      destruct t as [tn ts], t' as [tn' ts']. cbn [sort_name] in *. congruence. }
+  (* subst nil *)
+  1:{ intros x t Hl. cbn in Hl. discriminate. }
+  (* subst cons *)
+  1:{ intros c' s1 s2 Hsub IHsub name t e1 e2 Hhead IHhead.
+      intros x t0 Hl. cbn in Hl.
+      destruct (eqb x name) eqn:Hx.
+      - inversion Hl; subst t0; clear Hl.
+        unfold subst_lookup. cbn [named_list_lookup]. rewrite Hx.
+        assert (Hsn : sort_name (t [/s2/]) = sort_name t) by (destruct t; reflexivity).
+        split; intro Hs.
+        + eapply cut_eq_term_ott_rl_syntactic; [exact Hhead | rewrite Hsn; left; exact Hs].
+        + apply IHhead. rewrite Hsn. exact Hs.
+      - unfold subst_lookup. cbn [named_list_lookup]. rewrite Hx.
+        fold (subst_lookup s1 x). fold (subst_lookup s2 x).
+        eapply IHsub; eassumption. }
+  (* args nil *)
+  1:{ intros n name t a b Hc. destruct n; cbn in Hc; discriminate. }
+  (* args cons *)
+  1:{ intros c' es1 es2 Hargs IHargs name t e1 e2 Hhead IHhead.
+      intros n nm t0 a b Hc Ha Hb.
+      destruct n.
+      - cbn in Hc, Ha, Hb. inversion Hc; subst nm t0; clear Hc.
+        inversion Ha; subst a; clear Ha. inversion Hb; subst b; clear Hb.
+        assert (Hsn : sort_name (t [/with_names_from c' es2/]) = sort_name t)
+          by (destruct t; reflexivity).
+        split; intro Hs.
+        + eapply cut_eq_term_ott_rl_syntactic; [exact Hhead | rewrite Hsn; left; exact Hs].
+        + apply IHhead. rewrite Hsn. exact Hs.
+      - cbn in Hc, Ha, Hb. eapply IHargs; eassumption. }
+Qed.
+
+(* Bridge to declarative `Core.eq_sort`: `sort_rel` is an eq_sort invariant. *)
+Lemma core_sort_rel_invariant : forall c t1 t2,
+  eq_sort ott c t1 t2 -> sort_rel t1 = sort_rel t2.
+Proof.
+  intros c t1 t2 Hcore.
+  assert (Hcut : CutElim.wf_lang _ ott).
+  { apply CutElim.wf_lang_iff_cut; [ typeclasses eauto | typeclasses eauto | exact ott_wf ]. }
+  pose proof (CutElim.core_implies_cut _ ott Hcut) as Himpl.
+  destruct Himpl as [Hsort _].
+  apply Hsort in Hcore.
+  destruct (cut_code_rel_invariant c) as [Hinv _].
+  apply Hinv. exact Hcore.
+Qed.
+
+(* THE DISCHARGED OBLIGATION (relevance side).  Two code sorts whose buried
+   relevances are the (syntactically distinct) constants oirr / orel are NOT
+   eq_sort-related — this is the bound-var distinctness fact the z11/z13 wall
+   needed, now proven WITHOUT a model or a target language.  `code_sort r l G`
+   reads its relevance via `sort_rel` as `Some r`, so the invariant forces
+   `oirr = orel`, contradiction. *)
+Lemma code_sort_rel_neq_irr : forall c lF lG G G',
+  ~ eq_sort ott c (code_sort oirr lF G) (code_sort orel lG G').
+Proof.
+  intros c lF lG G G' H.
+  apply core_sort_rel_invariant in H.
+  unfold code_sort, sort_rel, oU, code_rel, oirr, orel in H.
+  cbn in H. discriminate.
+Qed.
+
+(* ---- LEVEL analogue (identical structure, reading the buried level) ---- *)
+Lemma cut_code_lvl_invariant (c : ctx string) :
+  (forall (t1 t2 : osort),
+     @CutElim.eq_sort string _ ott c t1 t2 -> sort_lvl t1 = sort_lvl t2)
+  /\ (forall (t : osort) (a b : tm),
+     @CutElim.eq_term string _ ott c t a b ->
+     sort_name t = "ty" -> code_lvl a = code_lvl b)
+  /\ (forall (c' : ctx string) (s1 s2 : subst string),
+     @CutElim.eq_subst string _ ott c c' s1 s2 ->
+     forall x t, named_list_lookup_err c' x = Some t ->
+       (sort_name t = "lvl" -> subst_lookup s1 x = subst_lookup s2 x)
+       /\ (sort_name t = "ty" ->
+           code_lvl (subst_lookup s1 x) = code_lvl (subst_lookup s2 x)))
+  /\ (forall (c' : ctx string) (s1 s2 : list tm),
+     @CutElim.eq_args string _ ott c c' s1 s2 ->
+     forall n name t a b, nth_error c' n = Some (name,t) ->
+       nth_error s1 n = Some a -> nth_error s2 n = Some b ->
+       (sort_name t = "lvl" -> a = b)
+       /\ (sort_name t = "ty" -> code_lvl a = code_lvl b)).
+Proof.
+  pose proof ott_all_fresh as Hfresh.
+  apply CutElim.cut_ind.
+  1:{ intros name c' t1 t2 s1 s2 Hin _ _. exfalso. eapply ott_no_sort_eq_rule; eassumption. }
+  1:{ intros name c' args s1 s2 Hin Hargs IHargs.
+      unfold sort_lvl.
+      destruct (String.eqb name "exp") eqn:Hn.
+      2:{ destruct s1; destruct s2; reflexivity. }
+      apply String.eqb_eq in Hn. subst name.
+      pose proof exp_in_ott as Hexp.
+      pose proof (in_all_fresh_same _ _ _ _ Hfresh Hin Hexp) as Heq.
+      inversion Heq; subst c' args; clear Heq Hexp Hin.
+      inversion Hargs; subst.
+      destruct (IHargs 0 "A" {{s #"ty" "G" "i"}} e1 e2 eq_refl eq_refl eq_refl) as [_ Hty0].
+      apply (Hty0 eq_refl). }
+  1:{ intros t1 t12 t2 _ H1 _ H2. congruence. }
+  1:{ intros t1 t2 _ H. congruence. }
+  1:{ intros name c' t e1 e2 s1 s2 Hin Hsub IHsub Hty.
+      assert (Htyt : sort_name t = "ty") by (destruct t; cbn in Hty |- *; exact Hty).
+      pose (f := fun p : string * rule string =>
+        match snd p with
+        | term_eq_rule _ _ _ t' => String.eqb (sort_name t') "ty"
+        | _ => false end).
+      assert (Hfin : In (name, term_eq_rule c' e1 e2 t) (filter f ott)).
+      { apply filter_In. split; [exact Hin|]. subst f; cbn. rewrite Htyt. reflexivity. }
+      vm_compute in Hfin.
+      destruct Hfin as [He|[He|[He|[He|[]]]]]; inversion He; subst name c' e1 e2 t; clear He.
+      - cbn -[subst_lookup]. f_equal.
+        change (term_subst_lookup s1 "l") with (subst_lookup s1 "l").
+        change (term_subst_lookup s2 "l") with (subst_lookup s2 "l").
+        destruct (IHsub "l" {{s #"lvl"}} eq_refl) as [Hlvl _].
+        apply Hlvl. reflexivity.
+      - cbn -[subst_lookup]. f_equal.
+        change (term_subst_lookup s1 "l") with (subst_lookup s1 "l").
+        change (term_subst_lookup s2 "l") with (subst_lookup s2 "l").
+        destruct (IHsub "l" {{s #"lvl"}} eq_refl) as [Hlvl _].
+        apply Hlvl. reflexivity.
+      - cbn -[subst_lookup].
+        change (term_subst_lookup s1 "A") with (subst_lookup s1 "A").
+        change (term_subst_lookup s2 "A") with (subst_lookup s2 "A").
+        destruct (IHsub "A" {{s #"ty" "G3" "i"}} eq_refl) as [_ Hty0].
+        apply Hty0. reflexivity.
+      - cbn -[subst_lookup].
+        change (term_subst_lookup s1 "A") with (subst_lookup s1 "A").
+        change (term_subst_lookup s2 "A") with (subst_lookup s2 "A").
+        destruct (IHsub "A" {{s #"ty" "G" "i"}} eq_refl) as [_ Hty0].
+        apply Hty0. reflexivity. }
+  1:{ intros name c' args t s1 s2 Hin Hargs IHargs Hty.
+      assert (Htyt : sort_name t = "ty") by (destruct t; cbn in Hty |- *; exact Hty).
+      pose (f := fun p : string * rule string =>
+        match snd p with
+        | term_rule _ _ t' => String.eqb (sort_name t') "ty"
+        | _ => false end).
+      assert (Hfin : In (name, term_rule c' args t) (filter f ott)).
+      { apply filter_In. split; [exact Hin|]. subst f; cbn. rewrite Htyt. reflexivity. }
+      vm_compute in Hfin.
+      destruct Hfin as [He|[He|[He|[]]]]; inversion He; subst name c' args t; clear He;
+        repeat (match goal with
+                | H : CutElim.eq_args _ _ _ (_ :: _) _ _ |- _ => inversion H; subst; clear H
+                end);
+        cbn [code_lvl].
+      - match goal with
+        | H : CutElim.eq_term _ _ _ {{s #"lvl"}} [/_/] ?a ?b |- _ =>
+            assert (Hr : a = b) by
+              (eapply cut_eq_term_ott_rl_syntactic; [ exact H | right; reflexivity ]); rewrite Hr
+        end. reflexivity.
+      - match goal with
+        | H : CutElim.eq_term _ _ _ {{s #"lvl"}} [/_/] ?a ?b |- _ =>
+            assert (Hr : a = b) by
+              (eapply cut_eq_term_ott_rl_syntactic; [ exact H | right; reflexivity ]); rewrite Hr
+        end. reflexivity.
+      - destruct (IHargs 0 "A" {{s #"ty" "G'" "i"}} e1 e2 eq_refl eq_refl eq_refl) as [_ Hty0].
+        rewrite (Hty0 eq_refl). reflexivity. }
+  1:{ intros n t Hin Hty. reflexivity. }
+  1:{ intros t e1 e12 e2 _ H1 _ H2 Hty. rewrite H1 by assumption. apply H2; assumption. }
+  1:{ intros t e1 e2 _ H Hty. symmetry. apply H; assumption. }
+  1:{ intros e1 e2 t t' _ IH Hsort _ Hty'.
+      apply IH. apply cut_eq_sort_ott_same_name in Hsort.
+      destruct t as [tn ts], t' as [tn' ts']. cbn [sort_name] in *. congruence. }
+  1:{ intros x t Hl. cbn in Hl. discriminate. }
+  1:{ intros c' s1 s2 Hsub IHsub name t e1 e2 Hhead IHhead.
+      intros x t0 Hl. cbn in Hl.
+      destruct (eqb x name) eqn:Hx.
+      - inversion Hl; subst t0; clear Hl.
+        unfold subst_lookup. cbn [named_list_lookup]. rewrite Hx.
+        assert (Hsn : sort_name (t [/s2/]) = sort_name t) by (destruct t; reflexivity).
+        split; intro Hs.
+        + eapply cut_eq_term_ott_rl_syntactic; [exact Hhead | rewrite Hsn; right; exact Hs].
+        + apply IHhead. rewrite Hsn. exact Hs.
+      - unfold subst_lookup. cbn [named_list_lookup]. rewrite Hx.
+        fold (subst_lookup s1 x). fold (subst_lookup s2 x).
+        eapply IHsub; eassumption. }
+  1:{ intros n name t a b Hc. destruct n; cbn in Hc; discriminate. }
+  1:{ intros c' es1 es2 Hargs IHargs name t e1 e2 Hhead IHhead.
+      intros n nm t0 a b Hc Ha Hb.
+      destruct n.
+      - cbn in Hc, Ha, Hb. inversion Hc; subst nm t0; clear Hc.
+        inversion Ha; subst a; clear Ha. inversion Hb; subst b; clear Hb.
+        assert (Hsn : sort_name (t [/with_names_from c' es2/]) = sort_name t)
+          by (destruct t; reflexivity).
+        split; intro Hs.
+        + eapply cut_eq_term_ott_rl_syntactic; [exact Hhead | rewrite Hsn; right; exact Hs].
+        + apply IHhead. rewrite Hsn. exact Hs.
+      - cbn in Hc, Ha, Hb. eapply IHargs; eassumption. }
+Qed.
+
+Lemma core_sort_lvl_invariant : forall c t1 t2,
+  eq_sort ott c t1 t2 -> sort_lvl t1 = sort_lvl t2.
+Proof.
+  intros c t1 t2 Hcore.
+  assert (Hcut : CutElim.wf_lang _ ott).
+  { apply CutElim.wf_lang_iff_cut; [ typeclasses eauto | typeclasses eauto | exact ott_wf ]. }
+  pose proof (CutElim.core_implies_cut _ ott Hcut) as Himpl.
+  destruct Himpl as [Hsort _].
+  apply Hsort in Hcore.
+  destruct (cut_code_lvl_invariant c) as [Hinv _].
+  apply Hinv. exact Hcore.
+Qed.
+
+(* THE DISCHARGED OBLIGATION (level side): two code sorts at the distinct
+   level constants oL1 / oL0 are NOT eq_sort-related. *)
+Lemma code_sort_lvl_neq_L1_L0 : forall c rF rG G G',
+  ~ eq_sort ott c (code_sort rF (con "L1" []) G) (code_sort rG oL0 G').
+Proof.
+  intros c rF rG G G' H.
+  apply core_sort_lvl_invariant in H.
+  unfold code_sort, sort_lvl, oU, code_lvl, oL0 in H.
+  cbn in H. discriminate.
+Qed.
+
 (* TODO (file 4 body, continued):
    - The full under'-lift Kripke-builder cluster is now TYPED
      (act_code/El_act_code/wkn/cmp/ounder/act_cod/cod_at/act_member/mapp), so the
