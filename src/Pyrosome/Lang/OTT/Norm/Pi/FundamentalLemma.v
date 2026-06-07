@@ -4339,6 +4339,64 @@ Proof.
     eapply eq_args_nil.
 Qed.
 
+(* ====================================================================== *)
+(* body_sort_transport (z21) — the heterogeneous BODY-SORT eq_sort shared *)
+(* by esc_tm@Pi (RedTm_Pi_eta_sound2) and reflect@Pi.  The eta/app body   *)
+(* sort over the A-side binder env `extGF = ext G (El F)` is              *)
+(* `eq_sort`-equal to the B-side `extGF' = ext G (El F')` one, from        *)
+(* F~F' (HFF') and the codomain code equality C~C' (HCC').  Same flavour  *)
+(* as `cod_collapse_both`'s internal `HSS'` (ext_cong on El F~El F' for   *)
+(* the env) PLUS a heterogeneous `El` congruence on the codes C~C' across *)
+(* the env change (the El-position of the exp sort, built from the RHS    *)
+(* env so the C-position lands at the B-side U-sort = HCC').               *)
+(* ====================================================================== *)
+Lemma body_sort_transport rF lF lG G F C F' C'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HlG : wf_term ott [] lG (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (HF' : wf_term ott [] F' (s_exp G (code_info lF) (oU rF lF G)))
+  (HFF' : eq_term ott [] (s_exp G (code_info lF) (oU rF lF G)) F F')
+  (HC : wf_term ott [] C (s_exp (oext (oEl rF lF G F) (term_info rF lF) G) (code_info lG)
+                                (oU orel lG (oext (oEl rF lF G F) (term_info rF lF) G))))
+  (HC' : wf_term ott [] C' (s_exp (oext (oEl rF lF G F') (term_info rF lF) G) (code_info lG)
+                                  (oU orel lG (oext (oEl rF lF G F') (term_info rF lF) G))))
+  (HCC' : eq_term ott []
+            (s_exp (oext (oEl rF lF G F') (term_info rF lF) G) (code_info lG)
+                   (oU orel lG (oext (oEl rF lF G F') (term_info rF lF) G)))
+            C C')
+  : let iF := term_info rF lF in
+    let extGF := oext (oEl rF lF G F) iF G in
+    let extGF' := oext (oEl rF lF G F') iF G in
+    eq_sort ott []
+      (s_exp extGF (term_info orel lG) (oEl orel lG extGF C))
+      (s_exp extGF' (term_info orel lG) (oEl orel lG extGF' C')).
+Proof.
+  pose proof ott_wf as Hwf.
+  intros iF extGF extGF'.
+  pose proof (El_cong rF lF G F F' HG HrF HlF HFF') as HElFF'.
+  pose proof (ext_cong rF lF G (oEl rF lF G F) (oEl rF lF G F') HG HrF HlF HElFF') as HextGG'.
+  assert (Horel : wf_term ott [] orel (scon "relevance" [])).
+  { unfold orel. eapply Elab.wf_term_by';
+      [ apply named_list_lookup_err_in; compute; reflexivity
+      | cbn [Model.wf_term core_model]; ott_build | left; compute; reflexivity ]. }
+  unfold extGF, extGF', s_exp. sort_cong.
+  - cbn [Model.eq_term core_model with_names_from]. fold iF. exact HextGG'.
+  - cbn [Model.eq_term core_model with_names_from]. eapply eq_term_refl. ott_build.
+  - cbn [Model.eq_term core_model with_names_from].
+    eapply term_con_congruence.
+    + apply named_list_lookup_err_in; compute; reflexivity.
+    + right; cbn [with_names_from]; reflexivity.
+    + exact ott_wf.
+    + cbn [with_names_from].
+      eapply eq_args_cons. 2:{ fold iF. cbn [with_names_from]. exact HCC'. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; eassumption. }
+      eapply eq_args_cons. 2:{ eapply eq_term_refl; eassumption. }
+      eapply eq_args_cons. 2:{ exact HextGG'. }
+      eapply eq_args_nil.
+Qed.
+
 (* TODO (file 4 body, continued) — STEP 3 remaining (the typing-induction
    fundamental lemma):
    - The mutual ESCAPE/REFLECT lemma (Pmot) Pi case + the hard direction
