@@ -1,5 +1,80 @@
 # Next-session kickoff — OTT two-sided PER migration
 
+## UPDATE 2026-06-07z7 — MIXED-instantiation machinery swap `cod_at_machinery_cong` **COMPLETE** (GREEN, axiom-free modulo `egraph_sound`, in `FundamentalLemma.v`). The escape-at-Pi collapse toolkit is now TOTAL (both cod_ats in the codomain IH collapse to C / C'). NEXT = escape-at-Pi proper assembly + the mutual reflect/escape adequacy induction (the eta crux) — but FIRST resolve the `rtt_pi` env-index concern below.
+
+This session landed the **entire `F -> F'` machinery-swap congruence tree** (15 lemmas,
+all GREEN, only `egraph_sound`, in `FundamentalLemma.v` right after `ext_cong`),
+discharging the z6 "MIXED-instantiation subtlety": in the escape-at-Pi codomain IH the
+SECOND code is `cod_at (machinery over El F) F' C' (hd over El F)` — machinery from F but
+code F'/C', so `cod_at_wkn_hd_eq` (which needs machinery=code=same X) does NOT collapse it.
+`cod_at_machinery_cong` SWAPS the whole machinery `F -> F'` (legit since `El F ~ El F'`), so
+`cod_at_wkn_hd_eq` at F' then collapses it to C'. Dependency tree (bottom-up):
+- leaves (1 differing arg = `El F ~ El F'`): `wkn_cong`, `hd_cong`, `id_cong`.
+- `act_code_mach_cong` (exp_subst, swaps g+target env, code F' fixed; lands at clean U via `U_subst_eq`).
+- `ElaF_mach_cong` (El of act_code), `extc_mach_cong` (the doubly-ext env), `U_cong` (generic U-in-env),
+  `U_env_cong` (its extc specialization), `wknD_mach_cong`/`hdD_mach_cong` (wkn/hd over El(act_code)).
+- `cmp_g0_mach_cong` (the cmp inside ounder), `ounder_mach_cong` (the under'-lift snoc),
+  `snoc_a_mach_cong` (the binder-instantiation snoc), `act_cod_mach_cong` (codomain push),
+  then **`cod_at_machinery_cong`** (the capstone).
+
+KEY RECIPES / GOTCHAS (reuse for ANY OTT con congruence):
+- **`term_con_congruence` + `eq_args_cons` peels the con-arg list HEAD-FIRST** (= rule-ctx
+  order = the `o*` builder list order). Provide each position's eq_term via the `2:{ ... }`
+  branch in that order; close the rest with `eapply eq_term_refl; ott_build` and finish
+  `eapply eq_args_nil` (NOT `eq_args_refl` if any arg is a congruence). The output sort is
+  built from **s2** (the RHS/F'-side) via `right; cbn [with_names_from]; reflexivity`.
+- **`con "sub"` and `con "ty_subst"` store args REVERSED from surface** (`#"sub" A B =
+  con "sub" [B;A]`; `#"ty_subst" G G' g i A = con "ty_subst" [A;i;g;G';G]`). So a cmp/sub
+  conclusion sort is `s_sub (target-from-G1) (...)` — orient `s_sub tgt src := scon "sub"
+  [src;tgt]` carefully (cost me one iteration on `cmp_g0_mach_cong`).
+- **`act_cod`'s home env `extG` is built from its F-ARGUMENT, not the machinery** (`act_cod
+  ... wknF G extGF F' C'` has `extG = ext G (El F')`). So in `act_cod_mach_cong` the A
+  (`oU orel lG extG`) and G' (`extG`) positions are REFLEXIVE (both F'); only g (ounder) and
+  G (extc) move. (cost me one iteration.)
+- **the two snoc v-leaf conversions** (the only non-trivial sort bridges): `ounder`'s v=hdD
+  lands at hd's natural `ty_subst wkn (El act_code)` sort but snoc demands the `ty_subst
+  (cmp g wkn)(El F)` form — bridge `eapply eq_term_conv; [exact hdD_cong | sort_cong;
+  eapply eq_term_sym; exact (ty_subst_g0_El_eq @F')]`. `snoc_a`'s v=hd (simple bound var)
+  lands at `El(act_code)` but snoc demands `ty_subst (id)(El act_code)` — bridge with
+  `eq_term_trans [El_subst_eq | eq_term_sym ty_subst_id_El_eq]`.
+
+**CONCERN DISCOVERED — `rtt_pi`'s `CodRed` env index looks WRONG (likely a bug).**
+In `LogicalRelation.v`, `rtt_pi`'s `CodRed : RedTy_tot (extc rF lF g G D F) (cod_at ... a)
+(cod_at ... a')`. But `cod_at` lives in env **D** (it = `exp_subst act_cod ... snoc_a extD D`,
+TARGET = D; `cod_at_wf` concludes `exp D (code_info lG)(U orel lG D)`, and `cod_at_wkn_hd_eq`
+is stated at env `extG = D`). Semantically the instantiated codomain at argument `a` IS a
+type in the future world D, NOT in `extc` (= D extended by the domain). So the index should
+be **D**, not `extc`. This is latent in the DEFINITION (the env arg is an unchecked raw index,
+so it compiled GREEN) but WILL bite the escape-at-Pi assembly: `escape_ty` of `CodRed` would
+give `eq_term` at the `extc`-env code-sort, while `cod_at_wkn_hd_eq` / `cod_at_machinery_cong`
+deliver the collapse at the **D**-env sort `exp extGF' (code_info lG)(U orel lG extGF')`.
+RESOLVE FIRST next session: either fix `rtt_pi` (extc -> D, re-thread `RedTy_rect`/smart ctors/
+`RedAtPi`, re-verify axiom-free) OR insert an env conversion in the escape proof. The swap
+toolkit is unaffected (all stated at the D-env sort).
+
+**NEXT = escape-at-Pi proper.** The type-collapse builders are now ALL in hand; precise plan:
+  A reds Pi_rel F C G, B reds Pi_rel F' C' G; goal `eq_term S A B`.
+  1. `reds_sound` both sides.
+  2. **DomRed at (D:=G, g:=id G)**: escape (domain IH) ⇒ `act_code (id G) F ≡ act_code (id G)
+     F'`; rewrite BOTH via `act_code_id_eq` ⇒ **F ≡ F'** (= `HFF'`, the driver every swap
+     lemma consumes).
+  3. **CodRed at (D:=ext G (El F), g:=wkn, a=a':=hd_F)** [a=a'=hd_F, the SAME raw bound var;
+     needs the bound-var REFLECT witness `raa'` — THE mutual entanglement, see GATE]: escape
+     (codomain IH) ⇒ `cod_at wknF G extGF F C hd_F ≡ cod_at wknF G extGF F' C' hd_F`. Then
+     - LHS ≡ C via `cod_at_wkn_hd_eq` (machinery=code=F);
+     - RHS ≡ C' via `cod_at_machinery_cong` (mach F -> F', a hd_F -> hd_F') THEN
+       `cod_at_wkn_hd_eq` at F' — BOTH at sort `exp extGF' (code_info lG)(U orel lG extGF')`,
+       so they compose by `eq_term_trans`.
+     ⇒ **C ≡ C'** (at the extGF' code-sort).
+  4. `term_con_congruence` on `Pi_rel`: eq_args = F≡F' (step 2) + C≡C' (step 3); the C-position
+     demanded sort uses F' (env `ext G (El F')`), already the home of the step-3 result —
+     reconcile via `El_cong`/`ext_cong` + `eq_term_conv` if needed.
+GATE (unchanged): step 3's bound-variable reflect witness ⇒ `RedTy_sound` total is gated on
+the mutual fundamental lemma (escape_ty + escape_tm + reflect bundled in one `RedTy_rect`).
+The reflect-at-Pi side consumes `mapp_ne_eq2` (DONE) + escape_tm at the domain.
+
+(Superseded: z6's "next builder = cod_at_machinery_cong" — DONE this session.)
+
 ## UPDATE 2026-06-07z6 — codomain id/var-collapse `cod_at_wkn_hd_eq` **COMPLETE** (GREEN, axiom-free modulo `egraph_sound`, in `FundamentalLemma.v`). BOTH escape-at-Pi collapse prerequisites are now done. NEXT = escape-at-Pi proper (instantiate CodRed at the bound var) + the mutual reflect/escape adequacy induction (the eta crux).
 
 `cod_at_wkn_hd_eq` (FundamentalLemma.v, right after `sub_collapse`) is DONE:
