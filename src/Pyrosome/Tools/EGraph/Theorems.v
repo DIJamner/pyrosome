@@ -2734,6 +2734,185 @@ Section WithVar.
           - exact Hctx. } }
     Qed.
 
+    (* =============================================================== *)
+    (* USE-SORT READBACK ENGINE (step 1 of the min-sorts discharge).    *)
+    (*                                                                  *)
+    (* This is the genuinely NEW e-graph content that                   *)
+    (* [add_open_faithful_rep] is missing: it produces, for every       *)
+    (* variable occurring in a [con] LHS, that its image [sg x] is      *)
+    (* well-formed (in the EMPTY context) -- WITHOUT any [wf_subst]      *)
+    (* hypothesis.                                                       *)
+    (*                                                                  *)
+    (* Engine: the root [con] atom is sound, so via [interprets_to_term]*)
+    (* the model term [con n args_terms] is wf at the model sort;        *)
+    (* inverting that [wf_term] gives each [args_terms_i] wf at its      *)
+    (* operator-telescope USE-sort.  At a direct var arg [s_i = var x], *)
+    (* [rep_var] makes [args_terms_i = sg x] SYNTACTICALLY, so [sg x] is*)
+    (* wf at the use-sort with NO [wf_subst].  At a nested [con] arg we  *)
+    (* recurse (its var leaves are covered by the term IH).             *)
+    (*                                                                  *)
+    (* NOTE on the conclusion: this engine establishes wf at SOME sort  *)
+    (* in [[]], not yet at the DECLARED sort [t_x[/sg/]].  Producing the*)
+    (* declared sort needs the use-sort -> declared-sort transport       *)
+    (* [eq_sort [] (t_x[/sg/]) (T_use[/sg/])], which is [eq_sort_subst]  *)
+    (* applied to [eq_sort c t_x T_use] -- and that needs [eq_subst]     *)
+    (* over the FULL context [c], i.e. a complete [wf_subst l [] sg c].  *)
+    (* There is no fv-restricted [eq_sort] context-strengthening lemma   *)
+    (* (and it is argued false: [eq_sort_trans] routes through           *)
+    (* intermediate sorts whose free variables escape any fixed fv set). *)
+    (* That transport is the remaining obstruction; see the report /     *)
+    (* the [min_sorts_query] memory.                                     *)
+    (* =============================================================== *)
+    (* Coverage walk over a [con]'s arguments.  Walks the four parallel
+       structures (source args [s] with source wf_args, the egraph ids
+       [sids], the model args [args_terms] with model wf_args, and the
+       per-arg term IH) in lockstep.  At a bare-var arg the model wf_args
+       gives the var's image wf directly; at a nested con arg the term IH
+       recurses. *)
+    Lemma add_open_use_sort_args
+      (a : interp) (eF : instance X) (sg : subst)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall (s : list term) (c c' : ctx),
+          wf_ctx l c ->
+          wf_args l c s c' ->
+          all (fun e => forall c t, wf_ctx l c -> wf_term l c e t ->
+                 forall xe, represents a eF sg e xe ->
+                 (* coverage is only ever needed for con args (var args are
+                    handled directly off the model [wf_args]); a var carries
+                    no use-sort, so the predicate is [True] there. *)
+                 match e with
+                 | con _ _ => forall x, In x (fv e) ->
+                                exists T, wf_term l [] (named_list_lookup default sg x) T
+                 | var _ => True
+                 end) s ->
+          forall sids, Forall2 (represents a eF sg) s sids ->
+          forall args_terms,
+            Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms ->
+            wf_args l [] args_terms c' ->
+            forall x, In x (fv_args s) ->
+                      exists T, wf_term l [] (named_list_lookup default sg x) T.
+    Proof.
+      intros s c c' Hctx Hwfa.
+      revert Hctx.
+      induction Hwfa as [|s c'0 nm e0 tnm Hwfe0 Hwfa IHwfa];
+        intros Hctx Hall sids Hrepargs args_terms Hlk HwfaM x Hin0.
+      { cbn in Hin0; contradiction. }
+      { safe_invert Hrepargs.
+        rename y into i.
+        match goal with
+          He0 : represents _ _ _ e0 _ |- _ => rename He0 into Hrep0 end.
+        safe_invert Hlk.
+        safe_invert HwfaM.
+        destruct Hall as [IHe0 IHs0].
+        unfold fv_args in Hin0; cbn [flat_map] in Hin0;
+          rewrite in_app_iff in Hin0.
+        destruct Hin0 as [Hin_e0 | Hin_rest].
+        { (* x occurs in the head argument e0 *)
+          destruct e0 as [yv | ne0 se0].
+          { (* head is a bare var: rep_var gives args_terms-head = sg y,
+               and the model wf_args gives that term wf. *)
+            cbn in Hin_e0; destruct Hin_e0 as [Hyx | Hfalse]; [|contradiction].
+            subst yv.
+            safe_invert Hrep0.
+            match goal with
+              Hgv : map.get a i = Some (inl (named_list_lookup default sg x)),
+              Hgi : map.get a i = Some (inl ?w) |- _ =>
+                rewrite Hgv in Hgi; safe_invert Hgi end.
+            eexists; eassumption. }
+          { (* head is a nested con: recurse via the term IH IHe0.
+               The source wf_term for e0 is Hwfe0 (in ctx c, at its source
+               use-sort). *)
+            eapply IHe0; [ exact Hctx | exact Hwfe0 | exact Hrep0 | exact Hin_e0 ]. } }
+        { (* x occurs in a later argument: recurse on the tail. *)
+          eapply IHwfa; try eassumption. } }
+    Qed.
+
+    Lemma add_open_use_sort_wf
+      (a : interp) (eF : instance X) (sg : subst)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall e c t, wf_ctx l c -> wf_term l c e t ->
+          forall xe, represents a eF sg e xe ->
+          (* every var occurring in a [con] [e] is wf in the empty context
+             at SOME (model use-) sort.  For a bare [var] root there is no
+             parent atom to read a use-sort off, hence [True] -- and that is
+             exactly why bare-var LHS terms are never in the skip set. *)
+          (match e with
+           | con _ _ => forall x, In x (fv e) ->
+                          exists T, wf_term l [] (named_list_lookup default sg x) T
+           | var _ => True
+           end).
+    Proof.
+      intro e.
+      induction e as [x | n s IHs] using term_ind;
+        intros c t Hctx Hwt xe Hrep.
+      { (* var ROOT: predicate is [True], nothing to prove. *)
+        exact I. }
+      { (* con ROOT: the engine. *)
+        intros x0 Hin0.
+        safe_invert Hrep.
+        match goal with
+          Hr : Forall2 (represents _ _ _) s _ |- _ => rename Hr into Hrepargs end.
+        match goal with
+          Ha : atom_in_egraph _ eF |- _ => rename Ha into Hatom end.
+        (* invert the SOURCE wf_term to get the per-arg source use-sorts *)
+        apply WfCutElim.invert_wf_term_con in Hwt.
+        destruct Hwt as (c' & args & t' & Hin & Hwfa & Hsort).
+        (* node atom sound -> interprets_to_term -> model args wf *)
+        pose proof (Hsound _ Hatom) as Hsnd.
+        unfold atom_sound_for_model, Is_Some_satisfying in Hsnd.
+        cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn]
+          in Hsnd.
+        destruct (list_Mmap (map.get a) sids) as [arg_doms|] eqn:Hargs;
+          cbn beta iota in Hsnd; [|contradiction].
+        destruct (map.get a xe) as [out|] eqn:Hgxe;
+          cbn beta iota in Hsnd; [|contradiction].
+        change (domain V lang_model) with (term + sort)%type in Hsnd.
+        cbn [interprets_to lang_model] in Hsnd.
+        inversion Hsnd as
+          [ es ts Hwt_es Hsoeq Hargdom Houtdom
+          | f0 args0 t0 Heqs Hf0 Hargdom Houtdom
+          | f0 args_terms e_out t0 Heqe Hf0 Hargdom Houtdom ]; subst.
+        { (* interprets_to_sort_of : n = sort_of, contradiction *)
+          exfalso. apply Hsof. eapply pair_fst_in; eauto. }
+        { (* interprets_to_sort : n is a term_rule, contradiction *)
+          exfalso.
+          apply eq_sort_wf_l in Heqs; eauto with lang_core.
+          safe_invert Heqs.
+          match goal with
+            Hsr : In (n, sort_rule _ _) l |- _ =>
+              pose proof (in_all_fresh_same _ _ _ _
+                            ltac:(eauto with lang_core) Hin Hsr) as Hbad end.
+          discriminate Hbad. }
+        { (* interprets_to_term : the real case.
+             Heqe : eq_term l [] t0 (con n args_terms) e_out *)
+          assert (wf_term l [] (con n args_terms) t0) as Hwfmodel.
+          { eapply (eq_term_wf_l Hwf ltac:(constructor) Heqe). }
+          (* per-arg model wf at use-sorts *)
+          apply WfCutElim.invert_wf_term_con in Hwfmodel.
+          destruct Hwfmodel as (cA & argsM & tM & HinM & HwfaM & _).
+          (* the rule name pins cA = c' *)
+          assert (cA = c') as HcAeq.
+          { pose proof (in_all_fresh_same _ _ _ _
+                          ltac:(eauto with lang_core) HinM Hin) as Hpin.
+            safe_invert Hpin; reflexivity. }
+          subst cA.
+          (* leaf correspondence: sids resolve to args_terms *)
+          assert (Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms)
+            as Hlk.
+          { eapply (list_Mmap_get_nth_inl term sort).
+            change (domain V lang_model) with (term + sort)%type in Hargs.
+            exact Hargs. }
+          (* the term IH (match-form) is exactly what the args walk wants *)
+          (* x0 in fv (con n s) = fv_args s; delegate to the args walk *)
+          cbn [fv] in Hin0.
+          eapply add_open_use_sort_args;
+            [ exact Hsound | exact Hctx | exact Hwfa | exact IHs
+            | exact Hrepargs | exact Hlk | exact HwfaM
+            | unfold fv_args; exact Hin0 ]. } }
+    Qed.
+
     (* The sort analogue of [represents].  A sort [scon n s] is built by
        [add_open_sort] = [hash_entry n s'] with [s'] the recursive
        [add_open_term] outputs over the (term) args [s]; so a sort id [xs]
