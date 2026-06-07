@@ -3970,6 +3970,194 @@ Proof.
     eapply eq_sort_refl. unfold code_sort, oU in Hwfsort. exact Hwfsort.
 Qed.
 
+(* ====================================================================== *)
+(* z18 STEP 1': the SYMBOLIC-RELEVANCE generalization of `elt_sort_eq_El`.  *)
+(*                                                                        *)
+(* The codomain bridge `elt_sort_eq_El` is stated only for a RELEVANT code *)
+(* (rX = orel), because the Pi CODOMAIN is always relevant.  The Pi        *)
+(* DOMAIN's bound variable, however, lives at the Pi former's SYMBOLIC     *)
+(* relevance/level `rF/lF` (a Pi_rel domain may be irrelevant — `Pi_rel`   *)
+(* leaves `rF` free).  To type the bound var `hd` at `elt_sort (DomRed)`   *)
+(* uniformly (without case-splitting `rF`, which `RedTy_rect` cannot do),  *)
+(* we need the bridge at the SYMBOLIC `rX`: `elt_sort r` is `eq_sort`-      *)
+(* equal to `El rX lX G X` whenever `X : code_sort rX lX G`.  The buried   *)
+(* `rX/lX` are pinned from the reduct's OWN typing by `code_sort_rel_lvl_eq`*)
+(* in EVERY branch (Nat pins orel/oL0; Empty pins oirr/oL0 — NO LONGER      *)
+(* vacuous, this is the irrelevant-domain case; Ne pins rN/lN; Pi pins      *)
+(* orel/lG), so the irrelevant case is handled by the SAME reconciliation,  *)
+(* not by a separate proof-irrelevance branch.  This dissolves the z9       *)
+(* relevant/irrelevant fork for the bound-var witness.                     *)
+(* ====================================================================== *)
+Lemma elt_sort_eq_El_gen G X Y (r : RedTy ott G X Y) rX lX
+  (HG : wf_term ott [] G s_env)
+  (HrX : wf_term ott [] rX (scon "relevance" []))
+  (HlX : wf_term ott [] lX (scon "lvl" []))
+  (HX : wf_term ott [] X (code_sort rX lX G))
+  : eq_sort ott [] (elt_sort r) (s_exp G (term_info rX lX) (oEl rX lX G X)).
+Proof.
+  pose proof ott_wf as Hwf.
+  assert (Horel : wf_term ott [] orel (scon "relevance" [])) by
+    (unfold orel; eapply Elab.wf_term_by';
+       [apply named_list_lookup_err_in; compute; reflexivity
+       | cbn [Model.wf_term core_model]; ott_build | left; compute; reflexivity]).
+  assert (Hoirr : wf_term ott [] oirr (scon "relevance" [])) by
+    (unfold oirr; eapply Elab.wf_term_by';
+       [apply named_list_lookup_err_in; compute; reflexivity
+       | cbn [Model.wf_term core_model]; ott_build | left; compute; reflexivity]).
+  destruct r as [R r].
+  unfold elt_sort. cbn [projT2].
+  destruct r.
+  - (* Nat: rX/lX pinned to orel/oL0 by canonicity; El-cong on oNat G ~ A *)
+    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfNat.
+    assert (HNatcanon : wf_term ott [] (oNat G) (code_sort orel oL0 G)).
+    { unfold oNat, code_sort, oU, code_info, oinfo, onext, orel, oL0.
+      eapply Elab.wf_term_by';
+        [ apply named_list_lookup_err_in; compute; reflexivity
+        | cbn [Model.wf_term core_model]; ott_build
+        | left; compute; reflexivity ]. }
+    pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HwfNat HNatcanon) as Hss.
+    apply code_sort_rel_lvl_eq in Hss. destruct Hss as [HrX0 HlX0]. subst rX lX.
+    unfold nat_sort, s_exp.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    assert (HNatA : eq_term ott [] (code_sort orel oL0 G) (oNat G) A)
+      by (eapply eq_term_sym; exact HAred).
+    pose proof (El_cong orel oL0 G (oNat G) A HG Horel HlX HNatA) as HElNatA.
+    sort_cong.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. exact HG.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
+    + cbn [Model.eq_term core_model]. exact HElNatA.
+  - (* Empty: rX/lX pinned to oirr/oL0; El-cong on oEmpty G ~ A *)
+    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfEmpty.
+    assert (HEmptycanon : wf_term ott [] (oEmpty G) (code_sort oirr oL0 G)).
+    { unfold oEmpty, code_sort, oU, code_info, oinfo, onext, orel, oirr, oL0.
+      eapply Elab.wf_term_by';
+        [ apply named_list_lookup_err_in; compute; reflexivity
+        | cbn [Model.wf_term core_model]; ott_build
+        | left; compute; reflexivity ]. }
+    pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HwfEmpty HEmptycanon) as Hss.
+    apply code_sort_rel_lvl_eq in Hss. destruct Hss as [HrXi HlX0]. subst rX lX.
+    unfold empty_sort, s_exp.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    assert (HEmptyA : eq_term ott [] (code_sort oirr oL0 G) (oEmpty G) A)
+      by (eapply eq_term_sym; exact HAred).
+    pose proof (El_cong oirr oL0 G (oEmpty G) A HG Hoirr HlX HEmptyA) as HElEmptyA.
+    sort_cong.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. exact HG.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
+    + cbn [Model.eq_term core_model]. exact HElEmptyA.
+  - (* Ne: rX=rN, lX=lN pinned by canonicity; El-cong on na ~ A *)
+    destruct n as (Hnna & Hnnb & Heqnanb).
+    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfNaS.
+    pose proof (eq_term_wf_l ott_wf wf_ctx_ott_nil Heqnanb) as HnaT.
+    pose proof (term_sorts_eq ott_wf wf_ctx_ott_nil HnaT HwfNaS) as Hss.
+    apply code_sort_rel_lvl_eq in Hss. destruct Hss as [HrN HlN]. subst rN lN.
+    unfold el_sort, s_exp.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    assert (HnaA : eq_term ott [] (code_sort rX lX G) na A)
+      by (eapply eq_term_sym; exact HAred).
+    pose proof (El_cong rX lX G na A HG HrX HlX HnaA) as HElnaA.
+    sort_cong.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. exact HG.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
+    + cbn [Model.eq_term core_model]. exact HElnaA.
+  - (* Pi: rX=orel, lX=lG pinned via Pi_rel-rule inversion; El-cong on oPi_rel ~ A *)
+    pose proof (@reds_wf string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HwfPi.
+    pose proof (Pi_rel_inv rF lF lG F C G (code_sort rX lX G) HwfPi) as
+      (_ & _ & _ & _ & _ & _ & HeqS).
+    apply eq_sort_sym in HeqS.
+    apply code_sort_rel_lvl_eq in HeqS. destruct HeqS as [HrXr HlXg]. subst rX lX.
+    unfold s_exp.
+    pose proof (@reds_sound string _ _ _ ott ott_wf ott_pa _ _ _ HX r) as HAred.
+    assert (HPiA : eq_term ott [] (code_sort orel lG G) (oPi_rel rF lF lG F C G) A)
+      by (eapply eq_term_sym; exact HAred).
+    pose proof (El_cong orel lG G (oPi_rel rF lF lG F C G) A HG Horel HlX HPiA) as HElPiA.
+    sort_cong.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. exact HG.
+    + cbn [Model.eq_term core_model]. eapply eq_term_refl. ott_build.
+    + cbn [Model.eq_term core_model]. exact HElPiA.
+Qed.
+
+(* ====================================================================== *)
+(* z18 STEP 1: the BOUND-VARIABLE REDUCIBILITY WITNESS.                     *)
+(*                                                                        *)
+(* At the Pi case of the mutual escape/reflect lemma, instantiating the     *)
+(* CodRed field at the bound variable requires a domain-reducibility        *)
+(* witness `RedTm (DomRed extGF wknF os) hd hd` for the Kripke object        *)
+(* substitution `wknF : sub extGF G` (`extGF := ext G (El F)`), where `hd`   *)
+(* is the bound variable's head projection.                                *)
+(*                                                                        *)
+(* This is the DOMAIN REFLECT IH applied at `hd`: `hd` is neutral (a `hd`   *)
+(* projection), is `eq_term`-equal to itself (refl), and types at           *)
+(* `elt_sort (DomRed extGF wknF os)` via the SYMBOLIC-relevance bridge       *)
+(* `elt_sort_eq_El_gen` (the natural type of `hd` is `El rF lF extGF         *)
+(* (act_code rF lF wknF G extGF F)`, and `act_code rF lF wknF G extGF F`     *)
+(* types at `code_sort rF lF extGF` by `act_code_wf`, so the bridge pins     *)
+(* the member sort uniformly across relevances — NO case-split on `rF`).    *)
+(* ====================================================================== *)
+
+(* The object substitution `wknF : sub extGF G` is an `osub G extGF`, the
+   Kripke world-extension at which CodRed is instantiated for the bound var. *)
+Lemma osub_wknF rF lF G F
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  : osub ott G (oext (oEl rF lF G F) (term_info rF lF) G)
+           (owkn (oEl rF lF G F) (term_info rF lF) G).
+Proof.
+  pose proof ott_wf as Hwf.
+  unfold osub.
+  assert (HElF : wf_term ott [] (oEl rF lF G F) (s_ty G (term_info rF lF))).
+  { unfold s_ty, oEl, term_info. ott_build. }
+  unfold owkn, term_info.
+  change (scon "sub" [G; oext (oEl rF lF G F) (term_info rF lF) G])
+    with (s_sub (oext (oEl rF lF G F) (term_info rF lF) G) G).
+  unfold s_sub, oext, oEl, term_info. ott_build.
+Qed.
+
+(* The bound-variable typing + member-sort bridge (the SOUND part of the
+   witness): `hd` types at `El rF lF extGF (act_code .. F)`, hence at
+   `elt_sort (DomRed extGF wknF os)` via `elt_sort_eq_El_gen`.  The REFLECT-
+   based witness `RedTm (DomRed) hd hd` does NOT go through, because `hd` is
+   NOT `neutral` in this explicit-substitution encoding (`ott_pa "hd" = None`,
+   so `con "hd"` is whnf-but-not-neutral) — see QUESTION in NEXT_SESSION z18. *)
+Lemma bound_var_typed rF lF G F F'
+  (HG : wf_term ott [] G s_env)
+  (HrF : wf_term ott [] rF (scon "relevance" []))
+  (HlF : wf_term ott [] lF (scon "lvl" []))
+  (HF : wf_term ott [] F (s_exp G (code_info lF) (oU rF lF G)))
+  (DomRed : forall D g (os : osub ott G D g),
+      RedTy ott D (act_code rF lF g G D F) (act_code rF lF g G D F'))
+  : let extGF := oext (oEl rF lF G F) (term_info rF lF) G in
+    let wknF  := owkn (oEl rF lF G F) (term_info rF lF) G in
+    let hdF   := ohd (oEl rF lF G F) (term_info rF lF) G in
+    forall (os : osub ott G extGF wknF),
+      wf_term ott [] hdF (elt_sort (DomRed extGF wknF os)).
+Proof.
+  pose proof ott_wf as Hwf.
+  intros extGF wknF hdF os.
+  assert (HElF : wf_term ott [] (oEl rF lF G F) (s_ty G (term_info rF lF))).
+  { unfold s_ty, oEl, term_info. ott_build. }
+  assert (HD : wf_term ott [] extGF s_env) by (unfold extGF; ott_build).
+  assert (HactF : wf_term ott [] (act_code rF lF wknF G extGF F)
+                    (code_sort rF lF extGF)).
+  { unfold code_sort. apply act_code_wf; eassumption. }
+  assert (Hhd : wf_term ott [] hdF
+            (s_exp extGF (term_info rF lF) (oEl rF lF extGF (act_code rF lF wknF G extGF F)))).
+  { unfold hdF. eapply wf_term_conv.
+    - eapply Elab.wf_term_by';
+        [ apply named_list_lookup_err_in; compute; reflexivity
+        | cbn [Model.wf_term core_model]; unfold extGF; ott_build
+        | left; compute; reflexivity ].
+    - unfold s_exp, extGF; sort_cong; cbn [Model.eq_term core_model];
+      try solve [ eapply eq_term_refl; ott_build ];
+      apply El_subst_eq; eassumption. }
+  pose proof (elt_sort_eq_El_gen extGF (act_code rF lF wknF G extGF F)
+                (act_code rF lF wknF G extGF F') (DomRed extGF wknF os) rF lF
+                HD HrF HlF HactF) as Hbridge.
+  eapply wf_term_conv; [ exact Hhd | eapply eq_sort_sym; exact Hbridge ].
+Qed.
+
 (* TODO (file 4 body, continued) — STEP 3 remaining (the typing-induction
    fundamental lemma):
    - The mutual ESCAPE/REFLECT lemma (Pmot) Pi case + the hard direction
