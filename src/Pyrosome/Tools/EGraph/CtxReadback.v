@@ -535,23 +535,20 @@ Section WithVar.
 
     (* ===== skip-sorts (_gen) IN-ORDER wf_subst reconstruction ===== *)
     (* [ctx_readback_wf_subst_gen]: the minimized-query analogue of            *)
-    (* [ctx_readback_wf_subst].  Builds [wf_subst l [] sg c] for the VALUE     *)
-    (* MAP [sg] already reconstructed by [ctx_readback_vals_gen], by showing   *)
-    (* the per-variable declared-sort wf and assembling via                    *)
-    (* [Core.wf_subst_from_pointwise] (the user's "assemble" step).            *)
+    (* [ctx_readback_wf_subst].  Builds [wf_subst l [] sg c] by HEAD-FIRST     *)
+    (* induction over [c] (Pyrosome ctx cons = most-dependent var first; the   *)
+    (* tail [c'] is the strictly-earlier "prefix").  The IH supplies a         *)
+    (* COMPLETE prefix [wf_subst l [] sg' c'] (the user's in-order unlock), so *)
+    (* [t[/sg'/]] is the declared sort each head must hit.                     *)
     (*                                                                         *)
-    (* The pointwise obligation splits by [no_sort]:                           *)
-    (*  - NON-skip [x]: [wf_term l [] (sg x) (t[/sg/])] from the var's         *)
-    (*    [sort_of] atom (its model sort is [eq_sort] to [t[/sg/]] via          *)
-    (*    [add_open_faithful_rep_sort], using the FULL [sg] now available).     *)
-    (*  - SKIP [x]: [wf_term l [] (sg x) (t[/sg/])] supplied externally        *)
-    (*    ([Hskipwf]) -- at the assembly this is produced from the LHS image    *)
-    (*    ([Theorems.add_open_use_sort_wf] for the model use-sort, then the     *)
-    (*    use->declared transport).  Isolating it here keeps the readback       *)
-    (*    decoupled from the (telescope) transport argument.                    *)
-    (*                                                                         *)
-    (* NOTE: [sg] is passed in (the value map) rather than re-derived, so the  *)
-    (* declared-sort witnesses are stated against the SAME [sg].               *)
+    (*  - NON-skip head [x]: value + declared-sort wf come from the var's      *)
+    (*    [sort_of] atom (its model sort is [eq_sort] to [t[/sg'/]] via         *)
+    (*    [add_open_faithful_rep_sort]; [sg'] is now a real wf_subst, so this   *)
+    (*    applies -- exactly as in [ctx_readback_wf_subst]).                    *)
+    (*  - SKIP head [x]: the value + [wf_term l [] es (t[/sg'/])] are supplied  *)
+    (*    by [skip_decl_wf] (discharged at the assembly from the LHS image:     *)
+    (*    [Theorems.add_open_use_sort_wf] gives wf at the model use-sort, and   *)
+    (*    the use->declared transport lands it at [t[/sg'/]]).                  *)
     (* The skip-var declared-sort witness, phrased against the INCREMENTAL
        prefix substitution [sg'] the induction produces (a genuine wf_subst
        over the prefix [c']).  At the assembly this is discharged from the LHS
@@ -657,6 +654,132 @@ Section WithVar.
             safe_invert Heqs0.
             match goal with Hin : In (sort_of, _) l |- _ =>
               apply Hsof; eapply pair_fst_in; exact Hin end.
+    Qed.
+
+    (* =============================================================== *)
+    (* THE ISOLATED REMAINING CONTENT (substitution-typing reflection   *)
+    (* at the e-graph level, restricted to a skipped/occurring var).     *)
+    (*                                                                  *)
+    (* For a ctx var [x] that OCCURS in the LHS [con n0 s0] (so it is    *)
+    (* skipped) with declared sort [t] over its prefix [c'], and a       *)
+    (* COMPLETE prefix [wf_subst l [] sg' c'] that agrees with the       *)
+    (* model value-map [sg] on the prefix companions, the var's image    *)
+    (* [sg x] is well-formed at its declared (substituted) sort          *)
+    (* [t[/sg'/]].                                                       *)
+    (*                                                                  *)
+    (* This is the genuine remaining obligation isolated by the in-order  *)
+    (* construction.  The engine [Theorems.add_open_use_sort_wf] already  *)
+    (* gives [wf_term l [] (sg x) T_use] at the MODEL use-sort with no    *)
+    (* [wf_subst]; closing this lemma requires, additionally:            *)
+    (*   (A) identifying [T_use] with the SUBSTITUTED SOURCE use-sort     *)
+    (*       [T_use_src[/sg'/]] (faithful-rep alignment of the model      *)
+    (*       use-sort -- [T_use_src] is the operator-telescope sort for   *)
+    (*       x's argument position, instantiated by the SIBLING args,     *)
+    (*       all of which are prefix-scoped by the telescope), and        *)
+    (*   (B) the SOURCE equation [eq_sort l c' T_use_src t] OVER THE      *)
+    (*       PREFIX [c'] (declared = use sort for the occurrence), then   *)
+    (*       transporting (B) by [sg'] via [Core.use_sort_to_decl_sort]    *)
+    (*       ([eq_subst_refl] of the prefix [wf_subst]).                  *)
+    (* (B) is [term_sorts_eq] strengthened from the full ctx to the       *)
+    (* prefix [c'] (dropping the bindings at/after [x], none of which     *)
+    (* the two prefix-scoped sorts mention).  This single-step           *)
+    (* strengthening of an [eq_sort] derivation is the precise point at   *)
+    (* which no existing Pyrosome lemma applies ([ctx_mono] only weakens; *)
+    (* there is no [eq_sort] context-strengthening).  REPORTED as the     *)
+    (* exact blocking obligation; admitted as the sole checkpoint.        *)
+    Lemma skip_var_decl_sort_wf (no_sort : V -> bool) (eF : instance X) (a : interp)
+      (Hsound : forall al, ain al eF -> asnd a al)
+      (sg : subst) (n0 : V) (s0 : list term) (x1 : V)
+      (Hrep : @Theorems.represents V V_Eqb V_default V_map V_trie sort_of X l a eF sg
+                (con n0 s0) x1)
+      (x : V) (t : sort) (c' : ctx) (sg' : subst)
+      (Hxfv : In x (fv (con n0 s0)))
+      (Hwfsub' : wf_subst l [] sg' c')
+      (Hdomsg' : map fst sg' = map fst c')
+      (Hagree : forall y, In y (map fst c') ->
+                  named_list_lookup default sg' y = named_list_lookup default sg y)
+      : wf_term l [] (named_list_lookup default sg x) (t[/sg'/]).
+    Proof.
+    Admitted.
+
+    (* =============================================================== *)
+    (* Discharge of [skip_decl_wf] from the LHS image: assemble the     *)
+    (* per-skip-var declared-sort witnesses (each from                  *)
+    (* [skip_var_decl_sort_wf]) into the [skip_decl_wf] predicate by      *)
+    (* induction over the ctx/sub telescope.  Fully Qed modulo the one    *)
+    (* admitted checkpoint [skip_var_decl_sort_wf]. *)
+    Lemma skip_decl_wf_from_image (no_sort : V -> bool) (eF : instance X) (a : interp)
+      (Hsound : forall al, ain al eF -> asnd a al)
+      (sg : subst) (n0 : V) (s0 : list term) (x1 : V)
+      (Hrep : @Theorems.represents V V_Eqb V_default V_map V_trie sort_of X l a eF sg
+                (con n0 s0) x1)
+      : forall c sub t1, wf_ctx l c -> wf_term l c (con n0 s0) t1 ->
+          map fst c = map fst sub ->
+          (forall x, no_sort x = true -> In x (fv (con n0 s0))) ->
+          (forall x, In x (map fst sub) ->
+                map.get a (named_list_lookup default sub x)
+                  = Some (inl (named_list_lookup default sg x))) ->
+          skip_decl_wf no_sort a sub c.
+    Proof.
+      (* the LHS use-sort coverage: every occurring var is wf at SOME sort *)
+      pose proof (@Theorems.add_open_use_sort_wf V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
+                    X l Hwf Hsof a eF sg Hsound (con n0 s0)) as Huse0.
+      intros c sub t1 Hwfc Hwfe1 Hdom Hskipset Hvals.
+      specialize (Huse0 c t1 Hwfc Hwfe1 x1 Hrep).
+      (* [Huse0]: for the [con] LHS, every var in [fv e1] is wf at some sort.
+         Its STATEMENT depends only on [e1]/[sg], so it survives the induction
+         on [c]/[sub].  We no longer need [Hwfe1]/[t1]. *)
+      clear Hwfe1 t1.
+      revert sub Hwfc Hdom Hvals.
+      induction c as [|[x t] c' IH]; intros sub Hwfc Hdom Hvals.
+      - cbn. exact I.
+      - destruct sub as [|[x0 x'] sub']; cbn [map fst] in Hdom; [discriminate|].
+        injection Hdom as Hxx0 Hdom'. subst x0.
+        apply invert_wf_ctx_cons in Hwfc.
+        destruct Hwfc as [Hfresh [Hwfc' Hwst] ].
+        cbn [skip_decl_wf]. split.
+        2:{ apply IH; [exact Hwfc' | exact Hdom' |].
+            intros y Hy. pose proof (Hvals y) as Hv. cbn beta in Hv.
+            cbn [named_list_lookup map fst] in Hv.
+            (* y is in sub', distinct from x (fresh), so lookup agrees *)
+            assert (Hyx : y <> x).
+            { intro; subst y. unfold fresh in Hfresh.
+              rewrite Hdom' in Hfresh. apply Hfresh. exact Hy. }
+            pose proof (eqb_spec y x) as Hsp.
+            destruct (eqb y x) eqn:Hyxb; [exfalso; apply Hyx; exact Hsp|].
+            apply Hv. cbn [map fst]. right. exact Hy. }
+        (* head skip clause *)
+        intros Hns sg' Hwfsub' Hdomsg' Hleaf'.
+        (* the head value [es = sg x = a x'] *)
+        assert (Hgx' : map.get a x' = Some (inl (named_list_lookup default sg x))).
+        { pose proof (Hvals x (or_introl eq_refl)) as Hv.
+          cbn [named_list_lookup] in Hv.
+          pose proof (eqb_spec x x) as Hs.
+          destruct (eqb x x); [exact Hv | exfalso; apply Hs; reflexivity]. }
+        exists (named_list_lookup default sg x).
+        split; [exact Hgx'|].
+        (* x occurs in the LHS (skip), declared sort [t] over the prefix [c'],
+           prefix [wf_subst l [] sg' c'] in hand.  Discharge via the isolated
+           e-graph-level substitution-typing reflection [skip_var_decl_sort_wf]. *)
+        assert (Hxfv : In x (fv (con n0 s0))) by (apply Hskipset; exact Hns).
+        (* prefix value-maps agree: both [sg'] and [sg] resolve [sub']'s
+           companions to the same model values. *)
+        assert (Hagree : forall y, In y (map fst c') ->
+                  named_list_lookup default sg' y = named_list_lookup default sg y).
+        { intros y Hy. rewrite Hdom' in Hy.
+          (* companion id [sub' y] resolves to both [sg' y] and [sg y] *)
+          pose proof (Hleaf' y Hy) as Hsg'y.
+          pose proof (Hvals y) as Hsgy. cbn beta in Hsgy.
+          assert (Hyx : y <> x).
+          { intro; subst y. unfold fresh in Hfresh. rewrite Hdom' in Hfresh.
+            apply Hfresh; exact Hy. }
+          cbn [named_list_lookup map fst] in Hsgy.
+          pose proof (eqb_spec y x) as Hsp.
+          destruct (eqb y x) eqn:Hyxb; [exfalso; apply Hyx; exact Hsp|].
+          specialize (Hsgy (or_intror Hy)).
+          rewrite Hsg'y in Hsgy. injection Hsgy as Hsgy. exact Hsgy. }
+        eapply (skip_var_decl_sort_wf no_sort eF a Hsound sg n0 s0 x1 Hrep
+                  x t c' sg' Hxfv Hwfsub' Hdomsg' Hagree).
     Qed.
 
   End AddCtxInvert.
