@@ -2828,6 +2828,80 @@ Section WithVar.
           eapply IHwfa; try eassumption. } }
     Qed.
 
+    (* PART A (min-sorts-query assessment): a strengthened coverage walk that,
+       for a DIRECT VARIABLE argument [s_i = var x] of a [con], RETURNS THE
+       SYNTACTIC SOURCE USE-SORT [T_use_src] (the operator-telescope sort
+       [tnm_i] instantiated by the SOURCE sibling args) as an explicit handle
+       (not the existential [T] of [add_open_use_sort_args]), together with the
+       image-wf [wf_term l [] (sg x) (model use-sort)].
+
+       This is what a leaf-level use->declared bridge attempt would consume.
+       It makes the source use-sort explicit and exposes precisely why the
+       bridge cannot be closed at the leaf without a complete [wf_subst] over
+       the FULL rule context:
+
+         the returned [T_use_src = tnm_i[/with_names_from c'0 s_tail/]]
+         depends on [fv_args s_tail] = the SIBLING args of [x] in the LHS,
+         which may be other (more-dependent) ctx vars; so the source equation
+         [eq_sort l c T_use_src t_x] (from [term_sorts_eq] on x's two sorts)
+         is irreducibly over the FULL ctx [c], and transporting it by [sg]
+         needs [eq_subst l [] c sg sg] = a complete [wf_subst l [] sg c].
+
+       The conclusion is restricted to direct var occurrences of the head con
+       (a var nested inside a con arg has no rule-level source use-sort — its
+       use-sort lives inside the nested operator's telescope; for those the
+       weaker existential [add_open_use_sort_args] is the right statement).
+       The image-wf is delivered at the MODEL use-sort [T_model] together with
+       the SOURCE use-sort [T_use_src] wf in [c]; relating the two requires the
+       full-ctx substitution (the documented wall), so it is deliberately NOT
+       part of this (Qed) lemma. *)
+    Lemma add_open_use_sort_args_src
+      (a : interp) (eF : instance X) (sg : subst)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall (s : list term) (c c' : ctx),
+          wf_ctx l c ->
+          wf_args l c s c' ->
+          forall sids, Forall2 (represents a eF sg) s sids ->
+          forall args_terms,
+            Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms ->
+            wf_args l [] args_terms c' ->
+            (* for any DIRECT var arg [s_i = var x], expose its SOURCE use-sort
+               [T_use_src] (wf in [c]) and the image-wf at the MODEL use-sort *)
+            forall x, In (var x) s ->
+                      exists T_use_src T_model,
+                        wf_term l c (var x) T_use_src
+                        /\ wf_term l [] (named_list_lookup default sg x) T_model.
+    Proof.
+      intros s c c' Hctx Hwfa.
+      induction Hwfa as [|s c'0 nm e0 tnm Hwfe0 Hwfa IHwfa];
+        intros sids Hrepargs args_terms Hlk HwfaM x Hin0.
+      { cbn in Hin0; contradiction. }
+      { safe_invert Hrepargs.
+        rename y into i.
+        match goal with
+          He0 : represents _ _ _ e0 _ |- _ => rename He0 into Hrep0 end.
+        safe_invert Hlk.
+        safe_invert HwfaM.
+        cbn [In] in Hin0.
+        destruct Hin0 as [Hhead | Htail].
+        { (* x is the head direct var arg: e0 = var x.  Its SOURCE use-sort is
+             [tnm[/with_names_from c'0 s/]] (= Hwfe0's sort), and the MODEL
+             wf_args head gives the image wf at the model use-sort. *)
+          subst e0.
+          exists (tnm[/with_names_from c'0 s/]).
+          safe_invert Hrep0.
+          match goal with
+            Hgv : map.get a i = Some (inl (named_list_lookup default sg x)),
+            Hgi : map.get a i = Some (inl ?w) |- _ =>
+              rewrite Hgv in Hgi; safe_invert Hgi end.
+          (* HwfaM head now: wf_term l [] (sg x) (model use-sort) *)
+          eexists.
+          split; [exact Hwfe0 | eassumption]. }
+        { (* x in the tail: recurse *)
+          eapply IHwfa; try eassumption. } }
+    Qed.
+
     Lemma add_open_use_sort_wf
       (a : interp) (eF : instance X) (sg : subst)
       (Hsound : forall al, atom_in_egraph al eF ->
