@@ -3018,6 +3018,84 @@ Section WithVar.
         eapply eq_sort_trans; [ eapply eq_sort_sym; exact Heqs | exact Hcong ]. }
     Qed.
 
+    (* SORT analogue of [add_open_use_sort_wf]: every var occurring in a sort
+       LHS [scon n0 s0] has its image [sg x] wf in [[]] at SOME (model use-)
+       sort, with NO [wf_subst].  Engine = the sort root atom is sound, so via
+       [interprets_to_sort] the model sort [scon n0 args_terms] is wf; inverting
+       gives the model [wf_args], and the shared [add_open_use_sort_args] walk
+       covers the term args. *)
+    Lemma add_open_use_sort_wf_scon
+      (a : interp) (eF : instance X) (sg : subst)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall n0 s0 c, wf_ctx l c ->
+          wf_sort l c (scon n0 s0) ->
+          forall xs, represents_sort a eF sg (scon n0 s0) xs ->
+          forall x, In x (fv_args s0) ->
+                    exists T, wf_term l [] (named_list_lookup default sg x) T.
+    Proof.
+      intros n0 s0 c Hctx Hws xs Hrep x0 Hin0.
+      destruct Hrep as (sids & Hrepargs & Hatom).
+      safe_invert Hws.
+      match goal with
+        Hin : In (n0, sort_rule ?c'0 ?args0) l |- _ =>
+          rename c'0 into c'; rename args0 into args; rename Hin into Hin end.
+      match goal with
+        Hwa : Model.wf_args _ s0 c' |- _ => rename Hwa into Hwfa end.
+      pose proof (Hsound _ Hatom) as Hsnd.
+      unfold atom_sound_for_model, Is_Some_satisfying in Hsnd.
+      cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn] in Hsnd.
+      destruct (list_Mmap (map.get a) sids) as [arg_doms|] eqn:Hargs;
+        cbn beta iota in Hsnd; [|contradiction].
+      destruct (map.get a xs) as [out|] eqn:Hgxs; cbn beta iota in Hsnd; [|contradiction].
+      change (domain V lang_model) with (term + sort)%type in Hsnd.
+      cbn [interprets_to lang_model] in Hsnd.
+      inversion Hsnd as
+        [ es ts Hwt_es Hsoeq Hargdom Houtdom
+        | f0 args_terms t0 Heqs Hf0 Hargdom Houtdom
+        | f0 args0 e_out t0 Heqe Hf0 Hargdom Houtdom ]; subst.
+      { exfalso. apply Hsof. eapply pair_fst_in; eauto. }
+      2:{ exfalso.
+          apply eq_term_wf_l in Heqe; eauto with lang_core.
+          apply WfCutElim.invert_wf_term_con in Heqe.
+          destruct Heqe as (c'' & args' & t'' & Hin' & _ & _).
+          match goal with Hsr : In (_, sort_rule _ _) l |- _ =>
+            pose proof (in_all_fresh_same _ _ _ _ ltac:(eauto with lang_core) Hsr Hin') as Hbad end.
+          discriminate Hbad. }
+      { (* interprets_to_sort: model sort wf *)
+        assert (wf_sort l [] (scon n0 args_terms)) as Hwfmodel.
+        { eapply (eq_sort_wf_l Hwf ltac:(constructor) Heqs). }
+        inversion Hwfmodel as [cc nn ss aa cA HinM HwfaM Heqnn Heqss]; subst.
+        assert (cA = c') as HcAeq.
+        { match goal with Hin2 : In (n0, sort_rule c' _) l |- _ =>
+            pose proof (in_all_fresh_same _ _ _ _ ltac:(eauto with lang_core) HinM Hin2) as Hpin end.
+          safe_invert Hpin; reflexivity. }
+        subst cA.
+        assert (Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms) as Hlk.
+        { eapply (list_Mmap_get_nth_inl term sort).
+          change (domain V lang_model) with (term + sort)%type in Hargs.
+          exact Hargs. }
+        assert (wf_ctx l c') as Hwfc'.
+        { eapply rule_in_ctx_wf with (r:=sort_rule c' args); eauto; reflexivity. }
+        (* per-arg term IH (match-form) for add_open_use_sort_args: each arg term
+           covered by add_open_use_sort_wf *)
+        assert (all (fun e => forall cc t, wf_ctx l cc -> wf_term l cc e t ->
+                       forall xe, represents a eF sg e xe ->
+                       match e with
+                       | con _ _ => forall y, In y (fv e) ->
+                                      exists T, wf_term l [] (named_list_lookup default sg y) T
+                       | var _ => True
+                       end) s0) as IHs0.
+        { clear Hwfa Hrepargs Hlk HwfaM Hin0.
+          induction s0 as [|e0 s0' IH]; cbn; [exact I|].
+          split; [| exact IH].
+          intros cc t Hwfcc Hwfe0 xe Hrep0.
+          eapply add_open_use_sort_wf; eauto. }
+        eapply add_open_use_sort_args;
+          [ exact Hsound | exact Hctx | exact Hwfa | exact IHs0
+          | exact Hrepargs | exact Hlk | exact HwfaM | exact Hin0 ]. }
+    Qed.
+
     (* =============================================================== *)
     (* Model-free skeleton of [represents] (the (P2a) connection layer).*)
     (* See [[project-source-rule-adapter]].                             *)
