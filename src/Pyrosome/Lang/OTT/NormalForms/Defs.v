@@ -63,7 +63,9 @@ Definition nf_injectivity : list (string * list string) :=
    ("nf_Nat", ["G"]);
    ("nf_zero", ["G"]);
    ("nf_suc", ["n"; "G"]);
-   ("nf_ne_at", ["m"; "n"; "i"; "G"])].
+   ("nf_ne_at", ["m"; "n"; "i"; "G"]);
+   ("nf_lam", ["t"; "B"; "F"; "lG"; "lF"; "rF"; "G"]);
+   ("ne_app", ["a"; "f"; "B"; "F"; "lG"; "lF"; "rF"; "G"])].
 
 Definition ott_base_inj_all :=
   (nf_injectivity ++ pi_injectivity ++ nat_injectivity
@@ -245,6 +247,40 @@ Proof.
           "m" : #"ne_exp" "G" "i" (#"ne2ty" "n")
       -----------------------------------------------
       #"nf_ne_at" "n" "m" : #"nf_exp" "G" "i" (#"ne2ty" "n")
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* ==================================================================== *)
+  (* Phase 1c/1d (Pi) — the binder constructors.  nf_lam is the ONLY normal   *)
+  (* at a Pi code (eta gate, above); ne_app's head is neutral, arg normal,    *)
+  (* result index uses nf2exp to stay in base syntax.  Mirror lam_rel/app_rel.*)
+  (* ==================================================================== *)
+
+  (* nf_lam : the unique eta-long normal at a Pi code (body is normal). *)
+  elab_rule {[r "G" : #"env", "rF" : #"relevance", "lF" : #"lvl", "lG" : #"lvl",
+          "F" : #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G"] "rF" "lF"),
+          "B" : #"exp" (#"ext" "G" (#"El" "F")) (#"info" #"rel" (#"next" "lG"))
+                       (#"U" ["G" := #"ext" "G" (#"El" "F")] #"rel" "lG"),
+          "t" : #"nf_exp" (#"ext" "G" (#"El" "F")) (#"info" #"rel" (#"iota" "lG")) (#"El" "B")
+      -----------------------------------------------
+      #"nf_lam" "rF" "lF" "lG" "F" "B" "t"
+        : #"nf_exp" "G" (#"info" #"rel" (#"iota" "lG"))
+          (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "lG"] (#"Pi_rel" ["G" := "G"] "rF" "lF" "lG" "F" "B"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* ne_app : application of a neutral head to a normal argument. *)
+  elab_rule {[r "G" : #"env", "rF" : #"relevance", "lF" : #"lvl", "lG" : #"lvl",
+          "F" : #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G"] "rF" "lF"),
+          "B" : #"exp" (#"ext" "G" (#"El" "F")) (#"info" #"rel" (#"next" "lG"))
+                       (#"U" ["G" := #"ext" "G" (#"El" "F")] #"rel" "lG"),
+          "f" : #"ne_exp" "G" (#"info" #"rel" (#"iota" "lG"))
+                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "lG"] (#"Pi_rel" ["G" := "G"] "rF" "lF" "lG" "F" "B")),
+          "a" : #"nf_exp" "G" (#"info" "rF" (#"iota" "lF")) (#"El" "F")
+      -----------------------------------------------
+      #"ne_app" "rF" "lF" "lG" "F" "B" "f" "a"
+        : #"ne_exp" "G" (#"info" #"rel" (#"iota" "lG"))
+            (#"ty_subst" (#"snoc" #"id" (#"nf2exp" "a")) (#"El" "B"))
     ]}%prerule
     ott_base_inj_all.
 
