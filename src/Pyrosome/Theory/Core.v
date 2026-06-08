@@ -1987,9 +1987,125 @@ Proof.
        with [eq_subst l c c' s s] -- the COMPLETE wf_subst we are building. *)
 Abort.
 
+(* ===================================================================== *)
+(* COVERING via construction of the full [wf_subst].                       *)
+(*                                                                        *)
+(* Driven to the SINGLE residual at the bare-var argument leaf:            *)
+(*     eq_sort l c (t1[/s/]) (t'[/s/])                                     *)
+(* where [t1 := tnm[/with_names_from cA' rest/]] is the var's USE sort     *)
+(* (the operator telescope arg-sort instantiated by the SOURCE siblings),  *)
+(* [t'] is its DECLARED sort in [c'], and [eq_sort l c' t1 t'] is in hand  *)
+(* (the var's two sorts, via [term_sorts_eq]).                             *)
+(*                                                                        *)
+(* This residual is exactly [eq_sort_subst] of [eq_sort l c' t1 t'] by     *)
+(* [eq_subst l c c' s s] = [eq_subst_refl] of the [wf_subst l c s c']      *)
+(* THIS lemma is building.  It does NOT decompose along the telescope      *)
+(* order: the use sort [t1] depends on the SIBLING args ([fv_args rest]),  *)
+(* which may be ctx variables EARLIER than [x] (e.g. [app f a] with        *)
+(* [a]'s use sort the EARLIER [A]); so no prefix substitution covers       *)
+(* [t1]'s dependencies, and [eq_sort_subst] cannot be applied with a       *)
+(* partial subst.  The only sound transport is by the complete            *)
+(* [wf_subst l c s c'] -- the apparent self-reference is genuine within a  *)
+(* single covering pass.  Isolated as the named checkpoint                 *)
+(* [covering_var_leaf_transport] below. *)
+Lemma covering_var_leaf_transport (l : lang) (c c' : ctx) (s : subst) (t1 t' : sort)
+  : wf_lang l ->
+    wf_ctx l c' ->
+    map fst s = map fst c' ->
+    eq_sort l c' t1 t' ->
+    eq_sort l c (t1[/s/]) (t'[/s/]).
+Proof.
+  (* This is [eq_sort_subst] with [eq_subst l c c' s s]; the latter is
+     [eq_subst_refl] of [wf_subst l c s c'].  See the discussion above:
+     the [wf_subst] is precisely what the covering produces, and the
+     dependency order does not permit a partial witness here. *)
+Admitted.
+
+Lemma wf_subst_from_args_image (l : lang) (wfl : wf_lang l) c' cA args
+  : wf_ctx l c' ->
+    wf_ctx l cA ->
+    wf_args l c' args cA ->
+    forall c s,
+      map fst s = map fst c' ->
+      wf_args l c args[/s/] cA ->
+      (forall y t'', In (y,t'') c' -> ~ In y (fv_args args) ->
+                     wf_term l c (subst_lookup s y) t''[/s/]) ->
+      wf_subst l c s c'.
+Proof.
+  intros Hwfc HwfcA Hsrc c s Hmap Himg Hwit.
+  apply (wf_subst_from_pointwise (c:=c)); [assumption | assumption | assumption |].
+  intros x t' Hin.
+  destruct (inb x (fv_args args)) eqn:Hib.
+  2:{ apply Hwit; [exact Hin|].
+      intro Hc. pose proof (proj2 (inb_is_In x (fv_args args)) Hc) as Hbad.
+      rewrite Hib in Hbad; exact Hbad. }
+  assert (Hfv : In x (fv_args args))
+    by (apply (proj1 (inb_is_In x (fv_args args))); rewrite Hib; exact I).
+  assert (Hvar : wf_term l c' (var x) t') by (apply wf_term_var; exact Hin).
+  clear Hib Hwit Hin.
+  revert Hfv cA HwfcA Hsrc Himg.
+  induction args as [|e0 rest IHargs]; intros Hfv cA HwfcA Hsrc Himg.
+  { cbn in Hfv; contradiction. }
+  destruct cA as [|[nm tnm] cA'].
+  { safe_invert Hsrc. }
+  apply invert_wf_ctx_cons in HwfcA.
+  destruct HwfcA as [HfrcA [HwfcA' Hwst_tnm] ].
+  cbn [apply_subst substable_args args_subst map] in Himg.
+  safe_invert Hsrc.
+  safe_invert Himg.
+  unfold fv_args in Hfv; cbn [flat_map] in Hfv; rewrite in_app_iff in Hfv.
+  destruct Hfv as [Hin_e0 | Hin_rest].
+  2:{ eapply IHargs; eauto. }
+  destruct e0 as [yv | ne0 se0].
+  - (* bare var arg: e0 = var x *)
+    cbn in Hin_e0; destruct Hin_e0 as [Hyx | []]; subst yv.
+    match goal with
+    | Hi : context[term_subst s (var x)] |- _ => rename Hi into Himgh
+    end.
+    set (t1 := tnm[/with_names_from cA' rest/]) in *.
+    match goal with
+    | Hh : context[t1] |- _ =>
+        match type of Hh with
+        | context[var x] => rename Hh into Hsrch
+        end
+    end.
+    assert (Heqsrc : eq_sort l c' t1 t')
+      by (eapply term_sorts_eq; [ exact wfl | exact Hwfc | exact Hsrch | exact Hvar ]).
+    (* the image head sort equals t1[/s/]: this is the [faithful_sort_align]
+       identity [tnm[/wnf cA' rest/][/s/] = tnm[/wnf cA' rest[/s/]/]], needing
+       only [ws_sort (map fst cA') tnm] and the length match. *)
+    assert (Hlen : length cA' = length rest)
+      by (eapply wf_args_length_eq; eassumption).
+    assert (Hwst1 : ws_sort (map fst cA') tnm).
+    { eapply wf_sort_implies_ws;
+        [ eapply wf_lang_implies_ws_noext; exact wfl | exact Hwst_tnm ]. }
+    assert (Himgsort : (t1[/s/]) = (tnm[/with_names_from cA' (map (term_subst s) rest)/])).
+    { subst t1.
+      change (map (term_subst s) rest) with (rest[/s/]).
+      rewrite with_names_from_args_subst.
+      erewrite subst_assoc; [ reflexivity | typeclasses eauto | ].
+      rewrite map_fst_with_names_from by exact Hlen. exact Hwst1. }
+    (* the image term head is [subst_lookup s x]; convert its sort to t'[/s/] *)
+    eapply wf_term_conv; [ exact Himgh |].
+    (* RESIDUAL (transported through the image-sort identity Himgsort):
+       eq_sort l c (t1[/s/]) (t'[/s/]). *)
+    assert (Hg : eq_sort l c (t1[/s/]) (t'[/s/]))
+      by (eapply covering_var_leaf_transport;
+          [ exact wfl | exact Hwfc | exact Hmap | exact Heqsrc ]).
+    rewrite Himgsort in Hg. exact Hg.
+  - (* nested con arg: x occurs inside the con [con ne0 se0].  Its var
+       leaves are covered by the same construction recursing into [se0]'s
+       argument list against the nested operator's telescope (the image
+       con-arg is wf at the nested op's substituted telescope sort, whose
+       inversion yields the inner image wf_args).  Deferred jointly with
+       the var-leaf transport (same residual at the inner var leaves). *)
+    admit.
+Admitted.
+
 Lemma wf_args_covers_fv (l : lang) c' cA args
   : wf_lang l ->
     wf_ctx l c' ->
+    wf_ctx l cA ->
     wf_args l c' args cA ->
     forall c s,
       map fst s = map fst c' ->
@@ -1999,7 +2115,36 @@ Lemma wf_args_covers_fv (l : lang) c' cA args
       forall x t', In (x,t') c' -> In x (fv_args args) ->
                    wf_term l c (subst_lookup s x) t'[/s/].
 Proof.
-Admitted.
+  intros wfl Hwfc HwfcA Hsrc c s Hmap Himg Hwit x t' Hin Hfv.
+  pose proof (@wf_subst_from_args_image l wfl c' cA args Hwfc HwfcA Hsrc c s Hmap Himg Hwit)
+    as Hsub.
+  (* read the per-variable witness off the assembled [wf_subst]; this is the
+     converse of [wf_subst_from_pointwise]'s pointwise obligation. *)
+  clear Himg Hwit Hsrc Hfv Hmap HwfcA.
+  revert x t' Hin.
+  induction Hsub as [|s0 c0 nm e0 t0 Hsubt IH Hh]; intros x t' Hin.
+  { cbn in Hin; contradiction. }
+  cbn [In] in Hin.
+  pose proof (wf_subst_dom_eq Hsubt) as Hdom0.
+  apply invert_wf_ctx_cons in Hwfc.
+  destruct Hwfc as [Hfrnm [Hwfc0 Hwst0] ].
+  destruct Hin as [Heq | Hin].
+  - safe_invert Heq.
+    assert (Hfrs0 : fresh x s0) by (unfold fresh; rewrite Hdom0; exact Hfrnm).
+    rewrite subst_lookup_hd.
+    2: solve [ exact Hfrs0 | eauto ].
+    rewrite (wf_sort_strengthen_cons (l:=l) (c':=c0) (n:=x) (t':=t')
+               e0 s0 wfl Hwst0 Hfrnm Hdom0).
+    exact Hh.
+  - assert (Hxnm : x <> nm)
+      by (intro; subst x; eapply Hfrnm; eapply pair_fst_in; eassumption).
+    rewrite subst_lookup_tl by assumption.
+    assert (Hwstx : wf_sort l c0 t')
+      by (eapply in_ctx_wf; [ exact wfl | exact Hwfc0 | exact Hin ]).
+    rewrite (wf_sort_strengthen_cons (l:=l) (c':=c0) (n:=nm) (t':=t')
+               e0 s0 wfl Hwstx Hfrnm Hdom0).
+    eapply IH; [ exact Hwfc0 | exact Hin ].
+Qed.
 
 (* Substitution inversion for a [con] LHS: a substitution [s : c' -> c] is
    well-formed as soon as (a) the image [(con n0 s0)[/s/]] of a [con] term
@@ -2035,10 +2180,12 @@ Proof.
     rewrite con_subst in Himg.
     apply wf_term_con_args in Himg.
     destruct Himg as (cA' & Hargs' & args' & tret' & Hrule').
+    assert (HwfcA : wf_ctx l cA)
+      by (eapply rule_in_ctx_wf; [ exact wfl | exact Hrule | reflexivity ]).
     pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh wfl) Hrule Hrule') as Heqr.
     safe_invert Heqr.
     eapply wf_args_covers_fv;
-      [exact wfl | exact Hwfc | exact Hargs | exact Hmap | exact Hargs' | exact Hwit
+      [exact wfl | exact Hwfc | exact HwfcA | exact Hargs | exact Hmap | exact Hargs' | exact Hwit
        | exact Hin | exact Hfv].
   - (* x does not occur: explicit witness *)
     apply Hwit; auto.
@@ -2071,6 +2218,11 @@ Proof.
     rewrite scon_subst in Himg.
     safe_invert Himg.
     match goal with
+    | Hr : In (n0, sort_rule ?cA _) l |- _ =>
+        assert (HwfcA : wf_ctx l cA)
+          by (eapply rule_in_ctx_wf; [ exact wfl | exact Hr | reflexivity ])
+    end.
+    match goal with
     | Hr : In (n0, sort_rule ?cA _) l, Hr' : In (n0, sort_rule ?cA' _) l |- _ =>
         pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh wfl) Hr Hr') as Heqr;
         safe_invert Heqr
@@ -2078,7 +2230,7 @@ Proof.
     match goal with
     | Hargs : wf_args l c' s0 ?cA, Hargs' : wf_args l c s0[/s/] ?cA |- _ =>
         eapply wf_args_covers_fv;
-          [exact wfl | exact Hwfc | exact Hargs | exact Hmap | exact Hargs' | exact Hwit
+          [exact wfl | exact Hwfc | exact HwfcA | exact Hargs | exact Hmap | exact Hargs' | exact Hwit
            | exact Hin | exact Hfv]
     end.
   - apply Hwit; auto.
