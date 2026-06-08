@@ -3411,6 +3411,62 @@ Section WithVar.
           * eapply IHwfa; [ exact IHs0 | exact HF2' | exact Hlk' | exact Hxs0 ].
     Qed.
 
+    (* Sort analogue of [atom_tree_leaf_inl]: every var occurring in a SORT
+       LHS [scon n0 s0] (whose [atom_tree_sort] witness is [HF2]+[Hatom]) has
+       its companion id resolve to an [inl] value.  The sort root atom is sound,
+       so its term-args all resolve to [inl] ([lang_model_args_inl]); each arg
+       is then covered by [atom_tree_leaf_inl]. *)
+    Lemma atom_tree_sort_leaf_inl
+      (a : interp) (eF : instance X) (sub : named_list V)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall n0 s0 sids xs,
+          Forall2 (atom_tree eF sub) s0 sids ->
+          atom_in_egraph (Build_atom n0 sids xs) eF ->
+          forall c, wf_sort l c (scon n0 s0) ->
+          forall x, In x (fv_args s0) ->
+            exists es', map.get a (named_list_lookup default sub x) = Some (inl es').
+    Proof.
+      intros n0 s0 sids xs HF2 Hatom c Hwfs x Hx.
+      (* root atom sound -> args resolve to inl *)
+      pose proof (Hsound _ Hatom) as Hsnd.
+      unfold atom_sound_for_model, Is_Some_satisfying in Hsnd.
+      cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn] in Hsnd.
+      destruct (list_Mmap (map.get a) sids) as [arg_doms|] eqn:Hargs;
+        cbn beta iota in Hsnd; [|contradiction].
+      destruct (map.get a xs) as [out|] eqn:Hgxs; cbn beta iota in Hsnd; [|contradiction].
+      change (domain V lang_model) with (term + sort)%type in Hsnd.
+      cbn [interprets_to lang_model] in Hsnd.
+      apply lang_model_args_inl in Hsnd.
+      destruct Hsnd as [ds Hds].
+      assert (Hlk : Forall2 (fun i e => map.get a i = Some (inl e)) sids ds).
+      { eapply (list_Mmap_get_nth_inl term sort).
+        change (domain V lang_model) with (term + sort)%type in Hargs.
+        rewrite Hargs. rewrite Hds. reflexivity. }
+      (* invert wf_sort to get the source wf_args *)
+      safe_invert Hwfs.
+      match goal with Hwa : Model.wf_args _ s0 ?c'0 |- _ => rename Hwa into Hwfa0 end.
+      match goal with Hin : In (n0, sort_rule _ _) l |- _ => clear Hin end.
+      (* walk the three parallel structures: source wf_args, atom trees, value lk *)
+      clear Hargs Hgxs Hatom.
+      unfold fv_args in Hx.
+      revert sids HF2 ds Hlk Hx.
+      induction Hwfa0 as [|s c'0 nm e0 tnm Hwfe0 Hwfa0 IHwfa];
+        intros sids HF2 ds Hlk Hx; [cbn in Hx; contradiction|].
+      destruct sids as [|i sids']; [safe_invert HF2|].
+      destruct ds as [|d ds']; [safe_invert Hlk|].
+      apply Forall2_cons_iff in HF2; destruct HF2 as [Htree0 HF2'].
+      apply Forall2_cons_iff in Hlk; destruct Hlk as [Hget0 Hlk'].
+      cbn beta in Htree0, Hget0.
+      cbn [flat_map] in Hx; rewrite in_app_iff in Hx.
+      destruct Hx as [Hxe0 | Hxrest].
+      - (* x in head arg e0 *)
+        eapply (atom_tree_leaf_inl a eF sub Hsound e0 i Htree0 c
+                  (tnm[/with_names_from c'0 s/]) Hwfe0 d Hget0 x Hxe0).
+      - (* x in tail *)
+        eapply IHwfa; [exact HF2' | exact Hlk' | exact Hxrest].
+    Qed.
+
     Lemma atom_tree_sort_to_represents_sort
       (a : interp) (eF : instance X) (sub : named_list V) (sg : subst) (c : ctx)
       (Hleaf : forall x, In x (map fst sub) ->
