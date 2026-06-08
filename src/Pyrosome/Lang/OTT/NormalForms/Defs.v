@@ -65,7 +65,15 @@ Definition nf_injectivity : list (string * list string) :=
    ("nf_suc", ["n"; "G"]);
    ("nf_ne_at", ["m"; "n"; "i"; "G"]);
    ("nf_lam", ["t"; "B"; "F"; "lG"; "lF"; "rF"; "G"]);
-   ("ne_app", ["a"; "f"; "B"; "F"; "lG"; "lF"; "rF"; "G"])].
+   ("ne_app", ["a"; "f"; "B"; "F"; "lG"; "lF"; "rF"; "G"]);
+   ("nf_sub", ["G'"; "G"]);
+   ("nf_ctx", []);
+   ("nfsub2sub", ["gn"; "G'"; "G"]);
+   ("nfctx2env", ["Gn"]);
+   ("nf_forget", ["G"]);
+   ("nf_snoc", ["vn"; "A"; "i"; "gn"; "G'"; "G"]);
+   ("nf_emp_ctx", []);
+   ("nf_ext_ctx", ["An"; "i"; "Gn"])].
 
 Definition ott_base_inj_all :=
   (nf_injectivity ++ pi_injectivity ++ nat_injectivity
@@ -281,6 +289,67 @@ Proof.
       #"ne_app" "rF" "lF" "lG" "F" "B" "f" "a"
         : #"ne_exp" "G" (#"info" #"rel" (#"iota" "lG"))
             (#"ty_subst" (#"snoc" #"id" (#"nf2exp" "a")) (#"El" "B"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* ==================================================================== *)
+  (* Phase 1f — nf substitutions / contexts (object sorts, list-shaped;       *)
+  (* carry normal exps/types, NOT base subs).  No nf_wkn/nf_cmp/nf_id —        *)
+  (* those normalize into snoc-lists.  Neutrals never carry a sub.            *)
+  (* ==================================================================== *)
+
+  elab_rule {[r "G" : #"env", "G'" : #"env"
+      -----------------------------------------------
+      #"nf_sub" "G" "G'" srt
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r
+      -----------------------------------------------
+      #"nf_ctx" srt
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* maps from the list sorts into base subs / envs. *)
+  elab_rule {[r "G" : #"env", "G'" : #"env", "gn" : #"nf_sub" "G" "G'"
+      -----------------------------------------------
+      #"nfsub2sub" "gn" : #"sub" "G" "G'"
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "Gn" : #"nf_ctx"
+      -----------------------------------------------
+      #"nfctx2env" "Gn" : #"env"
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* nf_sub constructors: forget + snoc (no wkn/cmp/id). *)
+  elab_rule {[r "G" : #"env"
+      -----------------------------------------------
+      #"nf_forget" : #"nf_sub" "G" #"emp"
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env", "G'" : #"env", "gn" : #"nf_sub" "G" "G'",
+          "i" : #"tyinfo", "A" : #"ty" "G'" "i",
+          "vn" : #"nf_exp" "G" "i"
+                   (#"ty_subst" ["G'" := "G'"] (#"nfsub2sub" ["G" := "G"] ["G'" := "G'"] "gn") "A")
+      -----------------------------------------------
+      #"nf_snoc" "gn" "vn" : #"nf_sub" "G" (#"ext" "G'" "A")
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* nf_ctx constructors: emp + ext (carrying a normal type). *)
+  elab_rule {[r
+      -----------------------------------------------
+      #"nf_emp_ctx" : #"nf_ctx"
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "Gn" : #"nf_ctx", "i" : #"tyinfo",
+          "An" : #"nf_ty" (#"nfctx2env" "Gn") "i"
+      -----------------------------------------------
+      #"nf_ext_ctx" "Gn" "An" : #"nf_ctx"
     ]}%prerule
     ott_base_inj_all.
 
