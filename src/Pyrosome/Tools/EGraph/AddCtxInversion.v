@@ -1815,6 +1815,10 @@ Section WithVar.
     Lemma eq_ctx_inversion_gen (no_sort : V -> bool) (rf : nat) (a : interp) c e1 t
         (Hwfc : wf_ctx l c) (Hwfe1 : wf_term l c e1 t)
         (Hskip : forall x, no_sort x = true -> In x (fv e1))
+        (* a bare-var LHS never skips any sort (the adapter sets
+           [term_eq_skip (var _) = fun _ => false]); this rules out the dead
+           bare-var-with-skip case below. *)
+        (Hbare : forall ev, e1 = var ev -> forall x, no_sort x = false)
       : fst (rebuild rf (snd (add_open_term succ sort_of l false false
                 (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
                 e1
@@ -1955,11 +1959,63 @@ Section WithVar.
                     e_open eF Hdb_open Hsurv0 c sub Hwfc Hroots_open Hrb_open) as Hrbef.
       assert (Hx1_inl : exists es1, map.get a x1 = Some (inl es1)).
       { destruct e1 as [ev | n0 s0].
-        - (* var LHS: dead case (var LHS never skips), but we still need an
-             [inl] root.  [Htree_eF] = [at_var]: x1 = sub(ev); its value is a
-             ctx companion (always [inl]).  Discharged in the var branch below;
-             here only the existence is needed and it is the skipped checkpoint. *)
-          admit.
+        - (* var LHS: x1 = sub(ev); ev is NON-skip (Hbare), so it carries a
+             [sort_of] atom whose term-arg [x1] resolves to [inl]
+             ([ctx_readback_eF_lookup_gen] + [lang_model_args_inl]). *)
+          inversion Htree_eF as [evx Hevx Hx1eq | ].
+          (* Hevx : evx = ev ; Hx1eq : named_list_lookup default sub evx = x1 *)
+          subst evx.
+          (* ev in c (var ev wf) -> companion in sub *)
+          assert (Hev_c : In ev (map fst c)).
+          { change (In ev (map fst c)) with (ws_term (map fst c) (var ev)).
+            eapply wf_term_implies_ws; eauto with lang_core. }
+          assert (Hev_sub : In ev (map fst sub)) by (rewrite <- Hmapfst'; exact Hev_c).
+          assert (Hev_sub2 : exists ev', In (ev, ev') sub).
+          { clear -Hev_sub. induction sub as [|[y v] sub' IH]; cbn in *;
+              [contradiction|]. destruct Hev_sub as [Heq|Hin'];
+              [subst y; exists v; left; reflexivity
+              | destruct (IH Hin') as [ev' Hev']; exists ev'; right; exact Hev']. }
+          destruct Hev_sub2 as [ev' Hev'sub].
+          pose proof (@CtxReadback.ctx_readback_eF_lookup_gen V V_Eqb V_Eqb_ok V_default V_map
+                        V_trie sort_of X l Hwf no_sort eF c sub Hwfc Hmapfst' Hrbef
+                        ev ev' Hev'sub (Hbare ev eq_refl ev)) as Hlk.
+          destruct Hlk as (tev & xev & Hin_c & Htree_sof & Hatom_sof).
+          (* the looked-up companion id equals sub(ev) = ev' *)
+          assert (Hx1ev : named_list_lookup default sub ev = ev').
+          { assert (Hafsub : all_fresh sub).
+            { pose proof (wf_ctx_all_fresh Hwfc) as Hafc.
+              assert (Hgenaf : forall (s0 : named_list V) (c0 : ctx),
+                        map fst s0 = map fst c0 -> all_fresh c0 -> all_fresh s0).
+              { clear. intros s0; induction s0 as [|[y v] s0' IH];
+                  intros c0 Hm Haf; cbn; [exact I|].
+                destruct c0 as [|[cy ct] c']; cbn in Hm; [discriminate|].
+                injection Hm as Hyc Hm'. subst cy.
+                cbn in Haf. destruct Haf as [Hfr Haf'].
+                split; [| eapply IH; eauto].
+                unfold fresh in *. rewrite Hm'. exact Hfr. }
+              eapply Hgenaf; [exact Hmapfst | exact Hafc]. }
+            clear -Hev'sub Hafsub V_Eqb_ok. induction sub as [|[y v] sub' IH]; cbn in *;
+              [contradiction|]. destruct Hafsub as [Hfr Hafsub'].
+            destruct Hev'sub as [Heq|Hin'].
+            - injection Heq as Hy Hv; subst y v.
+              pose proof (eqb_spec ev ev) as Hs; destruct (eqb ev ev);
+                [reflexivity | exfalso; apply Hs; reflexivity].
+            - pose proof (eqb_spec ev y) as Hs; destruct (eqb ev y).
+              + subst y. exfalso. exact (fresh_notin ev' Hfr Hin').
+              + apply IH; assumption. }
+          rewrite <- Hx1eq. rewrite Hx1ev.
+          (* sort_of atom sound -> its term-arg ev' resolves to inl *)
+          pose proof (Hsound _ Hatom_sof) as Hsnd.
+          unfold Semantics.atom_sound_for_model, Is_Some_satisfying in Hsnd.
+          cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn list_Mmap] in Hsnd.
+          destruct (map.get a ev') as [dx|] eqn:Hgev'; cbn beta iota in Hsnd; [|contradiction].
+          destruct (map.get a xev) as [outs|] eqn:Hgxev; cbn beta iota in Hsnd; [|contradiction].
+          change (domain V lang_model) with (term + sort)%type in Hsnd.
+          cbn [interprets_to lang_model] in Hsnd.
+          apply Theorems.lang_model_args_inl in Hsnd.
+          destruct Hsnd as [ds Hds].
+          destruct ds as [|d ds']; cbn [map] in Hds; [discriminate|].
+          injection Hds as Hd _. subst dx. exists d. solve [exact Hgev' | reflexivity].
         - (* con LHS: the root atom is in eF, sound, hence [interprets_to_term]
              gives an [inl] output. *)
           apply WfCutElim.invert_wf_term_con in Hwfe1.
@@ -2000,19 +2056,18 @@ Section WithVar.
       destruct e1 as [ev | n0 s0].
       { (* bare-var LHS: skip set empty; skip_decl_wf vacuous *)
         assert (Hskip_empty : @CtxReadback.skip_decl_wf V V_Eqb V_default V_map sort_of l no_sort a sub c).
-        { assert (Hgen : forall (sub0 : named_list V) (c0 : ctx),
-                    (forall x, no_sort x = true -> In x (fv (var ev))) ->
+        { pose proof (Hbare ev eq_refl) as Hnf.
+          assert (Hgen : forall (sub0 : named_list V) (c0 : ctx),
+                    (forall x, no_sort x = false) ->
                     @CtxReadback.skip_decl_wf V V_Eqb V_default V_map sort_of l no_sort a sub0 c0).
           { clear. intros sub0 c0; revert sub0.
-            induction c0 as [|[x tx] c' IH]; intros sub0 Hskip.
+            induction c0 as [|[x tx] c' IH]; intros sub0 Hnf.
             - cbn. destruct sub0; exact I.
             - destruct sub0 as [|[x0 x'] sub']; [cbn; exact I|].
               cbn [CtxReadback.skip_decl_wf]. split.
-              + intro Hns. exfalso.
-                pose proof (Hskip x Hns) as Hin. cbn in Hin.
-                destruct Hin as [Hev | Hfalse]; [subst x | contradiction]. admit.
-              + apply IH; exact Hskip. }
-          apply Hgen; exact Hskip. }
+              + intro Hns. exfalso. rewrite Hnf in Hns. discriminate Hns.
+              + apply IH; exact Hnf. }
+          apply Hgen; exact Hnf. }
         pose proof (@CtxReadback.ctx_readback_wf_subst_gen V V_Eqb V_Eqb_ok V_default V_map
                       V_trie sort_of X l Hwf Hsof no_sort eF a Hsound c sub Hwfc
                       Hmapfst' Hrbef Hskip_empty) as Hfin.
@@ -2027,7 +2082,7 @@ Section WithVar.
                     Hmapfst' Hrbef Hskipdw) as Hfin.
       destruct Hfin as [sgf [Hwfsgf [Hdomsgf Hfaithf] ] ].
       exact (ex_intro _ sgf (conj Hwfsgf (conj Hdomsgf Hfaithf))).
-    Admitted.
+    Qed.
 
     Lemma eq_assumption_inversion (rf : nat) (a : interp) c e1 t
         (Hwfc : wf_ctx l c) (Hwfe1 : wf_term l c e1 t)
@@ -3785,7 +3840,7 @@ Section WithVar.
                     Hmapfst' Hrbef Hskipdw) as Hfin.
       destruct Hfin as [sgf [Hwfsgf [Hdomsgf Hfaithf] ] ].
       exact (ex_intro _ sgf (conj Hwfsgf (conj Hdomsgf Hfaithf))).
-    Admitted.
+    Qed.
 
     Lemma eq_sort_add_ctx_readback_eF (rf : nat) c t1
         (Hwfc : wf_ctx l c) (Hwft1 : wf_sort l c t1)

@@ -2607,9 +2607,11 @@ Section WithVar.
       { intros x Hx. unfold term_eq_skip in Hx.
         destruct e1; [discriminate Hx|].
         apply (proj1 (inb_is_In _ _)). rewrite Hx. exact I. }
+      assert (Hbare : forall ev, e1 = var ev -> forall x, term_eq_skip e1 x = false).
+      { intros ev Hev x. subst e1. reflexivity. }
       pose proof (@eq_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                    (term_eq_skip e1) rf a c e1 t Hwfc Hwfe1 Hskip Hsucc_uf Hsnd_atoms_uf) as Hinv.
+                    (term_eq_skip e1) rf a c e1 t Hwfc Hwfe1 Hskip Hbare Hsucc_uf Hsnd_atoms_uf) as Hinv.
       destruct Hinv as (sg & Hsg & Hmapfst_sg & Hfaith).
       (* Hfaith uses (fst (add_ctx ...)) - rewrite to sub_c *)
       assert (Hfaith' : forall x, In x (map fst sub_c) ->
