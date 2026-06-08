@@ -1950,6 +1950,43 @@ Qed.
    of [e0] (the step that, taken globally, would require [s] to be known well
    formed).  Variable leaves with no conversion are immediate; [con] leaves
    recurse into the term structure. *)
+(* ATTEMPT (additive, exploratory): the decoupled covering via the complete
+   image.  Driven to the precise residual to document where the user's
+   decoupling lands.  Uses [term_ind] on the source term, inverting BOTH the
+   source and the (complete) image [con] wf to supply every sibling's image at
+   once (the user's "complete wf_subst over the operator context, for free,
+   order-independent").  The residual at the converted-var leaf is the
+   use->declared sort transport. *)
+Lemma wf_term_covers_attempt (l : lang) (wfl : wf_lang l) (e : term)
+  : forall c' t1, wf_ctx l c' -> wf_term l c' e t1 ->
+      forall c s,
+        map fst s = map fst c' ->
+        wf_term l c e[/s/] t1[/s/] ->
+        (forall y t'', In (y,t'') c' -> ~ In y (fv e) ->
+                       wf_term l c (subst_lookup s y) t''[/s/]) ->
+        forall x t', In (x,t') c' -> In x (fv e) ->
+                     wf_term l c (subst_lookup s x) t'[/s/].
+Proof.
+  induction e as [n | n s0 IHargs] using term_ind;
+    intros c' t1 Hwfc Hwfe c s Hmap Himg Hwit x t' Hin Hfv.
+  - (* VAR leaf: fv (var n) = {n}, so x = n; the declared sort t' equals the
+       matched sort t1 up to the var-sort conversion, and the image is at
+       t1[/s/].  This is where the use->declared transport for a CONVERTED var
+       is needed. *)
+    cbn [fv] in Hfv. destruct Hfv as [Hxn | []]. subst x.
+    cbn [term_subst term_var_map] in Himg |- *.
+    (* derive the var-sort equation [eq_sort l c' t' t1] *)
+    assert (Heqsrc : eq_sort l c' t' t1).
+    { eapply term_sorts_eq; [ exact wfl | exact Hwfc | | exact Hwfe ].
+      apply wf_term_var; exact Hin. }
+    (* goal: wf_term l c (subst_lookup s n) t'[/s/]; image: ... t1[/s/].
+       convert via eq_sort l c t1[/s/] t'[/s/] = transport Heqsrc by s. *)
+    eapply wf_term_conv; [ exact Himg | ].
+    (* RESIDUAL: eq_sort l c (t1[/s/]) (t'[/s/]).
+       This is [eq_sort_subst] applied to [eq_sort l c' t1 t'] (sym of Heqsrc)
+       with [eq_subst l c c' s s] -- the COMPLETE wf_subst we are building. *)
+Abort.
+
 Lemma wf_args_covers_fv (l : lang) c' cA args
   : wf_lang l ->
     wf_ctx l c' ->
