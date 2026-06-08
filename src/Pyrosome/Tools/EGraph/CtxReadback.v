@@ -801,6 +801,53 @@ Section WithVar.
       rewrite (nll_default_indep sg y (var y) default Hin_sg).
       apply Hagree; exact Hyc'.
     Qed.
+    (* ================================================================== *)
+    (* THE SINGLE CONSOLIDATED CHECKPOINT.                                  *)
+    (*                                                                     *)
+    (* Both the term-LHS ([skip_var_decl_sort_wf]) and sort-LHS            *)
+    (* ([skip_var_decl_sort_wf_scon]) skip-variable obligations reduce, after *)
+    (* the [decl_sort_subst_prefix_eq] rewrite and the engine use-sort step *)
+    (* ([Theorems.add_open_use_sort_wf{,_scon}], which gives the image wf at *)
+    (* SOME model use-sort [T_engine] with NO [wf_subst]), to the IDENTICAL  *)
+    (* residual conversion below.  The two former checkpoints differ only in *)
+    (* how they obtain the engine existential ([represents] of a [con] vs    *)
+    (* [represents_sort] of an [scon]); once that existential is in hand the  *)
+    (* remaining goal -- the use->declared closed sort conversion -- is the   *)
+    (* same.  Factoring it here collapses the two e-graph admits into ONE.    *)
+    (*                                                                     *)
+    (* HONEST CORE (substitution-typing reflection).  The residual          *)
+    (*   [eq_sort l [] T_engine (t[/sg/])]                                  *)
+    (* is exactly what [add_open_faithful_rep] would deliver for [var x] IF  *)
+    (* a full [wf_subst l [] sg Cfull] were in hand: [T_engine] is the model *)
+    (* use-sort of [x]'s occurrence (eq_term to its source use-sort under    *)
+    (* [sg]), and [t[/sg/]] is x's substituted declared sort; bridging them  *)
+    (* is transporting the source use=declared equation [eq_sort l Cfull     *)
+    (* T_use_src t] by [sg], i.e. [eq_sort_subst] needing [eq_subst l [] Cfull *)
+    (* sg sg] = the complete [wf_subst l [] sg Cfull] this construction is    *)
+    (* building.  No proper-prefix substitution suffices: x's use-sort can   *)
+    (* reference siblings telescope-EARLIER than [x] (outside [c']).  This is *)
+    (* the substitution-typing-reflection metatheorem absent from Pyrosome,   *)
+    (* and is the SAME obstruction as [Core.wf_subst_from_args_image]'s       *)
+    (* [Hself].  Stated once, both checkpoints below are Qed against it.      *)
+    Lemma skip_var_decl_sort_core
+      (sg : subst) (x : V) (t : sort)
+      (Cfull pre c' : ctx)
+      (Hwfcf : wf_ctx l Cfull)
+      (Hcfull : Cfull = pre ++ (x,t)::c')
+      (* the full model value-map [sg] covers the whole rule context, hence in
+         particular [c'] (= x's dependencies). *)
+      (Hdomsg : incl (map fst c') (map fst sg))
+      (* the engine deliverable: [x]'s image is wf at SOME model use-sort. *)
+      (T_engine : sort)
+      (HwfT : wf_term l [] (named_list_lookup default sg x) T_engine)
+      : wf_term l [] (named_list_lookup default sg x) (t[/sg/]).
+    Proof.
+      eapply wf_term_conv; [exact HwfT|].
+      (* RESIDUAL (the substitution-typing-reflection metatheorem):
+         eq_sort l [] T_engine (t[/sg/]).
+         See the block comment above; this is the single honest core. *)
+    Admitted.
+
     Lemma skip_var_decl_sort_wf (no_sort : V -> bool) (eF : instance X) (a : interp)
       (Hsound : forall al, ain al eF -> asnd a al)
       (sg : subst) (n0 : V) (s0 : list term) (x1 : V)
@@ -835,20 +882,14 @@ Section WithVar.
       rewrite (decl_sort_subst_prefix_eq sg sg' t c' Hwst Hdomsg' Hdomsg Hagree).
       (* Goal is now [wf_term l [] (sg x) (t[/sg/])]: the engine value-wf at the
          model use-sort, converted to the FULL-substitution declared sort. *)
-      (* The engine gives the image wf at SOME (model use-) sort, with no
-         wf_subst.  The declared sort needs the use->declared conversion. *)
       pose proof (@Theorems.add_open_use_sort_wf V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
                     X l Hwf Hsof a eF sg Hsound (con n0 s0) Cfull t1 Hwfcf Hwfe1f x1 Hrep
                     x Hxfv) as Huse.
       destruct Huse as [T_engine HwfT].
-      eapply wf_term_conv; [exact HwfT|].
-      (* REMAINING (sharpened): eq_sort l [] T_engine (t[/sg/]).
-         [T_engine] is the model use-sort of [x]'s occurrence; [t[/sg/]] is x's
-         declared sort under the FULL model value-map.  This is exactly the
-         output [add_open_faithful_rep] would give for [var x] IF a full
-         [wf_subst l [] sg Cfull] were available -- i.e. the use->declared sort
-         bridge.  Isolated checkpoint. *)
-    Admitted.
+      (* both checkpoints close against the single consolidated core. *)
+      eapply skip_var_decl_sort_core;
+        [ exact Hwfcf | exact Hcfull | exact Hdomsg | exact HwfT ].
+    Qed.
 
     (* =============================================================== *)
     (* Discharge of [skip_decl_wf] from the LHS image: assemble the     *)
@@ -993,10 +1034,10 @@ Section WithVar.
                     X l Hwf Hsof a eF sg Hsound n0 s0 Cfull Hwfcf Hwft1f xs1 Hrep
                     x Hxfv) as Huse.
       destruct Huse as [T_engine HwfT].
-      eapply wf_term_conv; [exact HwfT|].
-      (* REMAINING (sharpened, same checkpoint as the term case):
-         eq_sort l [] T_engine (t[/sg/]). *)
-    Admitted.
+      (* same residual as the term case: close against the consolidated core. *)
+      eapply skip_var_decl_sort_core;
+        [ exact Hwfcf | exact Hcfull | exact Hdomsg | exact HwfT ].
+    Qed.
 
     Lemma skip_decl_wf_from_image_sort (no_sort : V -> bool) (eF : instance X) (a : interp)
       (Hsound : forall al, ain al eF -> asnd a al)
