@@ -823,5 +823,112 @@ Section WithVar.
                   Cfull pre t1 Hwfcf Hwfe1f x t c' sg' Hpre' Hxfv Hwfsub' Hdomsg' Hagree).
     Qed.
 
+    (* ============ SORT_EQ analogues (scon LHS) ============ *)
+
+    (* Sort-LHS checkpoint, mirroring [skip_var_decl_sort_wf] but for a var
+       occurring in a SORT LHS [scon n0 s0].  Same residual obligation
+       (use->declared sort conversion). *)
+    Lemma skip_var_decl_sort_wf_scon (no_sort : V -> bool) (eF : instance X) (a : interp)
+      (Hsound : forall al, ain al eF -> asnd a al)
+      (sg : subst) (n0 : V) (s0 : list term) (xs1 : V)
+      (Hrep : @Theorems.represents_sort V V_Eqb V_default V_map V_trie sort_of X l a eF sg
+                (scon n0 s0) xs1)
+      (Cfull pre : ctx)
+      (Hwfcf : wf_ctx l Cfull) (Hwft1f : wf_sort l Cfull (scon n0 s0))
+      (x : V) (t : sort) (c' : ctx) (sg' : subst)
+      (Hcfull : Cfull = pre ++ (x,t)::c')
+      (Hxfv : In x (fv_args s0))
+      (Hwfsub' : wf_subst l [] sg' c')
+      (Hdomsg' : map fst sg' = map fst c')
+      (Hagree : forall y, In y (map fst c') ->
+                  named_list_lookup default sg' y = named_list_lookup default sg y)
+      : wf_term l [] (named_list_lookup default sg x) (t[/sg'/]).
+    Proof.
+      pose proof (@Theorems.add_open_use_sort_wf_scon V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
+                    X l Hwf Hsof a eF sg Hsound n0 s0 Cfull Hwfcf Hwft1f xs1 Hrep
+                    x Hxfv) as Huse.
+      destruct Huse as [T_engine HwfT].
+      eapply wf_term_conv; [exact HwfT|].
+      (* REMAINING (same checkpoint as the term case):
+         eq_sort l [] T_engine (t[/sg'/]). *)
+    Admitted.
+
+    Lemma skip_decl_wf_from_image_sort (no_sort : V -> bool) (eF : instance X) (a : interp)
+      (Hsound : forall al, ain al eF -> asnd a al)
+      (sg : subst) (n0 : V) (s0 : list term) (xs1 : V)
+      (Hrep : @Theorems.represents_sort V V_Eqb V_default V_map V_trie sort_of X l a eF sg
+                (scon n0 s0) xs1)
+      : forall c sub, wf_ctx l c -> wf_sort l c (scon n0 s0) ->
+          map fst c = map fst sub ->
+          (forall x, no_sort x = true -> In x (fv_sort (scon n0 s0))) ->
+          (forall x, In x (map fst sub) ->
+                map.get a (named_list_lookup default sub x)
+                  = Some (inl (named_list_lookup default sg x))) ->
+          skip_decl_wf no_sort a sub c.
+    Proof.
+      intros Cfull sub Hwfcf Hwft1f Hdom Hskipset Hvals.
+      cut (forall (c : ctx) sub,
+             (exists pre, Cfull = pre ++ c) ->
+             map fst c = map fst sub ->
+             (forall x, In x (map fst sub) ->
+                map.get a (named_list_lookup default sub x)
+                  = Some (inl (named_list_lookup default sg x))) ->
+             skip_decl_wf no_sort a sub c).
+      { intro Hcut. apply Hcut; [exists (@nil (V*sort)); reflexivity | exact Hdom | exact Hvals]. }
+      clear Hdom Hvals sub.
+      intro c. induction c as [|[x t] c' IH]; intros sub Hpre Hdom Hvals.
+      - cbn. exact I.
+      - destruct sub as [|[x0 x'] sub']; cbn [map fst] in Hdom; [discriminate|].
+        injection Hdom as Hxx0 Hdom'. subst x0.
+        assert (Hwfc_suf : wf_ctx l ((x,t)::c')).
+        { destruct Hpre as [pre Hpre'].
+          assert (Hgen : forall pre0 cc, wf_ctx l (pre0 ++ cc) -> wf_ctx l cc).
+          { clear. intros pre0; induction pre0 as [|[pn pt] pre0 IHp]; intros cc Hw.
+            - cbn in Hw. exact Hw.
+            - cbn in Hw. apply invert_wf_ctx_cons in Hw.
+              destruct Hw as [_ [Hw' _] ]. exact (IHp cc Hw'). }
+          eapply Hgen. rewrite <- Hpre'. exact Hwfcf. }
+        apply invert_wf_ctx_cons in Hwfc_suf.
+        destruct Hwfc_suf as [Hfresh [Hwfc' Hwst] ].
+        cbn [skip_decl_wf]. split.
+        2:{ apply IH; [ | exact Hdom' | ].
+            - destruct Hpre as [pre Hpre']. exists (pre ++ [(x,t)]).
+              rewrite <- app_assoc. cbn [app]. exact Hpre'.
+            - intros y Hy. pose proof (Hvals y) as Hv. cbn beta in Hv.
+              cbn [named_list_lookup map fst] in Hv.
+              assert (Hyx : y <> x).
+              { intro; subst y. unfold fresh in Hfresh.
+                rewrite Hdom' in Hfresh. apply Hfresh. exact Hy. }
+              pose proof (eqb_spec y x) as Hsp.
+              destruct (eqb y x) eqn:Hyxb; [exfalso; apply Hyx; exact Hsp|].
+              apply Hv. cbn [map fst]. right. exact Hy. }
+        intros Hns sg' Hwfsub' Hdomsg' Hleaf'.
+        assert (Hgx' : map.get a x' = Some (inl (named_list_lookup default sg x))).
+        { pose proof (Hvals x (or_introl eq_refl)) as Hv.
+          cbn [named_list_lookup] in Hv.
+          pose proof (eqb_spec x x) as Hs.
+          destruct (eqb x x); [exact Hv | exfalso; apply Hs; reflexivity]. }
+        exists (named_list_lookup default sg x).
+        split; [exact Hgx'|].
+        assert (Hxfv : In x (fv_args s0)).
+        { pose proof (Hskipset x Hns) as Hin0. cbn [fv_sort] in Hin0. exact Hin0. }
+        assert (Hagree : forall y, In y (map fst c') ->
+                  named_list_lookup default sg' y = named_list_lookup default sg y).
+        { intros y Hy. rewrite Hdom' in Hy.
+          pose proof (Hleaf' y Hy) as Hsg'y.
+          pose proof (Hvals y) as Hsgy. cbn beta in Hsgy.
+          assert (Hyx : y <> x).
+          { intro; subst y. unfold fresh in Hfresh. rewrite Hdom' in Hfresh.
+            apply Hfresh; exact Hy. }
+          cbn [named_list_lookup map fst] in Hsgy.
+          pose proof (eqb_spec y x) as Hsp.
+          destruct (eqb y x) eqn:Hyxb; [exfalso; apply Hyx; exact Hsp|].
+          specialize (Hsgy (or_intror Hy)).
+          rewrite Hsg'y in Hsgy. injection Hsgy as Hsgy. exact Hsgy. }
+        destruct Hpre as [pre Hpre'].
+        eapply (skip_var_decl_sort_wf_scon no_sort eF a Hsound sg n0 s0 xs1 Hrep
+                  Cfull pre Hwfcf Hwft1f x t c' sg' Hpre' Hxfv Hwfsub' Hdomsg' Hagree).
+    Qed.
+
   End AddCtxInvert.
 End WithVar.
