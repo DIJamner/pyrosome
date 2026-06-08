@@ -2076,7 +2076,7 @@ Section WithVar.
       pose proof (@CtxReadback.skip_decl_wf_from_image V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok
                     V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X _ l Hwf Hsof no_sort eF a Hsound sg n0 s0 x1 Hrep
                     c sub t Hwfc Hwfe1 Hmapfst') as Hskipdw.
-      specialize (Hskipdw (fun x Hx => Hskip x Hx) Hfaith).
+      specialize (Hskipdw Hdomsg (fun x Hx => Hskip x Hx) Hfaith).
       pose proof (@CtxReadback.ctx_readback_wf_subst_gen V V_Eqb V_Eqb_ok V_default V_map
                     V_trie sort_of X l Hwf Hsof no_sort eF a Hsound c sub Hwfc
                     Hmapfst' Hrbef Hskipdw) as Hfin.
@@ -3834,7 +3834,7 @@ Section WithVar.
       pose proof (@CtxReadback.skip_decl_wf_from_image_sort V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok
                     V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X _ l Hwf Hsof no_sort eF a Hsound sg n0 s0 _ Hrep
                     c sub Hwfc Hwft1 Hmapfst') as Hskipdw.
-      specialize (Hskipdw (fun x Hx => Hskip x Hx) Hfaith).
+      specialize (Hskipdw Hdomsg (fun x Hx => Hskip x Hx) Hfaith).
       pose proof (@CtxReadback.ctx_readback_wf_subst_gen V V_Eqb V_Eqb_ok V_default V_map
                     V_trie sort_of X l Hwf Hsof no_sort eF a Hsound c sub Hwfc
                     Hmapfst' Hrbef Hskipdw) as Hfin.

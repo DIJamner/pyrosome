@@ -687,6 +687,120 @@ Section WithVar.
     (* which no existing Pyrosome lemma applies ([ctx_mono] only weakens; *)
     (* there is no [eq_sort] context-strengthening).  REPORTED as the     *)
     (* exact blocking obligation; admitted as the sole checkpoint.        *)
+    (* Substitution extensionality: two substitutions that AGREE (by lookup)
+       on every free variable of a term/sort give the same result.  This is the
+       "generic strengthening" the in-order construction needs to replace the
+       partial prefix substitution [sg'] by the full model value-map [sg]:
+       the declared sort [t] is well-scoped over [x]'s prefix [c'] (= dom sg'),
+       and [sg']/[sg] agree there ([Hagree]), so [t[/sg'/] = t[/sg/]]. *)
+    Lemma term_var_map_ext (f g : V -> term) e
+      : (forall y, In y (fv e) -> f y = g y) ->
+        term_var_map f e = term_var_map g e.
+    Proof.
+      induction e as [x | n s IHs] using term_ind; intro Hag.
+      - cbn [term_var_map fv] in *. apply Hag. left; reflexivity.
+      - cbn [term_var_map fv] in *. f_equal.
+        revert Hag; induction s as [|e0 s0 IH]; intro Hag; cbn [map]; [reflexivity|].
+        cbn [all] in IHs. destruct IHs as [IHe0 IHs0].
+        f_equal.
+        + apply IHe0. intros y Hy. apply Hag.
+          cbn [flat_map]. apply in_or_app. left. exact Hy.
+        + apply IH; [exact IHs0|]. intros y Hy. apply Hag.
+          cbn [flat_map]. apply in_or_app. right. exact Hy.
+    Qed.
+
+    Lemma term_subst_ext (sg1 sg2 : subst) e
+      : (forall y, In y (fv e) ->
+           named_list_lookup (var y) sg1 y = named_list_lookup (var y) sg2 y) ->
+        e[/sg1/] = e[/sg2/].
+    Proof.
+      intro Hag.
+      change (e[/?sg/]) with (term_subst sg e).
+      unfold term_subst.
+      apply term_var_map_ext. intros y Hy. cbn [term_subst_lookup].
+      apply Hag; exact Hy.
+    Qed.
+
+    Lemma sort_subst_ext (sg1 sg2 : subst) (t : sort)
+      : (forall y, In y (fv_sort t) ->
+           named_list_lookup (var y) sg1 y = named_list_lookup (var y) sg2 y) ->
+        t[/sg1/] = t[/sg2/].
+    Proof.
+      destruct t as [n s]. intro Hag.
+      change ((scon n s)[/?sg/]) with (scon n (args_subst sg s)).
+      f_equal.
+      unfold fv_sort, fv_args in Hag.
+      unfold args_subst.
+      revert Hag; induction s as [|e0 s0 IH]; intro Hag; cbn [map]; [reflexivity|].
+      f_equal.
+      - change (apply_subst0 ?sg e0) with (e0[/sg/]).
+        apply term_subst_ext. intros y Hy. apply Hag.
+        cbn [flat_map]. apply in_or_app. left. exact Hy.
+      - apply IH. intros y Hy. apply Hag.
+        cbn [flat_map]. apply in_or_app. right. exact Hy.
+    Qed.
+
+    (* The declared sort [t] of [x] is well-scoped over its prefix [c'] (= dom
+       sg'), on which [sg'] and the full value-map [sg] agree ([Hagree]); hence
+       substituting [t] by [sg'] equals substituting by [sg].  This lets the
+       skip-var checkpoint be discharged against the FULL substitution [sg]
+       (where the engine value-wf and faithful representation live) and then
+       transported back to the prefix form [t[/sg'/]] that [wf_subst] wants. *)
+    Lemma term_fv_in_ws (args : list V) e
+      : ws_term args e -> forall y, In y (fv e) -> In y args.
+    Proof.
+      induction e as [x | n s IHs] using term_ind; cbn [ws_term fv].
+      - intros Hin y Hy. destruct Hy as [Hy | Hy]; [subst y; exact Hin | contradiction].
+      - intros Hall y Hy.
+        revert Hall; induction s as [|e0 s0 IH]; cbn [flat_map all] in *;
+          [contradiction|].
+        intros [Hwe0 Hall0]. destruct IHs as [IHe0 IHs0].
+        apply in_app_or in Hy. destruct Hy as [Hy | Hy].
+        + eapply IHe0; eauto.
+        + eapply IH; eauto.
+    Qed.
+
+    Lemma sort_fv_in_ws (args : list V) (t : sort)
+      : ws_sort args t -> forall y, In y (fv_sort t) -> In y args.
+    Proof.
+      destruct t as [n s]. cbn [ws_sort]. unfold fv_sort, fv_args.
+      change (ws_args args s) with (all (ws_term args) s).
+      induction s as [|e0 s0 IH]; cbn [flat_map all]; [contradiction|].
+      intros [Hwe0 Hall0] y Hy.
+      apply in_app_or in Hy. destruct Hy as [Hy | Hy].
+      - eapply term_fv_in_ws; eauto.
+      - eapply IH; eauto.
+    Qed.
+
+    (* A present key's lookup ignores the default. *)
+    Lemma nll_default_indep (s : subst) y (d1 d2 : term)
+      : In y (map fst s) ->
+        named_list_lookup d1 s y = named_list_lookup d2 s y.
+    Proof.
+      induction s as [|[z v] s0 IH]; cbn [map fst named_list_lookup]; [contradiction|].
+      intro Hin. eqb_case y z; [reflexivity|].
+      destruct Hin as [Hzy | Hin]; [exfalso; congruence | apply IH; exact Hin].
+    Qed.
+
+    Lemma decl_sort_subst_prefix_eq (sg sg' : subst) (t : sort) (c' : ctx)
+      (Hwst : wf_sort l c' t)
+      (Hdomsg' : map fst sg' = map fst c')
+      (Hdomsg : incl (map fst c') (map fst sg))
+      (Hagree : forall y, In y (map fst c') ->
+                  named_list_lookup default sg' y = named_list_lookup default sg y)
+      : t[/sg'/] = t[/sg/].
+    Proof.
+      apply sort_subst_ext. intros y Hy.
+      (* y in fv_sort t -> y in map fst c' (well-scopedness of t over c') *)
+      assert (Hyc' : In y (map fst c')).
+      { eapply sort_fv_in_ws; [ | exact Hy ].
+        eapply wf_sort_implies_ws; eauto with lang_core. }
+      assert (Hin' : In y (map fst sg')) by (rewrite Hdomsg'; exact Hyc').
+      assert (Hin_sg : In y (map fst sg)) by (apply Hdomsg; exact Hyc').
+      rewrite (nll_default_indep sg' y (var y) default Hin').
+      rewrite (nll_default_indep sg y (var y) default Hin_sg).
+      apply Hagree; exact Hyc'.
+    Qed.
     Lemma skip_var_decl_sort_wf (no_sort : V -> bool) (eF : instance X) (a : interp)
       (Hsound : forall al, ain al eF -> asnd a al)
       (sg : subst) (n0 : V) (s0 : list term) (x1 : V)
@@ -702,10 +816,25 @@ Section WithVar.
       (Hxfv : In x (fv (con n0 s0)))
       (Hwfsub' : wf_subst l [] sg' c')
       (Hdomsg' : map fst sg' = map fst c')
+      (* the full model value-map [sg] covers the whole rule context, hence in
+         particular [c'] (= x's dependencies). *)
+      (Hdomsg : incl (map fst c') (map fst sg))
       (Hagree : forall y, In y (map fst c') ->
                   named_list_lookup default sg' y = named_list_lookup default sg y)
       : wf_term l [] (named_list_lookup default sg x) (t[/sg'/]).
     Proof.
+      (* [t] is well-scoped over [x]'s prefix [c'] (the declared-sort position in
+         the head-first context), so substituting by the prefix [sg'] or by the
+         full value-map [sg] coincide -- "generic strengthening". *)
+      assert (Hwst : wf_sort l c' t).
+      { subst Cfull.
+        clear -Hwfcf.
+        induction pre as [|[pn pt] pre IH]; cbn [app] in Hwfcf.
+        - apply invert_wf_ctx_cons in Hwfcf. apply Hwfcf.
+        - apply invert_wf_ctx_cons in Hwfcf. apply IH. apply Hwfcf. }
+      rewrite (decl_sort_subst_prefix_eq sg sg' t c' Hwst Hdomsg' Hdomsg Hagree).
+      (* Goal is now [wf_term l [] (sg x) (t[/sg/])]: the engine value-wf at the
+         model use-sort, converted to the FULL-substitution declared sort. *)
       (* The engine gives the image wf at SOME (model use-) sort, with no
          wf_subst.  The declared sort needs the use->declared conversion. *)
       pose proof (@Theorems.add_open_use_sort_wf V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
@@ -713,11 +842,12 @@ Section WithVar.
                     x Hxfv) as Huse.
       destruct Huse as [T_engine HwfT].
       eapply wf_term_conv; [exact HwfT|].
-      (* REMAINING: eq_sort l [] T_engine (t[/sg'/]).
-         [T_engine] is the model use-sort of [x]'s occurrence (existential from
-         the engine); [t] is x's declared sort over its prefix [c'].  Closing
-         this is the e-graph substitution-typing reflection (the two telescope
-         facts (A)/(B) documented above).  Isolated checkpoint. *)
+      (* REMAINING (sharpened): eq_sort l [] T_engine (t[/sg/]).
+         [T_engine] is the model use-sort of [x]'s occurrence; [t[/sg/]] is x's
+         declared sort under the FULL model value-map.  This is exactly the
+         output [add_open_faithful_rep] would give for [var x] IF a full
+         [wf_subst l [] sg Cfull] were available -- i.e. the use->declared sort
+         bridge.  Isolated checkpoint. *)
     Admitted.
 
     (* =============================================================== *)
@@ -733,6 +863,8 @@ Section WithVar.
                 (con n0 s0) x1)
       : forall c sub t1, wf_ctx l c -> wf_term l c (con n0 s0) t1 ->
           map fst c = map fst sub ->
+          (* the full model value-map [sg] covers the whole rule context *)
+          map fst sg = map fst c ->
           (forall x, no_sort x = true -> In x (fv (con n0 s0))) ->
           (forall x, In x (map fst sub) ->
                 map.get a (named_list_lookup default sub x)
@@ -742,7 +874,7 @@ Section WithVar.
       (* the LHS use-sort coverage: every occurring var is wf at SOME sort *)
       pose proof (@Theorems.add_open_use_sort_wf V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
                     X l Hwf Hsof a eF sg Hsound (con n0 s0)) as Huse0.
-      intros Cfull sub t1 Hwfcf Hwfe1f Hdom Hskipset Hvals.
+      intros Cfull sub t1 Hwfcf Hwfe1f Hdom Hdomsgc Hskipset Hvals.
       specialize (Huse0 Cfull t1 Hwfcf Hwfe1f x1 Hrep).
       (* Track the prefix [pre] so that, at each head [(x,t)::c'], the FULL ctx
          is [Cfull = pre ++ (x,t)::c'].  This certifies [t] is x's declared sort
@@ -819,8 +951,13 @@ Section WithVar.
           specialize (Hsgy (or_intror Hy)).
           rewrite Hsg'y in Hsgy. injection Hsgy as Hsgy. exact Hsgy. }
         destruct Hpre as [pre Hpre'].
+        (* [c'] is a suffix of [Cfull], whose domain is [map fst sg] ([Hdomsgc]) *)
+        assert (Hincl : incl (map fst c') (map fst sg)).
+        { rewrite Hdomsgc. rewrite Hpre'.
+          rewrite map_app. cbn [map app]. intro z. intro Hz.
+          apply in_or_app. right. right. exact Hz. }
         eapply (skip_var_decl_sort_wf no_sort eF a Hsound sg n0 s0 x1 Hrep
-                  Cfull pre t1 Hwfcf Hwfe1f x t c' sg' Hpre' Hxfv Hwfsub' Hdomsg' Hagree).
+                  Cfull pre t1 Hwfcf Hwfe1f x t c' sg' Hpre' Hxfv Hwfsub' Hdomsg' Hincl Hagree).
     Qed.
 
     (* ============ SORT_EQ analogues (scon LHS) ============ *)
@@ -840,17 +977,25 @@ Section WithVar.
       (Hxfv : In x (fv_args s0))
       (Hwfsub' : wf_subst l [] sg' c')
       (Hdomsg' : map fst sg' = map fst c')
+      (Hdomsg : incl (map fst c') (map fst sg))
       (Hagree : forall y, In y (map fst c') ->
                   named_list_lookup default sg' y = named_list_lookup default sg y)
       : wf_term l [] (named_list_lookup default sg x) (t[/sg'/]).
     Proof.
+      assert (Hwst : wf_sort l c' t).
+      { subst Cfull.
+        clear -Hwfcf.
+        induction pre as [|[pn pt] pre IH]; cbn [app] in Hwfcf.
+        - apply invert_wf_ctx_cons in Hwfcf. apply Hwfcf.
+        - apply invert_wf_ctx_cons in Hwfcf. apply IH. apply Hwfcf. }
+      rewrite (decl_sort_subst_prefix_eq sg sg' t c' Hwst Hdomsg' Hdomsg Hagree).
       pose proof (@Theorems.add_open_use_sort_wf_scon V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
                     X l Hwf Hsof a eF sg Hsound n0 s0 Cfull Hwfcf Hwft1f xs1 Hrep
                     x Hxfv) as Huse.
       destruct Huse as [T_engine HwfT].
       eapply wf_term_conv; [exact HwfT|].
-      (* REMAINING (same checkpoint as the term case):
-         eq_sort l [] T_engine (t[/sg'/]). *)
+      (* REMAINING (sharpened, same checkpoint as the term case):
+         eq_sort l [] T_engine (t[/sg/]). *)
     Admitted.
 
     Lemma skip_decl_wf_from_image_sort (no_sort : V -> bool) (eF : instance X) (a : interp)
@@ -860,13 +1005,14 @@ Section WithVar.
                 (scon n0 s0) xs1)
       : forall c sub, wf_ctx l c -> wf_sort l c (scon n0 s0) ->
           map fst c = map fst sub ->
+          map fst sg = map fst c ->
           (forall x, no_sort x = true -> In x (fv_sort (scon n0 s0))) ->
           (forall x, In x (map fst sub) ->
                 map.get a (named_list_lookup default sub x)
                   = Some (inl (named_list_lookup default sg x))) ->
           skip_decl_wf no_sort a sub c.
     Proof.
-      intros Cfull sub Hwfcf Hwft1f Hdom Hskipset Hvals.
+      intros Cfull sub Hwfcf Hwft1f Hdom Hdomsgc Hskipset Hvals.
       cut (forall (c : ctx) sub,
              (exists pre, Cfull = pre ++ c) ->
              map fst c = map fst sub ->
@@ -926,8 +1072,12 @@ Section WithVar.
           specialize (Hsgy (or_intror Hy)).
           rewrite Hsg'y in Hsgy. injection Hsgy as Hsgy. exact Hsgy. }
         destruct Hpre as [pre Hpre'].
+        assert (Hincl : incl (map fst c') (map fst sg)).
+        { rewrite Hdomsgc. rewrite Hpre'.
+          rewrite map_app. cbn [map app]. intro z. intro Hz.
+          apply in_or_app. right. right. exact Hz. }
         eapply (skip_var_decl_sort_wf_scon no_sort eF a Hsound sg n0 s0 xs1 Hrep
-                  Cfull pre Hwfcf Hwft1f x t c' sg' Hpre' Hxfv Hwfsub' Hdomsg' Hagree).
+                  Cfull pre Hwfcf Hwft1f x t c' sg' Hpre' Hxfv Hwfsub' Hdomsg' Hincl Hagree).
     Qed.
 
   End AddCtxInvert.
