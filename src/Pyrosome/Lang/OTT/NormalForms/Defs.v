@@ -50,7 +50,20 @@ Definition nf_injectivity : list (string * list string) :=
    ("ne_exp", ["A"; "i"; "G"]);
    ("nf_exp", ["A"; "i"; "G"]);
    ("ne_ty", ["i"; "G"]);
-   ("nf_ty", ["i"; "G"])].
+   ("nf_ty", ["i"; "G"]);
+   ("var2exp", ["x"; "A"; "i"; "G"]);
+   ("ne2exp", ["m"; "A"; "i"; "G"]);
+   ("nf2exp", ["t"; "A"; "i"; "G"]);
+   ("nf2ty", ["n"; "i"; "G"]);
+   ("ne2ty", ["n"; "i"; "G"]);
+   ("ne_var", ["x"; "A"; "i"; "G"]);
+   ("ne_El", ["m"; "l"; "r"; "G"]);
+   ("nf_El", ["e"; "l"; "r"; "G"]);
+   ("nf_U", ["l"; "r"; "G"]);
+   ("nf_Nat", ["G"]);
+   ("nf_zero", ["G"]);
+   ("nf_suc", ["n"; "G"]);
+   ("nf_ne_at", ["m"; "n"; "i"; "G"])].
 
 Definition ott_base_inj_all :=
   (nf_injectivity ++ pi_injectivity ++ nat_injectivity
@@ -117,6 +130,121 @@ Proof.
   elab_rule {[r "G" : #"env", "i" : #"tyinfo"
       -----------------------------------------------
       #"nf_ty" "G" "i" srt
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* ==================================================================== *)
+  (* Phase 1g (maps only) — the embedding term-rule CONSTRUCTORS into base   *)
+  (* syntax.  Declared here (before the neutral/normal constructors) so      *)
+  (* indices may mention `nf2exp`/`nf2ty`.  Their collapse EQUATIONS are      *)
+  (* added later, once all formers exist.                                    *)
+  (* ==================================================================== *)
+
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo", "A" : #"ty" "G" "i",
+          "x" : #"var" "G" "i" "A"
+      -----------------------------------------------
+      #"var2exp" "x" : #"exp" "G" "i" "A"
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo", "A" : #"ty" "G" "i",
+          "m" : #"ne_exp" "G" "i" "A"
+      -----------------------------------------------
+      #"ne2exp" "m" : #"exp" "G" "i" "A"
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo", "A" : #"ty" "G" "i",
+          "t" : #"nf_exp" "G" "i" "A"
+      -----------------------------------------------
+      #"nf2exp" "t" : #"exp" "G" "i" "A"
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo",
+          "n" : #"nf_ty" "G" "i"
+      -----------------------------------------------
+      #"nf2ty" "n" : #"ty" "G" "i"
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* ==================================================================== *)
+  (* Phase 1c/1d/1e (non-Pi) — neutral & normal constructors for variables,  *)
+  (* Nat, and the universe/El type codes, plus the eta-positivity gate.      *)
+  (* The Pi pieces (ne_app / nf_lam) and Nat's eliminator neutral come next. *)
+  (* ==================================================================== *)
+
+  (* ne_var : a variable is a neutral. *)
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo", "A" : #"ty" "G" "i",
+          "x" : #"var" "G" "i" "A"
+      -----------------------------------------------
+      #"ne_var" "x" : #"ne_exp" "G" "i" "A"
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* ne2ty : embed a neutral type code into a base type (used by the gate). *)
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo", "n" : #"ne_ty" "G" "i"
+      -----------------------------------------------
+      #"ne2ty" "n" : #"ty" "G" "i"
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* ne_El : El of a neutral code is a neutral type. *)
+  elab_rule {[r "G" : #"env", "r" : #"relevance", "l" : #"lvl",
+          "m" : #"ne_exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] "r" "l")
+      -----------------------------------------------
+      #"ne_El" "m" : #"ne_ty" "G" (#"info" "r" (#"iota" "l"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* nf_El : El of a normal code is a normal type. *)
+  elab_rule {[r "G" : #"env", "r" : #"relevance", "l" : #"lvl",
+          "e" : #"nf_exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] "r" "l")
+      -----------------------------------------------
+      #"nf_El" "e" : #"nf_ty" "G" (#"info" "r" (#"iota" "l"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* nf_U : the universe is a normal type. *)
+  elab_rule {[r "G" : #"env", "r" : #"relevance", "l" : #"lvl"
+      -----------------------------------------------
+      #"nf_U" "r" "l" : #"nf_ty" "G" (#"info" #"rel" (#"next" "l"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* nf_Nat : Nat is a normal type. *)
+  elab_rule {[r "G" : #"env"
+      -----------------------------------------------
+      #"nf_Nat" : #"nf_ty" "G" (#"info" #"rel" (#"iota" #"L0"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* nf_zero / nf_suc : Nat normals (eta-trivial base type). *)
+  elab_rule {[r "G" : #"env"
+      -----------------------------------------------
+      #"nf_zero"
+        : #"nf_exp" "G" (#"info" #"rel" (#"iota" #"L0"))
+            (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env",
+          "n" : #"nf_exp" "G" (#"info" #"rel" (#"iota" #"L0"))
+                  (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
+      -----------------------------------------------
+      #"nf_suc" "n"
+        : #"nf_exp" "G" (#"info" #"rel" (#"iota" #"L0"))
+            (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* The eta-positivity GATE: a neutral is a normal ONLY at a neutral type    *)
+  (* `ne2ty n` (never at El(Pi_rel …), which is not a neutral type) ⇒ unique  *)
+  (* eta-long normals at Pi (only nf_lam inhabits a Pi code).                 *)
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo", "n" : #"ne_ty" "G" "i",
+          "m" : #"ne_exp" "G" "i" (#"ne2ty" "n")
+      -----------------------------------------------
+      #"nf_ne_at" "n" "m" : #"nf_exp" "G" "i" (#"ne2ty" "n")
     ]}%prerule
     ott_base_inj_all.
 
