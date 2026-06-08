@@ -353,6 +353,161 @@ Proof.
     ]}%prerule
     ott_base_inj_all.
 
+  (* ==================================================================== *)
+  (* Phase 1g — embedding EQUATIONS.  Each collapses an embedding map onto    *)
+  (* its base denotation; every equation concludes at a BASE sort.  Under     *)
+  (* the Phase-2 collapse compiler both sides become syntactically identical  *)
+  (* base terms ⇒ the preservation obligation closes by reflexivity.          *)
+  (* ==================================================================== *)
+
+  (* --- variables --- *)
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo", "A" : #"ty" "G" "i"
+      ----------------------------------------------- ("var2exp_vz")
+      #"var2exp" ["G" := #"ext" "G" "A"] ["i" := "i"] ["A" := #"ty_subst" #"wkn" "A"] #"vz"
+      = #"hd"
+      : #"exp" (#"ext" "G" "A") "i" (#"ty_subst" #"wkn" "A")
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo", "A" : #"ty" "G" "i",
+          "j" : #"tyinfo", "B" : #"ty" "G" "j", "x" : #"var" "G" "i" "A"
+      ----------------------------------------------- ("var2exp_vs")
+      #"var2exp" ["G" := #"ext" "G" "B"] ["i" := "i"] ["A" := #"ty_subst" #"wkn" "A"] (#"vs" "B" "x")
+      = #"exp_subst" ["G'" := "G"] #"wkn" (#"var2exp" "x")
+      : #"exp" (#"ext" "G" "B") "i" (#"ty_subst" #"wkn" "A")
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* --- neutrals into exps --- *)
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo", "A" : #"ty" "G" "i",
+          "x" : #"var" "G" "i" "A"
+      ----------------------------------------------- ("ne2exp_var")
+      #"ne2exp" (#"ne_var" "x") = #"var2exp" "x" : #"exp" "G" "i" "A"
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* --- normals into exps : Nat --- *)
+  elab_rule {[r "G" : #"env"
+      ----------------------------------------------- ("nf2exp_zero")
+      #"nf2exp" #"nf_zero" = #"zero"
+      : #"exp" "G" (#"info" #"rel" (#"iota" #"L0"))
+          (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env",
+          "n" : #"nf_exp" "G" (#"info" #"rel" (#"iota" #"L0"))
+                  (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
+      ----------------------------------------------- ("nf2exp_suc")
+      #"nf2exp" (#"nf_suc" "n") = #"suc" (#"nf2exp" "n")
+      : #"exp" "G" (#"info" #"rel" (#"iota" #"L0"))
+          (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* --- the eta gate collapses to the neutral's embedding --- *)
+  elab_rule {[r "G" : #"env", "i" : #"tyinfo", "n" : #"ne_ty" "G" "i",
+          "m" : #"ne_exp" "G" "i" (#"ne2ty" ["G" := "G"] ["i" := "i"] "n")
+      ----------------------------------------------- ("nf2exp_ne_at")
+      #"nf2exp" ["G" := "G"] ["i" := "i"] ["A" := #"ne2ty" "n"] (#"nf_ne_at" "n" "m")
+      = #"ne2exp" ["G" := "G"] ["i" := "i"] ["A" := #"ne2ty" "n"] "m"
+      : #"exp" "G" "i" (#"ne2ty" "n")
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* --- normal/neutral types --- *)
+  elab_rule {[r "G" : #"env", "r" : #"relevance", "l" : #"lvl"
+      ----------------------------------------------- ("nf2ty_U")
+      #"nf2ty" (#"nf_U" "r" "l") = #"U" ["G" := "G"] "r" "l"
+      : #"ty" "G" (#"info" #"rel" (#"next" "l"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env", "r" : #"relevance", "l" : #"lvl",
+          "e" : #"nf_exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] "r" "l")
+      ----------------------------------------------- ("nf2ty_El")
+      #"nf2ty" (#"nf_El" "e") = #"El" (#"nf2exp" "e")
+      : #"ty" "G" (#"info" "r" (#"iota" "l"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env"
+      ----------------------------------------------- ("nf2ty_Nat")
+      #"nf2ty" #"nf_Nat"
+      = #"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"])
+      : #"ty" "G" (#"info" #"rel" (#"iota" #"L0"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env", "r" : #"relevance", "l" : #"lvl",
+          "m" : #"ne_exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] "r" "l")
+      ----------------------------------------------- ("ne2ty_El")
+      #"ne2ty" (#"ne_El" "m") = #"El" (#"ne2exp" "m")
+      : #"ty" "G" (#"info" "r" (#"iota" "l"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* --- nf substitutions / contexts --- *)
+  elab_rule {[r "G" : #"env"
+      ----------------------------------------------- ("nfsub2sub_forget")
+      #"nfsub2sub" #"nf_forget" = #"forget" : #"sub" "G" #"emp"
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r
+      ----------------------------------------------- ("nfctx2env_emp")
+      #"nfctx2env" #"nf_emp_ctx" = #"emp" : #"env"
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "Gn" : #"nf_ctx", "i" : #"tyinfo",
+          "An" : #"nf_ty" (#"nfctx2env" "Gn") "i"
+      ----------------------------------------------- ("nfctx2env_ext")
+      #"nfctx2env" (#"nf_ext_ctx" "Gn" "An")
+      = #"ext" (#"nfctx2env" "Gn") (#"nf2ty" "An") : #"env"
+    ]}%prerule
+    ott_base_inj_all.
+
+  (* --- the two dependent / Pi embeddings (most inference-heavy) --- *)
+  elab_rule {[r "G" : #"env", "rF" : #"relevance", "lF" : #"lvl", "lG" : #"lvl",
+          "F" : #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G"] "rF" "lF"),
+          "B" : #"exp" (#"ext" "G" (#"El" "F")) (#"info" #"rel" (#"next" "lG"))
+                       (#"U" ["G" := #"ext" "G" (#"El" "F")] #"rel" "lG"),
+          "t" : #"nf_exp" (#"ext" "G" (#"El" "F")) (#"info" #"rel" (#"iota" "lG")) (#"El" "B")
+      ----------------------------------------------- ("nf2exp_lam")
+      #"nf2exp" (#"nf_lam" "rF" "lF" "lG" "F" "B" "t")
+      = #"lam_rel" "rF" "lF" "lG" "F" "B" (#"nf2exp" "t")
+      : #"exp" "G" (#"info" #"rel" (#"iota" "lG"))
+          (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "lG"] (#"Pi_rel" ["G" := "G"] "rF" "lF" "lG" "F" "B"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env", "rF" : #"relevance", "lF" : #"lvl", "lG" : #"lvl",
+          "F" : #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G"] "rF" "lF"),
+          "B" : #"exp" (#"ext" "G" (#"El" "F")) (#"info" #"rel" (#"next" "lG"))
+                       (#"U" ["G" := #"ext" "G" (#"El" "F")] #"rel" "lG"),
+          "f" : #"ne_exp" "G" (#"info" #"rel" (#"iota" "lG"))
+                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "lG"] (#"Pi_rel" ["G" := "G"] "rF" "lF" "lG" "F" "B")),
+          "a" : #"nf_exp" "G" (#"info" "rF" (#"iota" "lF")) (#"El" "F")
+      ----------------------------------------------- ("ne2exp_app")
+      #"ne2exp" (#"ne_app" "rF" "lF" "lG" "F" "B" "f" "a")
+      = #"app_rel" "rF" "lF" "lG" "F" "B" (#"ne2exp" "f") (#"nf2exp" "a")
+      : #"exp" "G" (#"info" #"rel" (#"iota" "lG"))
+          (#"ty_subst" (#"snoc" #"id" (#"nf2exp" "a")) (#"El" "B"))
+    ]}%prerule
+    ott_base_inj_all.
+
+  elab_rule {[r "G" : #"env", "G'" : #"env", "gn" : #"nf_sub" "G" "G'",
+          "i" : #"tyinfo", "A" : #"ty" "G'" "i",
+          "vn" : #"nf_exp" "G" "i"
+                   (#"ty_subst" ["G'" := "G'"] (#"nfsub2sub" ["G" := "G"] ["G'" := "G'"] "gn") "A")
+      ----------------------------------------------- ("nfsub2sub_snoc")
+      #"nfsub2sub" (#"nf_snoc" "gn" "vn")
+      = #"snoc" (#"nfsub2sub" "gn") (#"nf2exp" "vn")
+      : #"sub" "G" (#"ext" "G'" "A")
+    ]}%prerule
+    ott_base_inj_all.
+
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
