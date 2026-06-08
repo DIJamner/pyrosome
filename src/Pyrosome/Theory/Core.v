@@ -1784,6 +1784,62 @@ Proof.
 Qed.
 
 
+(* ===================================================================== *)
+(* CONTEXT STRENGTHENING for [eq_sort], by substitution (route 3).        *)
+(*                                                                        *)
+(* If [r] is an [eq_subst] from the smaller context [c'] to the larger    *)
+(* [Cfull] -- i.e. it provides, for EVERY variable of [Cfull] (including   *)
+(* the ones being dropped), an image well-formed in [c'] at its declared   *)
+(* sort under [r] -- and [r] acts as the identity on the two sorts         *)
+(* [t1], [t2], then an equality over [Cfull] can be transported to [c'].   *)
+(*                                                                        *)
+(* This is the ONLY sound form of [eq_sort] context strengthening: a       *)
+(* purely structural ("drop the unused bindings") strengthening is FALSE   *)
+(* in general because [eq_sort_trans] routes through an intermediate sort   *)
+(* [t12] that may mention the dropped variables and is not constrained to   *)
+(* the smaller context (verified concretely: the [eq_sort_trans] IH        *)
+(* requires [wf_sort l c' t12], which is unavailable).  The substitution   *)
+(* [r] supplies inhabitants for the dropped variables, which is exactly    *)
+(* the content a structural strengthening lacks.                           *)
+(*                                                                        *)
+(* This lemma is the existing [eq_sort_subst] constructor packaged for the *)
+(* strengthening use-case; the remaining content for any concrete          *)
+(* application is to CONSTRUCT the witnessing [eq_subst l c' Cfull r r].    *)
+Lemma eq_sort_strengthen_by_subst (l : lang) (Cfull c' : ctx) (r : subst) t1 t2
+  : wf_lang l ->
+    wf_ctx l Cfull ->
+    eq_subst l c' Cfull r r ->
+    t1[/r/] = t1 ->
+    t2[/r/] = t2 ->
+    eq_sort l Cfull t1 t2 ->
+    eq_sort l c' t1 t2.
+Proof.
+  intros wfl Hwfcf Hsub Ht1 Ht2 Heq.
+  pose proof (eq_sort_subst (l:=l) (c:=c') (c':=Cfull) (s1:=r) (s2:=r)
+                (t1':=t1) (t2':=t2) Heq Hsub Hwfcf) as Hs.
+  rewrite Ht1, Ht2 in Hs.
+  exact Hs.
+Qed.
+
+(* Term-level analogue, for completeness / symmetry. *)
+Lemma eq_term_strengthen_by_subst (l : lang) (Cfull c' : ctx) (r : subst) t e1 e2
+  : wf_lang l ->
+    wf_ctx l Cfull ->
+    eq_subst l c' Cfull r r ->
+    t[/r/] = t ->
+    e1[/r/] = e1 ->
+    e2[/r/] = e2 ->
+    eq_term l Cfull t e1 e2 ->
+    eq_term l c' t e1 e2.
+Proof.
+  intros wfl Hwfcf Hsub Ht He1 He2 Heq.
+  pose proof (eq_term_subst (l:=l) (c:=c') (c':=Cfull) (s1:=r) (s2:=r)
+                (t:=t) (e1:=e1) (e2:=e2) Heq Hsub Hwfcf) as Hs.
+  rewrite Ht, He1, He2 in Hs.
+  exact Hs.
+Qed.
+
+
 (* Dropping a fresh leading binding from a substitution does not change the
    action on a sort well-formed in the (unextended) context. *)
 Lemma wf_sort_strengthen_cons (l : lang) c' n e s t'
