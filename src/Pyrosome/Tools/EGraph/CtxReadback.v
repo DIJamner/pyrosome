@@ -706,6 +706,18 @@ Section WithVar.
                   named_list_lookup default sg' y = named_list_lookup default sg y)
       : wf_term l [] (named_list_lookup default sg x) (t[/sg'/]).
     Proof.
+      (* The engine gives the image wf at SOME (model use-) sort, with no
+         wf_subst.  The declared sort needs the use->declared conversion. *)
+      pose proof (@Theorems.add_open_use_sort_wf V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
+                    X l Hwf Hsof a eF sg Hsound (con n0 s0) Cfull t1 Hwfcf Hwfe1f x1 Hrep
+                    x Hxfv) as Huse.
+      destruct Huse as [T_engine HwfT].
+      eapply wf_term_conv; [exact HwfT|].
+      (* REMAINING: eq_sort l [] T_engine (t[/sg'/]).
+         [T_engine] is the model use-sort of [x]'s occurrence (existential from
+         the engine); [t] is x's declared sort over its prefix [c'].  Closing
+         this is the e-graph substitution-typing reflection (the two telescope
+         facts (A)/(B) documented above).  Isolated checkpoint. *)
     Admitted.
 
     (* =============================================================== *)
