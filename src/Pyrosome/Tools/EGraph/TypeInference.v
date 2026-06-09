@@ -266,25 +266,16 @@ Definition build_injection_rules (schemas: list (string * list string)) (L: lang
 (* ----------------------------- *)
 
 
-(* ============================================================
-   The e-graph engine, specialized to [positive] indices.
+(* The e-graph engine, ported from the deleted string version to [positive]
+   indices so it runs over the fast positive tries (sharing
+   Defs.PositiveInstantiation's instantiation, [sort_of = xH]).  Each definition
+   below is the positive analogue of the like-named string one.  [infer_*] build
+   the problem over strings (so gensym keeps making readable "?"-holes), rename
+   it into positives, run this engine, and unrename.  Parameterized by the
+   extraction [weight], supplied once the caller knows which positives are holes. *)
 
-   This is the same algorithm the string-indexed engine used to run inline
-   (build holes -> saturate injection+const rules -> extract), ported to
-   [positive] so it runs over the fast positive tries.  TypeInference's [infer_*]
-   entry points build the elaboration problem over strings (so gensym still makes
-   readable "?"-prefixed hole names), rename it into [positive] (sharing
-   Defs.PositiveInstantiation's instantiation, [sort_of = xH]), run the engine
-   below, then unrename the result.
-
-   Everything in this section is parameterized by the extraction [weight], which
-   the caller supplies once it knows which renamed positives are holes.
-   ============================================================ *)
-
-(* Build the extraction weight from a "is this symbol a hole" predicate.  Holes
-   (and the [sort_of] symbol) get infinite weight (None) so extraction never
-   picks them; everything else gets weight 1.  This is the positive analogue of
-   the string [weight] that special-cased the "?"-prefixed hole names. *)
+(* The positive analogue of the string [weight]: holes (and [sort_of]) get
+   infinite weight (None) so extraction never picks them, everything else 1. *)
 Definition mk_weight (is_hole : positive -> bool)
   : atom positive positive -> option positive :=
   fun a =>
@@ -305,12 +296,10 @@ Section WithWeight.
   Local Notation sort := (@Term.sort positive).
   Local Notation ctx := (@Term.ctx positive).
   Local Notation lang := (@Rule.lang positive).
-  (* [named_list] is left to the file-scope (string) notation; in this section
-     we write [@named_list positive _] explicitly to key on positives. *)
-  (* The special [sort_of] symbol: [xH], exactly as in Defs.PositiveInstantiation
-     (which egraph_sound / egraph_reducing_equal' use).  We deliberately share
-     their positive instantiation so type inference and the soundness path run
-     the *same* compiled rules. *)
+  (* [named_list] stays the file-scope string notation; inside the section we
+     write [@named_list positive _] explicitly.  [sort_of = xH] is shared with
+     Defs.PositiveInstantiation, so inference runs the same compiled rules as
+     egraph_sound. *)
   Local Notation sort_of := PosListMap.sort_of.
 
   Context (weight : atom -> option positive).
@@ -412,16 +401,12 @@ Section WithWeight.
         (x, decode_sort context graph x_id)::context
     end.
 
-  (* ---- running the pipeline ----
+  (* ---- running the pipeline: [infer_rule_egraph] + [decode_rule], fused into
+     one entry point per rule shape (the match on the rule lives in [infer_rule]
+     below, as it did in the string [infer_rule_egraph]). ---- *)
 
-     One entry point per rule shape (the match on the rule lives in [infer_rule]
-     below, exactly as it did in the string [infer_rule_egraph]).  Each adds the
-     context holes and the renamed conclusion to a fresh e-graph, saturates, and
-     decodes -- the positive analogue of [infer_rule_egraph] + [decode_rule]
-     fused per shape. *)
-
-  (* Add the context holes, returning their e-class ids.  The positive analogue
-     of the string [add_ctx_with_holes_to_egraph]. *)
+  (* Add the context holes, returning their e-class ids (the positive
+     [add_ctx_with_holes_to_egraph]). *)
   Definition add_ctx (l : lang) (ctx_holes : list (positive * sort))
     : state instance (list (positive * positive)) :=
     list_Mmap (fun '(n,s) =>
@@ -491,10 +476,8 @@ Section WithWeight.
 End WithWeight.
 
 
-(* ============================================================
-   Bridge: build the elaboration problem over strings, rename it into
-   positives, run the engine above, and unrename the result.
-   ============================================================ *)
+(* Bridge: build the problem over strings, rename into positives, run the engine
+   above, unrename the result. *)
 
 Local Open Scope list_scope.
 
@@ -700,8 +683,7 @@ Section __.
           @! let l_pos <- rename_lang l_full in
             let c'_pos <- rename_ctx c' in
             let t_pos <- rename_sort t_holes in
-            let inj_pos <- list_Mmap rename_sequent
-                             (build_injection_rules inj_rules l_full) in
+            let inj_pos <- rename_inj l_full inj_rules in
             ret (l_pos, c'_pos, t_pos, inj_pos)
         in
         let '(tmp, rn) := rename_all init_renaming in
@@ -729,8 +711,7 @@ Section __.
             let c'_pos <- rename_ctx c' in
             let tsort_pos <- rename_sort t_sort in
             let e_pos <- rename_term e_holes in
-            let inj_pos <- list_Mmap rename_sequent
-                             (build_injection_rules inj_rules l_full) in
+            let inj_pos <- rename_inj l_full inj_rules in
             ret (l_pos, c'_pos, tsort_pos, e_pos, inj_pos)
         in
         let '(tmp, rn) := rename_all init_renaming in
