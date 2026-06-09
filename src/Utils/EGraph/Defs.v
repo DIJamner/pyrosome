@@ -738,13 +738,34 @@ Section WithMap.
   Definition repair e :=
     match e with
     | union_repair old_idx new_idx improved_new_analysis =>
-        repair_union old_idx new_idx improved_new_analysis
+        (* Re-inserting a repointed parent (inside [repair_union]) recomputes
+           its row analysis from the merged class's now-refined analysis, which
+           can in turn refine the parent's own return class.  The
+           [improved_new_analysis]-gated step in [repair_union] only refreshes
+           [x_canonical]'s parents, not this cascade, so we additionally
+           schedule an [analysis_repair] for each old parent's return class.
+           Without it a db row's [entry_analysis] can stay stale relative to
+           its arguments after the worklist drains, making extraction's
+           [select_optimal_nodes] skip the class.  We read [old_idx]'s parents
+           before [repair_union] consumes them; [analysis_repair] on a class
+           with no stale parents is a no-op, so this only does work
+           proportional to the analyses that actually change.
+
+           TODO: this is correct, but the ideal behavior is for improved_new_analysis
+           to take into account whether the old idx needs its analysis updated.
+           That improvement is blocked on some proof details that need to be fixed.
+           Specifically, `good_worklist` probably should not preclude analysis elements,
+           since they are quire harmless to soundness.
+         *)
+        @!let old_ps <- get_parents old_idx in
+          let _ <- repair_union old_idx new_idx improved_new_analysis in
+          (list_Miter (fun a => push_worklist (analysis_repair a.(atom_ret))) old_ps)
     | analysis_repair i =>
         (* if the repair is stale, i should have no parents,
            correctly making this a no-op.
          *)
         @!let ps <- get_parents i in
-          (list_Miter repair_parent_analysis ps) 
+          (list_Miter repair_parent_analysis ps)
     end.
 
   Definition canonicalize_worklist_entry e : ST worklist_entry :=
