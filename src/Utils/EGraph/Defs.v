@@ -817,11 +817,47 @@ Section WithMap.
             else (saturate_until' 0 rs P fuel)
     end.
 
+  (* All e-class representatives that appear as an [entry_value] in the db. *)
+  Definition collect_db_rets : ST (list idx) :=
+    fun i =>
+      (map.fold (fun acc _ tbl =>
+                   map.fold (fun acc _ e => e.(entry_value)::acc) acc tbl)
+         [] i.(db),
+        i).
+
+  (* Re-establish analysis consistency after the saturation loop.
+
+     A [union] writes the merged analysis into the per-class [analyses] map for
+     the two representatives, but a db row's stored [entry_analysis] is only
+     refreshed by [repair_parent_analysis], which runs for the parents of a
+     class flagged [improved_new_analysis] (or via a pending [analysis_repair]).
+     In some union orders that flag is false where downstream propagation is
+     still needed, so the loop can terminate (empty worklist) with a db row
+     whose [entry_analysis] is stale relative to its arguments' current analyses.
+     Extraction's [select_optimal_nodes] keys on the raw [entry_value] and
+     selects a node only when [le row.entry_analysis analyses[ret]] holds, so a
+     stale row can make an e-class look node-less.
+
+     To make the result order-independent, push an [analysis_repair] for every
+     class in the db and rebuild: [repair_parent_analysis] recomputes each
+     parent's analysis from its arguments' current analyses and cascades on
+     change, reaching the analysis fixpoint.  This only rewrites [analyses] and
+     db rows' [entry_analysis] (via repairs), so it preserves [egraph_ok] and
+     the denotation; on an already-consistent egraph every repair short-circuits
+     and it is a no-op. *)
+  Definition propagate_analyses : ST unit :=
+    @! let rets <- collect_db_rets in
+       let _ <- list_Miter (fun o => push_worklist (analysis_repair o)) rets in
+       let _ <- rebuild rebuild_fuel in
+       ret tt.
+
   (* run the const rules once before the saturation loop *)
   Definition saturate_until window rs (P : ST bool) fuel : ST bool :=
     @! (process_const_rules rs);
        (rebuild rebuild_fuel);
-       (saturate_until' window rs P fuel).
+       let b <- saturate_until' window rs P fuel in
+       let _ <- propagate_analyses in
+       ret b.
     
   
   Definition are_unified (x1 x2 : idx) : state instance bool :=

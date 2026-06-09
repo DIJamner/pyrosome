@@ -234,6 +234,36 @@ Section Slice.
       split; [eapply map_extends_trans; [exact Hext_f | exact Hext1] | exact Hsnd_final].
   Qed.
 
+  (* Pushing [analysis_repair] entries only extends the worklist (db, equiv,
+     parents, analyses unchanged), and [analysis_repair] entries are trivially
+     [worklist_entry_ok], so it preserves both [egraph_ok] and soundness. *)
+  Lemma list_Miter_push_ar_pres (l : list idx) :
+    forall (e : instance),
+      egraph_ok e ->
+      egraph_ok (snd (list_Miter (fun o => push_worklist idx symbol symbol_map idx_map
+                        idx_trie analysis_result (analysis_repair idx o)) l e))
+      /\ (forall i, egraph_sound_for_interpretation i e ->
+            egraph_sound_for_interpretation i
+              (snd (list_Miter (fun o => push_worklist idx symbol symbol_map idx_map
+                      idx_trie analysis_result (analysis_repair idx o)) l e))).
+  Proof.
+    induction l as [|a l IH]; intros e Hok.
+    - cbn [list_Miter Mret StateMonad.state_monad snd].
+      split; [exact Hok | intros i Hs; exact Hs].
+    - destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
+      cbn [list_Miter]. unfold Mseq, push_worklist.
+      cbn [Mbind StateMonad.state_monad snd db equiv parents epoch worklist analyses log].
+      set (e1 := Build_instance idx symbol symbol_map idx_map idx_trie analysis_result
+                   db_e equiv_e parents_e epoch_e
+                   (analysis_repair idx a :: wl_e) analyses_e log_e).
+      assert (Hok1 : egraph_ok e1).
+      { destruct Hok as [Heq Hwl Hp Hdb]. unfold e1; constructor; cbn in *; auto. }
+      destruct (IH e1 Hok1) as [IHok IHsnd].
+      split; [exact IHok|].
+      intros i Hs. apply IHsnd.
+      destruct Hs as [Hwf Hex Hai Hrel]. unfold e1; constructor; cbn in *; auto.
+  Qed.
+
 End Slice.
 
 (* saturate_until_sound — external, explicit ctx binders, top level *)
@@ -296,6 +326,23 @@ Proof.
   pose proof (saturate_until'_sound (spaced_list_intersect:=spaced_list_intersect) (m:=m) Hlti Hlts Hltt rebuild_fuel rs P HP Hrules fuel window i_a e_b Hok_b Hsnd_b) as Hsat.
   destruct (saturate_until' idx_succ idx_zero idx_leb spaced_list_intersect rebuild_fuel window rs P fuel e_b) as [b e_final] eqn:Hsf.
   destruct Hsat as (Hok_f & i_f & Hext_f & Hsnd_f).
-  split; [exact Hok_f|]. exists i_f.
-  split; [eapply map_extends_trans; [exact Hext_f | exact Hext_a] | exact Hsnd_f].
+  (* The appended [propagate_analyses]: push an [analysis_repair] for every db
+     class (preserves egraph_ok + soundness) then [rebuild] (sound).  Together
+     they preserve egraph_ok and soundness, so the final state is still ok. *)
+  unfold Defs.propagate_analyses, Defs.collect_db_rets.
+  cbn [Mbind Mret StateMonad.state_monad fst snd].
+  match goal with
+  | |- context[list_Miter ?f ?rets e_final] =>
+      pose proof (list_Miter_push_ar_pres (m:=m) rets e_final Hok_f) as [Hok1 Hsnd1];
+      destruct (list_Miter f rets e_final) as [u1 e1] eqn:Hlm
+  end.
+  cbn [snd] in Hok1, Hsnd1.
+  specialize (Hsnd1 i_f Hsnd_f).
+  pose proof (@rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm (fun _ => True) rebuild_fuel e1) as Hrb2.
+  specialize (Hrb2 Hok1). destruct Hrb2 as (Hok2 & Hde2).
+  destruct (rebuild rebuild_fuel e1) as [u2 e2] eqn:Hrb2eq.
+  cbn [snd] in Hok2, Hde2.
+  pose proof (proj1 (Hde2 i_f) Hsnd1) as Hsnd2.
+  split; [exact Hok2|]. exists i_f.
+  split; [eapply map_extends_trans; [exact Hext_f | exact Hext_a] | exact Hsnd2].
 Qed.
