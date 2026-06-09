@@ -749,7 +749,14 @@ Section WithMap.
            [select_optimal_nodes] skip the class.  We read [old_idx]'s parents
            before [repair_union] consumes them; [analysis_repair] on a class
            with no stale parents is a no-op, so this only does work
-           proportional to the analyses that actually change. *)
+           proportional to the analyses that actually change.
+
+           TODO: this is correct, but the ideal behavior is for improved_new_analysis
+           to take into account whether the old idx needs its analysis updated.
+           That improvement is blocked on some proof details that need to be fixed.
+           Specifically, `good_worklist` probably should not preclude analysis elements,
+           since they are quire harmless to soundness.
+         *)
         @!let old_ps <- get_parents old_idx in
           let _ <- repair_union old_idx new_idx improved_new_analysis in
           (list_Miter (fun a => push_worklist (analysis_repair a.(atom_ret))) old_ps)
