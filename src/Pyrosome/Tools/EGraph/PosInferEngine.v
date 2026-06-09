@@ -118,97 +118,6 @@ Section WithWeight.
          (inj_seqs ++ const_rules l))
       (Mret false) 1000%nat.
 
-  (* ---- canonicalization before extraction ----
-
-     Rebuild keeps the e-graph confluent but does NOT, in every union order,
-     leave each db row's [entry_value]/[entry_analysis] consistent with the
-     final union-find and [analyses] map:
-       - a row's ret can be left non-canonical ([find ret <> ret]); and
-       - a row's stored analysis can be stale (smaller-than-current = the
-         analysis improved via a later union/propagation that didn't reach
-         this row).
-     [extract]'s [select_optimal_nodes] keys optimal nodes on the raw ret and
-     selects a node only when [le row.entry_analysis analyses[ret]] holds, so
-     either kind of staleness can make an e-class look node-less, and
-     extraction then returns the default ([#""] after unrename).  The string
-     engine happens to avoid this via its idx ordering (which picks the other
-     union direction); to be order-independent we re-canonicalize every row's
-     ret with [find] and recompute its analysis from the current [analyses]
-     before extracting.  Where rows are already consistent (the common case)
-     this is the identity, so it never changes a successful extraction. *)
-  Notation DBE := (db_entry positive (option positive)).
-
-  (* The depth analysis of one node, computed from the analyses [an] of its
-     (canonicalized) arguments.  Mirrors [weighted_depth_analysis]'s [analyze]. *)
-  Definition node_analysis (an : trie_map (option positive)) (g : instance)
-    (sym : positive) (args : list positive) : option positive :=
-    let w := weight {| atom_fn := sym; atom_args := args; atom_ret := default |} in
-    let arg_as := map (fun a => unwrap_with_default
-                                  (map.get an (snd (UnionFind.find (equiv g) a)))) args in
-    match arg_as with
-    | [] => w
-    | a0 :: rest => oP_add w (List.fold_left oP_maximum rest a0)
-    end.
-
-  (* One bottom-up pass: each class's analysis is the meet (min) over its atoms
-     of [node_analysis an]. *)
-  Definition analyses_step (g : instance) (an : trie_map (option positive))
-    : trie_map (option positive) :=
-    map.fold (fun acc sym inner =>
-                map.fold (fun (a2 : trie_map (option positive)) args ent =>
-                            let c := snd (UnionFind.find (equiv g) (entry_value _ _ ent)) in
-                            let a := node_analysis an g sym args in
-                            let merged := match map.get a2 c with
-                                          | None => a
-                                          | Some old => oP_minimum a old
-                                          end in
-                            map.put a2 c merged)
-                  acc (inner : (@FullPosTrie.full_pos_trie_map) DBE))
-      map.empty (db g).
-
-  Fixpoint iterate_analyses (g : instance) (fuel : nat)
-    (an : trie_map (option positive)) : trie_map (option positive) :=
-    match fuel with
-    | O => an
-    | S f =>
-        let an' := analyses_step g an in
-        (* depth analysis is monotone, so once a pass is a no-op we are at the
-           fixpoint; stop early to keep this cheap (converges in ~max-depth
-           passes, not [db_rows] passes). *)
-        if eqb (map.tuples an') (map.tuples an) then an'
-        else iterate_analyses g f an'
-    end.
-
-  (* The depth analyses recomputed to a fixpoint, independent of whatever
-     (possibly stale) analyses saturation left.  Bounded by the number of db
-     rows (>= the max class depth), starting from "all infinite". *)
-  Definition analyses_fixpoint (g : instance) : trie_map (option positive) :=
-    iterate_analyses g (S (List.length (map.tuples (db g)))) map.empty.
-
-  (* Make the e-graph extraction-ready: re-canonicalize every row's ret with
-     [find], recompute the analyses to a fixpoint, and refresh each row's
-     stored analysis from it.  On an already-consistent e-graph this is the
-     identity, so it never changes a successful extraction. *)
-  Definition canon_egraph (g : instance) : instance :=
-    let an' := analyses_fixpoint g in
-    let cdb : trie_map ((@FullPosTrie.full_pos_trie_map) DBE) :=
-      map.fold (fun acc sym inner =>
-                  map.put acc sym
-                    (map.fold (fun (ia : (@FullPosTrie.full_pos_trie_map) DBE) args ent =>
-                                 map.put ia args
-                                   {| entry_epoch := entry_epoch _ _ ent;
-                                      entry_value :=
-                                        snd (UnionFind.find (equiv g)
-                                               (entry_value _ _ ent));
-                                      entry_analysis := node_analysis an' g sym args |})
-                       map.empty (inner : (@FullPosTrie.full_pos_trie_map) DBE)))
-        map.empty (db g)
-    in
-    match g with
-    | Build_instance _ _ _ _ _ _ _ eq par ep wl _ lg =>
-        Build_instance _ _ _ _ _ _ cdb eq par ep wl an' lg
-    end.
-
   (* ---- decoding ---- *)
 
   Fixpoint con_to_var (context : ctx) (t : term) : term :=
@@ -310,7 +219,7 @@ Section WithWeight.
         ret ids
     in
     let (ids, g) := comp empty_egraph in
-    decode_rule (canon_egraph g) ids.
+    decode_rule g ids.
 
   (* Compiler-case entry points: the decoding context [c'] is given (the
      already-compiled target context), rather than inferred.  Mirrors
@@ -323,7 +232,7 @@ Section WithWeight.
         ret x
     in
     let (x, g) := comp empty_egraph in
-    decode_sort c' (canon_egraph g) x.
+    decode_sort c' g x.
 
   Definition run_compile_term (l : lang) (inj_seqs : list sequent)
     (c' : ctx) (t_sort : sort) (e : term) : term :=
@@ -334,6 +243,6 @@ Section WithWeight.
         ret x
     in
     let (x, g) := comp empty_egraph in
-    decode_term c' (canon_egraph g) x.
+    decode_term c' g x.
 
 End WithWeight.
