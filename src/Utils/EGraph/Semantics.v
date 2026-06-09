@@ -9264,6 +9264,60 @@ Section WithMap.
   Qed.
 
 
+  (* The trailing analysis-scheduling pass of [repair_union]: push an
+     [analysis_repair] for each repointed parent's return idx.  It only ever
+     prepends [analysis_repair] entries to the worklist, leaving db, equiv,
+     parents, epoch untouched, so it preserves egraph_ok and denote. *)
+  Lemma list_Miter_push_ar_atom_ret (ps : list atom)
+    : vc (list_Miter (fun a => push_worklist idx symbol symbol_map idx_map idx_trie
+                        analysis_result (analysis_repair idx a.(atom_ret))) ps)
+        (fun e res =>
+           (snd res).(db) = e.(db)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ (snd res).(parents) = e.(parents)
+           /\ (exists new_ents, (snd res).(worklist) = new_ents ++ e.(worklist)
+                  /\ all (fun ent => exists j, ent = analysis_repair _ j) new_ents)
+           /\ (egraph_ok e -> egraph_ok (snd res))
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    pose (R := fun (s s' : instance) =>
+       s'.(db) = s.(db) /\ s'.(equiv) = s.(equiv) /\ s'.(parents) = s.(parents)
+       /\ (exists new_ents, s'.(worklist) = new_ents ++ s.(worklist)
+              /\ all (fun ent => exists j, ent = analysis_repair _ j) new_ents)
+       /\ (egraph_ok s -> egraph_ok s') /\ (forall i, denote s i <-> denote s' i)).
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _ (fun _ _ => True) R)].
+    - cbn beta. intros s res Himpl. exact (proj2 (Himpl I)).
+    - (* R reflexive on the base [P [] s] *)
+      intros s _. unfold R.
+      split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|].
+      split; [exists []; split; [reflexivity | exact I]|].
+      split; [intro Hk; exact Hk | intro i; reflexivity].
+    - (* R transitive *)
+      intros s s' s'' HR1 HR2. unfold R in *.
+      destruct HR1 as (Hd1 & He1 & Hp1 & (n1 & Hw1 & Ha1) & Hok1 & Hde1).
+      destruct HR2 as (Hd2 & He2 & Hp2 & (n2 & Hw2 & Ha2) & Hok2 & Hde2).
+      split; [congruence|]. split; [congruence|]. split; [congruence|].
+      split; [exists (n2 ++ n1); split;
+                [rewrite Hw2, Hw1, app_assoc; reflexivity
+                | apply all_app; split; assumption]|].
+      split; [intro Hk; apply Hok2, Hok1, Hk
+             | intro i; rewrite (Hde1 i); exact (Hde2 i)].
+    - (* per-element step: a single [push_worklist (analysis_repair _)] *)
+      intros a l_rest. unfold vc, push_worklist. intros s _.
+      split; [exact I|]. unfold R.
+      destruct s as [db_s equiv_s parents_s epoch_s wl_s analyses_s log_s]; cbn [fst snd].
+      split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|].
+      split.
+      { exists [analysis_repair _ a.(atom_ret)]. split.
+        - reflexivity.
+        - cbn. split; [eexists; reflexivity | exact I]. }
+      split.
+      + intro Hok_s. destruct Hok_s as [Heqok Hwlok Hpaok Hdbok];
+          constructor; cbn in *; auto.
+      + intro i. split; intros [Hwf Hex Hatom Hrel]; constructor; cbn in *; auto.
+  Qed.
+
   (* [repair_union] = [pull_parents] of [x_old], then [list_Mmap] of
      [repair_each] over those parents, then conditional analysis pass.
      Each piece preserves egraph_ok and denote; pull_parents gives the
@@ -9312,9 +9366,23 @@ Section WithMap.
            /\ equiv_extends e (snd res)).
   Proof.
     destruct a as [old new improved | i_repair]; cbn [repair].
-    - unfold vc; intros e Hok Hwl.
+    - (* union_repair: [get_parents old] (pure), [repair_union], then the
+         trailing [analysis_repair] scheduling over [old]'s parents. *)
+      vc_bind get_parents_denote_iff.
+      rename s0 into e0, a into ps.
+      vc_bind (repair_union_denote_iff old new improved).
+      rename s0 into s1, a into _u.
+      eapply vc_consequence; [| apply (list_Miter_push_ar_atom_ret ps)].
+      cbn beta. cbn [fst snd]. intros s2 res Hpush Hru Hgp Hok_e Hwl.
       cbn in Hwl.
-      apply (repair_union_denote_iff old new improved e); auto.
+      destruct (Hgp Hok_e) as (Hok_e0 & Hde_e0 & He0eq & _).
+      subst e0.
+      destruct (Hru Hok_e Hwl) as (Hok_s1 & Hde_s1 & Hext_s1).
+      destruct Hpush as (_ & Heq_res_s1 & _ & _ & Hok_push & Hde_push).
+      split; [exact (Hok_push Hok_s1)|].
+      split; [intros i; rewrite Hde_s1; exact (Hde_push i)|].
+      intros x y Hxy. unfold equiv_extends in *. rewrite Heq_res_s1.
+      apply Hext_s1; exact Hxy.
     - vc_bind get_parents_denote_iff.
       eapply vc_consequence;
         [| apply (vc_and _ _ _
@@ -10315,6 +10383,40 @@ Section WithMap.
         exact (Hrev b ((proj1 (Hframe b Hkey_ne)) Hb_in)).
   Qed.
 
+  (* The trailing [analysis_repair] scheduling pass of [repair] (union case)
+     preserves [union_pass_inv]: it only prepends [analysis_repair] entries to
+     the worklist (which the invariant already allows) and leaves db, equiv,
+     parents untouched. *)
+  Lemma list_Miter_push_ar_union_pass_inv e0 ed_rem (ps : list atom)
+    : vc (list_Miter (fun a => push_worklist idx symbol symbol_map idx_map idx_trie
+                        analysis_result (analysis_repair idx a.(atom_ret))) ps)
+        (fun e res => union_pass_inv e0 e ed_rem -> union_pass_inv e0 (snd res) ed_rem).
+  Proof.
+    unfold vc. intro e.
+    pose proof (list_Miter_push_ar_atom_ret ps) as Hp. unfold vc in Hp. specialize (Hp e).
+    destruct (list_Miter (fun a => push_worklist idx symbol symbol_map idx_map idx_trie
+                analysis_result (analysis_repair idx a.(atom_ret))) ps e) as [u res] eqn:Hlm.
+    cbn [fst snd] in Hp |- *.
+    destruct Hp as (Hdb & Heq & Hpa & (new & Hwl & Hnew_ar) & Hok_pres & _).
+    intro Hinv.
+    unfold union_pass_inv in *.
+    destruct Hinv as (Hok & Hroots & Hwl_ar & Hdbinv & Hgood & Hdisj & Hcov & Hrev).
+    split; [exact (Hok_pres Hok)|].
+    split; [intros z Hz; unfold is_root in *; rewrite Heq; exact (Hroots z Hz)|].
+    split; [rewrite Hwl; apply all_app; split; [exact Hnew_ar | exact Hwl_ar]|].
+    split.
+    { unfold db_inv in *. intros b Hb. rewrite Hdb in Hb. rewrite Heq.
+      exact (Hdbinv b Hb). }
+    split.
+    { eapply all_wkn; [| exact Hgood]. intros d _ Hd.
+      unfold good_ed in *. rewrite Hpa, Hdb, Heq. exact Hd. }
+    split; [exact Hdisj|].
+    split.
+    { intros b Hb Hnr. rewrite Hdb in Hb. unfold is_root in Hnr; rewrite Heq in Hnr.
+      exact (Hcov b Hb Hnr). }
+    { intros b Hb. rewrite Hdb in Hb. exact (Hrev b Hb). }
+  Qed.
+
   (* D2: threading list_Miter repair through a list of good entries.
      The [NoDup] condition ensures d0 ∉ rest at each step. *)
   Lemma list_Miter_repair_union_pass e0 ed_list
@@ -10340,10 +10442,22 @@ Section WithMap.
       unfold vc in IH_rest.
       intros Hinv.
       specialize (Hstep_e Hinv).
-      cbn [Mseq Mbind StateMonad.state_monad] in *.
+      (* repair (union_repair ..) = get_parents ed_old ; repair_union ; push-pass *)
+      cbn [Mseq Mbind StateMonad.state_monad fst snd] in *.
+      unfold get_parents in *. cbn [Mbind StateMonad.state_monad fst snd] in *.
       destruct (repair_union d0.(ed_old) d0.(ed_new) d0.(ed_b) e) as [u1 e1] eqn:Hrep.
-      cbn [fst snd] in *.
-      exact (IH_rest e1 Hstep_e).
+      cbn [fst snd] in Hstep_e |- *.
+      (* trailing analysis_repair scheduling preserves union_pass_inv *)
+      pose proof (list_Miter_push_ar_union_pass_inv e0 rest
+                    (unwrap_with_default (map.get (parents e) d0.(ed_old)))) as Hpush.
+      unfold vc in Hpush. specialize (Hpush e1).
+      match goal with
+      | |- context[list_Miter ?f ?l e1] =>
+          destruct (list_Miter f l e1) as [u2 e2] eqn:Hpsh
+      end.
+      cbn [fst snd] in Hpush |- *.
+      specialize (Hpush Hstep_e).
+      exact (IH_rest e2 Hpush).
   Qed.
 
   (* D3: after full pass (ed_rem = nil), db_inv(fun _ => True) holds. *)
@@ -10878,9 +10992,19 @@ Section WithMap.
            all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
   Proof.
     destruct a as [old new improved | i_repair]; cbn [repair].
-    - unfold vc; intros e Hok Hwl Hall.
+    - (* union_repair: get_parents old ; repair_union ; push-pass *)
+      vc_bind (get_parents_denote_iff old).
+      rename s0 into e0, a into ps0.
+      vc_bind (repair_union_survives_side l old new improved).
+      rename s0 into s1, a into _u.
+      eapply vc_consequence; [| apply (list_Miter_push_ar_atom_ret ps0)].
+      cbn beta. cbn [fst snd]. intros s2 res Hpush Hru Hgp Hok_e Hwl Hall.
       cbn in Hwl.
-      apply (repair_union_survives_side l old new improved e); auto.
+      destruct (Hgp Hok_e) as (Hok_e0 & _ & He0eq & _). subst e0.
+      specialize (Hru Hok_e Hwl Hall).
+      destruct Hpush as (Hdb & Heq & _ & _ & _ & _).
+      eapply all_wkn; [| exact Hru]. intros a0 _ Ha0.
+      eapply aiue_eqfields; [exact Hdb | exact Heq | exact Ha0].
     - vc_bind (get_parents_denote_iff i_repair).
       rename s0 into s1, a into ps.
       eapply vc_consequence;
