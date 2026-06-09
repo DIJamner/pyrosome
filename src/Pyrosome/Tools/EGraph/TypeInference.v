@@ -1,6 +1,6 @@
 Set Implicit Arguments.
 
-From coqutil Require Import Datatypes.String Map.Interface.
+From coqutil Require Import Datatypes.String Map.Interface Datatypes.Result.
 From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
@@ -13,10 +13,7 @@ From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.EGraph.Automation
   Tools.PosRenaming.
 From Utils.EGraph Require Import Semantics.
-From Utils Require Import TrieMap PosListMap.
-(* [Require] (not [Import]) so its positive-only notations don't shadow the
-   string ones used here for building. *)
-From Pyrosome.Tools.EGraph Require PosInferEngine.
+From Utils Require Import TrieMap PosListMap FullPosTrie FullPosTrieConv.
 Import PArith.
 Import Ascii.AsciiSyntax.
 Import StringInstantiation.
@@ -270,19 +267,256 @@ Definition build_injection_rules (schemas: list (string * list string)) (L: lang
 
 
 (* ============================================================
-   Running the e-graph computation over positive indices.
+   The e-graph engine, specialized to [positive] indices.
 
-   The build (hole-insertion) phase runs over strings so we can gensym
-   readable hole names; then we rename the whole problem (language, context,
-   conclusion, injection sequents) into [positive] and run the actual
-   saturation/extraction in PosInferEngine, finally unrenaming the result.
-   This mirrors Defs.PositiveInstantiation, which renames into positives to
-   use the fast positive tries.
+   This is the same algorithm the string-indexed engine used to run inline
+   (build holes -> saturate injection+const rules -> extract), ported to
+   [positive] so it runs over the fast positive tries.  TypeInference's [infer_*]
+   entry points build the elaboration problem over strings (so gensym still makes
+   readable "?"-prefixed hole names), rename it into [positive] (sharing
+   Defs.PositiveInstantiation's instantiation, [sort_of = xH]), run the engine
+   below, then unrename the result.
+
+   Everything in this section is parameterized by the extraction [weight], which
+   the caller supplies once it knows which renamed positives are holes.
+   ============================================================ *)
+
+(* Build the extraction weight from a "is this symbol a hole" predicate.  Holes
+   (and the [sort_of] symbol) get infinite weight (None) so extraction never
+   picks them; everything else gets weight 1.  This is the positive analogue of
+   the string [weight] that special-cased the "?"-prefixed hole names. *)
+Definition mk_weight (is_hole : positive -> bool)
+  : atom positive positive -> option positive :=
+  fun a =>
+    if Pos.eqb a.(atom_fn) PosListMap.sort_of then None
+    else match a.(atom_args) with
+         | [] => if is_hole a.(atom_fn) then None else Some 1%positive
+         | _ => Some 1%positive
+         end.
+
+Section WithWeight.
+  Local Open Scope positive.
+
+  Local Notation atom := (atom positive positive).
+  Local Notation instance := (Defs.instance positive positive trie_map trie_map
+                                (@FullPosTrie.full_pos_trie_map) (option positive)).
+  Local Notation sequent := (sequent positive positive).
+  Local Notation term := (@Term.term positive).
+  Local Notation sort := (@Term.sort positive).
+  Local Notation ctx := (@Term.ctx positive).
+  Local Notation lang := (@Rule.lang positive).
+  (* [named_list] is left to the file-scope (string) notation; in this section
+     we write [@named_list positive _] explicitly to key on positives. *)
+  (* The special [sort_of] symbol: [xH], exactly as in Defs.PositiveInstantiation
+     (which egraph_sound / egraph_reducing_equal' use).  We deliberately share
+     their positive instantiation so type inference and the soundness path run
+     the *same* compiled rules. *)
+  Local Notation sort_of := PosListMap.sort_of.
+
+  Context (weight : atom -> option positive).
+
+  Definition empty_egraph : instance :=
+    Defs.empty_egraph (idx:=positive) (default:positive) (symbol:=positive)
+      (symbol_map:=trie_map) (idx_map:=trie_map)
+      (idx_trie:=(@FullPosTrie.full_pos_trie_map)) (option positive).
+
+  Definition add_open_term (l : lang) :=
+    Defs.add_open_term (V:=positive) (V_map:=trie_map) Pos.succ sort_of l
+      (H:=weighted_depth_analysis weight) true.
+
+  Definition add_open_sort (l : lang) :=
+    Defs.add_open_sort (V:=positive) (V_map:=trie_map) Pos.succ sort_of l
+      (H:=weighted_depth_analysis weight) true.
+
+  Definition update_entry (a : atom) : state instance unit :=
+    Defs.update_entry (idx:=positive) (symbol:=positive)
+      (H:=weighted_depth_analysis weight) a.
+
+  (* Add a term with holes, and assert that its sort is [sort_id].  This is the
+     residue of the string [add_elab_term_to_egraph] once hole-building has been
+     split off into the (string) build phase. *)
+  Definition add_elab_term (l : lang) (e : term) (sort_id : positive)
+    : state instance positive :=
+    @! let t_id <- add_open_term l true [] e in
+      let _ <- update_entry (Build_atom sort_of [t_id] sort_id) in
+      ret t_id.
+
+  Notation extract_weighted :=
+    (Defs.extract_weighted (V:=positive) (V_map:=trie_map)
+       (V_trie:=(@FullPosTrie.full_pos_trie_map))).
+
+  (* The constant rules of [l] (those with empty context), compiled to
+     sequents. *)
+  Definition const_rules (l : lang) : list sequent :=
+    flat_map (fun '(n,r) =>
+                match rule_to_log_rule trie_map _ Pos.succ sort_of l
+                        (analysis_result:=unit) 1000%nat n r with
+                | Result.Success s => [s]
+                | Result.Failure _ => []
+                end)
+      (filter (fun '(n,r) => inclb (get_ctx r) []) l).
+
+  (* Run the saturation, given the language [l] and the precompiled injection
+     sequents [inj_seqs]. *)
+  Definition state_operation (l : lang) (inj_seqs : list sequent)
+    : state instance bool :=
+    (* epoch leb [Pos.leb]: proper semi-naive evaluation, which is complete and
+       more efficient.  (The string engine ran naive only because string_succ's
+       little-endian suffix has no cheap <=; positive has a real order.) *)
+    @saturate_until positive Pos.eqb Pos.succ (default (A:=positive))
+      Pos.leb
+      positive trie_map ptree_map_plus trie_map ptree_map_plus
+      (@FullPosTrie.full_pos_trie_map) (option positive)
+      (weighted_depth_analysis weight) (@fpt_spaced_intersect)
+      1000%nat
+      0%nat (* window *)
+      (@QueryOpt.build_rule_set positive Pos.eqb Pos.succ (default (A:=positive))
+         positive trie_map ptree_map_plus trie_map
+         (@FullPosTrie.full_pos_trie_map) 1000%nat
+         (inj_seqs ++ const_rules l))
+      (Mret false) 1000%nat.
+
+  (* ---- decoding ---- *)
+
+  Fixpoint con_to_var (context : ctx) (t : term) : term :=
+    match t with
+    | con name [] =>
+        if (inb name (map fst context)) then (var name) else t
+    | con name subterms => con name (map (con_to_var context) subterms)
+    | _ => t
+    end.
+
+  Definition result_to_term (r : Result.result term) : term :=
+    match r with
+    | Result.Success t => t
+    | _ => default
+    end.
+
+  Definition term_to_sort (t : term) : sort :=
+    match t with
+    | var x => scon x []
+    | con n s => scon n s
+    end.
+
+  Definition decode_term (context : ctx) (graph : instance) (t_id : positive) : term :=
+    con_to_var context (result_to_term (extract_weighted graph 1000%nat t_id)).
+
+  Definition decode_sort (context : ctx) (graph : instance) (t_id : positive) : sort :=
+    term_to_sort (decode_term context graph t_id).
+
+  Fixpoint decode_ctx (graph : instance) (ids : list (positive * positive)) : ctx :=
+    match ids with
+    | [] => []
+    | (x,x_id)::ids =>
+        let context := decode_ctx graph ids in
+        (x, decode_sort context graph x_id)::context
+    end.
+
+  (* What the caller wants to add/decode for a rule.  The positive analogue of
+     [str_payload] below (the same conclusion, post-rename). *)
+  Variant payload :=
+    | pp_sort
+    | pp_term (t : sort)
+    | pp_sort_eq (t1 t2 : sort)
+    | pp_term_eq (e1 e2 : term) (t : sort).
+
+  Variant decoded :=
+    | pd_sort (c : ctx)
+    | pd_term (c : ctx) (t : sort)
+    | pd_sort_eq (c : ctx) (t1 t2 : sort)
+    | pd_term_eq (c : ctx) (e1 e2 : term) (t : sort).
+
+  Variant rule_ids :=
+    | id_sort (c_ids : list (positive * positive))
+    | id_term (c_ids : list (positive * positive)) (t_id : positive)
+    | id_sort_eq (c_ids : list (positive * positive)) (t1_id t2_id : positive)
+    | id_term_eq (c_ids : list (positive * positive)) (e1_id e2_id t_id : positive).
+
+  (* Add the context sorts and the rule payload to the egraph.  The positive
+     analogue of the string [add_ctx_with_holes_to_egraph] + [add_elab_*]. *)
+  Definition build_to_egraph (l : lang) (ctx_holes : list (positive * sort))
+    (p : payload) : state instance rule_ids :=
+    @! let c_ids <- list_Mmap (fun '(n,s) =>
+                                 @! let x <- add_open_sort l true [] s in
+                                   ret (n, x)) ctx_holes in
+      match p with
+      | pp_sort => @! ret (id_sort c_ids)
+      | pp_term t =>
+          @! let t_id <- add_open_sort l true [] t in
+            ret (id_term c_ids t_id)
+      | pp_sort_eq t1 t2 =>
+          @! let t1_id <- add_open_sort l true [] t1 in
+            let t2_id <- add_open_sort l true [] t2 in
+            ret (id_sort_eq c_ids t1_id t2_id)
+      | pp_term_eq e1 e2 t =>
+          @! let t_id <- add_open_sort l true [] t in
+            let e1_id <- add_elab_term l e1 t_id in
+            let e2_id <- add_elab_term l e2 t_id in
+            ret (id_term_eq c_ids e1_id e2_id t_id)
+      end.
+
+  Definition decode_rule (graph : instance) (ids : rule_ids) : decoded :=
+    match ids with
+    | id_sort c_ids => pd_sort (decode_ctx graph c_ids)
+    | id_term c_ids t_id =>
+        let c := decode_ctx graph c_ids in
+        pd_term c (decode_sort c graph t_id)
+    | id_sort_eq c_ids t1_id t2_id =>
+        let c := decode_ctx graph c_ids in
+        pd_sort_eq c (decode_sort c graph t1_id) (decode_sort c graph t2_id)
+    | id_term_eq c_ids e1_id e2_id t_id =>
+        let c := decode_ctx graph c_ids in
+        let t := decode_sort c graph t_id in
+        pd_term_eq c (decode_term c graph e1_id) (decode_term c graph e2_id) t
+    end.
+
+  (* The whole pipeline: build, saturate, decode.  The positive analogue of the
+     string [infer_rule_egraph] + [decode_rule]. *)
+  Definition run_infer (l : lang) (inj_seqs : list sequent)
+    (ctx_holes : list (positive * sort)) (p : payload) : decoded :=
+    let comp : state instance rule_ids :=
+      @! let ids <- build_to_egraph l ctx_holes p in
+        let _ <- state_operation l inj_seqs in
+        ret ids
+    in
+    let (ids, g) := comp empty_egraph in
+    decode_rule g ids.
+
+  (* Compiler-case entry points: the decoding context [c'] is given (the
+     already-compiled target context), rather than inferred. *)
+  Definition run_compile_sort (l : lang) (inj_seqs : list sequent)
+    (c' : ctx) (t : sort) : sort :=
+    let comp : state instance positive :=
+      @! let x <- add_open_sort l true [] t in
+        let _ <- state_operation l inj_seqs in
+        ret x
+    in
+    let (x, g) := comp empty_egraph in
+    decode_sort c' g x.
+
+  Definition run_compile_term (l : lang) (inj_seqs : list sequent)
+    (c' : ctx) (t_sort : sort) (e : term) : term :=
+    let comp : state instance positive :=
+      @! let t_id <- add_open_sort l true [] t_sort in
+        let x <- add_elab_term l e t_id in
+        let _ <- state_operation l inj_seqs in
+        ret x
+    in
+    let (x, g) := comp empty_egraph in
+    decode_term c' g x.
+
+End WithWeight.
+
+
+(* ============================================================
+   Bridge: build the elaboration problem over strings, rename it into
+   positives, run the engine above, and unrename the result.
    ============================================================ *)
 
 Local Open Scope list_scope.
 
-(* The conclusion of a rule, with gensym'd holes, over strings. *)
+(* The conclusion of a rule, with gensym'd holes, over strings.  Renamed into
+   the engine's [payload] before running. *)
 Variant str_payload :=
   | sp_sort
   | sp_term (t : sort)
@@ -296,33 +530,27 @@ Definition get_ctx (r : prerule) :=
   end.
 
 (* The build phase reuses the lens-based fresh-name (ident) and language
-   (list (string*rule)) state; it never touches the e-graph, so the [egraph]
-   field is left as the empty graph. *)
+   (list (string*rule)) state; it never touches the e-graph (that is now the
+   engine's job, post-rename). *)
 Record infer_state : Type :=
   {
     infer_fresh : ident;
     infer_lang : list (string * rule);
-    egraph : instance;
   }.
 
 Instance infer_state_fresh : Lens infer_state ident :=
   {
     lens_get := infer_fresh;
-    lens_set s i := Build_infer_state i s.(infer_lang) s.(egraph);
+    lens_set s i := Build_infer_state i s.(infer_lang);
   }.
 Instance infer_state_infer_lang : Lens infer_state (list (string * rule)) :=
   {
     lens_get := infer_lang;
-    lens_set s l := Build_infer_state s.(infer_fresh) l s.(egraph);
-  }.
-Instance infer_state_egraph : Lens infer_state instance :=
-  {
-    lens_get := egraph;
-    lens_set s g := Build_infer_state s.(infer_fresh) s.(infer_lang) g;
+    lens_set s l := Build_infer_state s.(infer_fresh) l;
   }.
 
 Definition init_infer_state (l : lang) : infer_state :=
-  Build_infer_state (Build_ident "?") l empty_egraph.
+  Build_infer_state (Build_ident "?") l.
 
 (* Phase 1: build the context and conclusion with holes, accumulating the
    dummy/context rules into the language.  Returns the extended language, the
@@ -354,8 +582,8 @@ Definition build_problem (l : lang) (r : prerule)
 
 (* ---- renaming into positives ---- *)
 
-(* Reserve [xH] for sort_of (PosInferEngine uses it as the special symbol),
-   so allocation starts at 2, matching Defs.PositiveInstantiation. *)
+(* Reserve [xH] for sort_of (the engine uses it as the special symbol), so
+   allocation starts at 2, matching Defs.PositiveInstantiation. *)
 Definition init_renaming : renaming string :=
   {| p_to_v := map.empty; v_to_p := []; next_id := 2%positive |}.
 
@@ -392,20 +620,20 @@ Definition rename_ctx_holes (ch : named_list sort)
                  ret (n', s')) ch.
 
 Definition rename_str_payload (p : str_payload)
-  : state (renaming string) PosInferEngine.payload :=
+  : state (renaming string) payload :=
   match p with
-  | sp_sort => @! ret PosInferEngine.pp_sort
+  | sp_sort => @! ret pp_sort
   | sp_term t =>
-      @! let t' <- rename_sort t in ret (PosInferEngine.pp_term t')
+      @! let t' <- rename_sort t in ret (pp_term t')
   | sp_sort_eq t1 t2 =>
       @! let t1' <- rename_sort t1 in
         let t2' <- rename_sort t2 in
-        ret (PosInferEngine.pp_sort_eq t1' t2')
+        ret (pp_sort_eq t1' t2')
   | sp_term_eq e1 e2 t =>
       @! let t' <- rename_sort t in
         let e1' <- rename_term e1 in
         let e2' <- rename_term e2 in
-        ret (PosInferEngine.pp_term_eq e1' e2' t')
+        ret (pp_term_eq e1' e2' t')
   end.
 
 (* A renamed positive is a hole iff its original string starts with "?"
@@ -419,31 +647,31 @@ Definition is_hole (rn : renaming string) (p : positive) : bool :=
 (* ---- inference of a single rule ---- *)
 
 Definition infer_rule (l : lang) inj_rules (r : prerule) : rule :=
-  let '(l_full, ctx_holes, payload) := build_problem l r in
+  let '(l_full, ctx_holes, concl) := build_problem l r in
   let rename_all : state (renaming string)
-                     (_ * _ * PosInferEngine.payload * _) :=
+                     (_ * _ * payload * _) :=
     @! let l_pos <- rename_lang l_full in
       let ctx_pos <- rename_ctx_holes ctx_holes in
-      let payload_pos <- rename_str_payload payload in
+      let payload_pos <- rename_str_payload concl in
       let inj_pos <- list_Mmap rename_sequent
                        (build_injection_rules inj_rules l_full) in
       ret (l_pos, ctx_pos, payload_pos, inj_pos)
   in
   let '(tmp, rn) := rename_all init_renaming in
   let '(l_pos, ctx_pos, payload_pos, inj_pos) := tmp in
-  let dec := PosInferEngine.run_infer (PosInferEngine.mk_weight (is_hole rn))
+  let dec := run_infer (mk_weight (is_hole rn))
                l_pos inj_pos ctx_pos payload_pos in
   let args := match r with
               | presort_rule _ a | preterm_rule _ a _ => a
               | _ => []
               end in
   match dec with
-  | PosInferEngine.pd_sort c => sort_rule (unrename_ctx rn c) args
-  | PosInferEngine.pd_term c t =>
+  | pd_sort c => sort_rule (unrename_ctx rn c) args
+  | pd_term c t =>
       term_rule (unrename_ctx rn c) args (unrename_sort rn t)
-  | PosInferEngine.pd_sort_eq c t1 t2 =>
+  | pd_sort_eq c t1 t2 =>
       sort_eq_rule (unrename_ctx rn c) (unrename_sort rn t1) (unrename_sort rn t2)
-  | PosInferEngine.pd_term_eq c e1 e2 t =>
+  | pd_term_eq c e1 e2 t =>
       term_eq_rule (unrename_ctx rn c) (unrename_term rn e1)
         (unrename_term rn e2) (unrename_sort rn t)
   end.
@@ -498,8 +726,7 @@ Section __.
         let '(tmp, rn) := rename_all init_renaming in
         let '(l_pos, c'_pos, t_pos, inj_pos) := tmp in
         let out' := unrename_sort rn
-                      (PosInferEngine.run_compile_sort
-                         (PosInferEngine.mk_weight (is_hole rn))
+                      (run_compile_sort (mk_weight (is_hole rn))
                          l_pos inj_pos c'_pos t_pos) in
         (* rename back to the compiler case names *)
         let out := out' [/combine (map fst c) (map var cnames)/] in
@@ -528,8 +755,7 @@ Section __.
         let '(tmp, rn) := rename_all init_renaming in
         let '(l_pos, c'_pos, tsort_pos, e_pos, inj_pos) := tmp in
         let out' := unrename_term rn
-                      (PosInferEngine.run_compile_term
-                         (PosInferEngine.mk_weight (is_hole rn))
+                      (run_compile_term (mk_weight (is_hole rn))
                          l_pos inj_pos c'_pos tsort_pos e_pos) in
         (* rename back to the compiler case names *)
         let out := out' [/combine (map fst c) (map var cnames)/] in
