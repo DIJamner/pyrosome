@@ -102,12 +102,11 @@ Section WithWeight.
      sequents [inj_seqs].  Mirrors TypeInference.state_operation. *)
   Definition state_operation (l : lang) (inj_seqs : list sequent)
     : state instance bool :=
-    (* epoch leb [fun _ _ => true]: treat every row as "new", i.e. run the
-       naive (fully complete) saturation, exactly as the string engine does.
-       Inference relies on completeness to fully resolve sort annotations; a
-       semi-naive split (Pos.leb) here can leave an unresolved e-class. *)
+    (* epoch leb [Pos.leb]: proper semi-naive evaluation, which is complete and
+       more efficient.  (The string engine runs naive only because string_succ's
+       little-endian suffix has no cheap <=; positive has a real order.) *)
     @saturate_until positive Pos.eqb Pos.succ (default (A:=positive))
-      (fun _ _ => true)
+      Pos.leb
       positive trie_map ptree_map_plus trie_map ptree_map_plus
       (@FullPosTrie.full_pos_trie_map) (option positive)
       (weighted_depth_analysis weight) (@fpt_spaced_intersect)
