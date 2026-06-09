@@ -1,0 +1,130 @@
+(* ====================================================================== *)
+(* OTT Normalization via In-Language Normal-Form Extension — Phase 2.        *)
+(*                                                                        *)
+(* The COLLAPSE compiler nf_to_ott : ott_nf -> ott.  Every nf/ne sort       *)
+(* collapses onto its base denotation (exp/ty/sub/env); each constructor    *)
+(* maps to the denotation; each embedding map (var2exp/ne2exp/…) collapses   *)
+(* to the IDENTITY (its bound argument).  Because of the identity collapse,  *)
+(* each Phase-1 embedding equation's two sides compile to syntactically      *)
+(* identical base terms, so the preservation obligation closes by refl.      *)
+(*                                                                        *)
+(* This establishes ott_nf as a CONSERVATIVE/derivable extension of ott:     *)
+(* every ott_nf judgment maps under `compile` to an ott judgment.           *)
+(* ====================================================================== *)
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
+Import ListNotations.
+Open Scope string.
+Open Scope list.
+From Utils Require Import Utils.
+From Pyrosome Require Import
+  Theory.Core Compilers.Compilers
+  Elab.Elab Elab.ElabCompilers
+  Tools.Matches Tools.EGraph.Automation
+  Tools.EGraph.TypeInference
+  Tools.EGraph.ComputeWf
+  Tools.Resolution.
+From Pyrosome.Compilers Require Import Parameterizer.
+From Pyrosome.Lang Require Import Subst SubstEqnGen.
+From Pyrosome.Lang.OTT Require Import Base Nat Pi.
+From Pyrosome.Lang.OTT.NormalForms Require Import Defs.
+Import Core.Notations.
+Import CompilerDefs.Notations.
+From Stdlib Require derive.Derive.
+
+Notation compiler := (compiler string).
+
+(* The base language ott compiles to ITSELF by the identity compiler; this
+   identity prefix is what makes the collapse a CONSERVATIVE EXTENSION (the base
+   sorts appearing in ott_nf rule contexts compile to themselves).  Mirrors the
+   `id_compiler` shared-fragment pattern in Lang/Multilanguages.v. *)
+Lemma ott_wf : wf_lang ott.
+Proof.
+  unfold ott.
+  pose proof ott_info_wf as H0.
+  pose proof (wf_lang_concat H0 subst_ott_wf) as H1.
+  pose proof (wf_lang_concat H1 ott_base_wf) as H2.
+  pose proof (wf_lang_concat H2 ott_nat_wf) as H3.
+  assert (Hpi : wf_lang_ext (ott_nat ++ ott_base ++ subst_ott ++ ott_info)%list ott_pi).
+  { eapply lang_ext_monotonicity.
+    - exact ott_pi_wf.
+    - apply incl_appr, incl_refl.
+    - compute_all_fresh. }
+  exact (wf_lang_concat H3 Hpi).
+Qed.
+
+Definition ott_id_compiler : compiler := id_compiler ott.
+
+Lemma ott_id_compiler_preserving
+  : preserving_compiler_ext ott [] ott_id_compiler ott.
+Proof. apply id_compiler_preserving; exact ott_wf. Qed.
+
+#[export] Hint Resolve ott_id_compiler_preserving : auto_elab.
+#[export] Hint Resolve ott_id_compiler_preserving : preserving_db.
+
+Definition nf_to_ott_def : compiler :=
+  match # from ott_nf with
+  (* --- sorts collapse onto their base denotation --- *)
+  | {{s #"var" "G" "i" "A"}}    => {{s #"exp" "G" "i" "A"}}
+  | {{s #"ne_exp" "G" "i" "A"}} => {{s #"exp" "G" "i" "A"}}
+  | {{s #"nf_exp" "G" "i" "A"}} => {{s #"exp" "G" "i" "A"}}
+  | {{s #"ne_ty" "G" "i"}}      => {{s #"ty" "G" "i"}}
+  | {{s #"nf_ty" "G" "i"}}      => {{s #"ty" "G" "i"}}
+  | {{s #"nf_sub" "G" "G'"}}    => {{s #"sub" "G" "G'"}}
+  | {{s #"nf_ctx"}}             => {{s #"env"}}
+
+  (* --- de Bruijn variables --- *)
+  | {{e #"vz" "G" "i" "A"}}          => {{e #"hd"}}
+  | {{e #"vs" "G" "i" "A" "j" "B" "x"}} => {{e #"exp_subst" #"wkn" "x"}}
+
+  (* --- neutral / normal constructors collapse to their denotation --- *)
+  | {{e #"ne_var" "G" "i" "A" "x"}} => {{e "x"}}
+  | {{e #"ne_app" "G" "rF" "lF" "lG" "F" "B" "f" "a"}} =>
+      {{e #"app_rel" "rF" "lF" "lG" "F" "B" "f" "a"}}
+  | {{e #"nf_lam" "G" "rF" "lF" "lG" "F" "B" "t"}} =>
+      {{e #"lam_rel" "rF" "lF" "lG" "F" "B" "t"}}
+  | {{e #"nf_zero" "G"}}            => {{e #"zero"}}
+  | {{e #"nf_suc" "G" "n"}}         => {{e #"suc" "n"}}
+  | {{e #"nf_U" "G" "r" "l"}}       => {{e #"U" "r" "l"}}
+  | {{e #"nf_Nat" "G"}}             => {{e #"El" #"Nat"}}
+  | {{e #"nf_El" "G" "r" "l" "e"}}  => {{e #"El" "e"}}
+  | {{e #"ne_El" "G" "r" "l" "m"}}  => {{e #"El" "m"}}
+  | {{e #"nf_ne_at" "G" "i" "n" "m"}} => {{e "m"}}
+
+  (* --- nf substitutions / contexts --- *)
+  | {{e #"nf_forget" "G"}}          => {{e #"forget"}}
+  | {{e #"nf_snoc" "G" "G'" "gn" "i" "A" "vn"}} => {{e #"snoc" "gn" "vn"}}
+  | {{e #"nf_emp_ctx"}}             => {{e #"emp"}}
+  | {{e #"nf_ext_ctx" "Gn" "i" "An"}} => {{e #"ext" "Gn" "An"}}
+
+  (* --- embedding maps collapse to the IDENTITY --- *)
+  | {{e #"var2exp" "G" "i" "A" "x"}}   => {{e "x"}}
+  | {{e #"ne2exp" "G" "i" "A" "m"}}    => {{e "m"}}
+  | {{e #"nf2exp" "G" "i" "A" "t"}}    => {{e "t"}}
+  | {{e #"nf2ty" "G" "i" "n"}}         => {{e "n"}}
+  | {{e #"ne2ty" "G" "i" "n"}}         => {{e "n"}}
+  | {{e #"nfsub2sub" "G" "G'" "gn"}}   => {{e "gn"}}
+  | {{e #"nfctx2env" "Gn"}}            => {{e "Gn"}}
+  end.
+
+(* ====================================================================== *)
+(* PRESERVATION (conservativity) — STAGING REQUIRED.                        *)
+(*                                                                        *)
+(* The monolithic elaboration below is CORRECT in design (validated: with    *)
+(* the id_compiler ott base prefix it elaborates and is memory-stable at      *)
+(* ~5GB), but `auto_elab_compiler` over the FULL ott (identity prefix, ~30    *)
+(* rules) + all of ott_nf (~40 rules) does not terminate within a 25-minute   *)
+(* budget on a 7.6GB box — the e-graph saturation over the combined language  *)
+(* is too large.  Per the plan ("land the framework on the binder-free part   *)
+(* U/El/Nat first, then Pi"), the preservation proof must be STAGED: split     *)
+(* ott_nf into sub-fragments (var + base-type + Nat first; Pi last) and run a  *)
+(* separate `auto_elab_compiler` per fragment over a growing prefix, so each   *)
+(* call's e-graph stays small.  That requires splitting `ott_nf` in Defs.v     *)
+(* into the corresponding `wf_lang_ext` pieces.  Tracked as follow-up.        *)
+(*                                                                        *)
+(* Derive nf_to_ott                                                          *)
+(*   in (elab_preserving_compiler ott_id_compiler ott nf_to_ott_def           *)
+(*         nf_to_ott ott_nf)                                                  *)
+(*   as nf_to_ott_preserving.                                                 *)
+(* Proof. auto_elab_compiler. Qed.                                           *)
+(* ====================================================================== *)
