@@ -118,7 +118,15 @@ Section WithVar.
       | var x => var (of_p x)
       | con n s => con (of_p n) (map unrename_term s)
       end.
-    
+
+    Definition unrename_sort (t : Term.sort positive) : Term.sort V :=
+      match t with
+      | scon n s => scon (of_p n) (map unrename_term s)
+      end.
+
+    Definition unrename_ctx (c : Term.ctx positive) : Term.ctx V :=
+      map (fun '(x,t) => (of_p x, unrename_sort t)) c.
+
   End Unrename.
           
 End WithVar.
@@ -126,8 +134,12 @@ End WithVar.
 
 Arguments rename_term {V}%_type_scope {V_Eqb} e _.
 Arguments rename_sort {V}%_type_scope {V_Eqb} t _.
+Arguments rename_ctx {V}%_type_scope {V_Eqb} c _.
 Arguments rename_lang {V}%_type_scope {V_Eqb} l _.
 Arguments unrename_term {V}%_type_scope {V_default} r e.
+Arguments unrename_sort {V}%_type_scope {V_default} r t.
+Arguments unrename_ctx {V}%_type_scope {V_default} r c.
+Arguments of_p {V}%_type_scope {V_default} r p.
 
 
 Arguments v_to_p {V}%_type_scope r.
