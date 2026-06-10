@@ -23,7 +23,8 @@ From Pyrosome Require Import
   Tools.Matches Tools.EGraph.Automation
   Tools.EGraph.TypeInference
   Tools.EGraph.ComputeWf
-  Tools.Resolution.
+  Tools.Resolution
+  Tools.Interactive.
 From Pyrosome.Compilers Require Import Parameterizer.
 From Pyrosome.Lang Require Import Subst SubstEqnGen.
 From Pyrosome.Lang.OTT Require Import Base Nat Pi.
@@ -33,6 +34,16 @@ Import CompilerDefs.Notations.
 From Stdlib Require derive.Derive.
 
 Notation compiler := (compiler string).
+
+(* `preserving_compiler_ext` (CompilerDefs) is parameterized by an implicit
+   target Model, not a target lang.  The user-facing 4-argument form takes the
+   target *language* and injects `core_model tgt`; this Local Notation is what
+   makes `preserving_compiler_ext ott [] ott_id_compiler ott` resolve correctly.
+   WITHOUT it, the bare inductive is used and the elaborator tries to unify
+   `ott : lang` against the `compiler` parameter, which does not terminate.
+   (Copied from Lang/Multilanguages.v:1133.) *)
+Local Notation preserving_compiler_ext tgt cmp_pre cmp src :=
+  (preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src).
 
 (* The base language ott compiles to ITSELF by the identity compiler; this
    identity prefix is what makes the collapse a CONSERVATIVE EXTENSION (the base
@@ -57,7 +68,7 @@ Definition ott_id_compiler : compiler := id_compiler ott.
 
 Lemma ott_id_compiler_preserving
   : preserving_compiler_ext ott [] ott_id_compiler ott.
-Proof. apply id_compiler_preserving; exact ott_wf. Qed.
+Proof. apply id_compiler_preserving; solve [ exact ott_wf | typeclasses eauto ]. Qed.
 
 #[export] Hint Resolve ott_id_compiler_preserving : auto_elab.
 #[export] Hint Resolve ott_id_compiler_preserving : preserving_db.
@@ -122,19 +133,28 @@ Definition nf_to_ott_def : compiler :=
 (* each call's e-graph stays small.  That requires splitting `ott_nf` in       *)
 (* Defs.v into the corresponding `wf_lang_ext` pieces.  Tracked as follow-up.  *)
 (*                                                                        *)
-(* For now we PARK the derivation behind `TODO_auto_elab_compiler` (an `admit`)*)
-(* so that `nf_to_ott` (the elaborated compiler) and `nf_to_ott_preserving`    *)
-(* exist with their intended types and downstream phases (DecEq, Model) can    *)
-(* build against them.  The real proof replaces the stub later — at which      *)
-(* point this file becomes axiom-clean again.                                 *)
+(* For now we PARK the derivation behind `TODO_auto_elab_compiler`, which       *)
+(* instantiates the derived compiler with the source `nf_to_ott_def` and        *)
+(* discharges preservation with the `todo` axiom (see below), so that           *)
+(* `nf_to_ott` and `nf_to_ott_preserving` exist with their intended types and   *)
+(* downstream phases (DecEq, Model) can build against them.  The real proof      *)
+(* replaces the stub later — at which point this file becomes axiom-clean.      *)
 (* ====================================================================== *)
 
 (* Placeholder standing in for `auto_elab_compiler` while the staged
-   preservation proof is developed.  Leaves the goal admitted. *)
-Ltac TODO_auto_elab_compiler := admit.
+   preservation proof is developed.  Rather than running the (intractable)
+   elaboration, instantiate the derived elaborated compiler with the source
+   definition (the 3rd argument of `elab_preserving_compiler`) and discharge the
+   preservation obligation with the `todo` axiom.  This resolves the Derive
+   existential so the result `Qed`s, with `nf_to_ott := nf_to_ott_def`. *)
+Ltac TODO_auto_elab_compiler :=
+  lazymatch goal with
+  | |- elab_preserving_compiler ?a ?b ?cdef _ ?e =>
+      exact (todo : elab_preserving_compiler a b cdef cdef e)
+  end.
 
 Derive nf_to_ott
   in (elab_preserving_compiler ott_id_compiler ott nf_to_ott_def
         nf_to_ott ott_nf)
   as nf_to_ott_preserving.
-Proof. TODO_auto_elab_compiler. Admitted.
+Proof. TODO_auto_elab_compiler. Qed.
