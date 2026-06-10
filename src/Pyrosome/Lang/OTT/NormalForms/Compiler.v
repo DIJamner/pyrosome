@@ -108,7 +108,7 @@ Definition nf_to_ott_def : compiler :=
   end.
 
 (* ====================================================================== *)
-(* PRESERVATION (conservativity) — STAGING REQUIRED.                        *)
+(* PRESERVATION (conservativity) — STAGING REQUIRED; PARKED behind a stub.   *)
 (*                                                                        *)
 (* The monolithic elaboration below is CORRECT in design (validated: with    *)
 (* the id_compiler ott base prefix it elaborates and is memory-stable at      *)
@@ -116,15 +116,25 @@ Definition nf_to_ott_def : compiler :=
 (* rules) + all of ott_nf (~40 rules) does not terminate within a 25-minute   *)
 (* budget on a 7.6GB box — the e-graph saturation over the combined language  *)
 (* is too large.  Per the plan ("land the framework on the binder-free part   *)
-(* U/El/Nat first, then Pi"), the preservation proof must be STAGED: split     *)
-(* ott_nf into sub-fragments (var + base-type + Nat first; Pi last) and run a  *)
-(* separate `auto_elab_compiler` per fragment over a growing prefix, so each   *)
-(* call's e-graph stays small.  That requires splitting `ott_nf` in Defs.v     *)
-(* into the corresponding `wf_lang_ext` pieces.  Tracked as follow-up.        *)
+(* U/El/Nat first, then Pi"), the real preservation proof must be STAGED:      *)
+(* split ott_nf into sub-fragments (var + base-type + Nat first; Pi last) and  *)
+(* run a separate `auto_elab_compiler` per fragment over a growing prefix, so  *)
+(* each call's e-graph stays small.  That requires splitting `ott_nf` in       *)
+(* Defs.v into the corresponding `wf_lang_ext` pieces.  Tracked as follow-up.  *)
 (*                                                                        *)
-(* Derive nf_to_ott                                                          *)
-(*   in (elab_preserving_compiler ott_id_compiler ott nf_to_ott_def           *)
-(*         nf_to_ott ott_nf)                                                  *)
-(*   as nf_to_ott_preserving.                                                 *)
-(* Proof. auto_elab_compiler. Qed.                                           *)
+(* For now we PARK the derivation behind `TODO_auto_elab_compiler` (an `admit`)*)
+(* so that `nf_to_ott` (the elaborated compiler) and `nf_to_ott_preserving`    *)
+(* exist with their intended types and downstream phases (DecEq, Model) can    *)
+(* build against them.  The real proof replaces the stub later — at which      *)
+(* point this file becomes axiom-clean again.                                 *)
 (* ====================================================================== *)
+
+(* Placeholder standing in for `auto_elab_compiler` while the staged
+   preservation proof is developed.  Leaves the goal admitted. *)
+Ltac TODO_auto_elab_compiler := admit.
+
+Derive nf_to_ott
+  in (elab_preserving_compiler ott_id_compiler ott nf_to_ott_def
+        nf_to_ott ott_nf)
+  as nf_to_ott_preserving.
+Proof. TODO_auto_elab_compiler. Admitted.
