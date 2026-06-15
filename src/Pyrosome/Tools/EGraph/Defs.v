@@ -554,7 +554,7 @@ Section WithVar.
             match arg_as with
             | [] => (symbol_weight a)
             | arg0::arg_as' =>
-                oP_add (symbol_weight a) (List.fold_left oP_maximum arg_as' arg0)
+                oP_add (symbol_weight a) (List.fold_left oP_add arg_as' arg0)
             end;
           analysis_meet := oP_minimum;
         }.
