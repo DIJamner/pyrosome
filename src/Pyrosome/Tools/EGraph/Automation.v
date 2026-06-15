@@ -47,6 +47,10 @@ Definition subst_weight (r : renaming string) (a : atom positive positive) :=
 Definition filter_rules :=
 (fun pat : string * Rule.rule string =>
    match pat with
+   (* Filtering out sort rules has a risk because some rules need sorts to match.
+      However, it is a huge performance improvement.
+    *)
+   | (_, sort_rule _ _)
    | (_, term_rule _ _ _) => false
    | _ => true
    end).
