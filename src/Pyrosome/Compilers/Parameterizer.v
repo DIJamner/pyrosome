@@ -1346,8 +1346,20 @@ Section WithVar.
       destruct 1.
       eexists; eauto.
     Qed.
-   
-                               
+
+  (* The "constructors of [cv] are fresh for [pl]" assertion, shared by the
+     sort_con_congruence / term_eq_subst / term_con_congruence branches of the
+     parameterize_preserving'_None and _Some cut_ind proofs.  [cv] is the rule
+     context and [r] the rule it is the [get_ctx] of; both are passed explicitly
+     (bare hypothesis/variable names do not resolve inside a tactic body).  The
+     trailing [try] covers the branches whose [ctx_fresh_if_sort_fresh] leaves a
+     [named_list_lookup_err pl name = None] side goal. *)
+  Ltac _pcp_ctx_fresh cv r :=
+    assert (all (fun n : V => fresh n pl) (constructors_of_ctx cv))
+      by (change cv with (get_ctx r);
+          eapply ctx_fresh_if_sort_fresh; eauto;
+          try (apply named_list_lookup_none_iff; eauto)).
+
   Lemma parameterize_preserving'_None
     : (forall (t1 t2 : sort),
           eq_sort l c t1 t2 -> wf_ctx l c ->
@@ -1382,9 +1394,7 @@ Section WithVar.
           | simpl in *; tauto ]
       | (* sort_con_congruence *)
         use_rule_in_wf; autorewrite with utils lang_core in *; break;
-        assert (all (fun n : V => fresh n pl) (constructors_of_ctx c'))
-          by (change c' with (get_ctx (sort_rule c' args));
-              eapply ctx_fresh_if_sort_fresh; eauto);
+        _pcp_ctx_fresh c' (sort_rule c' args);
         p_name_lift_in H;
         eapply sort_con_congruence; subst l_plus; basic_utils_crush;
         apply named_list_lookup_none_iff in H3; rewrite <- H3; eauto
@@ -1402,10 +1412,7 @@ Section WithVar.
         assert (named_list_lookup_err pl name = None)
           by (symmetry; apply named_list_lookup_none_iff;
               eapply eq_fresh_iff_sort_fresh; eauto);
-        assert (all (fun n : V => fresh n pl) (constructors_of_ctx c'))
-          by (change c' with (get_ctx (term_eq_rule c' e1 e2 t));
-              eapply ctx_fresh_if_sort_fresh; eauto;
-              apply named_list_lookup_none_iff; eauto);
+        _pcp_ctx_fresh c' (term_eq_rule c' e1 e2 t);
         param_in_map_in H; cbn in H;
         epose proof (in_or_app _ l_base _ (or_introl H));
         use_rule_in_wf; autorewrite with utils lang_core in *; break;
@@ -1426,10 +1433,7 @@ Section WithVar.
               eapply con_fresh_iff_sort_fresh in H;
               symmetry; apply named_list_lookup_none_iff;
               intuition auto);
-        assert (all (fun n : V => fresh n pl) (constructors_of_ctx c'))
-          by (change c' with (get_ctx (term_rule c' args t));
-              eapply ctx_fresh_if_sort_fresh; eauto;
-              apply named_list_lookup_none_iff; eauto);
+        _pcp_ctx_fresh c' (term_rule c' args t);
         use_rule_in_wf; autorewrite with utils lang_core in *; break;
         rewrite H4 in *;
         p_name_lift_in H; subst l_plus;
@@ -3548,6 +3552,14 @@ Section WithVar.
     apply compute_pl_indices_sound; basic_utils_crush.
   Qed.
 
+  (* The compiled-context well-formedness premise of parameterize_ctx_preserving',
+     identical in the sort_rule and term_rule cases; it discards the context and
+     reasons from the single hypothesis [H] ([p_name_fresh_in_cmp ...]), passed
+     explicitly to avoid bare-name resolution in a tactic body. *)
+  Ltac _pcp_wf_ctx H :=
+    revert H; clear; cbn; intros; basic_goal_prep;
+    unfold compile_ctx; basic_core_crush.
+
   (* [map fst] of a parameterized context, used (identically) in the sort_rule and
      term_rule case openings to rewrite the context-name list. *)
   Lemma map_fst_parameterize_ctx (mn : option (nat * bool)) c
@@ -3698,11 +3710,7 @@ Section WithVar.
                 basic_core_crush.
             }
             {
-              revert H2; clear.
-              cbn.
-              intros; basic_goal_prep;
-                unfold compile_ctx;
-                basic_core_crush.
+              _pcp_wf_ctx H2.
             }
             _pcp_h_respectsb cmp c x0 H_respectsb (sort_rule c args).
           }
@@ -3785,11 +3793,7 @@ Section WithVar.
                 basic_core_crush.
             }
             {
-              revert H2; clear.
-              cbn.
-              intros; basic_goal_prep;
-                unfold compile_ctx;
-                basic_core_crush.
+              _pcp_wf_ctx H2.
             }
             _pcp_h_respectsb cmp c x0 H_respectsb (term_rule c args t).
           }
