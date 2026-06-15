@@ -21,7 +21,7 @@ From coqutil Require Import Map.Interface Datatypes.Result.
 From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations Result.
 From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsParents SemanticsAreUnified SemanticsSaturate SemanticsUnionSem SemanticsLSurvive SemanticsRebuildCanon SemanticsAnalysesCover SemanticsHashDb.
 Import Monad.StateMonad.
-From Pyrosome.Theory Require Import Core ModelImpls.
+From Pyrosome.Theory Require Import Core ModelImpls SyntacticSortCovering.
 From Pyrosome.Theory Require WfCutElim.
 Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.

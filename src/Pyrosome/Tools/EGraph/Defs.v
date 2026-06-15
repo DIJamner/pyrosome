@@ -264,9 +264,6 @@ Section WithVar.
                      let _ <- union t_v tx' in
                      ret (x,x')::sub) c [].
 
-  Lemma add_ctx_eq_gen c : add_ctx c = add_ctx_gen (fun _ => false) c.
-  Proof. reflexivity. Qed.
-
   End SortFlag.
   
     (*TODO: deprecate & use (version of?) instance version below only

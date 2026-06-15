@@ -8,7 +8,7 @@ From coqutil Require Import Map.Interface Datatypes.Result.
 From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations Result.
 From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsParents SemanticsAreUnified SemanticsSaturate SemanticsUnionSem SemanticsLSurvive SemanticsRebuildCanon SemanticsAnalysesCover SemanticsHashDb.
 Import Monad.StateMonad.
-From Pyrosome.Theory Require Import Core ModelImpls.
+From Pyrosome.Theory Require Import Core ModelImpls SyntacticSortCovering.
 From Pyrosome.Theory Require WfCutElim.
 Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.
@@ -153,6 +153,13 @@ Section WithVar.
     Context (l : lang). (* {X} (i : instance X).*)
 
     Context (sort_of_fresh : fresh sort_of l).
+
+    (* [add_ctx] is [add_ctx_gen] with the empty skip set (moved here from
+       Defs.v, which should contain definitions, not lemmas). *)
+    Lemma add_ctx_eq_gen (with_sorts with_ctx_sorts : bool) (c : ctx)
+      : add_ctx succ sort_of l with_sorts with_ctx_sorts c
+        = add_ctx_gen succ sort_of l with_sorts with_ctx_sorts (fun _ => false) c.
+    Proof. reflexivity. Qed.
 
     Definition eq_sum {A B} (eqA : A -> A -> Prop) eqB (x y : A + B) :=
       match x, y with
