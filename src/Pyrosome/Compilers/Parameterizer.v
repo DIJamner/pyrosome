@@ -3517,6 +3517,43 @@ Section WithVar.
         | cbn; basic_core_crush .. ]
       | autorewrite with utils lang_core in *; break; basic_utils_crush ] ].
 
+  (* The 4 rule-kind cases of [parameterize_compiler_preserving'] each
+     discharge the same three FIXED facts about [tgt] (they don't depend on
+     the inducted rule), via [unfold syntactic_parameterization_conditions'
+     in *; basic_utils_crush]-style blocks.  That re-runs the (expensive,
+     context-wide) [autorewrite]/[intuition] crush ~4x per fact.  Prove each
+     once here; the cases then discharge them with a cheap [apply ...; exact].
+     [_pcp_cond] auto-selects the right one. *)
+  Lemma cond_no_sort_eqns_tgt
+    : Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt) ->
+      Is_true (no_sort_eqns tgt).
+  Proof.
+    unfold syntactic_parameterization_conditions'; intro Hb; basic_utils_crush.
+  Qed.
+
+  Lemma cond_fresh_get_ctx_tgt
+    : Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt) ->
+      all (fun p : V * rule => fresh p_name (get_ctx (snd p))) tgt.
+  Proof.
+    unfold syntactic_parameterization_conditions'; intro Hb; basic_utils_crush.
+    eapply all_impl; eauto.
+    basic_goal_prep; basic_utils_crush.
+  Qed.
+
+  Lemma cond_pl_indices_tgt
+    : Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt) ->
+      pl_indices_sound tgt_spec tgt.
+  Proof.
+    unfold syntactic_parameterization_conditions'; intro Hb; basic_utils_crush.
+    apply compute_pl_indices_sound; basic_utils_crush.
+  Qed.
+
+  Ltac _pcp_cond :=
+    solve [ first [ simple apply cond_no_sort_eqns_tgt
+                  | simple apply cond_fresh_get_ctx_tgt
+                  | simple apply cond_pl_indices_tgt ];
+            eassumption ].
+
   Lemma parameterize_compiler_preserving' cmp src (H_ordered_src: pl_is_ordered src_spec src)
     : wf_lang tgt ->
       Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt) ->
@@ -3646,23 +3683,9 @@ Section WithVar.
             }
             5:{ eapply eq_sort_refl; basic_core_crush. }
             all: break; cbn in *.
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-              eapply all_impl; eauto.
-              basic_goal_prep;
-                basic_utils_crush.
-            }
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-            }
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-              apply compute_pl_indices_sound;
-                basic_utils_crush.
-            }
+            { _pcp_cond. }
+            { _pcp_cond. }
+            { _pcp_cond. }
             {
               autorewrite with lang_core model utils in *.
               break.
@@ -3770,22 +3793,9 @@ Section WithVar.
             }
             5:{ eapply eq_term_refl; basic_core_crush. }
             all: break; cbn in *.
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-              eapply all_impl; eauto.
-              basic_goal_prep;
-                basic_utils_crush.
-            }
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-            }
-            {
-              unfold syntactic_parameterization_conditions' in *;
-                try apply compute_pl_indices_sound;
-                basic_utils_crush.
-            }
+            { _pcp_cond. }
+            { _pcp_cond. }
+            { _pcp_cond. }
             {
               autorewrite with lang_core model utils in *.
               break.
@@ -3912,23 +3922,9 @@ Section WithVar.
             }
             5:{ basic_core_crush. }
             all: break; cbn in *.
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-              eapply all_impl; eauto.
-              basic_goal_prep;
-                basic_utils_crush.
-            }
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-            }
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-              apply compute_pl_indices_sound;
-                basic_utils_crush.
-            }
+            { _pcp_cond. }
+            { _pcp_cond. }
+            { _pcp_cond. }
             {
               autorewrite with lang_core model utils in *.
               break.
@@ -4049,23 +4045,9 @@ Section WithVar.
             }
             5:{ basic_core_crush. }
             all: break; cbn in *.
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-              eapply all_impl; eauto.
-              basic_goal_prep;
-                basic_utils_crush.
-            }
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-            }
-            {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-              apply compute_pl_indices_sound;
-                basic_utils_crush.
-            }
+            { _pcp_cond. }
+            { _pcp_cond. }
+            { _pcp_cond. }
             {
               autorewrite with lang_core model utils in *.
               break.
