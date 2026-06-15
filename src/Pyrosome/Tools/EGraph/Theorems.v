@@ -2735,6 +2735,272 @@ Section WithVar.
     Qed.
 
     (* =============================================================== *)
+    (* wf_subst-FREE faithful representation, gated on [syntactic_sort_eq]. *)
+    (*                                                                  *)
+    (* The min-sorts skip discharge needs the WHOLE-LHS image wf        *)
+    (* [wf_term l [] (e[/sg/]) (t[/sg/])] to feed [covering_var_leaf_syn].*)
+    (* [add_open_faithful_rep] delivers it but requires [wf_subst l []   *)
+    (* sg c] -- the very thing being built.  Under [syntactic_sort_eq]   *)
+    (* the wf_subst is unnecessary: the final rule-sort->declared        *)
+    (* transport collapses to syntactic equality, and var ARGS are typed *)
+    (* off the model [wf_args] (as in [add_open_use_sort_args]) rather   *)
+    (* than via a wf_subst-dependent var base case.  var ROOTS carry no  *)
+    (* parent atom, hence the [match e with var => True] (and var roots  *)
+    (* are never in the skip set).                                       *)
+    (*                                                                  *)
+    (* [faithful_args_syn]: the args walk producing the faithful         *)
+    (* [eq_args].  At a var head it reads the image wf off the model     *)
+    (* [wf_args] and converts the sort using the TAIL [eq_args]          *)
+    (* (computed first) via [eq_args_implies_eq_subst]+[eq_sort_subst].  *)
+    (* At a con head it uses the per-arg term IH (no [syntactic_sort_eq] *)
+    (* needed there).                                                    *)
+    Lemma faithful_args_syn
+      (Hsyn : syntactic_sort_eq l)
+      (a : interp) (eF : instance X) (sg : subst)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall (s : list term) (c c' : ctx),
+          wf_ctx l c -> wf_ctx l c' -> wf_args l c s c' ->
+          (* [sg] covers the source ctx [c]; needed so a var arg's image
+             [sg x] (which [rep_var] records via the [default] lookup) agrees
+             syntactically with [(var x)[/sg/]] (the [var x] lookup). *)
+          incl (map fst c) (map fst sg) ->
+          all (fun e => match e with
+                 | con _ _ => forall c t, wf_ctx l c -> wf_term l c e t ->
+                                incl (map fst c) (map fst sg) ->
+                                forall xe, represents a eF sg e xe ->
+                                exists e', map.get a xe = Some (inl e')
+                                         /\ eq_term l [] t[/sg/] e' (e[/sg/])
+                 | var _ => True
+                 end) s ->
+          forall sids, Forall2 (represents a eF sg) s sids ->
+          forall args_terms,
+            Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms ->
+            wf_args l [] args_terms c' ->
+            eq_args l [] c' args_terms s[/sg/].
+    Proof.
+      intros s c c' Hctx Hwfc' Hwfa Hdom.
+      revert Hctx Hwfc'.
+      induction Hwfa as [|s c'0 nm e0 tnm Hwfe0 Hwfa IHwfa];
+        intros Hctx Hwfc' IHs sids Hrep args_terms Hm HwfaM.
+      { (* nil *)
+        safe_invert Hrep; safe_invert Hm.
+        cbn; constructor. }
+      { (* cons: s = e0::rest, c' = (nm,tnm)::c'0 *)
+        safe_invert Hrep.
+        rename y into i.
+        match goal with
+          He : represents _ _ _ e0 _ |- _ => rename He into Hrep_e0 end.
+        safe_invert Hm.
+        safe_invert HwfaM.
+        match goal with
+          Hh : Model.wf_term [] _ _ |- _ => rename Hh into HwfHead end.
+        match goal with
+          Ht : wf_args l [] ?tl c'0 |- _ => rename Ht into HwfaMtail end.
+        cbn in Hwfc'.
+        inversion Hwfc' as [|nm0 c0' tt1 Hfresh0 Hwfc'0 Hwstnm Heqc'eq];
+          subst; clear Hwfc'.
+        destruct IHs as [IHe0 IHs0].
+        cbn [args_subst map apply_subst].
+        (* compute the tail eq_args FIRST *)
+        match goal with
+          Ht : wf_args l [] ?tl c'0 |- _ =>
+            assert (eq_args l [] c'0 tl s[/sg/]) as Heqtail
+              by (eapply IHwfa; eauto) end.
+        constructor; [ exact Heqtail |].
+        (* HEAD: eq_term l [] ((tnm[/wnf c'0 s/])[/sg/]) x (e0[/sg/]) *)
+        destruct e0 as [xv | ne0 se0].
+        { (* var head *)
+          safe_invert Hrep_e0.
+          match goal with
+            Hgv : map.get a i = Some (inl (named_list_lookup default sg xv)),
+            Hgi : map.get a i = Some (inl ?w) |- _ =>
+              rewrite Hgv in Hgi; safe_invert Hgi end.
+          (* goal: eq_term l [] ((tnm[/wnf c'0 s/])[/sg/]) (sg xv) ((var xv)[/sg/]) *)
+          (* identify the two var lookups: [sg] applied to [var xv] uses the
+             default [var xv], the model head uses [default]; they agree because
+             [xv] is in [dom sg] -- [xv] is a source ctx var ([Hwfe0]) and [sg]
+             covers [c] ([Hdom]). *)
+          assert (In xv (map fst sg)) as Hxvsg.
+          { apply Hdom.
+            change (In xv (map fst c)) with (ws_term (map fst c) (var xv)).
+            eapply wf_term_implies_ws; eauto with lang_core. }
+          assert (named_list_lookup default sg xv
+                  = named_list_lookup (var xv) sg xv) as Hlk.
+          { clear -Hxvsg V_Eqb_ok.
+            induction sg as [|[z v] sg' IH]; cbn in *; [contradiction|].
+            eqb_case xv z; [reflexivity|].
+            apply IH. destruct Hxvsg as [?|?]; [congruence|auto]. }
+          assert (named_list_lookup default sg xv = apply_subst0 sg (var xv))
+            as Hlk2.
+          { rewrite Hlk. reflexivity. }
+          rewrite Hlk2.
+          eapply eq_term_refl.
+          (* goal: wf_term l [] (apply_subst0 sg (var xv)) (tnm[/wnf c'0 s[/sg/]/]) *)
+          (* HwfHead : wf_term l [] (sg xv) (tnm[/wnf c'0 atl/]) *)
+          rewrite <- Hlk2.
+          eapply wf_term_conv; [ exact HwfHead |].
+          (* eq_sort l [] (tnm[/wnf c'0 atl/]) (tnm[/wnf c'0 s[/sg/]/]) *)
+          eapply (eq_sort_subst (l:=l) (c:=[]) (c':=c'0) (t1':=tnm) (t2':=tnm)
+                    (s1:=with_names_from c'0 l'0)
+                    (s2:=with_names_from c'0 (map (apply_subst0 sg) s))).
+          - eapply eq_sort_refl; exact Hwstnm.
+          - eapply eq_args_implies_eq_subst; exact Heqtail.
+          - exact Hwfc'0. }
+        { (* con head: use the term IH *)
+          specialize (IHe0 c (tnm[/with_names_from c'0 s/])
+                        Hctx Hwfe0 Hdom i Hrep_e0).
+          destruct IHe0 as (e' & Hge' & Heq0).
+          match goal with
+            Hgi : map.get a i = Some (inl _) |- _ =>
+              rewrite Hge' in Hgi; safe_invert Hgi end.
+          rewrite faithful_sort_align in Heq0;
+            [ exact Heq0
+            | eapply wf_sort_implies_ws; eauto with lang_core
+            | eapply wf_args_length_eq; eauto ]. } }
+    Qed.
+
+    (* The con-root consumer: every [con] LHS, source-typed in [c] and      *)
+    (* faithfully represented, has its image wf-at-declared-sort recoverable *)
+    (* via the [eq_term] to its egraph value.  var roots: [True].           *)
+    Lemma faithful_rep_syn
+      (Hsyn : syntactic_sort_eq l)
+      (a : interp) (eF : instance X) (sg : subst)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall e c t, wf_ctx l c -> wf_term l c e t ->
+          incl (map fst c) (map fst sg) ->
+          forall xe, represents a eF sg e xe ->
+          match e with
+          | con _ _ => exists e', map.get a xe = Some (inl e')
+                                /\ eq_term l [] t[/sg/] e' (e[/sg/])
+          | var _ => True
+          end.
+    Proof.
+      intro e.
+      induction e as [x | n s IHs] using term_ind;
+        intros c t Hctx Hwt Hdom xe Hrep.
+      { (* var ROOT: predicate is [True]. *)
+        exact I. }
+      { (* con ROOT *)
+        safe_invert Hrep.
+        match goal with
+          Hr : Forall2 (represents _ _ _) s _ |- _ => rename Hr into Hrepargs end.
+        match goal with
+          Ha : atom_in_egraph _ eF |- _ => rename Ha into Hatom end.
+        (* invert the SOURCE wf_term *)
+        apply WfCutElim.invert_wf_term_con in Hwt.
+        destruct Hwt as (c' & args & t' & Hin & Hwfa & Hsort).
+        (* node atom sound -> interprets_to_term *)
+        pose proof (Hsound _ Hatom) as Hsnd.
+        unfold atom_sound_for_model, Is_Some_satisfying in Hsnd.
+        cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn]
+          in Hsnd.
+        destruct (list_Mmap (map.get a) sids) as [arg_doms|] eqn:Hargs;
+          cbn beta iota in Hsnd; [|contradiction].
+        destruct (map.get a xe) as [out|] eqn:Hgxe;
+          cbn beta iota in Hsnd; [|contradiction].
+        change (domain V lang_model) with (term + sort)%type in Hsnd.
+        cbn [interprets_to lang_model] in Hsnd.
+        inversion Hsnd as
+          [ es ts Hwt_es Hsoeq Hargdom Houtdom
+          | f0 args0 t0 Heqs Hf0 Hargdom Houtdom
+          | f0 args_terms e_out t0 Heqe Hf0 Hargdom Houtdom ]; subst.
+        { (* interprets_to_sort_of : n = sort_of, contradiction *)
+          exfalso. apply Hsof. eapply pair_fst_in; eauto. }
+        { (* interprets_to_sort : n is a term_rule, contradiction *)
+          exfalso.
+          apply eq_sort_wf_l in Heqs; eauto with lang_core.
+          safe_invert Heqs.
+          match goal with
+            Hsr : In (n, sort_rule _ _) l |- _ =>
+              pose proof (in_all_fresh_same _ _ _ _
+                            ltac:(eauto with lang_core) Hin Hsr) as Hbad end.
+          discriminate Hbad. }
+        { (* interprets_to_term : the real case.
+             Heqe : eq_term l [] t0 (con n args_terms) e_out *)
+          exists e_out; split; [solve [reflexivity | exact Hgxe]|].
+          (* goal: eq_term l [] t[/sg/] e_out ((con n s)[/sg/]) *)
+          change ((con n s)[/sg/]) with (con n s[/sg/]).
+          assert (wf_ctx l c') as Hwfc'.
+          { eapply rule_in_ctx_wf with (r:=term_rule c' args t');
+              eauto; reflexivity. }
+          (* MODEL wf_args (no wf_subst): from [con n args_terms] wf *)
+          assert (wf_term l [] (con n args_terms) t0) as Hwfmodel.
+          { eapply (eq_term_wf_l Hwf ltac:(constructor) Heqe). }
+          apply WfCutElim.invert_wf_term_con in Hwfmodel.
+          destruct Hwfmodel as (cA & argsM & tM & HinM & HwfaM & _).
+          assert (cA = c') as HcAeq.
+          { pose proof (in_all_fresh_same _ _ _ _
+                          ltac:(eauto with lang_core) HinM Hin) as Hpin.
+            safe_invert Hpin; reflexivity. }
+          subst cA.
+          assert (Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms)
+            as Hlk.
+          { eapply (list_Mmap_get_nth_inl term sort).
+            change (domain V lang_model) with (term + sort)%type in Hargs.
+            exact Hargs. }
+          (* the per-arg IH (match-form) for faithful_args_syn *)
+          assert (all (fun e => match e with
+                   | con _ _ => forall c t, wf_ctx l c -> wf_term l c e t ->
+                                  incl (map fst c) (map fst sg) ->
+                                  forall xe, represents a eF sg e xe ->
+                                  exists e', map.get a xe = Some (inl e')
+                                           /\ eq_term l [] t[/sg/] e' (e[/sg/])
+                   | var _ => True
+                   end) s) as IHs'.
+          { eapply all_wkn; [| exact IHs].
+            intros e0 _ He0.
+            destruct e0 as [y | ne0 se0]; [exact I|].
+            intros c0 t0' Hctx0 Hwt0 Hdom0 xe0 Hrep0.
+            exact (He0 c0 t0' Hctx0 Hwt0 Hdom0 xe0 Hrep0). }
+          assert (eq_args l [] c' args_terms s[/sg/]) as Heqargs.
+          { exact (faithful_args_syn Hsyn a eF sg Hsound s c c' Hctx Hwfc'
+                     Hwfa Hdom IHs' sids Hrepargs args_terms Hlk HwfaM). }
+          (* congruence: con n args_terms = con n s[/sg/] at the rule's sort *)
+          assert (eq_term l [] (t'[/with_names_from c' s[/sg/]/])
+                    (con n args_terms) (con n s[/sg/])) as Hcong.
+          { eapply term_con_congruence;
+              [ exact Hin | right; reflexivity | exact Hwf | exact Heqargs ]. }
+          assert (wf_term l [] (con n args_terms)
+                    (t'[/with_names_from c' s[/sg/]/])) as Hwf1.
+          { eapply (eq_term_wf_l Hwf ltac:(constructor) Hcong). }
+          assert (wf_term l [] (con n args_terms) t0) as Hwf2.
+          { eapply (eq_term_wf_l Hwf ltac:(constructor) Heqe). }
+          assert (eq_sort l [] t0 (t'[/with_names_from c' s[/sg/]/])) as Hsorteq.
+          { eapply term_sorts_eq; eauto; constructor. }
+          assert (eq_term l [] (t'[/with_names_from c' s[/sg/]/])
+                    e_out (con n s[/sg/])) as Hchain.
+          { eapply eq_term_trans;
+              [ eapply eq_term_sym;
+                eapply eq_term_conv; [ exact Heqe | exact Hsorteq ]
+              | exact Hcong ]. }
+          assert (ws_sort (map fst c') t') as Hwst'.
+          { eapply wf_sort_implies_ws; eauto with lang_core.
+            eapply term_rule_in_sort_wf; eauto. }
+          (* the declared/rule sort equality collapses syntactically (Hsyn) *)
+          assert (t'[/with_names_from c' s/] = t) as Hsorteq2.
+          { destruct Hsort as [Hsort|Hsort];
+              [ exact (Hsyn _ _ _ Hsort) | exact Hsort ]. }
+          eapply eq_term_conv; [exact Hchain|].
+          (* goal: eq_sort l [] (t'[/with_names_from c' s[/sg/]/]) (t[/sg/]) *)
+          rewrite <- faithful_sort_align by
+            (first [ assumption | eapply wf_args_length_eq; eauto ]).
+          (* goal: eq_sort l [] ((t'[/with_names_from c' s/])[/sg/]) (t[/sg/]) *)
+          rewrite Hsorteq2.
+          (* goal: eq_sort l [] (t[/sg/]) (t[/sg/]) *)
+          eapply eq_sort_refl.
+          (* wf_sort l [] (t[/sg/]) from [Hcong]'s sort *)
+          assert (wf_sort l [] (t'[/with_names_from c' s[/sg/]/])) as Hwss.
+          { eapply (eq_term_wf_sort (l:=l) (c:=[]) Hwf ltac:(constructor) Hcong). }
+          rewrite <- faithful_sort_align in Hwss by
+            (first [ assumption | eapply wf_args_length_eq; eauto ]).
+          rewrite Hsorteq2 in Hwss.
+          exact Hwss. } }
+    Qed.
+
+
+    (* =============================================================== *)
     (* USE-SORT READBACK ENGINE (step 1 of the min-sorts discharge).    *)
     (*                                                                  *)
     (* This is the genuinely NEW e-graph content that                   *)
@@ -3090,6 +3356,96 @@ Section WithVar.
         { eapply sort_con_congruence; eauto. }
         (* Heqs : eq_sort l [] (scon n args_terms) t0 *)
         eapply eq_sort_trans; [ eapply eq_sort_sym; exact Heqs | exact Hcong ]. }
+    Qed.
+
+    (* Sort analogue: for a sort LHS [scon n0 s0] source-typed in [c] and
+       faithfully represented, the (term) args [s0] have BOTH a source
+       [wf_args l c s0 c'] and a wf_subst-FREE image [wf_args l [] (s0[/sg/])
+       c'] at the shared rule ctx [c'].  This is exactly what the skip-sort
+       covering ([covering_var_leaf_syn_args_aux]) consumes.  Mirrors
+       [add_open_faithful_rep_sort] but uses [faithful_args_syn] (no wf_subst). *)
+    Lemma faithful_rep_sort_args_syn
+      (Hsyn : syntactic_sort_eq l)
+      (a : interp) (eF : instance X) (sg : subst)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall n0 s0 c, wf_ctx l c -> wf_sort l c (scon n0 s0) ->
+          incl (map fst c) (map fst sg) ->
+          forall xs, represents_sort a eF sg (scon n0 s0) xs ->
+          exists c', wf_ctx l c' /\ wf_args l c s0 c' /\ wf_args l [] s0[/sg/] c'.
+    Proof.
+      intros n0 s0 c Hctx Hws Hdom xs Hrep.
+      destruct Hrep as (sids & Hrepargs & Hatom).
+      safe_invert Hws.
+      match goal with
+        Hin : In (n0, sort_rule ?c'0 ?args0) l |- _ =>
+          rename c'0 into c'; rename args0 into args; rename Hin into Hin0 end.
+      match goal with
+        Hwa : Model.wf_args _ s0 c' |- _ => rename Hwa into Hwfa end.
+      pose proof (Hsound _ Hatom) as Hsnd.
+      unfold atom_sound_for_model, Is_Some_satisfying in Hsnd.
+      cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn]
+        in Hsnd.
+      destruct (list_Mmap (map.get a) sids) as [arg_doms|] eqn:Hargs;
+        cbn beta iota in Hsnd; [|contradiction].
+      destruct (map.get a xs) as [out|] eqn:Hgxs;
+        cbn beta iota in Hsnd; [|contradiction].
+      change (domain V lang_model) with (term + sort)%type in Hsnd.
+      cbn [interprets_to lang_model] in Hsnd.
+      inversion Hsnd as
+        [ es t_es Hwt_es Hargdom Houtdom
+        | f0 args_terms t0 Heqs Hargdom Houtdom
+        | f0 args0 e_out t0 Heqe Hargdom Houtdom ]; subst.
+      { (* interprets_to_sort_of : n0 = sort_of, contradiction *)
+        exfalso. apply Hsof. eapply pair_fst_in; eauto. }
+      2:{ (* interprets_to_term : out = inl, but n0 is a sort_rule *)
+        exfalso.
+        apply eq_term_wf_l in Heqe; eauto with lang_core.
+        apply WfCutElim.invert_wf_term_con in Heqe.
+        destruct Heqe as (c'' & args' & t'' & Hin' & _ & _).
+        pose proof (in_all_fresh_same _ _ _ _
+                      ltac:(eauto with lang_core) Hin0 Hin') as Hbad.
+        discriminate Hbad. }
+      { (* interprets_to_sort : the real case.
+           Heqs : eq_sort l [] (scon n0 args_terms) t0 *)
+        assert (wf_ctx l c') as Hwfc'.
+        { eapply rule_in_ctx_wf with (r:=sort_rule c' args); eauto; reflexivity. }
+        assert (Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms)
+          as Hlk.
+        { eapply (list_Mmap_get_nth_inl term sort).
+          change (domain V lang_model) with (term + sort)%type in Hargs.
+          exact Hargs. }
+        (* model wf_args from the model sort wf *)
+        assert (wf_sort l [] (scon n0 args_terms)) as Hwsmodel.
+        { exact (eq_sort_wf_l Hwf ltac:(constructor) Heqs). }
+        safe_invert Hwsmodel.
+        match goal with
+        | HwaM : Model.wf_args _ args_terms ?cM, HinM : In (n0, sort_rule ?cM _) l |- _ =>
+            pose proof (in_all_fresh_same _ _ _ _
+                          ltac:(eauto with lang_core) HinM Hin0) as Hpin;
+            safe_invert Hpin; rename HwaM into HwfaM
+        end.
+        (* per-arg con IH from faithful_rep_syn *)
+        assert (Hall : forall sx, all (fun e => match e with
+                 | con _ _ => forall c t, wf_ctx l c -> wf_term l c e t ->
+                                incl (map fst c) (map fst sg) ->
+                                forall xe, represents a eF sg e xe ->
+                                exists e', map.get a xe = Some (inl e')
+                                         /\ eq_term l [] t[/sg/] e' (e[/sg/])
+                 | var _ => True
+                 end) sx).
+        { intro sx; induction sx as [|e0 sx' IH]; cbn; [exact I|]; split; [|exact IH].
+          destruct e0 as [|ne0 se0]; [exact I|].
+          intros c0 t0' Hctx0 Hwt0 Hdom0 xe0 Hrep0.
+          exact (faithful_rep_syn Hsyn a eF sg Hsound (con ne0 se0) c0 t0'
+                   Hctx0 Hwt0 Hdom0 xe0 Hrep0). }
+        assert (eq_args l [] c' args_terms s0[/sg/]) as Heqargs.
+        { exact (faithful_args_syn Hsyn a eF sg Hsound s0 c c' Hctx Hwfc'
+                   Hwfa Hdom (Hall s0) sids Hrepargs args_terms Hlk HwfaM). }
+        exists c'.
+        split. { exact Hwfc'. }
+        split. { exact Hwfa. }
+        exact (eq_args_wf_r Hwf ltac:(constructor) Hwfc' Heqargs). }
     Qed.
 
     (* SORT analogue of [add_open_use_sort_wf]: every var occurring in a sort

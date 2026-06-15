@@ -1815,6 +1815,9 @@ Section WithVar.
     Lemma eq_ctx_inversion_gen (no_sort : V -> bool) (rf : nat) (a : interp) c e1 t
         (Hwfc : wf_ctx l c) (Hwfe1 : wf_term l c e1 t)
         (Hskip : forall x, no_sort x = true -> In x (fv e1))
+        (* skipping a sort is only sound when the language has syntactic sort
+           equality; the adapter gates [no_sort] on [syntactic_sort_eq_langb l]. *)
+        (Hsyn_skip : forall x, no_sort x = true -> syntactic_sort_eq l)
         (* a bare-var LHS never skips any sort (the adapter sets
            [term_eq_skip (var _) = fun _ => false]); this rules out the dead
            bare-var-with-skip case below. *)
@@ -2073,8 +2076,8 @@ Section WithVar.
                       Hmapfst' Hrbef Hskip_empty) as Hfin.
         destruct Hfin as [sgf [Hwfsgf [Hdomsgf Hfaithf] ] ].
         exact (ex_intro _ sgf (conj Hwfsgf (conj Hdomsgf Hfaithf))). }
-      pose proof (@CtxReadback.skip_decl_wf_from_image V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok
-                    V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X _ l Hwf Hsof no_sort eF a Hsound sg n0 s0 x1 Hrep
+      pose proof (@CtxReadback.skip_decl_wf_from_image V V_Eqb V_Eqb_ok V_default V_map
+                    V_trie sort_of X l Hwf Hsof no_sort eF a Hsyn_skip Hsound sg n0 s0 x1 Hrep
                     c sub t Hwfc Hwfe1 Hmapfst') as Hskipdw.
       specialize (Hskipdw Hdomsg (fun x Hx => Hskip x Hx) Hfaith).
       pose proof (@CtxReadback.ctx_readback_wf_subst_gen V V_Eqb V_Eqb_ok V_default V_map
@@ -3684,6 +3687,7 @@ Section WithVar.
     Lemma eq_sort_ctx_inversion_gen (no_sort : V -> bool) (rf : nat) (a : interp) c t1
         (Hwfc : wf_ctx l c) (Hwft1 : wf_sort l c t1)
         (Hskip : forall x, no_sort x = true -> In x (fv_sort t1))
+        (Hsyn_skip : forall x, no_sort x = true -> syntactic_sort_eq l)
       : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx_gen succ sort_of l false false no_sort c (empty_egraph V_default X)))
                   t1
@@ -3831,8 +3835,8 @@ Section WithVar.
                        (scon n0 s0) (fst (add_open_sort succ sort_of l false false sub (scon n0 s0) e_ctx))).
       { eapply (@Theorems.atom_tree_sort_to_represents_sort V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of X l Hwf
                   a eF sub sg c Hfaith (eq_sym Hmapfst) (scon n0 s0) Hwft1 _ Htree_eF0). }
-      pose proof (@CtxReadback.skip_decl_wf_from_image_sort V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok
-                    V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X _ l Hwf Hsof no_sort eF a Hsound sg n0 s0 _ Hrep
+      pose proof (@CtxReadback.skip_decl_wf_from_image_sort V V_Eqb V_Eqb_ok V_default V_map
+                    V_trie sort_of X l Hwf Hsof no_sort eF a Hsyn_skip Hsound sg n0 s0 _ Hrep
                     c sub Hwfc Hwft1 Hmapfst') as Hskipdw.
       specialize (Hskipdw Hdomsg (fun x Hx => Hskip x Hx) Hfaith).
       pose proof (@CtxReadback.ctx_readback_wf_subst_gen V V_Eqb V_Eqb_ok V_default V_map

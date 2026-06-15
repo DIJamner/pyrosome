@@ -2615,9 +2615,13 @@ Section WithVar.
         rewrite Bool.andb_true_iff in Hx. apply Is_true_eq_left. exact (proj2 Hx). }
       assert (Hbare : forall ev, e1 = var ev -> forall x, term_eq_skip e1 x = false).
       { intros ev Hev x. subst e1. unfold term_eq_skip. apply Bool.andb_false_r. }
-      pose proof (@eq_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok
+      assert (Hsyn_skip : forall x, term_eq_skip e1 x = true -> syntactic_sort_eq l).
+      { intros x Hx. unfold term_eq_skip in Hx.
+        apply Bool.andb_true_iff in Hx.
+        exact (syntactic_sort_eq_sound (proj1 Hx) Hwf). }
+      pose proof (@eq_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                    (term_eq_skip e1) rf a c e1 t Hwfc Hwfe1 Hskip Hbare Hsucc_uf Hsnd_atoms_uf) as Hinv.
+                    (term_eq_skip e1) rf a c e1 t Hwfc Hwfe1 Hskip Hsyn_skip Hbare Hsucc_uf Hsnd_atoms_uf) as Hinv.
       destruct Hinv as (sg & Hsg & Hmapfst_sg & Hfaith).
       (* Hfaith uses (fst (add_ctx ...)) - rewrite to sub_c *)
       assert (Hfaith' : forall x, In x (map fst sub_c) ->
@@ -3399,9 +3403,13 @@ Section WithVar.
       { intros x Hx. unfold sort_eq_skip in Hx.
         rewrite Bool.andb_true_iff in Hx.
         apply (proj1 (inb_is_In _ _)). apply Is_true_eq_left. exact (proj2 Hx). }
-      pose proof (@AddCtxInversion.eq_sort_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok
+      assert (Hsyn_skip : forall x, sort_eq_skip t1 x = true -> syntactic_sort_eq l).
+      { intros x Hx. unfold sort_eq_skip in Hx.
+        apply Bool.andb_true_iff in Hx.
+        exact (syntactic_sort_eq_sound (proj1 Hx) Hwf). }
+      pose proof (@AddCtxInversion.eq_sort_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                    (sort_eq_skip t1) rf a c t1 Hwfc Hwft1 Hskip Hsucc_uf Hsnd_atoms_uf) as Hinv.
+                    (sort_eq_skip t1) rf a c t1 Hwfc Hwft1 Hskip Hsyn_skip Hsucc_uf Hsnd_atoms_uf) as Hinv.
       destruct Hinv as (sg & Hsg & Hmapfst_sg & Hfaith).
       assert (Hfaith' : forall x, In x (map fst sub_c) ->
                 map.get a (named_list_lookup default sub_c x)
