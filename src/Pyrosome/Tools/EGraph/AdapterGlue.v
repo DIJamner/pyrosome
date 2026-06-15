@@ -11,7 +11,7 @@ From coqutil Require Import Map.Interface Datatypes.Result.
 From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations Result.
 From Utils.EGraph Require Import Defs Semantics QueryOpt QueryOptSound.
 Import Monad.StateMonad.
-From Pyrosome.Theory Require Import Core ModelImpls.
+From Pyrosome.Theory Require Import Core ModelImpls SyntacticSorts.
 Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.
 From Pyrosome.Tools.EGraph Require Import Theorems AddCtxInversion ConclSemantic.
@@ -282,13 +282,18 @@ Section WithVar.
     (* Skip predicates matching the equational cases of [Defs.rule_to_log_rule]
        / [rule_to_log_seq]: a ctx var's sort_of atom is dropped from the QUERY
        exactly when the var occurs in the LHS (and the LHS isn't a bare var). *)
+    (* Gated on [syntactic_sort_eq_langb l] to match [Defs.rule_to_log_rule]:
+       the skip (dropping a ctx var's sort_of requirement) is only taken when
+       [l] has syntactic sort equality.  The bare-var case stays [false]
+       regardless ([_ && false = false]). *)
     Definition term_eq_skip (e1 : term) (x : V) : bool :=
-      match e1 with
-      | con _ _ => inb x (fv e1)
-      | var _ => false
-      end.
+      andb (syntactic_sort_eq_langb l)
+        (match e1 with
+         | con _ _ => inb x (fv e1)
+         | var _ => false
+         end).
     Definition sort_eq_skip (t1 : sort) (x : V) : bool :=
-      inb x (fv_sort t1).
+      andb (syntactic_sort_eq_langb l) (inb x (fv_sort t1)).
 
     (* The bare compiled sequent for [r] — the [Success] value of
        [rule_to_log_rule] (which now returns [result sequent]).  Used in the
@@ -2605,10 +2610,11 @@ Section WithVar.
       { rewrite Hac. cbn [fst snd]. rewrite Hao1. cbn [snd]. rewrite Hr1. cbn [fst]. exact Hsucc. }
       assert (Hskip : forall x, term_eq_skip e1 x = true -> In x (fv e1)).
       { intros x Hx. unfold term_eq_skip in Hx.
-        destruct e1; [discriminate Hx|].
-        apply (proj1 (inb_is_In _ _)). rewrite Hx. exact I. }
+        destruct e1; [rewrite Bool.andb_false_r in Hx; discriminate Hx|].
+        apply (proj1 (inb_is_In _ _)).
+        rewrite Bool.andb_true_iff in Hx. apply Is_true_eq_left. exact (proj2 Hx). }
       assert (Hbare : forall ev, e1 = var ev -> forall x, term_eq_skip e1 x = false).
-      { intros ev Hev x. subst e1. reflexivity. }
+      { intros ev Hev x. subst e1. unfold term_eq_skip. apply Bool.andb_false_r. }
       pose proof (@eq_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
                     (term_eq_skip e1) rf a c e1 t Hwfc Hwfe1 Hskip Hbare Hsucc_uf Hsnd_atoms_uf) as Hinv.
@@ -3391,7 +3397,8 @@ Section WithVar.
       { rewrite Hac. cbn [fst snd]. rewrite Hao1. cbn [snd]. rewrite Hr1. cbn [fst]. exact Hsucc. }
       assert (Hskip : forall x, sort_eq_skip t1 x = true -> In x (fv_sort t1)).
       { intros x Hx. unfold sort_eq_skip in Hx.
-        apply (proj1 (inb_is_In _ _)). rewrite Hx. exact I. }
+        rewrite Bool.andb_true_iff in Hx.
+        apply (proj1 (inb_is_In _ _)). apply Is_true_eq_left. exact (proj2 Hx). }
       pose proof (@AddCtxInversion.eq_sort_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
                     (sort_eq_skip t1) rf a c t1 Hwfc Hwft1 Hskip Hsucc_uf Hsnd_atoms_uf) as Hinv.
@@ -3554,9 +3561,11 @@ Section WithVar.
     Proof.
       intro H.
       unfold term_eq_skip.
-      cbv -[add_ctx_gen add_open_term add_open_sort rebuild empty_egraph inb fv] in H.
+      cbv -[add_ctx_gen add_open_term add_open_sort rebuild empty_egraph inb fv
+              syntactic_sort_eq_langb andb] in H.
       destruct (add_ctx_gen succ sort_of l false false
-                  (fun x => match e1 with con _ _ => inb x (fv e1) | var _ => false end)
+                  (fun x => syntactic_sort_eq_langb l &&
+                             match e1 with con _ _ => inb x (fv e1) | var _ => false end)
                   c (empty_egraph V_default X))
         as [sub e_ctx].
       cbn [fst snd] in H |- *.
@@ -3578,9 +3587,11 @@ Section WithVar.
     Proof.
       intro H.
       unfold sort_eq_skip.
-      cbv -[add_ctx_gen add_open_term add_open_sort rebuild empty_egraph inb fv_sort] in H.
+      cbv -[add_ctx_gen add_open_term add_open_sort rebuild empty_egraph inb fv_sort
+              syntactic_sort_eq_langb andb] in H.
       destruct (add_ctx_gen succ sort_of l false false
-                  (fun x => inb x (fv_sort t1)) c (empty_egraph V_default X))
+                  (fun x => syntactic_sort_eq_langb l && inb x (fv_sort t1))
+                  c (empty_egraph V_default X))
         as [sub e_ctx].
       cbn [fst snd] in H |- *.
       destruct (add_open_sort succ sort_of l false false sub t1 e_ctx)

@@ -19,6 +19,7 @@ From Utils Require Import Utils Monad Result.
 From Utils.EGraph Require Import Semantics Defs QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
+From Pyrosome.Theory Require Import SyntacticSorts.
 From Pyrosome.Theory Require ClosedTerm.
 Import Core.Notations.
 
@@ -446,8 +447,13 @@ Section WithVar.
         (* Drop the query's sort requirements for ctx vars appearing in the LHS
            [t1]: their nodes are bound by the LHS atoms and their sorts are
            determined up to equivalence.  A sort is always a [scon], so every
-           free var of [t1] occurs as an atom argument (no bare-var case). *)
-        let skip x := inb x (fv_sort t1) in
+           free var of [t1] occurs as an atom argument (no bare-var case).
+
+           GATED on [syntactic_sort_eq_langb l]: the "sort determined up to
+           equivalence" justification holds only when [l] has syntactic sort
+           equality (see Theory.SyntacticSorts).  Otherwise the skip list is
+           empty and [add_ctx_gen] reduces to [add_ctx]. *)
+        let skip x := andb (syntactic_sort_eq_langb l) (inb x (fv_sort t1)) in
         sequent_of_states
           (@!let sub <- add_ctx_gen false false skip c in
              let x1 <- add_open_sort false false sub t1 in
@@ -460,10 +466,11 @@ Section WithVar.
            Guard the degenerate [e1 = var x] case: then [x]'s node is the whole
            LHS and is referenced by no atom, so dropping its sort would leave it
            unbound. *)
-        let skip x := match e1 with
-                      | con _ _ => inb x (fv e1)
-                      | var _ => false
-                      end in
+        let skip x := andb (syntactic_sort_eq_langb l)
+                        (match e1 with
+                         | con _ _ => inb x (fv e1)
+                         | var _ => false
+                         end) in
         sequent_of_states
           (@!let sub <- add_ctx_gen false false skip c in
              let x1 <- add_open_term false false sub e1 in
