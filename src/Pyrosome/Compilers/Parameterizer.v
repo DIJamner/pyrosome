@@ -3554,6 +3554,33 @@ Section WithVar.
                   | simple apply cond_pl_indices_tgt ];
             eassumption ].
 
+  (* The induction-hypothesis discharge, identical in all 4 rule-kind cases
+     of [parameterize_compiler_preserving'].  Must be a tactic (it refers to
+     [IHpreserving_compiler_ext]). *)
+  Ltac _pcp_ih IH :=
+    eapply IH; eauto;
+    basic_goal_prep; basic_core_crush.
+
+  (* The two [inductive_implies_semantic] premises of [parameterize_preserving'],
+     identical across all 4 cases. *)
+  Ltac _pcp_inductive_semantic :=
+    autorewrite with lang_core model utils in *;
+    break;
+    eapply inductive_implies_semantic; auto; cycle 2; eauto with lang_core.
+
+  (* The [compile_strengthen_sort_incl] side of the strengthen block, byte-for-byte
+     identical in the term_rule / sort_eq / term_eq cases (no auto-name dependence). *)
+  Ltac _pcp_strengthen_incl :=
+    autorewrite with lang_core utils term in *;
+    symmetry;
+    eapply compile_strengthen_sort_incl; intuition eauto;
+    eauto with lang_core term model utils;
+    try (eapply all_fresh_compiler;
+         [ eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core
+         | basic_core_crush ]);
+    try (eapply all_constructors_sort_from_wf; eauto;
+         eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core).
+
   Lemma parameterize_compiler_preserving' cmp src (H_ordered_src: pl_is_ordered src_spec src)
     : wf_lang tgt ->
       Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt) ->
@@ -3617,8 +3644,7 @@ Section WithVar.
       {
         eapply CompilerDefs.preserving_compiler_sort; eauto.
         {
-          eapply IHpreserving_compiler_ext; eauto.
-          all: basic_goal_prep; basic_core_crush.
+          _pcp_ih IHpreserving_compiler_ext.
         }
         cbn -[parameterize_ctx parameterize_compiler].
         pose proof H as Hpres.
@@ -3687,16 +3713,10 @@ Section WithVar.
             { _pcp_cond. }
             { _pcp_cond. }
             {
-              autorewrite with lang_core model utils in *.
-              break.
-              eapply inductive_implies_semantic; auto; cycle 2;
-              eauto with lang_core.
+              _pcp_inductive_semantic.
             }
             {
-              autorewrite with lang_core model utils in *.
-              break.
-              eapply inductive_implies_semantic; auto; cycle 2;
-              eauto with lang_core.
+              _pcp_inductive_semantic.
             }
             {
               unfold syntactic_parameterization_conditions' in *.
@@ -3728,8 +3748,7 @@ Section WithVar.
       {
         eapply CompilerDefs.preserving_compiler_term; eauto.
         {
-          eapply IHpreserving_compiler_ext; eauto.
-          all: basic_goal_prep; basic_core_crush.
+          _pcp_ih IHpreserving_compiler_ext.
         }
         cbn -[parameterize_ctx parameterize_compiler].
         pose proof H as Hpres.
@@ -3797,14 +3816,10 @@ Section WithVar.
             { _pcp_cond. }
             { _pcp_cond. }
             {
-              autorewrite with lang_core model utils in *.
-              break.
-              eapply inductive_implies_semantic; auto; cycle 2; eauto with lang_core.
+              _pcp_inductive_semantic.
             }
             {
-              autorewrite with lang_core model utils in *.
-              break.
-              eapply inductive_implies_semantic; auto; cycle 2; eauto with lang_core.
+              _pcp_inductive_semantic.
             }
             {
               replace (compile_sort cmp t)
@@ -3861,21 +3876,7 @@ Section WithVar.
                 eapply named_list_lookup_none_iff in case_match_eqn; eauto.
               }
               {
-                autorewrite with lang_core utils term in *.
-                symmetry.
-                eapply compile_strengthen_sort_incl; intuition eauto.
-                all: eauto with lang_core term model utils.
-                {
-                  eapply all_fresh_compiler.
-                  {
-                    eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
-                  }
-                  basic_core_crush.
-                }
-                {
-                  eapply all_constructors_sort_from_wf; eauto.
-                  eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
-                }
+                _pcp_strengthen_incl.
               }
             }
           }
@@ -3896,8 +3897,7 @@ Section WithVar.
       cbn -[parameterize_ctx parameterize_compiler].
       eapply CompilerDefs.preserving_compiler_sort_eq; eauto.
       {
-        eapply IHpreserving_compiler_ext; eauto.
-        all: basic_goal_prep; basic_core_crush.
+        _pcp_ih IHpreserving_compiler_ext.
       }
       cbn -[parameterize_ctx parameterize_compiler].
       pose proof H as Hpres.
@@ -3926,16 +3926,10 @@ Section WithVar.
             { _pcp_cond. }
             { _pcp_cond. }
             {
-              autorewrite with lang_core model utils in *.
-              break.
-              eapply inductive_implies_semantic; auto; cycle 2;
-              eauto with lang_core.
+              _pcp_inductive_semantic.
             }
             {
-              autorewrite with lang_core model utils in *.
-              break.
-              eapply inductive_implies_semantic;auto; cycle 2;
-              eauto with lang_core.
+              _pcp_inductive_semantic.
             }
             {
               replace (compile_sort cmp t1)
@@ -3992,21 +3986,7 @@ Section WithVar.
                 eapply named_list_lookup_none_iff in case_match_eqn; eauto.
               }
               {
-                autorewrite with lang_core utils term in *.
-                symmetry.
-                eapply compile_strengthen_sort_incl; intuition eauto.
-                all: eauto with lang_core term model utils.
-                {
-                  eapply all_fresh_compiler.
-                  {
-                    eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
-                  }
-                  basic_core_crush.
-                }
-                {
-                  eapply all_constructors_sort_from_wf; eauto.
-                  eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
-                }
+                _pcp_strengthen_incl.
               }
             }
           }
@@ -4018,8 +3998,7 @@ Section WithVar.
       cbn -[parameterize_ctx parameterize_compiler].
       eapply CompilerDefs.preserving_compiler_term_eq; eauto.
       {
-        eapply IHpreserving_compiler_ext; eauto.
-        all: basic_goal_prep; basic_core_crush.
+        _pcp_ih IHpreserving_compiler_ext.
       }
       cbn -[parameterize_ctx parameterize_compiler].
       pose proof H as Hpres.
@@ -4049,16 +4028,10 @@ Section WithVar.
             { _pcp_cond. }
             { _pcp_cond. }
             {
-              autorewrite with lang_core model utils in *.
-              break.
-              eapply inductive_implies_semantic; auto; cycle 2;
-              eauto with lang_core.
+              _pcp_inductive_semantic.
             }
             {
-              autorewrite with lang_core model utils in *.
-              break.
-              eapply inductive_implies_semantic; auto; cycle 2;
-                eauto with lang_core.
+              _pcp_inductive_semantic.
             }
             {
               replace (compile_sort cmp t)
@@ -4115,21 +4088,7 @@ Section WithVar.
                 eapply named_list_lookup_none_iff in case_match_eqn; eauto.
               }
               {
-                autorewrite with lang_core utils term in *.
-                symmetry.
-                eapply compile_strengthen_sort_incl; intuition eauto.
-                all: eauto with lang_core term model utils.
-                {
-                  eapply all_fresh_compiler.
-                  {
-                    eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
-                  }
-                  basic_core_crush.
-                }
-                {
-                  eapply all_constructors_sort_from_wf; eauto.
-                  eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
-                }
+                _pcp_strengthen_incl.
               }
             }
           }
