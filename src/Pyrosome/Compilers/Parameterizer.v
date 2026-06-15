@@ -1360,6 +1360,10 @@ Section WithVar.
           eapply ctx_fresh_if_sort_fresh; eauto;
           try (apply named_list_lookup_none_iff; eauto)).
 
+  (* The wellformedness-extraction preamble repeated across cut_ind branches. *)
+  Ltac _pcp_rule_wf :=
+    use_rule_in_wf; autorewrite with utils lang_core in *; break.
+
   Lemma parameterize_preserving'_None
     : (forall (t1 t2 : sort),
           eq_sort l c t1 t2 -> wf_ctx l c ->
@@ -1393,7 +1397,7 @@ Section WithVar.
             apply H' in H; cbn in *; congruence
           | simpl in *; tauto ]
       | (* sort_con_congruence *)
-        use_rule_in_wf; autorewrite with utils lang_core in *; break;
+        _pcp_rule_wf;
         _pcp_ctx_fresh c' (sort_rule c' args);
         p_name_lift_in H;
         eapply sort_con_congruence; subst l_plus; basic_utils_crush;
@@ -1415,7 +1419,7 @@ Section WithVar.
         _pcp_ctx_fresh c' (term_eq_rule c' e1 e2 t);
         param_in_map_in H; cbn in H;
         epose proof (in_or_app _ l_base _ (or_introl H));
-        use_rule_in_wf; autorewrite with utils lang_core in *; break;
+        _pcp_rule_wf;
         erewrite !parameterize_sort_subst with (mn:=None);
           [| eapply eq_subst_name_fresh_r_from_ctx; eauto
            | pure_fast_core_crush ];
@@ -1434,7 +1438,7 @@ Section WithVar.
               symmetry; apply named_list_lookup_none_iff;
               intuition auto);
         _pcp_ctx_fresh c' (term_rule c' args t);
-        use_rule_in_wf; autorewrite with utils lang_core in *; break;
+        _pcp_rule_wf;
         rewrite H4 in *;
         p_name_lift_in H; subst l_plus;
         eapply term_con_congruence;
@@ -1527,7 +1531,7 @@ Section WithVar.
          apply H' in H; cbn in *; congruence
        | simpl in *; tauto ].
     (* sort_con_congruence *)
-    1: use_rule_in_wf; autorewrite with utils lang_core in *; break;
+    1: _pcp_rule_wf;
        case_match;
          [ eapply sort_con_congruence; eauto;
              [ param_in_map_in H; unfold parameterize_lang;
