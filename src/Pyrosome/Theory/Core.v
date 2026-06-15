@@ -1748,154 +1748,6 @@ Proof.
 Qed.
 
 
-(* ===================================================================== *)
-(* USE-SORT -> DECLARED-SORT transport, the restriction-substitution      *)
-(* step (min-sorts-query discharge, step 2).                              *)
-(*                                                                        *)
-(* The minimized-query engine ([Theorems.add_open_use_sort_wf]) produces, *)
-(* for an occurring (skipped) ctx var [x], well-formedness of its image   *)
-(* [e := sg x] at the OPERATOR USE-sort [T_use[/r/]], not at the          *)
-(* DECLARED sort [t_decl[/r/]] that [wf_subst] requires.  The source rule *)
-(* gives [eq_sort l c' T_use t_decl] (the two sorts of [var x] in the     *)
-(* rule context, via [term_sorts_eq]).  This lemma performs the transport *)
-(* by an explicit substitution [r] (the "restriction / identity sub" of   *)
-(* the user's resolution): substituting the source sort equation by [r]   *)
-(* and converting.  It is the EXISTING [eq_sort_subst] specialised to the *)
-(* conversion shape, with NO new context-strengthening axiom.             *)
-(*                                                                        *)
-(* The remaining (non-circular here, but still open) obligation for the   *)
-(* full discharge is to CONSTRUCT the [eq_subst l c c' r r] for the       *)
-(* prefix [r] -- the restriction substitution -- at each variable, in an  *)
-(* order where the relevant prefix is already well-formed.  That          *)
-(* construction is the genuine remaining content (see [wf_args_covers_fv]  *)
-(* and the [min_sorts_query] memory); this lemma isolates the transport   *)
-(* step so that construction can consume it cleanly. *)
-Lemma use_sort_to_decl_sort (l : lang) c c' r e T_use t_decl
-  : wf_lang l ->
-    wf_ctx l c' ->
-    eq_sort l c' T_use t_decl ->
-    eq_subst l c c' r r ->
-    wf_term l c e (T_use[/r/]) ->
-    wf_term l c e (t_decl[/r/]).
-Proof.
-  intros wfl Hwfc Heqs Heqsub Hwf.
-  eapply wf_term_conv; [exact Hwf|].
-  eapply eq_sort_subst; eauto.
-Qed.
-
-
-(* ===================================================================== *)
-(* CONTEXT STRENGTHENING for [eq_sort], by substitution (route 3).        *)
-(*                                                                        *)
-(* If [r] is an [eq_subst] from the smaller context [c'] to the larger    *)
-(* [Cfull] -- i.e. it provides, for EVERY variable of [Cfull] (including   *)
-(* the ones being dropped), an image well-formed in [c'] at its declared   *)
-(* sort under [r] -- and [r] acts as the identity on the two sorts         *)
-(* [t1], [t2], then an equality over [Cfull] can be transported to [c'].   *)
-(*                                                                        *)
-(* This is the ONLY sound form of [eq_sort] context strengthening: a       *)
-(* purely structural ("drop the unused bindings") strengthening is FALSE   *)
-(* in general because [eq_sort_trans] routes through an intermediate sort   *)
-(* [t12] that may mention the dropped variables and is not constrained to   *)
-(* the smaller context (verified concretely: the [eq_sort_trans] IH        *)
-(* requires [wf_sort l c' t12], which is unavailable).  The substitution   *)
-(* [r] supplies inhabitants for the dropped variables, which is exactly    *)
-(* the content a structural strengthening lacks.                           *)
-(*                                                                        *)
-(* This lemma is the existing [eq_sort_subst] constructor packaged for the *)
-(* strengthening use-case; the remaining content for any concrete          *)
-(* application is to CONSTRUCT the witnessing [eq_subst l c' Cfull r r].    *)
-Lemma eq_sort_strengthen_by_subst (l : lang) (Cfull c' : ctx) (r : subst) t1 t2
-  : wf_lang l ->
-    wf_ctx l Cfull ->
-    eq_subst l c' Cfull r r ->
-    t1[/r/] = t1 ->
-    t2[/r/] = t2 ->
-    eq_sort l Cfull t1 t2 ->
-    eq_sort l c' t1 t2.
-Proof.
-  intros wfl Hwfcf Hsub Ht1 Ht2 Heq.
-  pose proof (eq_sort_subst (l:=l) (c:=c') (c':=Cfull) (s1:=r) (s2:=r)
-                (t1':=t1) (t2':=t2) Heq Hsub Hwfcf) as Hs.
-  rewrite Ht1, Ht2 in Hs.
-  exact Hs.
-Qed.
-
-(* Term-level analogue, for completeness / symmetry. *)
-Lemma eq_term_strengthen_by_subst (l : lang) (Cfull c' : ctx) (r : subst) t e1 e2
-  : wf_lang l ->
-    wf_ctx l Cfull ->
-    eq_subst l c' Cfull r r ->
-    t[/r/] = t ->
-    e1[/r/] = e1 ->
-    e2[/r/] = e2 ->
-    eq_term l Cfull t e1 e2 ->
-    eq_term l c' t e1 e2.
-Proof.
-  intros wfl Hwfcf Hsub Ht He1 He2 Heq.
-  pose proof (eq_term_subst (l:=l) (c:=c') (c':=Cfull) (s1:=r) (s2:=r)
-                (t:=t) (e1:=e1) (e2:=e2) Heq Hsub Hwfcf) as Hs.
-  rewrite Ht, He1, He2 in Hs.
-  exact Hs.
-Qed.
-
-
-(* Dropping a fresh leading binding from a substitution does not change the
-   action on a sort well-formed in the (unextended) context. *)
-Lemma wf_sort_strengthen_cons (l : lang) c' n e s t'
-  : wf_lang l ->
-    wf_sort l c' t' ->
-    fresh n c' ->
-    map fst s = map fst c' ->
-    t' [/(n,e)::s/] = t' [/s/].
-Proof.
-  intros wfl Hwf Hfr Hmap.
-  erewrite strengthen_subst; try typeclasses eauto.
-  - reflexivity.
-  - rewrite Hmap. eapply wf_sort_implies_ws; eauto with lang_core.
-  - unfold fresh in *. rewrite Hmap. exact Hfr.
-Qed.
-
-(* Pushing a substitution through a [con]/[scon] head (definitional). *)
-Lemma con_subst (s : subst) n (s0 : list term) : (con n s0)[/s/] = con n s0[/s/].
-Proof. reflexivity. Qed.
-Lemma scon_subst (s : subst) n (s0 : list term) : (scon n s0)[/s/] = scon n s0[/s/].
-Proof. reflexivity. Qed.
-
-(* Assembly: a substitution is well-formed as soon as each context variable's
-   image is well-formed at the variable's (substituted) declared sort.  This is
-   the easy direction; the work is in producing those per-variable witnesses. *)
-Lemma wf_subst_from_pointwise (l : lang) c c' s
-  : wf_lang l ->
-    wf_ctx l c' ->
-    map fst s = map fst c' ->
-    (forall x t', In (x,t') c' -> wf_term l c (subst_lookup s x) t'[/s/]) ->
-    wf_subst l c s c'.
-Proof.
-  intro wfl.
-  revert s.
-  induction c' as [|[n t] c' IH]; intros s Hwfc Hmap Hpt.
-  - destruct s; cbn in Hmap; [constructor | discriminate].
-  - destruct s as [|[n' e] s]; cbn in Hmap; [discriminate|].
-    injection Hmap as Hnn Hmap'. subst n'.
-    autorewrite with model in Hwfc.
-    destruct Hwfc as [Hfr [Hwfc' Hwfsort] ].
-    constructor.
-    + (* tail *)
-      apply IH; [exact Hwfc' | exact Hmap' | ].
-      intros x t' Hin.
-      assert (Hxn : x <> n)
-        by (intro Heq; subst x; eapply fresh_notin; [exact Hfr | eapply Hin]).
-      pose proof (Hpt x t' (or_intror Hin)) as Hx.
-      rewrite subst_lookup_tl in Hx by assumption.
-      erewrite wf_sort_strengthen_cons with (c':=c') in Hx;
-        eauto with lang_core.
-    + (* head *)
-      pose proof (Hpt n t (or_introl eq_refl)) as Hn.
-      rewrite subst_lookup_hd in Hn by assumption.
-      erewrite wf_sort_strengthen_cons with (c':=c') in Hn;
-        eauto with lang_core.
-Qed.
 
 (* Inversion of a [con]'s well-formedness down to its argument list.  Unlike a
    direct [inversion], this peels any trailing conversions. *)
@@ -1933,9 +1785,9 @@ Definition syntactic_sort_eq (l : lang) : Prop :=
 (* for a var in [fv e0] collapses to [t1 = t'] by [Hsyn], so [t1[/s/] =  *)
 (* t'[/s/]] by [f_equal] and the image wf already lands at [t'[/s/]].    *)
 (* No [wf_subst l c s c'] self-reference is needed.  The sort-alignment   *)
-(* step ([Himgsort]) is the SAME telescope computation as the existing    *)
-(* [wf_subst_from_args_image] proof; here it is wired into an args walk  *)
-(* that takes an external term-level IH so the mutual recursion closes. *)
+(* step ([Himgsort]) is the standard telescope [subst_assoc] computation, *)
+(* wired into an args walk that takes an external term-level IH so the     *)
+(* mutual recursion closes. *)
 Lemma covering_var_leaf_syn_args_aux (l : lang) (wfl : wf_lang l)
       (c c' : ctx) (s : subst)
       (Hsyn : syntactic_sort_eq l)

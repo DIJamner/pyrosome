@@ -328,7 +328,7 @@ Section WithVar.
     (* [ctx_readback_eF_gen no_sort]: like [ctx_readback_eF] but a skipped  *)
     (* var ([no_sort x = true]) carries NO sort_of/atom_tree witness (its    *)
     (* sort is recovered downstream from the LHS image via                   *)
-    (* [wf_subst_from_image]); non-skipped vars keep the full witness.       *)
+    (* [skip_decl_wf_from_image]); non-skipped vars keep the full witness.   *)
     Fixpoint ctx_readback_eF_gen (no_sort : V -> bool) (eF : instance X)
         (sub : named_list V) (c0 : ctx) {struct c0} : Prop :=
       match c0, sub with
@@ -462,8 +462,8 @@ Section WithVar.
     (* sorts is the remaining obligation: it needs the skip vars' wf, which   *)
     (* in turn comes from the LHS image, so it cannot be done here (the       *)
     (* [wf_subst]-needs-[wf_subst] circularity).  [eq_ctx_inversion_gen]      *)
-    (* closes it by feeding [sg]+[Hfaith] (plus the image) to                 *)
-    (* [wf_subst_from_image]. *)
+    (* closes it by feeding [sg]+[Hfaith] (plus the image) through            *)
+    (* [skip_decl_wf_from_image] / [Core.covering_var_leaf_syn]. *)
     Lemma ctx_readback_vals_gen (no_sort : V -> bool) (eF : instance X) (a : interp)
       (Hsound : forall al, ain al eF -> asnd a al)
       : forall c sub, wf_ctx l c ->
@@ -546,16 +546,15 @@ Section WithVar.
     (*    [add_open_faithful_rep_sort]; [sg'] is now a real wf_subst, so this   *)
     (*    applies -- exactly as in [ctx_readback_wf_subst]).                    *)
     (*  - SKIP head [x]: the value + [wf_term l [] es (t[/sg'/])] are supplied  *)
-    (*    by [skip_decl_wf] (discharged at the assembly from the LHS image:     *)
-    (*    [Theorems.add_open_use_sort_wf] gives wf at the model use-sort, and   *)
-    (*    the use->declared transport lands it at [t[/sg'/]]).                  *)
+    (*    by [skip_decl_wf] (discharged at the assembly from the LHS image via   *)
+    (*    [skip_decl_wf_from_image], i.e. [Core.covering_var_leaf_syn] fed by    *)
+    (*    the wf_subst-free [Theorems.faithful_rep_syn], gated on               *)
+    (*    [syntactic_sort_eq l]).                                               *)
     (* The skip-var declared-sort witness, phrased against the INCREMENTAL
        prefix substitution [sg'] the induction produces (a genuine wf_subst
        over the prefix [c']).  At the assembly this is discharged from the LHS
-       image: [Theorems.add_open_use_sort_wf] gives the value wf at the model
-       use-sort, and the use->declared transport ([Core.use_sort_to_decl_sort]
-       against [sg']) lands it at [t[/sg'/]].  The source equation over the
-       prefix [c'] is the telescope fact. *)
+       image by [skip_decl_wf_from_image] via [Core.covering_var_leaf_syn]
+       (under [syntactic_sort_eq l]). *)
     Fixpoint skip_decl_wf (no_sort : V -> bool) (a : interp)
       (sub : named_list V) (c0 : ctx) {struct c0} : Prop :=
       match c0, sub with
@@ -656,37 +655,6 @@ Section WithVar.
               apply Hsof; eapply pair_fst_in; exact Hin end.
     Qed.
 
-    (* =============================================================== *)
-    (* THE ISOLATED REMAINING CONTENT (substitution-typing reflection   *)
-    (* at the e-graph level, restricted to a skipped/occurring var).     *)
-    (*                                                                  *)
-    (* For a ctx var [x] that OCCURS in the LHS [con n0 s0] (so it is    *)
-    (* skipped) with declared sort [t] over its prefix [c'], and a       *)
-    (* COMPLETE prefix [wf_subst l [] sg' c'] that agrees with the       *)
-    (* model value-map [sg] on the prefix companions, the var's image    *)
-    (* [sg x] is well-formed at its declared (substituted) sort          *)
-    (* [t[/sg'/]].                                                       *)
-    (*                                                                  *)
-    (* This is the genuine remaining obligation isolated by the in-order  *)
-    (* construction.  The engine [Theorems.add_open_use_sort_wf] already  *)
-    (* gives [wf_term l [] (sg x) T_use] at the MODEL use-sort with no    *)
-    (* [wf_subst]; closing this lemma requires, additionally:            *)
-    (*   (A) identifying [T_use] with the SUBSTITUTED SOURCE use-sort     *)
-    (*       [T_use_src[/sg'/]] (faithful-rep alignment of the model      *)
-    (*       use-sort -- [T_use_src] is the operator-telescope sort for   *)
-    (*       x's argument position, instantiated by the SIBLING args,     *)
-    (*       all of which are prefix-scoped by the telescope), and        *)
-    (*   (B) the SOURCE equation [eq_sort l c' T_use_src t] OVER THE      *)
-    (*       PREFIX [c'] (declared = use sort for the occurrence), then   *)
-    (*       transporting (B) by [sg'] via [Core.use_sort_to_decl_sort]    *)
-    (*       ([eq_subst_refl] of the prefix [wf_subst]).                  *)
-    (* (B) is [term_sorts_eq] strengthened from the full ctx to the       *)
-    (* prefix [c'] (dropping the bindings at/after [x], none of which     *)
-    (* the two prefix-scoped sorts mention).  This single-step           *)
-    (* strengthening of an [eq_sort] derivation is the precise point at   *)
-    (* which no existing Pyrosome lemma applies ([ctx_mono] only weakens; *)
-    (* there is no [eq_sort] context-strengthening).  REPORTED as the     *)
-    (* exact blocking obligation; admitted as the sole checkpoint.        *)
     (* Substitution extensionality: two substitutions that AGREE (by lookup)
        on every free variable of a term/sort give the same result.  This is the
        "generic strengthening" the in-order construction needs to replace the
@@ -954,8 +922,8 @@ Section WithVar.
         exists (named_list_lookup default sg x).
         split; [exact Hgx'|].
         (* x occurs in the LHS (skip), declared sort [t] over the prefix [c'],
-           prefix [wf_subst l [] sg' c'] in hand.  Discharge via the isolated
-           e-graph-level substitution-typing reflection [skip_var_decl_sort_wf]. *)
+           prefix [wf_subst l [] sg' c'] in hand.  Discharge via
+           [skip_var_decl_sort_wf]. *)
         assert (Hxfv : In x (fv (con n0 s0))) by (apply Hskipset; exact Hns).
         (* prefix value-maps agree: both [sg'] and [sg] resolve [sub']'s
            companions to the same model values. *)

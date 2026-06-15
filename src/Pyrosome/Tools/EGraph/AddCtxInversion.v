@@ -1763,55 +1763,19 @@ Section WithVar.
     Qed.
 
     (* ============================================================ *)
-    (* MINIMIZED-QUERY substitution inversion (the SINGLE confined    *)
-    (* admit for the skip-sorts feature).                             *)
+    (* MINIMIZED-QUERY substitution inversion (skip-sorts feature).   *)
     (*                                                                *)
     (* Same conclusion as [eq_ctx_inversion] but over the minimized   *)
     (* context egraph [add_ctx_gen ... no_sort c]: context variables  *)
-    (* [x] with [no_sort x = true] carry NO [sort_of] atom (their     *)
-    (* sort requirement is dropped from the query).  [Hskip] records  *)
-    (* the soundness side condition the caller establishes: a skipped  *)
-    (* var occurs in the LHS [e1], so its node is bound by the LHS     *)
-    (* atoms.                                                          *)
-    (*                                                                 *)
-    (* WHY ADMITTED: recovering [wf_subst l [] sg c] needs each var    *)
-    (* well-formed at its DECLARED (substituted) sort.  Skipped vars   *)
-    (* have no [sort_of] atom, so their declared-sort wf must come     *)
-    (* from the LHS image; but the e-graph model interprets atoms only *)
-    (* up to [eq_term]/[eq_sort] (see [lang_model_interprets_to]:      *)
-    (* [interprets_to_term] yields an output merely [eq_term] to       *)
-    (* [con f args], never syntactically equal), so the syntactic      *)
-    (* image needed by [Core.wf_subst_from_image] / the declared-sort  *)
-    (* conversion both route through [add_open_faithful_rep], which     *)
-    (* itself needs [wf_subst].  Closing this is the research-grade    *)
-    (* "minimized substitution inversion": a simultaneous wf_subst +   *)
-    (* per-var covering by a well-founded order over the ctx-telescope  *)
-    (* and the LHS argument order.  The value map + leaf               *)
-    (* correspondence ([CtxReadback.ctx_readback_vals_gen]) and the    *)
-    (* covering entry points ([Core.wf_subst_from_image]) are proved;  *)
-    (* the combined construction is the gap.  See memory               *)
-    (* min_sorts_query for the full analysis.                          *)
-    (*                                                                  *)
-    (* RE-VERIFIED (session 9): the restriction-substitution route     *)
-    (* (transport via [Core.use_sort_to_decl_sort] +                   *)
-    (* [Theorems.add_open_use_sort_wf]) bottoms out at the SAME wall.   *)
-    (* [use_sort_to_decl_sort] needs [eq_subst l c c' r r] where [c']   *)
-    (* is the context of the source sort equation [eq_sort l c' T_use   *)
-    (* t_decl].  By [term_sorts_eq] that equation lives in the FULL     *)
-    (* rule context (a var's two sorts are both wf in [c]), and         *)
-    (* [eq_subst] (Model.v:66) is structural over the WHOLE of [c'], so *)
-    (* [r] must cover every var of [c] -- i.e. a complete [wf_subst].   *)
-    (* Confining the source equation to an fv-closed sub-context        *)
-    (* [c'' <= c] (the only escape) is exactly [eq_sort_ctx_strengthen],*)
-    (* which is FALSE in general: [eq_sort_trans] (Core.v:106 and the   *)
-    (* CUT-FREE [eq_sort_trans], CutElim.v:133) introduces an arbitrary *)
-    (* intermediate sort [t12] wf in [c] whose free variables may       *)
-    (* escape [fv T_use ++ fv t_decl] and the chosen [c''], so no       *)
-    (* derivation can be confined to the fv-closure and a [c'']-only    *)
-    (* [r] cannot transport it.  Cut-freeness does NOT help: trans is   *)
-    (* still a primitive constructor cut-free.  The genuine close       *)
-    (* requires the substitution-typing-REFLECTION metatheorem, which   *)
-    (* Pyrosome does not have. *)
+    (* [x] with [no_sort x = true] carry NO [sort_of] atom (their      *)
+    (* sort requirement is dropped from the query).  [Hskip] records   *)
+    (* that a skipped var occurs in the LHS [e1] (so its node is bound *)
+    (* by the LHS atoms); [Hsyn_skip] records that the skip is gated   *)
+    (* on [syntactic_sort_eq l].  Under that gate the declared-sort wf *)
+    (* of a skipped var is recovered from the whole-LHS image via      *)
+    (* [Core.covering_var_leaf_syn] (fed by the wf_subst-free          *)
+    (* [Theorems.faithful_rep_syn]); see                              *)
+    (* [CtxReadback.skip_decl_wf_from_image]. *)
     Lemma eq_ctx_inversion_gen (no_sort : V -> bool) (rf : nat) (a : interp) c e1 t
         (Hwfc : wf_ctx l c) (Hwfe1 : wf_term l c e1 t)
         (Hskip : forall x, no_sort x = true -> In x (fv e1))
@@ -3679,11 +3643,11 @@ Section WithVar.
                eF a Hsound c sub Hwfc (eq_sym Hmapfst) Hrbef).
     Qed.
 
-    (* Sort analogue of [eq_ctx_inversion_gen] (the SAME confined admit, for
-       the sort_eq query [add_ctx_gen ... no_sort c] with [add_open_sort t1]).
-       [Hskip]: a skipped var occurs in the LHS sort [t1].  Admitted for the
-       identical reason as [eq_ctx_inversion_gen] (see its comment / memory
-       min_sorts_query). *)
+    (* Sort analogue of [eq_ctx_inversion_gen], for the sort_eq query
+       [add_ctx_gen ... no_sort c] with [add_open_sort t1].  [Hskip]: a
+       skipped var occurs in the LHS sort [t1]; [Hsyn_skip]: the skip is gated
+       on [syntactic_sort_eq l].  Discharged the same way as
+       [eq_ctx_inversion_gen] (see its comment). *)
     Lemma eq_sort_ctx_inversion_gen (no_sort : V -> bool) (rf : nat) (a : interp) c t1
         (Hwfc : wf_ctx l c) (Hwft1 : wf_sort l c t1)
         (Hskip : forall x, no_sort x = true -> In x (fv_sort t1))
