@@ -426,6 +426,11 @@ Section WithVar.
      if it ran out of fuel (via [sequent_of_states : result sequent]).  A failed
      rebuild means the sequent would be built from a non-canonical egraph, so it
      is propagated rather than silently used. *)
+  (* The syntactic-sort-equality gate scans the whole language, so compute it
+     once (shared via this [Let]) rather than re-evaluating it for every ctx
+     var in the skip predicate below. *)
+  Let syntactic_sort_gate : bool := syntactic_sort_eq_langb l.
+
   Definition rule_to_log_rule n (r : rule) : Result.result (sequent V V) :=
     match r with
     | sort_rule c args =>
@@ -450,7 +455,7 @@ Section WithVar.
            equivalence" justification holds only when [l] has syntactic sort
            equality (see Theory.SyntacticSorts).  Otherwise the skip list is
            empty and [add_ctx_gen] reduces to [add_ctx]. *)
-        let skip x := andb (syntactic_sort_eq_langb l) (inb x (fv_sort t1)) in
+        let skip x := andb syntactic_sort_gate (inb x (fv_sort t1)) in
         sequent_of_states
           (@!let sub <- add_ctx_gen false false skip c in
              let x1 <- add_open_sort false false sub t1 in
@@ -463,7 +468,7 @@ Section WithVar.
            Guard the degenerate [e1 = var x] case: then [x]'s node is the whole
            LHS and is referenced by no atom, so dropping its sort would leave it
            unbound. *)
-        let skip x := andb (syntactic_sort_eq_langb l)
+        let skip x := andb syntactic_sort_gate
                         (match e1 with
                          | con _ _ => inb x (fv e1)
                          | var _ => false
