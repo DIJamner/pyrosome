@@ -898,16 +898,12 @@ Section WithVar.
                   = Some (inl (named_list_lookup default sg x))) ->
           skip_decl_wf no_sort a sub c.
     Proof.
-      (* the LHS use-sort coverage: every occurring var is wf at SOME sort *)
-      pose proof (@Theorems.add_open_use_sort_wf V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
-                    X l Hwf Hsof a eF sg Hsound (con n0 s0)) as Huse0.
       intros Cfull sub t1 Hwfcf Hwfe1f Hdom Hdomsgc Hskipset Hvals.
-      specialize (Huse0 Cfull t1 Hwfcf Hwfe1f x1 Hrep).
       (* Track the prefix [pre] so that, at each head [(x,t)::c'], the FULL ctx
          is [Cfull = pre ++ (x,t)::c'].  This certifies [t] is x's declared sort
          over its strict prefix [c'] (the telescope link [skip_var_decl_sort_wf]
          needs).  We induct on a suffix [c] of [Cfull], keeping [Cfull]/[Hwfcf]/
-         [Hwfe1f]/[Huse0] fixed. *)
+         [Hwfe1f] fixed. *)
       (* generalize the suffix *)
       cut (forall (c : ctx) sub,
              (exists pre, Cfull = pre ++ c) ->
