@@ -1748,7 +1748,6 @@ Proof.
 Qed.
 
 
-
 End WithVar.
 
 (* TODO: assess benefits of symmetry and transitivity in hints
