@@ -3548,6 +3548,19 @@ Section WithVar.
     apply compute_pl_indices_sound; basic_utils_crush.
   Qed.
 
+  (* [map fst] of a parameterized context, used (identically) in the sort_rule and
+     term_rule case openings to rewrite the context-name list. *)
+  Lemma map_fst_parameterize_ctx (mn : option (nat * bool)) c
+    : map fst (parameterize_ctx p_name p_sort src_spec mn c)
+      = match mn with
+        | Some n0 => insert (fst n0) p_name (map fst c)
+        | None => map fst c
+        end.
+  Proof.
+    destruct mn; basic_goal_prep; basic_utils_crush;
+      cbn; rewrite map_fst_named_map; reflexivity.
+  Qed.
+
   Ltac _pcp_cond :=
     solve [ first [ simple apply cond_no_sort_eqns_tgt
                   | simple apply cond_fresh_get_ctx_tgt
@@ -3675,17 +3688,9 @@ Section WithVar.
               eapply in_all in H6; eauto.
               eapply use_compute_fresh; eauto.
             }
-            {
-              unfold syntactic_parameterization_conditions' in *;
-                basic_utils_crush.
-            }
+            { _pcp_cond. }
             
-            {
-              unfold syntactic_parameterization_conditions' in *;
-                basic_utils_crush.
-              eapply compute_pl_indices_sound;
-                basic_utils_crush.
-            }
+            { _pcp_cond. }
             {
               
               eapply inductive_implies_semantic; cycle 6;
@@ -3731,11 +3736,7 @@ Section WithVar.
         }
       }
       {
-        case_match; basic_goal_prep;
-          basic_utils_crush.
-        all: cbn.
-        all: rewrite map_fst_named_map;
-          reflexivity.
+        apply map_fst_parameterize_ctx.
       }
     }
     {
@@ -3775,16 +3776,9 @@ Section WithVar.
               eapply in_all in H6; eauto.
               eapply use_compute_fresh; eauto.
             }
-            {
-              unfold syntactic_parameterization_conditions' in *;
-                basic_utils_crush.
-            }
+            { _pcp_cond. }
             
-            {
-              unfold syntactic_parameterization_conditions' in *;
-                try eapply compute_pl_indices_sound;
-                basic_utils_crush.
-            }
+            { _pcp_cond. }
             {
               eapply inductive_implies_semantic; cycle 6;
                 eauto with utils lang_core model;
@@ -3886,11 +3880,7 @@ Section WithVar.
         }
       }
       {
-        case_match; basic_goal_prep;
-          basic_utils_crush.
-        all: cbn.
-        all: rewrite map_fst_named_map;
-          reflexivity.
+        apply map_fst_parameterize_ctx.
       }
     }
     {
