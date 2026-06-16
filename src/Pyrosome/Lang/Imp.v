@@ -395,7 +395,7 @@ Derive ch8_cc
        as ch8_cc_preserving.
 Proof.
   (*Note: Automation.auto_elab_compiler doesn't work because the goals take too long to fail. *)
-  ElabCompilers.auto_elab_compiler.  
+  ElabCompilers.auto_elab_compiler.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
@@ -424,38 +424,23 @@ Definition cc_injectivity :=
   [("jmp", ["G"]); ("cont", ["e";"A"; "G"]); ("neg", ["A"])].
 
   TODO: clo_eta is expensive
-  *)
+     *)
     clo_eta_cong.
     Automation.by_reduction;Matches.t'.
-  - apply TODO (*Automation.by_reduction; Matches.t'.*).
-  - Automation.by_reduction; Matches.t'.
-  - compute_eq_compilation.
+  - (* TODO: figure out whether the e-graph gets there eventually without the help.
+       Alternatively, figure out how to specify that e[/-/] is injective if e is a metavariable.
+     *)
     Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    progress clo_eta_cong.
+    term_cong; try term_refl; [].
+    term_cong; try term_refl; [].
     Automation.by_reduction; Matches.t'.
-  - compute_eq_compilation.
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    progress clo_eta_cong.
-    term_refl.
-  - compute_eq_compilation.
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-      eapply eq_term_trans;
-   [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"
-   |  ].
-      compute_eq_compilation; reduce_lhs.
-      (*Import UnElab. hide_implicits.*)
-      (*TODO: clo_eta <- on the RHS is too slow.
-        Check whether egraph is running <- rules.
-       *)
-      eapply eq_term_trans; cycle 1;
-        [ now eredex_steps_with cc_lang "clo_eta" |  ].
-      apply TODO (*Automation.by_reduction; Matches.t'. *).
   - Automation.by_reduction; Matches.t'.
-    Unshelve.
-    all: repeat Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  Unshelve.
+  all: repeat Matches.t'.
 Qed.
 #[local] Definition ch8_cc_entry :=
   cmp_entry (elab_compiler_implies_preserving ch8_cc_preserving).
