@@ -311,15 +311,15 @@ Section WithWeight.
 
   Definition add_open_term (l : lang) :=
     Defs.add_open_term (V:=positive) (V_map:=trie_map) Pos.succ sort_of l
-      (H:=weighted_depth_analysis weight) true.
+      (H:=weighted_size_analysis weight) true.
 
   Definition add_open_sort (l : lang) :=
     Defs.add_open_sort (V:=positive) (V_map:=trie_map) Pos.succ sort_of l
-      (H:=weighted_depth_analysis weight) true.
+      (H:=weighted_size_analysis weight) true.
 
   Definition update_entry (a : atom) : state instance unit :=
     Defs.update_entry (idx:=positive) (symbol:=positive)
-      (H:=weighted_depth_analysis weight) a.
+      (H:=weighted_size_analysis weight) a.
 
   (* Add a term with holes, and assert that its sort is [sort_id].  This is the
      residue of the string [add_elab_term_to_egraph] once hole-building has been
@@ -356,7 +356,7 @@ Section WithWeight.
       Pos.leb
       positive trie_map ptree_map_plus trie_map ptree_map_plus
       (@FullPosTrie.full_pos_trie_map) (option positive)
-      (weighted_depth_analysis weight) (@fpt_spaced_intersect)
+      (weighted_size_analysis weight) (@fpt_spaced_intersect)
       1000%nat
       0%nat (* window *)
       (@QueryOpt.build_rule_set positive Pos.eqb Pos.succ (default (A:=positive))

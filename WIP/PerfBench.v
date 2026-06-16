@@ -18,7 +18,7 @@ Import PositiveInstantiation.
 
 (* depth analysis instance, mirroring Automation.v *)
 Instance bench_analysis : analysis string string (option positive) :=
-  weighted_depth_analysis (fun _ => Some xH).
+  weighted_size_analysis (fun _ => Some xH).
 
 Definition filter_rules :=
   (fun pat : string * Rule.rule string =>
@@ -193,7 +193,7 @@ Time Definition s6  := Eval vm_compute in sat_eq 6.
 (* pin the (option positive) depth analysis used by the positive engine,
    so run1iter doesn't default to the generic unit_analysis instance. *)
 Definition an_pos : analysis positive positive (option positive) :=
-  weighted_depth_analysis (fun _ => Some xH).
+  weighted_size_analysis (fun _ => Some xH).
 
 Arguments Defs.run1iter {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope
   idx_zero {symbol}%_type_scope {symbol_map}%_function_scope symbol_map_plus

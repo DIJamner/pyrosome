@@ -62,7 +62,7 @@ Fixpoint term_depth (e : term string) :=
   end.
 
 Instance depth_analysis : analysis string string (option positive) :=
-  weighted_depth_analysis (fun a => Some 1).
+  weighted_size_analysis (fun a => Some 1).
 
 (* ================================================================== *)
 (* Phases 4-6 SKELETON for [egraph_sound].                            *)
@@ -412,7 +412,7 @@ Section ReducingSkeleton.
                      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
                      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A)
                      (@FullPosTrie.full_pos_trie_map) (fun A => @FullPosTrie.full_pos_trie_map_ok A)
-                     (option positive) (@Defs.depth positive)
+                     (option positive) (@Defs.size positive)
                      (Theorems.lang_model positive PosListMap.sort_of Lp)
                      Hmok pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
                      rebuild_fuel seqsR HmsrR i e Hok Hsnd).
@@ -428,7 +428,7 @@ Section ReducingSkeleton.
                      pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
                      TrieMap.ptree_map_plus_ok
                      (@fpt_spaced_intersect)
-                     (option positive) (@Defs.depth positive)
+                     (option positive) (@Defs.size positive)
                      w
                      (Theorems.lang_model positive PosListMap.sort_of Lp)
                      Hmok rebuild_fuel seqsR er e HmsrR Hin_er).
@@ -449,7 +449,7 @@ Section ReducingSkeleton.
                      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
                      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A)
                      (@FullPosTrie.full_pos_trie_map) (fun A => @FullPosTrie.full_pos_trie_map_ok A)
-                     (option positive) (@Defs.depth positive)
+                     (option positive) (@Defs.size positive)
                      (Theorems.lang_model positive PosListMap.sort_of Lp)
                      Hmok pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
                      rebuild_fuel seqsRR HmsrRR i e Hok Hsnd).
@@ -465,7 +465,7 @@ Section ReducingSkeleton.
                      pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
                      TrieMap.ptree_map_plus_ok
                      (@fpt_spaced_intersect)
-                     (option positive) (@Defs.depth positive)
+                     (option positive) (@Defs.size positive)
                      w
                      (Theorems.lang_model positive PosListMap.sort_of Lp)
                      Hmok rebuild_fuel seqsRR er e HmsrRR Hin_er).
@@ -606,14 +606,14 @@ Definition empty_egraph := (empty_egraph (idx:=string) (default : string)
                               (idx_map := string_trie_map) (option positive)).
 
 Definition add_ctx weight l :=
-  add_ctx (V:= string) (V_map := string_trie_map) string_succ "@sort_of" l (H:=weighted_depth_analysis weight) true.
+  add_ctx (V:= string) (V_map := string_trie_map) string_succ "@sort_of" l (H:=weighted_size_analysis weight) true.
 
 Definition add_open_term weight l :=
-  add_open_term (V:= string) (V_map := string_trie_map) string_succ "@sort_of" l (H:=weighted_depth_analysis weight) true.
+  add_open_term (V:= string) (V_map := string_trie_map) string_succ "@sort_of" l (H:=weighted_size_analysis weight) true.
 
 Definition add_open_sort weight l :=
-  add_open_sort (V:= string) (V_map := string_trie_map) string_succ "@sort_of" l (H:=weighted_depth_analysis weight) true.
+  add_open_sort (V:= string) (V_map := string_trie_map) string_succ "@sort_of" l (H:=weighted_size_analysis weight) true.
 
-Definition rebuild weight fuel : state instance _ := (rebuild (idx:=string) fuel (symbol:=string) (H:=weighted_depth_analysis weight)).
+Definition rebuild weight fuel : state instance _ := (rebuild (idx:=string) fuel (symbol:=string) (H:=weighted_size_analysis weight)).
 
 Notation extract_weighted := (extract_weighted (V:=string) (V_map:=string_trie_map) (V_trie:=string_list_trie_map)).

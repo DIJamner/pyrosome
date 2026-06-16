@@ -548,7 +548,7 @@ Section WithVar.
       (*TODO: move this somewhere better*)
       Existing Instance PositiveIdx.positive_Eqb.
 
-      Instance weighted_depth_analysis : analysis V V (option positive) :=
+      Instance weighted_size_analysis : analysis V V (option positive) :=
         {
           analyze a arg_as :=
             match arg_as with
@@ -694,8 +694,8 @@ Section WithVar.
       Local Notation hash_entry := (hash_entry (symbol:=V) succ (analysis_result:=option positive)).
       Local Notation instance := (instance (option positive)).
 
-      Instance depth : analysis V V (option positive) :=
-        weighted_depth_analysis (fun _ => Some xH).
+      Instance size : analysis V V (option positive) :=
+        weighted_size_analysis (fun _ => Some xH).
       
     Definition egraph_sort_of (x t : V) : state instance bool :=
       @! let t0 <- hash_entry sort_of [x] in
