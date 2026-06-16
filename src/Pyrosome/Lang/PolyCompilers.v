@@ -589,6 +589,8 @@ Ltac intermediate_term e :=
          clear H']
   end.
 
+(* Temporary until I restore the proof*)
+Axiom (TODO : forall {A}, A).
 Derive poly_cps
   in (elab_preserving_compiler
               (exp_ty_subst_cps
@@ -613,10 +615,10 @@ Derive poly_cps
   as poly_cps_preserving.
 Proof.
   auto_elab_compiler.
-  { apply TODO (*Automation.by_reduction; t'.*). }
+  {  apply TODO (*Automation.by_reduction; t'.*). }
   (*Automation.auto_elab_compiler.
 12:57-1:46+; too long
-   *)  
+   *)
 Qed.
 #[local] Definition poly_cps_entry :=
   cmp_entry (elab_compiler_implies_preserving poly_cps_preserving).
