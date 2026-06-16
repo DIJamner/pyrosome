@@ -412,7 +412,7 @@ Proof.
   setup_elab_compiler.
   { repeat t. }
   { repeat t. }
-  { by_reduction; now t'. }
+  { Automation.by_reduction; now t'. }
   {
     (*TODO: figure out what t does wrong here,
       or use e-graph inference machinery.
@@ -423,11 +423,15 @@ Proof.
                              "A" }}).
     30:instantiate (1 := {{e ext "H" (#"neg" "B")}}).
     all: first [left; vm_compute; reflexivity
-               | right; sort_cong; by_reduction; now t'].
+               | right; sort_cong; Automation.by_reduction; now t'].
   }
-  { by_reduction; now t'. }
+  { Automation.by_reduction; now t'. }
   (* ===== obligation 6 (Linear-STLC-beta): reduce + verified explicit proof ===== *)
   reduce. compute_eq_compilation.
+  
+  (*TODO: still seems like too much here.
+    Could be related to sorts in queries.
+    Automation.by_reduction; repeat t'.*)
   (* ===== dance 1 ===== *)
   match goal with
   | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_} (#"cmp" {_} {_} {_} (#"exch" {?G} {?H}) (#"csub" {?H} {?H'} {?G} {?G'} {?h} {?g})) (#"jmp" {?H'} {?G'} {?A} {?b} {?a})}} _ ] =>
@@ -438,10 +442,7 @@ Proof.
     eapply eq_term_trans; [ instantiate (1 := {{e #"blk_subst" {Ga} {Gb} (#"exch" {G} {H}) (#"jmp" {H} {G} {A} (#"val_subst" {H2} {H'} {h} (#"neg" {A}) {b}) (#"val_subst" {G2} {G'} {g} {A} {a}))}}) | ]
   end.
   {
-    term_cong.
-    { left; solve_sort. }
-    1-3:term_refl.
-    compute_eq_compilation; eredex_steps_with linear_cps_lang "jmp-subst".
+    Automation.by_reduction; repeat t'.
   }
   reduce.
   lazymatch goal with
@@ -460,30 +461,25 @@ Proof.
       end.
       match goal with | [|- eq_term _ _ _ {{e #"blk_subst" {?Ga} {?Gb} (#"exch" {?G} {?H}) (#"blk_subst" {_} {_} (#"csub" {?H2} {?H'} {?G2} {?G'} {?h} {?g}) (#"jmp" {?H'} {?G'} {?A} {?b} {?a}))}} _ ] => instantiate (1 := {{e #"blk_subst" {Ga} {Gb} (#"exch" {G} {H}) (#"jmp" {H} {G} {A} (#"val_subst" {H2} {H'} {h} (#"neg" {A}) {b}) (#"val_subst" {G2} {G'} {g} {A} {a}))}})
       end.
-      term_cong;
-        [ term_refl | term_refl | term_refl
-        | compute_eq_compilation; eredex_steps_with linear_cps_lang "jmp-subst"].
+      Automation.by_reduction; repeat t'.
     }
   }
   (* ===== push jmp ===== *)
   reduce.
+  
   lazymatch goal with
   | [|- eq_term _ _ _ {{e #"blk_subst" {?H1} {?H2} {?c} (#"jmp" {?G1} {?G2} {?A} (#"hd" {?B}) (#"val_subst" {?G2} {?G3} {?s} {?A} {?p})) }} _ ] =>
     reduce_to {{e #"blk_subst" {H1} {H2} {c} (#"blk_subst" {H2} (#"conc" {G1} {G3}) (#"csub" {G1} {G1} {G2} {G3} (#"id" (#"only" {B})) {s}) (#"jmp" {G1} {G3} {A} (#"hd" {B}) {p})) }};
     reduce_to {{e #"blk_subst" {H1} (#"conc" {G1} {G3}) (#"cmp" {H1} {H2} (#"conc" {G1} {G3}) {c} (#"csub" {G1} {G1} {G2} {G3} (#"id" (#"only" {B})) {s})) (#"jmp" {G1} {G3} {A} (#"hd" {B}) {p}) }}
   end.
   (* ===== continuation ===== *)
-  {
-    eapply eq_term_sym.
-    blk_cmp.
-    term_refl.
-  }
+  { Automation.by_reduction; repeat t'. }
 
   Unshelve.
   all:[> | now repeat t'..].
 
   Optimize Proof.
-
+  
   eapply eq_term_trans.
 
   {
@@ -492,7 +488,6 @@ Proof.
     2: unshelve (left; solve_sort); now repeat t'.
 
     compute_eq_compilation.
-
     normalize_perm.
 
     Optimize Proof.
@@ -507,15 +502,18 @@ Proof.
           {?e}
         }} _ ] =>
           let cs' := csub_normalize cs in
-          reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs'} {e}) }};
-          eapply eq_term_trans;
-          [ break_cmp;
-            [ term_refl
-            | eapply eq_term_trans;
-              [ break_cmp; [ now eredex_steps_with linear_value_subst "csub_assoc" |  term_refl ]
-              | now exch_invert ] ]            
-          | reduce_lhs; break_cmp; [ | term_refl ] ]          
+          reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs'} {e}) }}         
       end.
+      
+      eapply eq_term_trans.
+      {
+        break_cmp.
+        { term_refl. }
+        eapply eq_term_trans.
+        { break_cmp; [ now eredex_steps_with linear_value_subst "csub_assoc" |  term_refl ]. }
+        { now exch_invert. }
+      }
+      reduce_lhs; break_cmp; [ | term_refl ].
 
       lazymatch goal with
       | [|- eq_term _ _ _ {{e #"cmp"
@@ -528,7 +526,7 @@ Proof.
           {g2}
         }}
       end.
-
+      
       trans break_cmp.
       {
         trans break_cmp.
@@ -689,7 +687,7 @@ Proof.
               (#"csub" {?B} {?B'} {?C} {?C'} {?b} {?c})
             }} _ ] =>
               instantiate (1:= {{e #"csub" (#"conc" {A} {B}) (#"conc" {A'} {B'}) {C} {C'}
-                (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); by_reduction
+                (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); Automation.by_reduction; repeat t'
             end.
         }
 
@@ -734,7 +732,7 @@ Proof.
               (#"csub" {?B} {?B'} {?C} {?C'} {?b} {?c})
             }} _ ] =>
               instantiate (1:= {{e #"csub" (#"conc" {A} {B}) (#"conc" {A'} {B'}) {C} {C'}
-                (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); by_reduction
+                (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); Automation.by_reduction; repeat t'
             end.
         }
         
@@ -784,11 +782,11 @@ Proof.
                   }}).
       Automation.by_reduction; repeat t'.
     }
-    {
-      unapply linear_value_subst "cmp_assoc".
-    }
+    term_refl.
   }
   Automation.by_reduction; repeat t'.
+  Unshelve.
+  all: repeat t'.
 Qed.
 #[local] Definition linear_cps_stlc_entry :=
   cmp_entry (elab_compiler_implies_preserving linear_cps_preserving).

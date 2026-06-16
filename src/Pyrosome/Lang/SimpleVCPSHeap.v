@@ -150,7 +150,7 @@ Derive heap_cps
                                           heap_cps
                                           heap_ops)
        as heap_cps_preserving.
-Proof. TODO_auto_elab_compiler. Qed.
+Proof. auto_elab_compiler. Qed.
 #[local] Definition heap_cps_entry :=
   cmp_entry (elab_compiler_implies_preserving heap_cps_preserving).
 #[export] Hint Resolve heap_cps_entry : preserving_db.
