@@ -19,6 +19,7 @@ From Utils Require Import Utils Monad Result.
 From Utils.EGraph Require Import Semantics Defs QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
+From Pyrosome.Theory Require Import SyntacticSorts.
 From Pyrosome.Theory Require ClosedTerm.
 Import Core.Notations.
 
@@ -206,6 +207,43 @@ Section WithVar.
     (alloc_opaque V succ V V_map V_map V_trie _).
 
 
+  (* Like [add_ctx], but skips emitting the sort subterm, [sort_of] atom, and
+     [union] for any context variable [x] with [no_sort x = true].  Such a
+     variable is still allocated a fresh node and recorded in the returned
+     substitution, so it can still be looked up while opening a term/sort; only
+     its sort *requirement* is dropped from the query.  This is sound for the
+     query side of an equational rule when [x] appears in the LHS: the LHS atoms
+     already bind [x]'s node, and a term's sort is unique up to equivalence, so
+     the dropped [sort_of] constraint is redundant. *)
+  Definition add_ctx_gen (no_sort : V -> bool) (c : ctx) : state instance _ :=
+    list_Mfoldr (fun '(x,t) sub =>
+                   if no_sort x
+                   then (@! let {(state instance)} x' <- alloc_opaque in
+                            ret (x,x')::sub)
+                   else
+                   (*use the empty substitution to indicate the identity.
+                      Assumes that the input egraph starts with an allocator
+                    *)
+                   @! let t_v <- add_open_sort sub t in
+                     (* using the variables from ctx isn't sound,
+                          so we make sure to allocate a fresh one.
+                          We also write a default analysis value
+                          so that things are analyzable and rebuilding doesn't loop
+                      *)
+                     let {(state instance)} x' <- alloc_opaque in
+                     (*Note: do not replace with update_entry.
+                       It does not work correctly, likely with
+                       the unmapped variables in rule compilation.
+                      *)
+                     let tx' <- hash_entry sort_of [x'] in
+                     let _ <- union t_v tx' in
+                     ret (x,x')::sub) c [].
+
+  (* [add_ctx] is kept as its own standalone definition (rather than
+     [add_ctx_gen (fun _ => false)]) so that the many existing tactics that
+     [unfold add_ctx; cbn [list_Mfoldr]] to step through the fold keep working
+     verbatim.  It is extensionally equal to [add_ctx_gen (fun _ => false)]
+     (see [add_ctx_eq_gen] below). *)
   Definition add_ctx (c : ctx) : state instance _ :=
     list_Mfoldr (fun '(x,t) sub =>
                    (*use the empty substitution to indicate the identity.
@@ -388,6 +426,11 @@ Section WithVar.
      if it ran out of fuel (via [sequent_of_states : result sequent]).  A failed
      rebuild means the sequent would be built from a non-canonical egraph, so it
      is propagated rather than silently used. *)
+  (* The syntactic-sort-equality gate scans the whole language, so compute it
+     once (shared via this [Let]) rather than re-evaluating it for every ctx
+     var in the skip predicate below. *)
+  Let syntactic_sort_gate : bool := syntactic_sort_eq_langb l.
+
   Definition rule_to_log_rule n (r : rule) : Result.result (sequent V V) :=
     match r with
     | sort_rule c args =>
@@ -403,16 +446,35 @@ Section WithVar.
        As a design question, is that what I want?
      *)
     | sort_eq_rule c t1 t2 =>
+        (* Drop the query's sort requirements for ctx vars appearing in the LHS
+           [t1]: their nodes are bound by the LHS atoms and their sorts are
+           determined up to equivalence.  A sort is always a [scon], so every
+           free var of [t1] occurs as an atom argument (no bare-var case).
+
+           GATED on [syntactic_sort_eq_langb l]: the "sort determined up to
+           equivalence" justification holds only when [l] has syntactic sort
+           equality (see Theory.SyntacticSorts).  Otherwise the skip list is
+           empty and [add_ctx_gen] reduces to [add_ctx]. *)
+        let skip x := andb syntactic_sort_gate (inb x (fv_sort t1)) in
         sequent_of_states
-          (@!let sub <- add_ctx false false c in
+          (@!let sub <- add_ctx_gen false false skip c in
              let x1 <- add_open_sort false false sub t1 in
              ret (sub,x1))
           (fun '(sub,x1) =>
              @! let x2 <- add_open_sort true false sub t2 in
                (union x1 x2))
     | term_eq_rule c e1 e2 t =>
+        (* As above, drop query sort requirements for ctx vars in the LHS [e1].
+           Guard the degenerate [e1 = var x] case: then [x]'s node is the whole
+           LHS and is referenced by no atom, so dropping its sort would leave it
+           unbound. *)
+        let skip x := andb syntactic_sort_gate
+                        (match e1 with
+                         | con _ _ => inb x (fv e1)
+                         | var _ => false
+                         end) in
         sequent_of_states
-          (@!let sub <- add_ctx false false c in
+          (@!let sub <- add_ctx_gen false false skip c in
              let x1 <- add_open_term false false sub e1 in
              ret (sub,x1))
           (* TODO: should I add that t is its sort?*)
@@ -486,13 +548,13 @@ Section WithVar.
       (*TODO: move this somewhere better*)
       Existing Instance PositiveIdx.positive_Eqb.
 
-      Instance weighted_depth_analysis : analysis V V (option positive) :=
+      Instance weighted_size_analysis : analysis V V (option positive) :=
         {
           analyze a arg_as :=
             match arg_as with
             | [] => (symbol_weight a)
             | arg0::arg_as' =>
-                oP_add (symbol_weight a) (List.fold_left oP_maximum arg_as' arg0)
+                oP_add (symbol_weight a) (List.fold_left oP_add arg_as' arg0)
             end;
           analysis_meet := oP_minimum;
         }.
@@ -632,8 +694,8 @@ Section WithVar.
       Local Notation hash_entry := (hash_entry (symbol:=V) succ (analysis_result:=option positive)).
       Local Notation instance := (instance (option positive)).
 
-      Instance depth : analysis V V (option positive) :=
-        weighted_depth_analysis (fun _ => Some xH).
+      Instance size : analysis V V (option positive) :=
+        weighted_size_analysis (fun _ => Some xH).
       
     Definition egraph_sort_of (x t : V) : state instance bool :=
       @! let t0 <- hash_entry sort_of [x] in

@@ -8,7 +8,7 @@ From coqutil Require Import Map.Interface Datatypes.Result.
 From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations Result.
 From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsParents SemanticsAreUnified SemanticsSaturate SemanticsUnionSem SemanticsLSurvive SemanticsRebuildCanon SemanticsAnalysesCover SemanticsHashDb.
 Import Monad.StateMonad.
-From Pyrosome.Theory Require Import Core ModelImpls.
+From Pyrosome.Theory Require Import Core ModelImpls SyntacticSortCovering.
 From Pyrosome.Theory Require WfCutElim.
 Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.
@@ -154,6 +154,13 @@ Section WithVar.
 
     Context (sort_of_fresh : fresh sort_of l).
 
+    (* [add_ctx] is [add_ctx_gen] with the empty skip set (moved here from
+       Defs.v, which should contain definitions, not lemmas). *)
+    Lemma add_ctx_eq_gen (with_sorts with_ctx_sorts : bool) (c : ctx)
+      : add_ctx succ sort_of l with_sorts with_ctx_sorts c
+        = add_ctx_gen succ sort_of l with_sorts with_ctx_sorts (fun _ => false) c.
+    Proof. reflexivity. Qed.
+
     Definition eq_sum {A B} (eqA : A -> A -> Prop) eqB (x y : A + B) :=
       match x, y with
       | inl x, inl y => eqA x y
@@ -292,7 +299,19 @@ Section WithVar.
         interprets_to := lang_model_interprets_to;
       |}.
 
-    
+    (* Every constructor of [lang_model_interprets_to] takes an all-[inl]
+       argument list (sort_of's [ [inl e] ], or a [map inl args]).  So any
+       sound atom's resolved arguments are terms. *)
+    Lemma lang_model_args_inl f dargs out
+      : lang_model_interprets_to f dargs out -> exists ds, dargs = map inl ds.
+    Proof.
+      intro Hi; inversion Hi; subst.
+      - exists [e]; reflexivity.
+      - eexists; reflexivity.
+      - eexists; reflexivity.
+    Qed.
+
+
     Lemma all2_model_eq_eq_args args args0 c'
       : wf_args l [] args c' ->
         wf_ctx l c' ->
@@ -2145,6 +2164,323 @@ Section WithVar.
           econstructor. eapply eq_term_refl; eauto with lang_core.
     Qed.
 
+    (* ===============================================================  *)
+    (* [add_ctx_gen] port of [add_ctx_sound].  This is the forward      *)
+    (* (model-soundness) direction: [s : wf_subst l [] s c] is a GIVEN, *)
+    (* so the skip branch (which emits no sort_of/sort/union, only      *)
+    (* [alloc_opaque]) can extend the interpretation [i] with the       *)
+    (* fresh companion node [x'] mapped to the var's value [inl e] and  *)
+    (* re-establish [args_in_instance] directly from the wf_subst cons  *)
+    (* (no sort_of atom needed).  The non-skip branch is the cons case  *)
+    (* of [add_ctx_sound] verbatim.                                     *)
+    (* ===============================================================  *)
+    Lemma add_ctx_gen_sound (no_sort : V -> bool) s c
+      : wf_subst l [] s c ->
+        wf_ctx l c ->
+        forall i,
+        vc (add_ctx_gen succ sort_of l with_sorts false no_sort c)
+           (ctx_post s c i).
+    Proof.
+      intros Hsubst Hctx i.
+      unfold add_ctx_gen.
+      induction Hsubst.
+      - (* nil case: identical to add_ctx_sound *)
+        cbn [list_Mfoldr].
+        unfold vc, Mret. cbn.
+        unfold ctx_post. intros e_in Hok Hsound.
+        exists i. split; [apply extending_sound_refl; auto|].
+        split; [reflexivity|].
+        cbn. unfold args_in_instance. cbn. constructor.
+      - (* cons case *)
+        cbn [list_Mfoldr].
+        eapply vc_bind.
+        { apply IHHsubst. inversion Hctx; assumption. }
+        intros e_pre base'.
+        cbn [Mbind StateMonad.state_monad Mret].
+        destruct (no_sort name) eqn:Hns.
+        2:{
+        (* ---- non-skip branch: add_ctx_sound cons verbatim ---- *)
+        unfold vc; intros e_inner Hpost_tail.
+        unfold ctx_post. intros Hok Hsound.
+        unfold ctx_post in Hpost_tail.
+        specialize (Hpost_tail Hok Hsound).
+        destruct Hpost_tail as [i_tail Hpa]. destruct Hpa as [Hext_tail Hpa'].
+        destruct Hpa' as [Hfst_tail Hai_tail].
+        pose proof Hext_tail as Hext_tail_save.
+        destruct Hext_tail as (Hok_tail & Hexti_tail & Hsnd_tail & Hkeys_tail).
+        cbn [fst snd] in *.
+        (* Step 1: add_open_sort_sound on t *)
+        pose proof (add_open_sort_sound c' base' (map snd s) t
+                      (wf_args_from_wf_subst _ _ _ _ Hsubst)) as Hsort_snd.
+        assert (Hwfc' : wf_ctx l c') by (inversion Hctx; assumption).
+        assert (Hwfst : wf_sort l c' t) by (inversion Hctx; assumption).
+        specialize (Hsort_snd Hwfc' Hwfst).
+        assert (Hmaps_t : map fst c' = map fst base') by (symmetry; exact Hfst_tail).
+        specialize (Hsort_snd Hmaps_t i_tail).
+        unfold vc in Hsort_snd. specialize (Hsort_snd e_inner).
+        unfold open_sort_post in Hsort_snd.
+        specialize (Hsort_snd Hok_tail Hsnd_tail Hai_tail).
+        destruct (add_open_sort succ sort_of l with_sorts false base' t e_inner)
+          as [t_v e_sort] eqn:Heq_sort.
+        cbn [fst snd] in Hsort_snd.
+        destruct Hsort_snd as [i_sort Hi_sort]. destruct Hi_sort as [Hext_sort Hdom_sort].
+        pose proof Hext_sort as Hext_sort_save.
+        destruct Hext_sort as (Hok_sort & Hexti_sort & Hsnd_sort & Hkeys_sort).
+        cbn [fst snd] in *.
+        (* Step 2: alloc_opaque_sound with d := inl e *)
+        pose proof (@alloc_opaque_sound V V_Eqb V_Eqb_ok lt succ V_default V
+                       V_map V_map V_map_ok V_trie X _ lang_model
+                       lt_asymmetric lt_succ lt_trans
+                       i_sort (inl e : domain V lang_model)) as Halloc_snd.
+        assert (Hwfd : domain_wf V lang_model (inl e)).
+        { unfold domain_wf. cbn. econstructor.
+          eapply eq_term_refl; eauto with lang_core. }
+        specialize (Halloc_snd Hwfd Hwfd).
+        unfold vc in Halloc_snd. specialize (Halloc_snd e_sort).
+        specialize (Halloc_snd Hok_sort Hsnd_sort).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_sort) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc_snd.
+        destruct Halloc_snd as (Hok_alloc & Hsnd_alloc & Hinone_x' & Hx'_fresh
+                                & Hx'_key & Hkeys_alloc & Hdb_alloc & Hpar_alloc
+                                & Hwl_alloc).
+        cbn [fst snd] in *.
+        (* Step 3: hash_entry_sound on sort_of [x'] *)
+        pose proof (@hash_entry_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+                      V_map V_map_ok V_map V_map_ok V_trie V_trie_ok X _ lang_model
+                      (lang_model_ok l Hsof Hwf) lt_asymmetric lt_succ lt_trans
+                      (map.put i_sort x' (inl e : domain V lang_model))
+                      sort_of [x'] (inr (t[/s/]) : domain V lang_model)) as Hhe.
+        unfold vc in Hhe. specialize (Hhe e_alloc).
+        assert (Hkeys_args : forall y, In y [x'] -> Sep.has_key y (parent (equiv e_alloc))).
+        { intros y Hy. cbn in Hy. destruct Hy as [Hy|]; [|contradiction]. subst y. exact Hx'_key. }
+        assert (Hint_wit : exists arg_doms,
+                  list_Mmap (map.get (map.put i_sort x' (inl e : domain V lang_model))) [x']
+                  = Some arg_doms
+                  /\ interprets_to V lang_model sort_of arg_doms
+                       (inr (t[/s/]) : domain V lang_model)).
+        { exists [inl e]. split.
+          - cbn. rewrite map.get_put_same. reflexivity.
+          - cbn. eapply interprets_to_sort_of. exact H0. }
+        specialize (Hhe Hok_alloc Hsnd_alloc Hkeys_args Hint_wit).
+        destruct Hhe as [Hok_he Hex_he].
+        destruct Hex_he as [i_he Hi_he].
+        destruct Hi_he as (Hexti_he & Hsnd_he & Hkeys_he & Hkey_he_res & Hdom_he).
+        destruct (hash_entry succ sort_of [x'] e_alloc) as [tx' e_he] eqn:Heq_he.
+        cbn [fst snd] in *.
+        (* Step 4: union_sound on (t_v, tx') *)
+        assert (Hkey_tv_he : Sep.has_key t_v (parent (equiv e_he))).
+        { apply Hkeys_he. apply Hkeys_alloc.
+          pose proof Hsnd_sort as Hsnd_sort_copy.
+          destruct Hsnd_sort_copy as [_ Hsnd_exact _ _].
+          apply Hsnd_exact.
+          destruct (map.get i_sort t_v) as [d|]; cbn in Hdom_sort;
+            [constructor|discriminate]. }
+        pose proof (@union_sound V V_Eqb V_Eqb_ok lt succ V_default V
+                      V_map V_map V_map_ok V_trie X _ t_v tx') as Hu.
+        unfold vc in Hu. specialize (Hu e_he).
+        pose proof Hok_he as Hok_he_save.
+        destruct Hok_he as [Heqok_he Hwlok_he Hparok_he Hdbkok_he].
+        destruct Heqok_he as [roots_he Hroots_he].
+        specialize (Hu (ex_intro _ roots_he Hroots_he)).
+        specialize (Hu Hkey_tv_he Hkey_he_res).
+        destruct (union t_v tx' e_he) as [v_u e_u] eqn:Heq_union.
+        cbn [fst snd] in Hu.
+        destruct Hu as (Hdb_u & [roots_u Hroots_u] & Hper_u & Hpar_u
+                       & Hwl_rel_u & Hper_tv_u).
+        cbn [fst snd] in *.
+        assert (Heq_subst : with_names_from c' (map snd s) = s).
+        { pose proof (wf_subst_dom_eq Hsubst) as Hdom.
+          revert Hdom. clear -s c'. revert s.
+          induction c' as [|[n0 t0] c_rest IH]; destruct s as [|[n1 e1] s_rest];
+            cbn; intros Hdom; auto; try discriminate.
+          inversion Hdom; subst. f_equal. apply IH. exact H1. }
+        rewrite Heq_subst in Hdom_sort.
+        assert (Hext_put : map.extends (map.put i_sort x' (inl e : domain V lang_model)) i_sort).
+        { intros k v Hgk.
+          eqb_case k x'.
+          - rewrite Hgk in Hinone_x'. discriminate.
+          - rewrite map.get_put_diff by congruence. exact Hgk. }
+        assert (Hext_he_sort : map.extends i_he i_sort).
+        { intros k v Hgk. apply Hexti_he. apply Hext_put. exact Hgk. }
+        assert (Hdom_sort_he : option_relation (domain_eq V lang_model)
+                                  (map.get i_he t_v) (Some (inr t[/s/]))).
+        { destruct (map.get i_sort t_v) as [d|] eqn:Hgts; cbn in Hdom_sort;
+            [|discriminate].
+          apply Hext_he_sort in Hgts. rewrite Hgts. cbn. exact Hdom_sort. }
+        assert (Heqs_tv_tx : eq_sound_for_model V V V_map lang_model i_he t_v tx').
+        { unfold eq_sound_for_model.
+          destruct (map.get i_he t_v) as [d_tv|] eqn:Hgtv; cbn in Hdom_sort_he;
+            [|discriminate].
+          destruct (map.get i_he tx') as [d_tx|] eqn:Hgtx; cbn in Hdom_he;
+            [|discriminate].
+          cbn.
+          pose proof (lang_model_ok l Hsof Hwf) as Hmok.
+          assert (Hsym : Symmetric (domain_eq V lang_model))
+            by (apply Hmok).
+          assert (Htrans : Transitive (domain_eq V lang_model))
+            by (apply Hmok).
+          eapply Htrans; [exact Hdom_sort_he|].
+          apply Hsym. exact Hdom_he. }
+        assert (Hkey_pres_he_u : forall x, Sep.has_key x (parent (equiv e_he)) ->
+                                            Sep.has_key x (parent (equiv e_u))).
+        { intros x Hx. unfold Sep.has_key in *.
+          destruct (map.get (parent (equiv e_u)) x) eqn:Hgx; [constructor|].
+          exfalso.
+          destruct (map.get (parent (equiv e_he)) x) eqn:Hgx_he; [|tauto].
+          assert (Hxx : uf_rel_PER V (V_map V) (V_map nat) (equiv e_he) x x).
+          { unfold uf_rel_PER.
+            eapply PER_clo_trans;
+              [apply PER_clo_base; exact Hgx_he
+              |apply PER_clo_sym; apply PER_clo_base; exact Hgx_he]. }
+          assert (Hxx' : uf_rel_PER V (V_map V) (V_map nat) (equiv e_u) x x).
+          { apply Hper_u. unfold Relations.union_closure_PER.
+            apply PER_clo_base. left. exact Hxx. }
+          edestruct (@uf_rel_PER_has_key V V_Eqb V_Eqb_ok lt V_default V_map V_map_ok
+                       (equiv e_u) roots_u x x Hroots_u Hxx') as [Hkx _].
+          unfold Sep.has_key in Hkx. rewrite Hgx in Hkx. tauto. }
+        assert (Hper_lift : forall i1 i2,
+                            uf_rel_PER V (V_map V) (V_map nat) (equiv e_he) i1 i2 ->
+                            uf_rel_PER V (V_map V) (V_map nat) (equiv e_u) i1 i2).
+        { intros i1 i2 Hi12. apply Hper_u.
+          unfold Relations.union_closure_PER. apply PER_clo_base. left. exact Hi12. }
+        assert (Hrel_new : forall i1 i2,
+                            uf_rel_PER V (V_map V) (V_map nat) (equiv e_u) i1 i2 ->
+                            eq_sound_for_model V V V_map lang_model i_he i1 i2).
+        { intros i1 i2 Hi12. apply Hper_u in Hi12.
+          induction Hi12 as [a b H1 | a b c2 IHab Hab IHbc Hbc | a b IHab Hab].
+          - destruct H1 as [Hold | Hnew];
+              [destruct Hsnd_he as [_ _ _ Hi_rel]; apply Hi_rel; exact Hold
+              |destruct Hnew as [Hpa Hpb]; subst; exact Heqs_tv_tx].
+          - pose proof (lang_model_ok l Hsof Hwf) as Hmok_t.
+            eapply (eq_sound_for_model_trans V V V_map lang_model);
+              [exact Hab|exact Hbc].
+          - pose proof (lang_model_ok l Hsof Hwf) as Hmok_s.
+            eapply (eq_sound_for_model_Symmetric V V V_map lang_model); exact Hab. }
+        assert (Hok_u : egraph_ok e_u).
+        { constructor.
+          1:{ exists roots_u. exact Hroots_u. }
+          1:{ destruct Hwl_rel_u as [Hwl_same | Hwl_new].
+              { rewrite Hwl_same. eapply all_wkn; [|exact Hwlok_he].
+                intros ent _ Hp. destruct ent as [old new improved | x_a];
+                  cbn in *; [apply Hper_lift; exact Hp | exact I]. }
+              { destruct Hwl_new as [v_old Hwln1]. destruct Hwln1 as [v_new Hwln2].
+                destruct Hwln2 as [improved Hwln3]. destruct Hwln3 as [Hwl_eq Hwln4].
+                destruct Hwln4 as [Hper_old Hper_new].
+                rewrite Hwl_eq. cbn. split.
+                1:{ assert (Hr_ar : uf_rel_PER V (V_map V) (V_map nat) (equiv e_u) t_v tx').
+                    { apply Hper_u. apply PER_clo_base. right. unfold Relations.singleton_rel.
+                      split; reflexivity. }
+                    unfold uf_rel_PER in *.
+                    eapply PER_clo_trans; [exact Hper_old|].
+                    eapply PER_clo_trans; [exact Hr_ar|].
+                    apply PER_clo_sym. exact Hper_new. }
+                eapply all_wkn; [|exact Hwlok_he].
+                intros ent2 _ Hp2. destruct ent2 as [old2 new2 improved2 | x_a2];
+                  cbn in *; [apply Hper_lift; exact Hp2 | exact I]. } }
+          1:{ rewrite <- Hpar_u. intros x_p s_p Hgs.
+              specialize (Hparok_he _ _ Hgs).
+              eapply all_wkn; [|exact Hparok_he].
+              intros b _ Hbup.
+              destruct Hbup as [bb Hbb]. destruct Hbb as [Hca Hbain].
+              destruct Hca as [Hfn Hargs_ret]. destruct Hargs_ret as [Hargs Hret].
+              exists bb. split.
+              1:{ unfold atom_canonical_equiv. split; [exact Hfn|]. split.
+                  1:{ clear -Hargs Hper_lift.
+                      revert Hargs. generalize (atom_args b), (atom_args bb).
+                      intros l1 l2. revert l2.
+                      induction l1 as [|y ys IH']; destruct l2 as [|z zs];
+                        cbn; auto; try tauto.
+                      intros [Hy Hys]. split.
+                      { apply Hper_lift. exact Hy. }
+                      { apply IH'. exact Hys. } }
+                  apply Hper_lift. exact Hret. }
+              unfold atom_in_egraph. rewrite <- Hdb_u. exact Hbain. }
+          rewrite <- Hdb_u. intros b Hb. specialize (Hdbkok_he _ Hb).
+          destruct Hdbkok_he as [Hka Hkr]. split.
+          1:{ eapply all_wkn; [|exact Hka].
+              intros j _ Hj. apply Hkey_pres_he_u. exact Hj. }
+          apply Hkey_pres_he_u. exact Hkr. }
+        assert (Hsnd_u : egraph_sound_for_interpretation lang_model i_he e_u).
+        { constructor.
+          1:{ destruct Hsnd_he as [Hi_wf _ _ _]. exact Hi_wf. }
+          1:{ intros y Hy. destruct Hsnd_he as [_ Hi_exact _ _].
+              apply Hkey_pres_he_u. apply Hi_exact. exact Hy. }
+          1:{ destruct Hsnd_he as [_ _ Hi_atom _].
+              unfold atom_in_egraph. rewrite <- Hdb_u. exact Hi_atom. }
+          exact Hrel_new. }
+        exists i_he.
+        split.
+        1:{ unfold extending_sound.
+            split. 1: exact Hok_u.
+            split.
+            1:{ intros k v Hgv. apply Hext_he_sort. apply Hexti_sort.
+                apply Hexti_tail. exact Hgv. }
+            split. 1: exact Hsnd_u.
+            intros k Hk. apply Hkey_pres_he_u. apply Hkeys_he.
+            apply Hkeys_alloc. apply Hkeys_sort. apply Hkeys_tail. exact Hk. }
+        split.
+        1:{ cbn. f_equal. exact Hfst_tail. }
+        cbn [map snd].
+        apply args_in_instance_cons.
+        + eapply args_in_instance_monotone; [|exact Hai_tail].
+          intros k v Hgv. apply Hext_he_sort. apply Hexti_sort. exact Hgv.
+        + assert (Hgx'_put : map.get (map.put i_sort x' (inl e : domain V lang_model)) x'
+                            = Some (inl e)) by (rewrite map.get_put_same; reflexivity).
+          apply Hexti_he in Hgx'_put.
+          rewrite Hgx'_put. cbn.
+          econstructor. eapply eq_term_refl; eauto with lang_core.
+        }
+        (* ---- skip branch: alloc_opaque only ---- *)
+        unfold vc; intros e_inner Hpost_tail.
+        unfold ctx_post. intros Hok Hsound.
+        unfold ctx_post in Hpost_tail.
+        specialize (Hpost_tail Hok Hsound).
+        destruct Hpost_tail as [i_tail Hpa]. destruct Hpa as [Hext_tail Hpa'].
+        destruct Hpa' as [Hfst_tail Hai_tail].
+        pose proof Hext_tail as Hext_tail_save.
+        destruct Hext_tail as (Hok_tail & Hexti_tail & Hsnd_tail & Hkeys_tail).
+        cbn [fst snd] in *.
+        (* alloc_opaque_sound with d := inl e (the var's value from wf_subst) *)
+        pose proof (@alloc_opaque_sound V V_Eqb V_Eqb_ok lt succ V_default V
+                       V_map V_map V_map_ok V_trie X _ lang_model
+                       lt_asymmetric lt_succ lt_trans
+                       i_tail (inl e : domain V lang_model)) as Halloc_snd.
+        assert (Hwfd : domain_wf V lang_model (inl e)).
+        { unfold domain_wf. cbn. econstructor.
+          eapply eq_term_refl; eauto with lang_core. }
+        specialize (Halloc_snd Hwfd Hwfd).
+        unfold vc in Halloc_snd. specialize (Halloc_snd e_inner).
+        specialize (Halloc_snd Hok_tail Hsnd_tail).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_inner) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc_snd.
+        destruct Halloc_snd as (Hok_alloc & Hsnd_alloc & Hinone_x' & Hx'_fresh
+                                & Hx'_key & Hkeys_alloc & Hdb_alloc & Hpar_alloc
+                                & Hwl_alloc).
+        cbn [fst snd] in *.
+        (* result interpretation: map.put i_tail x' (inl e) *)
+        exists (map.put i_tail x' (inl e : domain V lang_model)).
+        assert (Hext_put : map.extends (map.put i_tail x' (inl e : domain V lang_model)) i_tail).
+        { intros k v Hgk.
+          eqb_case k x'.
+          - rewrite Hgk in Hinone_x'. discriminate.
+          - rewrite map.get_put_diff by congruence. exact Hgk. }
+        split.
+        1:{ unfold extending_sound.
+            split. 1: exact Hok_alloc.
+            split.
+            1:{ intros k v Hgv. apply Hext_put. apply Hexti_tail. exact Hgv. }
+            split. 1: exact Hsnd_alloc.
+            intros k Hk. apply Hkeys_alloc. apply Hkeys_tail. exact Hk. }
+        split.
+        1:{ cbn. f_equal. exact Hfst_tail. }
+        cbn [map snd].
+        apply args_in_instance_cons.
+        + eapply args_in_instance_monotone; [|exact Hai_tail].
+          exact Hext_put.
+        + rewrite map.get_put_same. cbn.
+          econstructor. eapply eq_term_refl; eauto with lang_core.
+    Qed.
+
     (* =============================================================== *)
     (* Model-faithful representation (the (I)-side workhorse for the    *)
     (* source-rule soundness adapter).  See [[project-source-rule-      *)
@@ -2405,6 +2741,275 @@ Section WithVar.
           - exact Hctx. } }
     Qed.
 
+    (* =============================================================== *)
+    (* wf_subst-FREE faithful representation, gated on [syntactic_sort_eq]. *)
+    (*                                                                  *)
+    (* The min-sorts skip discharge needs the WHOLE-LHS image wf        *)
+    (* [wf_term l [] (e[/sg/]) (t[/sg/])] to feed [covering_var_leaf_syn].*)
+    (* [add_open_faithful_rep] delivers it but requires [wf_subst l []   *)
+    (* sg c] -- the very thing being built.  Under [syntactic_sort_eq]   *)
+    (* the wf_subst is unnecessary: the final rule-sort->declared        *)
+    (* transport collapses to syntactic equality, and var ARGS are typed *)
+    (* off the model [wf_args] rather than via a wf_subst-dependent var   *)
+    (* base case.  var ROOTS carry no                                    *)
+    (* parent atom, hence the [match e with var => True] (and var roots  *)
+    (* are never in the skip set).                                       *)
+    (*                                                                  *)
+    (* [faithful_args_syn]: the args walk producing the faithful         *)
+    (* [eq_args].  At a var head it reads the image wf off the model     *)
+    (* [wf_args] and converts the sort using the TAIL [eq_args]          *)
+    (* (computed first) via [eq_args_implies_eq_subst]+[eq_sort_subst].  *)
+    (* At a con head it uses the per-arg term IH (no [syntactic_sort_eq] *)
+    (* needed there).                                                    *)
+    Lemma faithful_args_syn
+      (Hsyn : syntactic_sort_eq l)
+      (a : interp) (eF : instance X) (sg : subst)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall (s : list term) (c c' : ctx),
+          wf_ctx l c -> wf_ctx l c' -> wf_args l c s c' ->
+          (* [sg] covers the source ctx [c]; needed so a var arg's image
+             [sg x] (which [rep_var] records via the [default] lookup) agrees
+             syntactically with [(var x)[/sg/]] (the [var x] lookup). *)
+          incl (map fst c) (map fst sg) ->
+          all (fun e => match e with
+                 | con _ _ => forall c t, wf_ctx l c -> wf_term l c e t ->
+                                incl (map fst c) (map fst sg) ->
+                                forall xe, represents a eF sg e xe ->
+                                exists e', map.get a xe = Some (inl e')
+                                         /\ eq_term l [] t[/sg/] e' (e[/sg/])
+                 | var _ => True
+                 end) s ->
+          forall sids, Forall2 (represents a eF sg) s sids ->
+          forall args_terms,
+            Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms ->
+            wf_args l [] args_terms c' ->
+            eq_args l [] c' args_terms s[/sg/].
+    Proof.
+      intros s c c' Hctx Hwfc' Hwfa Hdom.
+      revert Hctx Hwfc'.
+      induction Hwfa as [|s c'0 nm e0 tnm Hwfe0 Hwfa IHwfa];
+        intros Hctx Hwfc' IHs sids Hrep args_terms Hm HwfaM.
+      { (* nil *)
+        safe_invert Hrep; safe_invert Hm.
+        cbn; constructor. }
+      { (* cons: s = e0::rest, c' = (nm,tnm)::c'0 *)
+        safe_invert Hrep.
+        rename y into i.
+        match goal with
+          He : represents _ _ _ e0 _ |- _ => rename He into Hrep_e0 end.
+        safe_invert Hm.
+        safe_invert HwfaM.
+        match goal with
+          Hh : Model.wf_term [] _ _ |- _ => rename Hh into HwfHead end.
+        match goal with
+          Ht : wf_args l [] ?tl c'0 |- _ => rename Ht into HwfaMtail end.
+        cbn in Hwfc'.
+        inversion Hwfc' as [|nm0 c0' tt1 Hfresh0 Hwfc'0 Hwstnm Heqc'eq];
+          subst; clear Hwfc'.
+        destruct IHs as [IHe0 IHs0].
+        cbn [args_subst map apply_subst].
+        (* compute the tail eq_args FIRST *)
+        match goal with
+          Ht : wf_args l [] ?tl c'0 |- _ =>
+            assert (eq_args l [] c'0 tl s[/sg/]) as Heqtail
+              by (eapply IHwfa; eauto) end.
+        constructor; [ exact Heqtail |].
+        (* HEAD: eq_term l [] ((tnm[/wnf c'0 s/])[/sg/]) x (e0[/sg/]) *)
+        destruct e0 as [xv | ne0 se0].
+        { (* var head *)
+          safe_invert Hrep_e0.
+          match goal with
+            Hgv : map.get a i = Some (inl (named_list_lookup default sg xv)),
+            Hgi : map.get a i = Some (inl ?w) |- _ =>
+              rewrite Hgv in Hgi; safe_invert Hgi end.
+          (* goal: eq_term l [] ((tnm[/wnf c'0 s/])[/sg/]) (sg xv) ((var xv)[/sg/]) *)
+          (* identify the two var lookups: [sg] applied to [var xv] uses the
+             default [var xv], the model head uses [default]; they agree because
+             [xv] is in [dom sg] -- [xv] is a source ctx var ([Hwfe0]) and [sg]
+             covers [c] ([Hdom]). *)
+          assert (In xv (map fst sg)) as Hxvsg.
+          { apply Hdom.
+            change (In xv (map fst c)) with (ws_term (map fst c) (var xv)).
+            eapply wf_term_implies_ws; eauto with lang_core. }
+          assert (named_list_lookup default sg xv
+                  = named_list_lookup (var xv) sg xv) as Hlk.
+          { clear -Hxvsg V_Eqb_ok.
+            induction sg as [|[z v] sg' IH]; cbn in *; [contradiction|].
+            eqb_case xv z; [reflexivity|].
+            apply IH. destruct Hxvsg as [?|?]; [congruence|auto]. }
+          assert (named_list_lookup default sg xv = apply_subst0 sg (var xv))
+            as Hlk2.
+          { rewrite Hlk. reflexivity. }
+          rewrite Hlk2.
+          eapply eq_term_refl.
+          (* goal: wf_term l [] (apply_subst0 sg (var xv)) (tnm[/wnf c'0 s[/sg/]/]) *)
+          (* HwfHead : wf_term l [] (sg xv) (tnm[/wnf c'0 atl/]) *)
+          rewrite <- Hlk2.
+          eapply wf_term_conv; [ exact HwfHead |].
+          (* eq_sort l [] (tnm[/wnf c'0 atl/]) (tnm[/wnf c'0 s[/sg/]/]) *)
+          eapply (eq_sort_subst (l:=l) (c:=[]) (c':=c'0) (t1':=tnm) (t2':=tnm)
+                    (s1:=with_names_from c'0 l'0)
+                    (s2:=with_names_from c'0 (map (apply_subst0 sg) s))).
+          - eapply eq_sort_refl; exact Hwstnm.
+          - eapply eq_args_implies_eq_subst; exact Heqtail.
+          - exact Hwfc'0. }
+        { (* con head: use the term IH *)
+          specialize (IHe0 c (tnm[/with_names_from c'0 s/])
+                        Hctx Hwfe0 Hdom i Hrep_e0).
+          destruct IHe0 as (e' & Hge' & Heq0).
+          match goal with
+            Hgi : map.get a i = Some (inl _) |- _ =>
+              rewrite Hge' in Hgi; safe_invert Hgi end.
+          rewrite faithful_sort_align in Heq0;
+            [ exact Heq0
+            | eapply wf_sort_implies_ws; eauto with lang_core
+            | eapply wf_args_length_eq; eauto ]. } }
+    Qed.
+
+    (* The con-root consumer: every [con] LHS, source-typed in [c] and      *)
+    (* faithfully represented, has its image wf-at-declared-sort recoverable *)
+    (* via the [eq_term] to its egraph value.  var roots: [True].           *)
+    Lemma faithful_rep_syn
+      (Hsyn : syntactic_sort_eq l)
+      (a : interp) (eF : instance X) (sg : subst)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall e c t, wf_ctx l c -> wf_term l c e t ->
+          incl (map fst c) (map fst sg) ->
+          forall xe, represents a eF sg e xe ->
+          match e with
+          | con _ _ => exists e', map.get a xe = Some (inl e')
+                                /\ eq_term l [] t[/sg/] e' (e[/sg/])
+          | var _ => True
+          end.
+    Proof.
+      intro e.
+      induction e as [x | n s IHs] using term_ind;
+        intros c t Hctx Hwt Hdom xe Hrep.
+      { (* var ROOT: predicate is [True]. *)
+        exact I. }
+      { (* con ROOT *)
+        safe_invert Hrep.
+        match goal with
+          Hr : Forall2 (represents _ _ _) s _ |- _ => rename Hr into Hrepargs end.
+        match goal with
+          Ha : atom_in_egraph _ eF |- _ => rename Ha into Hatom end.
+        (* invert the SOURCE wf_term *)
+        apply WfCutElim.invert_wf_term_con in Hwt.
+        destruct Hwt as (c' & args & t' & Hin & Hwfa & Hsort).
+        (* node atom sound -> interprets_to_term *)
+        pose proof (Hsound _ Hatom) as Hsnd.
+        unfold atom_sound_for_model, Is_Some_satisfying in Hsnd.
+        cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn]
+          in Hsnd.
+        destruct (list_Mmap (map.get a) sids) as [arg_doms|] eqn:Hargs;
+          cbn beta iota in Hsnd; [|contradiction].
+        destruct (map.get a xe) as [out|] eqn:Hgxe;
+          cbn beta iota in Hsnd; [|contradiction].
+        change (domain V lang_model) with (term + sort)%type in Hsnd.
+        cbn [interprets_to lang_model] in Hsnd.
+        inversion Hsnd as
+          [ es ts Hwt_es Hsoeq Hargdom Houtdom
+          | f0 args0 t0 Heqs Hf0 Hargdom Houtdom
+          | f0 args_terms e_out t0 Heqe Hf0 Hargdom Houtdom ]; subst.
+        { (* interprets_to_sort_of : n = sort_of, contradiction *)
+          exfalso. apply Hsof. eapply pair_fst_in; eauto. }
+        { (* interprets_to_sort : n is a term_rule, contradiction *)
+          exfalso.
+          apply eq_sort_wf_l in Heqs; eauto with lang_core.
+          safe_invert Heqs.
+          match goal with
+            Hsr : In (n, sort_rule _ _) l |- _ =>
+              pose proof (in_all_fresh_same _ _ _ _
+                            ltac:(eauto with lang_core) Hin Hsr) as Hbad end.
+          discriminate Hbad. }
+        { (* interprets_to_term : the real case.
+             Heqe : eq_term l [] t0 (con n args_terms) e_out *)
+          exists e_out; split; [solve [reflexivity | exact Hgxe]|].
+          (* goal: eq_term l [] t[/sg/] e_out ((con n s)[/sg/]) *)
+          change ((con n s)[/sg/]) with (con n s[/sg/]).
+          assert (wf_ctx l c') as Hwfc'.
+          { eapply rule_in_ctx_wf with (r:=term_rule c' args t');
+              eauto; reflexivity. }
+          (* MODEL wf_args (no wf_subst): from [con n args_terms] wf *)
+          assert (wf_term l [] (con n args_terms) t0) as Hwfmodel.
+          { eapply (eq_term_wf_l Hwf ltac:(constructor) Heqe). }
+          apply WfCutElim.invert_wf_term_con in Hwfmodel.
+          destruct Hwfmodel as (cA & argsM & tM & HinM & HwfaM & _).
+          assert (cA = c') as HcAeq.
+          { pose proof (in_all_fresh_same _ _ _ _
+                          ltac:(eauto with lang_core) HinM Hin) as Hpin.
+            safe_invert Hpin; reflexivity. }
+          subst cA.
+          assert (Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms)
+            as Hlk.
+          { eapply (list_Mmap_get_nth_inl term sort).
+            change (domain V lang_model) with (term + sort)%type in Hargs.
+            exact Hargs. }
+          (* the per-arg IH (match-form) for faithful_args_syn *)
+          assert (all (fun e => match e with
+                   | con _ _ => forall c t, wf_ctx l c -> wf_term l c e t ->
+                                  incl (map fst c) (map fst sg) ->
+                                  forall xe, represents a eF sg e xe ->
+                                  exists e', map.get a xe = Some (inl e')
+                                           /\ eq_term l [] t[/sg/] e' (e[/sg/])
+                   | var _ => True
+                   end) s) as IHs'.
+          { eapply all_wkn; [| exact IHs].
+            intros e0 _ He0.
+            destruct e0 as [y | ne0 se0]; [exact I|].
+            intros c0 t0' Hctx0 Hwt0 Hdom0 xe0 Hrep0.
+            exact (He0 c0 t0' Hctx0 Hwt0 Hdom0 xe0 Hrep0). }
+          assert (eq_args l [] c' args_terms s[/sg/]) as Heqargs.
+          { exact (faithful_args_syn Hsyn a eF sg Hsound s c c' Hctx Hwfc'
+                     Hwfa Hdom IHs' sids Hrepargs args_terms Hlk HwfaM). }
+          (* congruence: con n args_terms = con n s[/sg/] at the rule's sort *)
+          assert (eq_term l [] (t'[/with_names_from c' s[/sg/]/])
+                    (con n args_terms) (con n s[/sg/])) as Hcong.
+          { eapply term_con_congruence;
+              [ exact Hin | right; reflexivity | exact Hwf | exact Heqargs ]. }
+          assert (wf_term l [] (con n args_terms)
+                    (t'[/with_names_from c' s[/sg/]/])) as Hwf1.
+          { eapply (eq_term_wf_l Hwf ltac:(constructor) Hcong). }
+          assert (wf_term l [] (con n args_terms) t0) as Hwf2.
+          { eapply (eq_term_wf_l Hwf ltac:(constructor) Heqe). }
+          assert (eq_sort l [] t0 (t'[/with_names_from c' s[/sg/]/])) as Hsorteq.
+          { eapply term_sorts_eq; eauto; constructor. }
+          assert (eq_term l [] (t'[/with_names_from c' s[/sg/]/])
+                    e_out (con n s[/sg/])) as Hchain.
+          { eapply eq_term_trans;
+              [ eapply eq_term_sym;
+                eapply eq_term_conv; [ exact Heqe | exact Hsorteq ]
+              | exact Hcong ]. }
+          assert (ws_sort (map fst c') t') as Hwst'.
+          { eapply wf_sort_implies_ws; eauto with lang_core.
+            eapply term_rule_in_sort_wf; eauto. }
+          (* the declared/rule sort equality collapses syntactically (Hsyn) *)
+          assert (t'[/with_names_from c' s/] = t) as Hsorteq2.
+          { destruct Hsort as [Hsort|Hsort];
+              [ exact (Hsyn _ _ _ Hsort) | exact Hsort ]. }
+          eapply eq_term_conv; [exact Hchain|].
+          (* goal: eq_sort l [] (t'[/with_names_from c' s[/sg/]/]) (t[/sg/]) *)
+          rewrite <- faithful_sort_align by
+            (first [ assumption | eapply wf_args_length_eq; eauto ]).
+          (* goal: eq_sort l [] ((t'[/with_names_from c' s/])[/sg/]) (t[/sg/]) *)
+          rewrite Hsorteq2.
+          (* goal: eq_sort l [] (t[/sg/]) (t[/sg/]) *)
+          eapply eq_sort_refl.
+          (* wf_sort l [] (t[/sg/]) from [Hcong]'s sort *)
+          assert (wf_sort l [] (t'[/with_names_from c' s[/sg/]/])) as Hwss.
+          { eapply (eq_term_wf_sort (l:=l) (c:=[]) Hwf ltac:(constructor) Hcong). }
+          rewrite <- faithful_sort_align in Hwss by
+            (first [ assumption | eapply wf_args_length_eq; eauto ]).
+          rewrite Hsorteq2 in Hwss.
+          exact Hwss. } }
+    Qed.
+
+
+
+
+
     (* The sort analogue of [represents].  A sort [scon n s] is built by
        [add_open_sort] = [hash_entry n s'] with [s'] the recursive
        [add_open_term] outputs over the (term) args [s]; so a sort id [xs]
@@ -2509,6 +3114,97 @@ Section WithVar.
         (* Heqs : eq_sort l [] (scon n args_terms) t0 *)
         eapply eq_sort_trans; [ eapply eq_sort_sym; exact Heqs | exact Hcong ]. }
     Qed.
+
+    (* Sort analogue: for a sort LHS [scon n0 s0] source-typed in [c] and
+       faithfully represented, the (term) args [s0] have BOTH a source
+       [wf_args l c s0 c'] and a wf_subst-FREE image [wf_args l [] (s0[/sg/])
+       c'] at the shared rule ctx [c'].  This is exactly what the skip-sort
+       covering ([covering_var_leaf_syn_args_aux]) consumes.  Mirrors
+       [add_open_faithful_rep_sort] but uses [faithful_args_syn] (no wf_subst). *)
+    Lemma faithful_rep_sort_args_syn
+      (Hsyn : syntactic_sort_eq l)
+      (a : interp) (eF : instance X) (sg : subst)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall n0 s0 c, wf_ctx l c -> wf_sort l c (scon n0 s0) ->
+          incl (map fst c) (map fst sg) ->
+          forall xs, represents_sort a eF sg (scon n0 s0) xs ->
+          exists c', wf_ctx l c' /\ wf_args l c s0 c' /\ wf_args l [] s0[/sg/] c'.
+    Proof.
+      intros n0 s0 c Hctx Hws Hdom xs Hrep.
+      destruct Hrep as (sids & Hrepargs & Hatom).
+      safe_invert Hws.
+      match goal with
+        Hin : In (n0, sort_rule ?c'0 ?args0) l |- _ =>
+          rename c'0 into c'; rename args0 into args; rename Hin into Hin0 end.
+      match goal with
+        Hwa : Model.wf_args _ s0 c' |- _ => rename Hwa into Hwfa end.
+      pose proof (Hsound _ Hatom) as Hsnd.
+      unfold atom_sound_for_model, Is_Some_satisfying in Hsnd.
+      cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn]
+        in Hsnd.
+      destruct (list_Mmap (map.get a) sids) as [arg_doms|] eqn:Hargs;
+        cbn beta iota in Hsnd; [|contradiction].
+      destruct (map.get a xs) as [out|] eqn:Hgxs;
+        cbn beta iota in Hsnd; [|contradiction].
+      change (domain V lang_model) with (term + sort)%type in Hsnd.
+      cbn [interprets_to lang_model] in Hsnd.
+      inversion Hsnd as
+        [ es t_es Hwt_es Hargdom Houtdom
+        | f0 args_terms t0 Heqs Hargdom Houtdom
+        | f0 args0 e_out t0 Heqe Hargdom Houtdom ]; subst.
+      { (* interprets_to_sort_of : n0 = sort_of, contradiction *)
+        exfalso. apply Hsof. eapply pair_fst_in; eauto. }
+      2:{ (* interprets_to_term : out = inl, but n0 is a sort_rule *)
+        exfalso.
+        apply eq_term_wf_l in Heqe; eauto with lang_core.
+        apply WfCutElim.invert_wf_term_con in Heqe.
+        destruct Heqe as (c'' & args' & t'' & Hin' & _ & _).
+        pose proof (in_all_fresh_same _ _ _ _
+                      ltac:(eauto with lang_core) Hin0 Hin') as Hbad.
+        discriminate Hbad. }
+      { (* interprets_to_sort : the real case.
+           Heqs : eq_sort l [] (scon n0 args_terms) t0 *)
+        assert (wf_ctx l c') as Hwfc'.
+        { eapply rule_in_ctx_wf with (r:=sort_rule c' args); eauto; reflexivity. }
+        assert (Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms)
+          as Hlk.
+        { eapply (list_Mmap_get_nth_inl term sort).
+          change (domain V lang_model) with (term + sort)%type in Hargs.
+          exact Hargs. }
+        (* model wf_args from the model sort wf *)
+        assert (wf_sort l [] (scon n0 args_terms)) as Hwsmodel.
+        { exact (eq_sort_wf_l Hwf ltac:(constructor) Heqs). }
+        safe_invert Hwsmodel.
+        match goal with
+        | HwaM : Model.wf_args _ args_terms ?cM, HinM : In (n0, sort_rule ?cM _) l |- _ =>
+            pose proof (in_all_fresh_same _ _ _ _
+                          ltac:(eauto with lang_core) HinM Hin0) as Hpin;
+            safe_invert Hpin; rename HwaM into HwfaM
+        end.
+        (* per-arg con IH from faithful_rep_syn *)
+        assert (Hall : forall sx, all (fun e => match e with
+                 | con _ _ => forall c t, wf_ctx l c -> wf_term l c e t ->
+                                incl (map fst c) (map fst sg) ->
+                                forall xe, represents a eF sg e xe ->
+                                exists e', map.get a xe = Some (inl e')
+                                         /\ eq_term l [] t[/sg/] e' (e[/sg/])
+                 | var _ => True
+                 end) sx).
+        { intro sx; induction sx as [|e0 sx' IH]; cbn; [exact I|]; split; [|exact IH].
+          destruct e0 as [|ne0 se0]; [exact I|].
+          intros c0 t0' Hctx0 Hwt0 Hdom0 xe0 Hrep0.
+          exact (faithful_rep_syn Hsyn a eF sg Hsound (con ne0 se0) c0 t0'
+                   Hctx0 Hwt0 Hdom0 xe0 Hrep0). }
+        assert (eq_args l [] c' args_terms s0[/sg/]) as Heqargs.
+        { exact (faithful_args_syn Hsyn a eF sg Hsound s0 c c' Hctx Hwfc'
+                   Hwfa Hdom (Hall s0) sids Hrepargs args_terms Hlk HwfaM). }
+        exists c'.
+        split. { exact Hwfc'. }
+        split. { exact Hwfa. }
+        exact (eq_args_wf_r Hwf ltac:(constructor) Hwfc' Heqargs). }
+    Qed.
+
 
     (* =============================================================== *)
     (* Model-free skeleton of [represents] (the (P2a) connection layer).*)
@@ -2751,6 +3447,134 @@ Section WithVar.
           Htrees : Forall2 (atom_tree eF sub) s ?sids |- _ =>
             eapply atom_tree_args_to_represents with (c:=c) (c':=c'0); eauto
         end.
+    Qed.
+
+    (* ============================================================== *)
+    (* Leaf-soundness extraction (the skip-sorts crux-breaker).        *)
+    (* Given the atom skeleton [atom_tree eF sub e xe] of a wf term [e] *)
+    (* whose root [xe] interprets to a TERM ([inl es]), every free      *)
+    (* variable [x] of [e] has its companion id [sub(x)] interpret to a *)
+    (* term as well.  Engine: a [con] node's top atom is sound, and its *)
+    (* head being a real constructor forces [interprets_to_term], whose *)
+    (* arguments are all [inl] -- so every child id is [inl], and we     *)
+    (* recurse.  Variable leaves have NO sort_of atom in the minimized   *)
+    (* query, so their values are recovered HERE (from the LHS image),   *)
+    (* not from [ctx_readback].  PROVEN, 0-axiom, model-free except for  *)
+    (* the [Hsound] hypothesis the caller supplies. *)
+    Lemma atom_tree_leaf_inl
+      (a : interp) (eF : instance X) (sub : named_list V)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall e xe, atom_tree eF sub e xe ->
+          forall (c : ctx) t, wf_term l c e t ->
+          forall es, map.get a xe = Some (inl es) ->
+          forall x, In x (fv e) ->
+            exists es', map.get a (named_list_lookup default sub x) = Some (inl es').
+    Proof.
+      intro e; induction e as [y | n s IHs] using term_ind;
+        intros xe Htree c t Hwt es Hxe x Hx.
+      - (* var leaf: xe = sub(y), x = y, and the root is already [inl es] *)
+        safe_invert Htree.
+        cbn [fv] in Hx. destruct Hx as [Heq | Hfalse]; [| destruct Hfalse].
+        subst x.
+        exists es. exact Hxe.
+      - (* con node *)
+        safe_invert Htree.
+        match goal with H : Forall2 (atom_tree eF sub) s ?sd |- _ => rename H into HF2 end.
+        match goal with H : atom_in_egraph _ eF |- _ => rename H into Hatom end.
+        apply WfCutElim.invert_wf_term_con in Hwt.
+        destruct Hwt as (c' & args & t' & Hin & Hwfa & Hsort).
+        pose proof (Hsound _ Hatom) as Hsnd.
+        unfold atom_sound_for_model, Is_Some_satisfying in Hsnd.
+        cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn]
+          in Hsnd.
+        destruct (list_Mmap (map.get a) sids) as [arg_doms|] eqn:Hargs;
+          cbn beta iota in Hsnd; [|contradiction].
+        rewrite Hxe in Hsnd. cbn beta iota in Hsnd.
+        change (domain V lang_model) with (term + sort)%type in Hsnd.
+        cbn [interprets_to lang_model] in Hsnd.
+        (* only the interprets_to_term branch can produce an [inl] output; the
+           [sort_of] and [sort] constructors give an [inr] output, auto-eliminated *)
+        inversion Hsnd as
+          [ ee ts Hwt_ee Hsoeq Hargdom Houtdom
+          | f0 args0 t0 Heqs Hf0 Hargdom Houtdom
+          | f0 args_terms e_out t0 Heqe Hf0 Hargdom Houtdom ].
+        assert (Hlk : Forall2 (fun i e => map.get a i = Some (inl e)) sids args_terms).
+        { eapply (list_Mmap_get_nth_inl term sort).
+          change (domain V lang_model) with (term + sort)%type in Hargs.
+          congruence. }
+        cbn [fv] in Hx.
+        clear Hsnd Hargs Hatom Hin Hsort Heqe Hf0 Hargdom Hxe.
+        revert sids args_terms IHs HF2 Hlk Hx.
+        induction Hwfa as [| s0 c'0 name e0 t0' Hwt_e0 Hwfa0 IHwfa];
+          intros sids args_terms IHs HF2 Hlk Hx.
+        + cbn in Hx. contradiction.
+        + safe_invert HF2.
+          match goal with H : atom_tree eF sub e0 ?sd |- _ => rename H into Htree0 end.
+          match goal with H : Forall2 (atom_tree eF sub) s0 ?sd |- _ => rename H into HF2' end.
+          safe_invert Hlk.
+          match goal with H : map.get a _ = Some (inl _) |- _ => rename H into Hget0 end.
+          match goal with H : Forall2 _ _ _ |- _ => rename H into Hlk' end.
+          destruct IHs as [IHe0 IHs0].
+          cbn [flat_map] in Hx. apply in_app_or in Hx. destruct Hx as [Hxe0 | Hxs0].
+          * eapply IHe0; [ exact Htree0 | exact Hwt_e0 | exact Hget0 | exact Hxe0 ].
+          * eapply IHwfa; [ exact IHs0 | exact HF2' | exact Hlk' | exact Hxs0 ].
+    Qed.
+
+    (* Sort analogue of [atom_tree_leaf_inl]: every var occurring in a SORT
+       LHS [scon n0 s0] (whose [atom_tree_sort] witness is [HF2]+[Hatom]) has
+       its companion id resolve to an [inl] value.  The sort root atom is sound,
+       so its term-args all resolve to [inl] ([lang_model_args_inl]); each arg
+       is then covered by [atom_tree_leaf_inl]. *)
+    Lemma atom_tree_sort_leaf_inl
+      (a : interp) (eF : instance X) (sub : named_list V)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      : forall n0 s0 sids xs,
+          Forall2 (atom_tree eF sub) s0 sids ->
+          atom_in_egraph (Build_atom n0 sids xs) eF ->
+          forall c, wf_sort l c (scon n0 s0) ->
+          forall x, In x (fv_args s0) ->
+            exists es', map.get a (named_list_lookup default sub x) = Some (inl es').
+    Proof.
+      intros n0 s0 sids xs HF2 Hatom c Hwfs x Hx.
+      (* root atom sound -> args resolve to inl *)
+      pose proof (Hsound _ Hatom) as Hsnd.
+      unfold atom_sound_for_model, Is_Some_satisfying in Hsnd.
+      cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn] in Hsnd.
+      destruct (list_Mmap (map.get a) sids) as [arg_doms|] eqn:Hargs;
+        cbn beta iota in Hsnd; [|contradiction].
+      destruct (map.get a xs) as [out|] eqn:Hgxs; cbn beta iota in Hsnd; [|contradiction].
+      change (domain V lang_model) with (term + sort)%type in Hsnd.
+      cbn [interprets_to lang_model] in Hsnd.
+      apply lang_model_args_inl in Hsnd.
+      destruct Hsnd as [ds Hds].
+      assert (Hlk : Forall2 (fun i e => map.get a i = Some (inl e)) sids ds).
+      { eapply (list_Mmap_get_nth_inl term sort).
+        change (domain V lang_model) with (term + sort)%type in Hargs.
+        rewrite Hargs. rewrite Hds. reflexivity. }
+      (* invert wf_sort to get the source wf_args *)
+      safe_invert Hwfs.
+      match goal with Hwa : Model.wf_args _ s0 ?c'0 |- _ => rename Hwa into Hwfa0 end.
+      match goal with Hin : In (n0, sort_rule _ _) l |- _ => clear Hin end.
+      (* walk the three parallel structures: source wf_args, atom trees, value lk *)
+      clear Hargs Hgxs Hatom.
+      unfold fv_args in Hx.
+      revert sids HF2 ds Hlk Hx.
+      induction Hwfa0 as [|s c'0 nm e0 tnm Hwfe0 Hwfa0 IHwfa];
+        intros sids HF2 ds Hlk Hx; [cbn in Hx; contradiction|].
+      destruct sids as [|i sids']; [safe_invert HF2|].
+      destruct ds as [|d ds']; [safe_invert Hlk|].
+      apply Forall2_cons_iff in HF2; destruct HF2 as [Htree0 HF2'].
+      apply Forall2_cons_iff in Hlk; destruct Hlk as [Hget0 Hlk'].
+      cbn beta in Htree0, Hget0.
+      cbn [flat_map] in Hx; rewrite in_app_iff in Hx.
+      destruct Hx as [Hxe0 | Hxrest].
+      - (* x in head arg e0 *)
+        eapply (atom_tree_leaf_inl a eF sub Hsound e0 i Htree0 c
+                  (tnm[/with_names_from c'0 s/]) Hwfe0 d Hget0 x Hxe0).
+      - (* x in tail *)
+        eapply IHwfa; [exact HF2' | exact Hlk' | exact Hxrest].
     Qed.
 
     Lemma atom_tree_sort_to_represents_sort
@@ -4614,6 +5438,316 @@ Section WithVar.
           exact Hok_eg_u. }
     Qed.
 
+    Lemma add_ctx_gen_egraph_ok (no_sort : V -> bool) c
+      : wf_ctx l c ->
+        vc (add_ctx_gen succ sort_of l false false no_sort c) (ctx_egraph_post c).
+    Proof.
+      intros Hctx.
+      unfold add_ctx_gen.
+      induction c as [|[name t] c' IH].
+      - (* nil case *)
+        cbn [list_Mfoldr].
+        unfold vc, Mret. cbn [StateMonad.state_monad].
+        unfold ctx_egraph_post.
+        intros e_in Hok Hdb Hok_eg.
+        cbn [fst snd].
+        split; [exact Hok|].
+        split; [exact Hdb|].
+        split; [cbn; exact I|].
+        split; [cbn; reflexivity|].
+        exact Hok_eg.
+      - (* cons case *)
+        cbn [list_Mfoldr].
+        eapply vc_bind.
+        { apply IH. inversion Hctx; assumption. }
+        intros e_pre base'.
+        cbn [Mbind StateMonad.state_monad Mret].
+        destruct (no_sort name) eqn:Hns.
+        2:{
+        unfold vc; intros e_inner Htail.
+        unfold ctx_egraph_post.
+        intros Hok Hdb Hok_eg.
+        unfold ctx_egraph_post in Htail.
+        assert (Hwfc' : wf_ctx l c') by (inversion Hctx; assumption).
+        assert (Hwfst : wf_sort l c' t) by (inversion Hctx; assumption).
+        specialize (Htail Hok Hdb Hok_eg).
+        destruct Htail as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hok_eg_tail).
+        (* Step 1: add_open_sort_all_roots *)
+        pose proof (add_open_sort_all_roots c' base' t Hwfc' Hwfst) as Hsort_roots.
+        assert (Hmaps : map fst c' = map fst base') by (symmetry; exact Hfst_tail).
+        specialize (Hsort_roots Hmaps).
+        unfold vc in Hsort_roots. specialize (Hsort_roots e_inner).
+        unfold open_roots_sort_post in Hsort_roots.
+        specialize (Hsort_roots Huf_tail Hdb_tail Hall_tail).
+        (* Step 1': add_open_sort_egraph_ok (same e_sort) *)
+        pose proof (add_open_sort_egraph_ok c' base' t Hwfc' Hwfst Hmaps) as Hsort_eg.
+        unfold vc in Hsort_eg. specialize (Hsort_eg e_inner).
+        unfold open_egraph_sort_post, open_egraph_post in Hsort_eg.
+        assert (Hbase_keys : all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_inner))) base').
+        { eapply all_wkn; [|exact Hall_tail].
+          intros p _ Hp_root. apply is_root_has_key. exact Hp_root. }
+        specialize (Hsort_eg Hok_eg_tail Hbase_keys).
+        destruct (add_open_sort succ sort_of l false false base' t e_inner)
+          as [t_v e_sort] eqn:Heq_sort.
+        cbn [fst snd] in Hsort_roots, Hsort_eg.
+        destruct Hsort_roots as [Henv_sort Htv_root].
+        destruct Henv_sort as (Huf_sort & Hdb_sort & Hincl_sort & Hmono_sort).
+        destruct Hsort_eg as (Hok_eg_sort & Hmono_eg_sort & Htv_key_sort).
+        (* Step 2: alloc_opaque_rank_zero *)
+        pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ
+                      V V_map V_map V_map_ok V_trie X H
+                      lt_asymmetric lt_succ lt_trans)
+          as Halloc.
+        unfold vc in Halloc. specialize (Halloc e_sort).
+        (* Step 2': alloc_opaque_egraph_ok (same e_alloc) *)
+        pose proof (@alloc_opaque_egraph_ok V V_Eqb V_Eqb_ok lt succ
+                      V V_map V_map V_map_ok V_trie X H
+                      lt_asymmetric lt_succ lt_trans)
+          as Halloc_eg.
+        unfold vc in Halloc_eg. specialize (Halloc_eg e_sort).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_sort) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc, Halloc_eg.
+        destruct Huf_sort as [roots_s Hroots_s].
+        specialize (Halloc roots_s Hroots_s).
+        destruct Halloc as (Hok_alloc & Hfresh_x' & Hx'_root & Hx'_rank0
+                           & Hkeys_alloc & Hmono_alloc & Hdb_alloc_eq
+                           & Hpar_alloc & Hwl_alloc).
+        specialize (Halloc_eg Hok_eg_sort).
+        destruct Halloc_eg as (Hok_eg_alloc & _ & Hx'_key_alloc & Hmono_eg_alloc & _ & _ & _).
+        cbn [fst snd] in *.
+        (* Derive db_ctx_inv e_alloc from db_ctx_inv e_sort + db unchanged *)
+        assert (Hdb_alloc : db_ctx_inv e_alloc).
+        { unfold db_ctx_inv, db_inv in *.
+          intros a Ha.
+          rewrite <- Hdb_alloc_eq in Ha.
+          specialize (Hdb_sort a Ha).
+          destruct Hdb_sort as [Hargs_roots Hret_root].
+          split.
+          - eapply all_wkn; [|exact Hargs_roots].
+            intros z _ Hz. exact (Hmono_alloc z Hz).
+          - intro HPfn. exact (Hmono_alloc _ (Hret_root HPfn)). }
+        (* Steps 3a and 3b: hash_entry_all_roots + hash_entry_fresh_rank_zero *)
+        (* Prove x' is a key in e_alloc (it's a root) *)
+        assert (Hx'_key : Sep.has_key x' (parent (Defs.equiv e_alloc))).
+        { apply is_root_has_key. unfold is_root. exact Hx'_root. }
+        (* Prove no (sort_of,[x'],r) atom in e_alloc.db *)
+        assert (Hno_sortof : forall r, ~ atom_in_db (Build_atom sort_of [x'] r) e_alloc.(Defs.db)).
+        { intros r Hin.
+          (* e_alloc.db = e_sort.db *)
+          rewrite <- Hdb_alloc_eq in Hin.
+          (* by db_ctx_inv e_sort, x' is a root in e_sort *)
+          unfold db_ctx_inv, db_inv in Hdb_sort.
+          specialize (Hdb_sort (Build_atom sort_of [x'] r) Hin).
+          destruct Hdb_sort as [Hargs_s _].
+          cbn [atom_args] in Hargs_s.
+          destruct Hargs_s as [Hx'_s _].
+          (* x' is a root in e_sort => has_key x' e_sort *)
+          assert (Hx'_ks : Sep.has_key x' (parent (Defs.equiv e_sort))).
+          { apply is_root_has_key. unfold is_root. exact Hx'_s. }
+          (* but alloc_opaque says x' is fresh in e_sort *)
+          exact (Hfresh_x' Hx'_ks). }
+        (* Apply hash_entry_all_roots *)
+        pose proof (@hash_entry_all_roots V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _ (fun s => s <> sort_of)
+                      lt_asymmetric lt_succ lt_trans sort_of [x']) as Hhe_roots.
+        (* Apply hash_entry_fresh_rank_zero *)
+        pose proof (@hash_entry_fresh_rank_zero V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map_ok V_map V_map_ok V_trie V_trie_ok X H
+                      lt_asymmetric lt_succ lt_trans sort_of [x']) as Hhe_fresh.
+        (* Apply hash_entry_egraph_ok *)
+        pose proof (@hash_entry_egraph_ok V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X H lt_asymmetric lt_succ lt_trans sort_of [x']) as Hhe_eg.
+        unfold vc in Hhe_roots, Hhe_fresh, Hhe_eg.
+        specialize (Hhe_roots e_alloc).
+        specialize (Hhe_fresh e_alloc).
+        specialize (Hhe_eg e_alloc).
+        destruct (hash_entry succ sort_of [x'] e_alloc) as [tx' e_he] eqn:Heq_he.
+        cbn [fst snd] in Hhe_roots, Hhe_fresh, Hhe_eg.
+        (* Supply hypotheses to hash_entry_all_roots *)
+        assert (Hkeys_he_args : forall y, In y [x'] -> Sep.has_key y (parent (Defs.equiv e_alloc))).
+        { intros y Hy. cbn in Hy. destruct Hy as [Hy|]; [|contradiction].
+          subst y. exact Hx'_key. }
+        specialize (Hhe_roots (ex_intro _ _ Hok_alloc) Hdb_alloc Hkeys_he_args).
+        destruct Hhe_roots as (Huf_he & Hdb_he & Hincl_he & Hmono_he & _).
+        (* Supply hypotheses to hash_entry_egraph_ok *)
+        specialize (Hhe_eg Hok_eg_alloc Hkeys_he_args).
+        destruct Hhe_eg as (Hok_eg_he & Hmono_eg_he & Htx'_key_he).
+        (* Apply hash_entry_args_old_keys to get structural info about e_he.db *)
+        pose proof (@hash_entry_args_old_keys V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X H lt_asymmetric lt_succ lt_trans
+                      (fun s => s <> sort_of) sort_of [x']) as Hhe_old.
+        unfold vc in Hhe_old. specialize (Hhe_old e_alloc).
+        rewrite Heq_he in Hhe_old. cbn [fst snd] in Hhe_old.
+        specialize (Hhe_old (ex_intro _ _ Hok_alloc) Hdb_alloc Hkeys_he_args).
+        (* Supply hypotheses to hash_entry_fresh_rank_zero *)
+        assert (Hx'_root_list : all (fun y => map.get (parent (Defs.equiv e_alloc)) y = Some y) [x']).
+        { cbn. split; [exact Hx'_root | exact I]. }
+        specialize (Hhe_fresh (ex_intro _ _ Hok_alloc) Hx'_root_list Hno_sortof).
+        destruct Hhe_fresh as (Htx'_rank0 & Htx'_root & Htx'_fresh & Htx'_atom).
+        (* Step 4: union_roots_demote_second *)
+        (* t_v is a root in e_he (via Hmono_he from Htv_root in e_sort via Hmono_alloc) *)
+        assert (Htv_root_alloc : is_root e_alloc t_v).
+        { unfold is_root. exact (Hmono_alloc t_v Htv_root). }
+        assert (Htv_root_he : is_root e_he t_v).
+        { unfold is_root. exact (Hmono_he t_v (Htv_root_alloc)). }
+        (* tx' is a root in e_he *)
+        assert (Htx'_root_he : is_root e_he tx').
+        { unfold is_root. exact Htx'_root. }
+        (* t_v <> tx': t_v has_key in e_alloc, tx' is fresh in e_alloc *)
+        assert (Htv_ne_tx' : t_v <> tx').
+        { intro Heq. subst t_v.
+          apply Htx'_fresh.
+          apply is_root_has_key. exact Htv_root_alloc. }
+        (* rank tx' = Some 0 in e_he *)
+        assert (Hrank_tx' : map.get (@rank _ _ _ (Defs.equiv e_he)) tx' = Some 0).
+        { exact Htx'_rank0. }
+        (* has_key t_v in e_he (for union_preserves_egraph_ok_sem) *)
+        assert (Htv_key_he : Sep.has_key t_v (parent (Defs.equiv e_he))).
+        { apply is_root_has_key. exact Htv_root_he. }
+        pose proof (@union_roots_demote_second V V_Eqb V_Eqb_ok lt V_default
+                      V V_map V_map V_map_ok V_trie X H t_v tx') as Hunion.
+        unfold vc in Hunion. specialize (Hunion e_he).
+        (* Step 4': union_preserves_egraph_ok_sem on e_he *)
+        pose proof (@union_preserves_egraph_ok_sem V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map V_map_ok V_trie X H t_v tx' e_he
+                      Hok_eg_he Htv_key_he Htx'_key_he) as Hok_eg_u.
+        destruct (Defs.union t_v tx' e_he) as [v_u e_u] eqn:Heq_union.
+        cbn [fst snd] in Hunion, Hok_eg_u.
+        destruct Huf_he as [roots_he Hroots_he].
+        specialize (Hunion roots_he Hroots_he Htv_root_he Htx'_root_he Htv_ne_tx' Hrank_tx').
+        destruct Hunion as (Hvu_tv & Htv_root_u & Htx'_demoted_u & Hothers_u
+                           & Hdb_u & Hpar_u & [improved Hwl_u] & [roots_u Hroots_u]).
+        cbn [fst snd] in *.
+        (* Now prove tx' is not an arg of any e_he.db atom (needed for crux) *)
+        assert (Htx'_not_arg : forall b, atom_in_db b (Defs.db e_he) -> ~ In tx' (atom_args b)).
+        { intros b Hb Hin_tx'.
+          (* From hash_entry_args_old_keys: all args of b were has_key in e_alloc *)
+          destruct (Hhe_old b Hb) as [Hb_args_old _].
+          assert (Htx'_hk : Sep.has_key tx' (parent (Defs.equiv e_alloc))).
+          { exact (in_all _ _ _ Hb_args_old Hin_tx'). }
+          (* But tx' is fresh in e_alloc — contradiction *)
+          exact (Htx'_fresh Htx'_hk). }
+        (* Build db_ctx_inv e_u *)
+        assert (Hdb_u_inv : db_ctx_inv e_u).
+        { unfold db_ctx_inv, db_inv in *.
+          intros a Ha.
+          rewrite <- Hdb_u in Ha.
+          specialize (Hdb_he a Ha).
+          destruct Hdb_he as [Hargs_he Hret_he].
+          split.
+          - (* args: each arg y is root in e_he; y != tx' (Htx'_not_arg); so others_u gives root in e_u *)
+            eapply all_wkn; [|exact Hargs_he].
+            intros y Hyin Hy_root.
+            unfold is_root in Hy_root.
+            apply Hothers_u.
+            + intro Heq. subst y.
+              exact (Htx'_not_arg a Ha Hyin).
+            + exact Hy_root.
+          - (* ret: a.fn != sort_of -> ret root in e_he -> ret != tx' -> root in e_u *)
+            intro HPfn.
+            assert (Hret_root : map.get (parent (Defs.equiv e_he)) (atom_ret a) = Some (atom_ret a)).
+            { exact (Hret_he HPfn). }
+            apply Hothers_u.
+            + (* ret != tx' *)
+              intro Heq. subst.
+              destruct (Hhe_old a Ha) as [_ Ha_old].
+              assert (Ha_alloc : atom_in_db a (Defs.db e_alloc)) by (apply Ha_old; exact HPfn).
+              unfold db_ctx_inv, db_inv in Hdb_alloc.
+              specialize (Hdb_alloc a Ha_alloc).
+              destruct Hdb_alloc as [_ Hret_alloc].
+              assert (Htx'_hk : Sep.has_key (atom_ret a) (parent (Defs.equiv e_alloc))).
+              { unfold Sep.has_key. rewrite (Hret_alloc HPfn). exact I. }
+              exact (Htx'_fresh Htx'_hk).
+            + exact Hret_root. }
+        (* Assemble the 5 conjuncts *)
+        split.
+        { exact (ex_intro _ roots_u Hroots_u). }
+        split.
+        { exact Hdb_u_inv. }
+        split.
+        { (* all-roots ((name,x')::base') in e_u *)
+          cbn [all].
+          split.
+          - (* x' is root in e_u *)
+            unfold is_root.
+            apply Hothers_u.
+            + (* x' != tx' *)
+              intro Heq. apply Htx'_fresh.
+              rewrite <- Heq. exact Hx'_key.
+            + exact (Hmono_he x' Hx'_root).
+          - (* all roots in base' (Hall_tail) lifted to e_u *)
+            eapply all_wkn; [|exact Hall_tail].
+            intros [xn yn] Hyin Hyn_root.
+            cbn [snd] in *.
+            unfold is_root in *.
+            apply Hothers_u.
+            + (* yn != tx' *)
+              intro Heq. subst yn.
+              apply Htx'_fresh.
+              apply is_root_has_key.
+              unfold is_root.
+              exact (Hmono_alloc _ (Hmono_sort _ Hyn_root)).
+            + exact (Hmono_he _ (Hmono_alloc _ (Hmono_sort _ Hyn_root))). }
+        split.
+        { (* map fst ((name,x')::base') = map fst ((name,t)::c') *)
+          cbn [map fst]. f_equal. exact Hfst_tail. }
+        { (* egraph_ok e_u *)
+          exact Hok_eg_u. }
+        }
+        unfold vc; intros e_inner Htail.
+        unfold ctx_egraph_post.
+        intros Hok Hdb Hok_eg.
+        unfold ctx_egraph_post in Htail.
+        specialize (Htail Hok Hdb Hok_eg).
+        destruct Htail as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hok_eg_tail).
+        pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ
+                      V V_map V_map V_map_ok V_trie X H
+                      lt_asymmetric lt_succ lt_trans)
+          as Halloc.
+        unfold vc in Halloc. specialize (Halloc e_inner).
+        pose proof (@alloc_opaque_egraph_ok V V_Eqb V_Eqb_ok lt succ
+                      V V_map V_map V_map_ok V_trie X H
+                      lt_asymmetric lt_succ lt_trans)
+          as Halloc_eg.
+        unfold vc in Halloc_eg. specialize (Halloc_eg e_inner).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_inner) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc, Halloc_eg.
+        destruct Huf_tail as [roots_t Hroots_t].
+        specialize (Halloc roots_t Hroots_t).
+        destruct Halloc as (Hok_alloc & Hfresh_x' & Hx'_root & Hx'_rank0
+                           & Hkeys_alloc & Hmono_alloc & Hdb_alloc_eq
+                           & Hpar_alloc & Hwl_alloc).
+        specialize (Halloc_eg Hok_eg_tail).
+        destruct Halloc_eg as (Hok_eg_alloc & _ & Hx'_key_alloc & Hmono_eg_alloc & _ & _ & _).
+        cbn [fst snd] in *.
+        split.
+        { exact (ex_intro _ _ Hok_alloc). }
+        split.
+        { unfold db_ctx_inv, db_inv in *.
+          intros a Ha.
+          rewrite <- Hdb_alloc_eq in Ha.
+          specialize (Hdb_tail a Ha).
+          destruct Hdb_tail as [Hargs_roots Hret_root].
+          split.
+          - eapply all_wkn; [|exact Hargs_roots].
+            intros z _ Hz. exact (Hmono_alloc z Hz).
+          - intro HPfn. exact (Hmono_alloc _ (Hret_root HPfn)). }
+        split.
+        { cbn [all].
+          split.
+          - exact Hx'_root.
+          - eapply all_wkn; [|exact Hall_tail].
+            intros [xn yn] _ Hyn.
+            exact (Hmono_alloc _ Hyn). }
+        split.
+        { cbn [map fst]. f_equal. exact Hfst_tail. }
+        { exact Hok_eg_alloc. }
+    Qed.
+
+
     (* ============================================================== *)
     (* add_open_node_atoms: structural augmentation of add_open_all_  *)
     (* roots that additionally establishes atom_tree.                 *)
@@ -6254,6 +7388,423 @@ Section WithVar.
             [exact Hincl_iu | exact Hmono_iu | exact Hequiv_iu | exact Hrb_tail]. }
     Qed.
 
+
+    Fixpoint ctx_readback_gen (no_sort : V -> bool) (e1 : instance X) (sub : named_list V) (c0 : ctx)
+      {struct c0} : Prop :=
+      match c0 with
+      | [] => True
+      | (x,t)::c' =>
+          match sub with
+          | [] => False
+          | (_, x')::sub' =>
+              (if no_sort x then True
+               else (exists xs, is_root e1 xs /\ atom_tree_sort X e1 sub' t xs
+                       /\ exists tx', atom_in_db (Build_atom sort_of [x'] tx') (Defs.db e1)
+                                   /\ uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e1) tx' xs))
+              /\ ctx_readback_gen no_sort e1 sub' c'
+          end
+      end.
+
+    Lemma ctx_readback_gen_mono (no_sort : V -> bool) (e1 e2 : instance X) (sub : named_list V) (c0 : ctx)
+      : (forall a, atom_in_db a (Defs.db e1) -> atom_in_db a (Defs.db e2)) ->
+        roots_mono e1 e2 ->
+        (forall i j, uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e1) i j ->
+                     uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e2) i j) ->
+        ctx_readback_gen no_sort e1 sub c0 -> ctx_readback_gen no_sort e2 sub c0.
+    Proof.
+      revert sub; induction c0 as [|[x t] c' IH]; intros sub Hincl Hmono Hequiv Hrb.
+      - exact I.
+      - destruct sub as [|[x0 x'] sub']; [exact Hrb|].
+        cbn in Hrb |- *.
+        destruct Hrb as [Hhead Hrb'].
+        split.
+        2:{ eapply IH; [exact Hincl | exact Hmono | exact Hequiv | exact Hrb']. }
+        destruct (no_sort x).
+        + exact Hhead.
+        + destruct Hhead as [xs (Hxs_root & Htree & tx' & Hatom & Hper)].
+          exists xs. split; [exact (Hmono xs Hxs_root)|].
+          split.
+          * eapply atom_tree_sort_db_incl; [exact Hincl | exact Htree].
+          * exists tx'. split; [exact (Hincl _ Hatom) | exact (Hequiv _ _ Hper)].
+    Qed.
+
+    Definition ctx_readback_post_gen (no_sort : V -> bool) (c0 : ctx) (e_in : instance X)
+        (res : named_list V * instance X) : Prop :=
+      (exists roots, union_find_ok lt (Defs.equiv e_in) roots) ->
+      db_ctx_inv e_in ->
+      (exists roots, union_find_ok lt (Defs.equiv (snd res)) roots)
+      /\ db_ctx_inv (snd res)
+      /\ all (fun p => is_root (snd res) (snd p)) (fst res)
+      /\ map fst (fst res) = map fst c0
+      /\ ctx_readback_gen no_sort (snd res) (fst res) c0.
+
+    Lemma add_ctx_readback_gen (no_sort : V -> bool) c
+      : wf_ctx l c ->
+        vc (add_ctx_gen succ sort_of l false false no_sort c) (ctx_readback_post_gen no_sort c).
+    Proof.
+      intros Hctx.
+      unfold add_ctx_gen.
+      induction c as [|[name t] c' IH].
+      - (* nil case *)
+        cbn [list_Mfoldr].
+        unfold vc, Mret. cbn [StateMonad.state_monad].
+        unfold ctx_readback_post_gen.
+        intros e_in Hok Hdb.
+        cbn [fst snd].
+        split; [exact Hok|].
+        split; [exact Hdb|].
+        split; [cbn; exact I|].
+        split; [cbn; reflexivity|].
+        cbn. exact I.
+      - (* cons case *)
+        cbn [list_Mfoldr].
+        eapply vc_bind.
+        { apply IH. inversion Hctx; assumption. }
+        intros e_pre base'.
+        cbn [Mbind StateMonad.state_monad Mret].
+        destruct (no_sort name) eqn:Hns.
+        2:{
+        unfold vc; intros e_inner Htail.
+        unfold ctx_readback_post_gen.
+        intros Hok Hdb.
+        unfold ctx_readback_post_gen in Htail.
+        assert (Hwfc' : wf_ctx l c') by (inversion Hctx; assumption).
+        assert (Hwfst : wf_sort l c' t) by (inversion Hctx; assumption).
+        specialize (Htail Hok Hdb).
+        destruct Htail as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hrb_tail).
+        (* Step 1: add_open_sort_node_atoms (gives roots_env + atom_tree + equiv_extends) *)
+        assert (Hmaps : map fst c' = map fst base') by (symmetry; exact Hfst_tail).
+        pose proof (add_open_sort_node_atoms c' base' t Hwfc' Hwfst Hmaps) as Hnode_sort.
+        unfold vc in Hnode_sort. specialize (Hnode_sort e_inner).
+        unfold open_atomtree_sort_post in Hnode_sort.
+        destruct (add_open_sort succ sort_of l false false base' t e_inner)
+          as [t_v e_sort] eqn:Heq_sort.
+        cbn [fst snd] in Hnode_sort.
+        specialize (Hnode_sort Huf_tail Hdb_tail Hall_tail).
+        destruct Hnode_sort as (Henv_sort & Htv_root & Htree_sort & Hext_sort).
+        destruct Henv_sort as (Huf_sort & Hdb_sort & Hincl_sort & Hmono_sort).
+        (* Step 2: alloc_opaque_rank_zero *)
+        pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ
+                      V V_map V_map V_map_ok V_trie X H
+                      lt_asymmetric lt_succ lt_trans)
+          as Halloc.
+        unfold vc in Halloc. specialize (Halloc e_sort).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_sort) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc.
+        destruct Huf_sort as [roots_s Hroots_s].
+        specialize (Halloc roots_s Hroots_s).
+        destruct Halloc as (Hok_alloc & Hfresh_x' & Hx'_root & Hx'_rank0
+                           & Hkeys_alloc & Hmono_alloc & Hdb_alloc_eq
+                           & Hpar_alloc & Hwl_alloc).
+        cbn [fst snd] in *.
+        (* Derive db_ctx_inv e_alloc from db_ctx_inv e_sort + db unchanged *)
+        assert (Hdb_alloc : db_ctx_inv e_alloc).
+        { unfold db_ctx_inv, db_inv in *.
+          intros a Ha.
+          rewrite <- Hdb_alloc_eq in Ha.
+          specialize (Hdb_sort a Ha).
+          destruct Hdb_sort as [Hargs_roots Hret_root].
+          split.
+          - eapply all_wkn; [|exact Hargs_roots].
+            intros z _ Hz. exact (Hmono_alloc z Hz).
+          - intro HPfn. exact (Hmono_alloc _ (Hret_root HPfn)). }
+        (* Steps 3a and 3b: hash_entry_all_roots + hash_entry_fresh_rank_zero *)
+        (* Prove x' is a key in e_alloc (it's a root) *)
+        assert (Hx'_key : Sep.has_key x' (parent (Defs.equiv e_alloc))).
+        { apply is_root_has_key. unfold is_root. exact Hx'_root. }
+        (* Prove no (sort_of,[x'],r) atom in e_alloc.db *)
+        assert (Hno_sortof : forall r, ~ atom_in_db (Build_atom sort_of [x'] r) e_alloc.(Defs.db)).
+        { intros r Hin.
+          (* e_alloc.db = e_sort.db *)
+          rewrite <- Hdb_alloc_eq in Hin.
+          (* by db_ctx_inv e_sort, x' is a root in e_sort *)
+          unfold db_ctx_inv, db_inv in Hdb_sort.
+          specialize (Hdb_sort (Build_atom sort_of [x'] r) Hin).
+          destruct Hdb_sort as [Hargs_s _].
+          cbn [atom_args] in Hargs_s.
+          destruct Hargs_s as [Hx'_s _].
+          (* x' is a root in e_sort => has_key x' e_sort *)
+          assert (Hx'_ks : Sep.has_key x' (parent (Defs.equiv e_sort))).
+          { apply is_root_has_key. unfold is_root. exact Hx'_s. }
+          (* but alloc_opaque says x' is fresh in e_sort *)
+          exact (Hfresh_x' Hx'_ks). }
+        (* Apply hash_entry_all_roots *)
+        pose proof (@hash_entry_all_roots V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _ (fun s => s <> sort_of)
+                      lt_asymmetric lt_succ lt_trans sort_of [x']) as Hhe_roots.
+        (* Apply hash_entry_fresh_rank_zero *)
+        pose proof (@hash_entry_fresh_rank_zero V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map_ok V_map V_map_ok V_trie V_trie_ok X H
+                      lt_asymmetric lt_succ lt_trans sort_of [x']) as Hhe_fresh.
+        unfold vc in Hhe_roots, Hhe_fresh.
+        specialize (Hhe_roots e_alloc).
+        specialize (Hhe_fresh e_alloc).
+        destruct (hash_entry succ sort_of [x'] e_alloc) as [tx' e_he] eqn:Heq_he.
+        cbn [fst snd] in Hhe_roots, Hhe_fresh.
+        (* Supply hypotheses to hash_entry_all_roots *)
+        assert (Hkeys_he_args : forall y, In y [x'] -> Sep.has_key y (parent (Defs.equiv e_alloc))).
+        { intros y Hy. cbn in Hy. destruct Hy as [Hy|]; [|contradiction].
+          subst y. exact Hx'_key. }
+        specialize (Hhe_roots (ex_intro _ _ Hok_alloc) Hdb_alloc Hkeys_he_args).
+        destruct Hhe_roots as (Huf_he & Hdb_he & Hincl_he & Hmono_he & _).
+        (* Apply hash_entry_args_old_keys to get structural info about e_he.db *)
+        pose proof (@hash_entry_args_old_keys V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X H lt_asymmetric lt_succ lt_trans
+                      (fun s => s <> sort_of) sort_of [x']) as Hhe_old.
+        unfold vc in Hhe_old. specialize (Hhe_old e_alloc).
+        rewrite Heq_he in Hhe_old. cbn [fst snd] in Hhe_old.
+        specialize (Hhe_old (ex_intro _ _ Hok_alloc) Hdb_alloc Hkeys_he_args).
+        (* Hhe_old : forall b in e_he.db,
+             all (fun y => Sep.has_key y (parent e_alloc)) b.args
+             /\ (b.fn <> sort_of -> atom_in_db b e_alloc.db) *)
+        (* Supply hypotheses to hash_entry_fresh_rank_zero *)
+        assert (Hx'_root_list : all (fun y => map.get (parent (Defs.equiv e_alloc)) y = Some y) [x']).
+        { cbn. split; [exact Hx'_root | exact I]. }
+        specialize (Hhe_fresh (ex_intro _ _ Hok_alloc) Hx'_root_list Hno_sortof).
+        destruct Hhe_fresh as (Htx'_rank0 & Htx'_root & Htx'_fresh & Htx'_atom).
+        (* Step 4: union_roots_demote_second *)
+        (* t_v is a root in e_he (via Hmono_he from Htv_root in e_sort via Hmono_alloc) *)
+        assert (Htv_root_alloc : is_root e_alloc t_v).
+        { unfold is_root. exact (Hmono_alloc t_v Htv_root). }
+        assert (Htv_root_he : is_root e_he t_v).
+        { unfold is_root. exact (Hmono_he t_v (Htv_root_alloc)). }
+        (* tx' is a root in e_he *)
+        assert (Htx'_root_he : is_root e_he tx').
+        { unfold is_root. exact Htx'_root. }
+        (* t_v <> tx': t_v has_key in e_alloc, tx' is fresh in e_alloc *)
+        assert (Htv_ne_tx' : t_v <> tx').
+        { intro Heq. subst t_v.
+          apply Htx'_fresh.
+          apply is_root_has_key. exact Htv_root_alloc. }
+        (* rank tx' = Some 0 in e_he *)
+        assert (Hrank_tx' : map.get (@rank _ _ _ (Defs.equiv e_he)) tx' = Some 0).
+        { exact Htx'_rank0. }
+        pose proof (@union_roots_demote_second V V_Eqb V_Eqb_ok lt V_default
+                      V V_map V_map V_map_ok V_trie X H t_v tx') as Hunion.
+        unfold vc in Hunion. specialize (Hunion e_he).
+        destruct (Defs.union t_v tx' e_he) as [v_u e_u] eqn:Heq_union.
+        cbn [fst snd] in Hunion.
+        destruct Huf_he as [roots_he Hroots_he].
+        specialize (Hunion roots_he Hroots_he Htv_root_he Htx'_root_he Htv_ne_tx' Hrank_tx').
+        destruct Hunion as (Hvu_tv & Htv_root_u & Htx'_demoted_u & Hothers_u
+                           & Hdb_u & Hpar_u & [improved Hwl_u] & [roots_u Hroots_u]).
+        cbn [fst snd] in *.
+        (* Now prove tx' is not an arg of any e_he.db atom (needed for crux) *)
+        assert (Htx'_not_arg : forall b, atom_in_db b (Defs.db e_he) -> ~ In tx' (atom_args b)).
+        { intros b Hb Hin_tx'.
+          (* From hash_entry_args_old_keys: all args of b were has_key in e_alloc *)
+          destruct (Hhe_old b Hb) as [Hb_args_old _].
+          assert (Htx'_hk : Sep.has_key tx' (parent (Defs.equiv e_alloc))).
+          { exact (in_all _ _ _ Hb_args_old Hin_tx'). }
+          (* But tx' is fresh in e_alloc — contradiction *)
+          exact (Htx'_fresh Htx'_hk). }
+        (* Build db_ctx_inv e_u *)
+        assert (Hdb_u_inv : db_ctx_inv e_u).
+        { unfold db_ctx_inv, db_inv in *.
+          intros a Ha.
+          rewrite <- Hdb_u in Ha.
+          specialize (Hdb_he a Ha).
+          destruct Hdb_he as [Hargs_he Hret_he].
+          split.
+          - (* args: each arg y is root in e_he; y != tx' (Htx'_not_arg); so others_u gives root in e_u *)
+            eapply all_wkn; [|exact Hargs_he].
+            intros y Hyin Hy_root.
+            unfold is_root in Hy_root.
+            apply Hothers_u.
+            + intro Heq. subst y.
+              exact (Htx'_not_arg a Ha Hyin).
+            + exact Hy_root.
+          - (* ret: a.fn != sort_of -> ret root in e_he -> ret != tx' -> root in e_u *)
+            intro HPfn.
+            assert (Hret_root : map.get (parent (Defs.equiv e_he)) (atom_ret a) = Some (atom_ret a)).
+            { exact (Hret_he HPfn). }
+            apply Hothers_u.
+            + (* ret != tx': a.fn != sort_of, so by hash_entry_args_old_keys,
+                 a is in e_alloc.db; by db_ctx_inv e_alloc, a.ret has_key in e_alloc;
+                 tx' is fresh in e_alloc, so a.ret != tx'. *)
+              intro Heq. subst.
+              destruct (Hhe_old a Ha) as [_ Ha_old].
+              assert (Ha_alloc : atom_in_db a (Defs.db e_alloc)) by (apply Ha_old; exact HPfn).
+              unfold db_ctx_inv, db_inv in Hdb_alloc.
+              specialize (Hdb_alloc a Ha_alloc).
+              destruct Hdb_alloc as [_ Hret_alloc].
+              assert (Htx'_hk : Sep.has_key (atom_ret a) (parent (Defs.equiv e_alloc))).
+              { unfold Sep.has_key. rewrite (Hret_alloc HPfn). exact I. }
+              exact (Htx'_fresh Htx'_hk).
+            + exact Hret_root. }
+        (* Assemble the 5 conjuncts *)
+        split.
+        { exact (ex_intro _ roots_u Hroots_u). }
+        split.
+        { exact Hdb_u_inv. }
+        split.
+        { (* all-roots ((name,x')::base') in e_u *)
+          cbn [all].
+          split.
+          - (* x' is root in e_u *)
+            unfold is_root.
+            (* x' root in e_alloc -> root in e_he (Hmono_he) -> others_u (x' != tx') -> root in e_u *)
+            apply Hothers_u.
+            + (* x' != tx' *)
+              intro Heq. apply Htx'_fresh.
+              rewrite <- Heq. exact Hx'_key.
+            + exact (Hmono_he x' Hx'_root).
+          - (* all roots in base' (Hall_tail) lifted to e_u *)
+            eapply all_wkn; [|exact Hall_tail].
+            intros [xn yn] Hyin Hyn_root.
+            cbn [snd] in *.
+            unfold is_root in *.
+            (* yn root in e_inner -> root in e_sort (Hmono_sort) -> root in e_alloc (Hmono_alloc)
+               -> root in e_he (Hmono_he) -> others_u (yn != tx') -> root in e_u *)
+            apply Hothers_u.
+            + (* yn != tx': yn has_key in e_alloc, tx' doesn't *)
+              intro Heq. subst yn.
+              apply Htx'_fresh.
+              apply is_root_has_key.
+              unfold is_root.
+              exact (Hmono_alloc _ (Hmono_sort _ Hyn_root)).
+            + exact (Hmono_he _ (Hmono_alloc _ (Hmono_sort _ Hyn_root))). }
+        split.
+        { (* map fst ((name,x')::base') = map fst ((name,t)::c') *)
+          cbn [map fst]. f_equal. exact Hfst_tail. }
+        (* 5th conjunct: ctx_readback e_u ((name,x')::base') ((name,t)::c') *)
+        (* db inclusion facts *)
+        assert (Hincl_su : forall a, atom_in_db a (Defs.db e_sort) -> atom_in_db a (Defs.db e_u)).
+        { intros a Ha. rewrite Hdb_alloc_eq in Ha. apply Hincl_he in Ha.
+          rewrite Hdb_u in Ha. exact Ha. }
+        assert (Hincl_iu : forall a, atom_in_db a (Defs.db e_inner) -> atom_in_db a (Defs.db e_u)).
+        { intros a Ha. apply Hincl_sort in Ha. apply Hincl_su. exact Ha. }
+        assert (Hmono_iu : roots_mono e_inner e_u).
+        { unfold roots_mono. intros z Hz. unfold is_root in *.
+          apply Hothers_u.
+          - intro Heq. subst z. apply Htx'_fresh. apply is_root_has_key.
+            unfold is_root. exact (Hmono_alloc _ (Hmono_sort _ Hz)).
+          - exact (Hmono_he _ (Hmono_alloc _ (Hmono_sort _ Hz))). }
+        (* equiv_extends e_inner e_u:
+           e_inner ->sort (Hext_sort) ->alloc (alloc_parent_eq+fresh)
+           ->he (hash_entry_equiv_extends) ->u (union extends) *)
+        assert (Hext_alloc : equiv_extends_inst e_sort e_alloc).
+        { pose proof (alloc_opaque_parent_eq e_sort) as Hpar_sort.
+          cbn [fst snd] in Hpar_sort.
+          (* Hpar_sort : parent (equiv (snd (alloc_opaque ... e_sort))) = map.put ... *)
+          rewrite Heq_alloc in Hpar_sort. cbn [fst snd] in Hpar_sort.
+          (* Hpar_sort : parent (equiv e_alloc) = map.put (parent (equiv e_sort)) x' x' *)
+          assert (Hnone_x' : map.get (parent (Defs.equiv e_sort)) x' = None).
+          { unfold Sep.has_key in Hfresh_x'.
+            destruct (map.get (parent (Defs.equiv e_sort)) x'); tauto. }
+          unfold equiv_extends_inst, equiv_extends, uf_rel_PER. intros i j Hpre.
+          rewrite Hpar_sort.
+          eapply uf_rel_PER_alloc_monotone;
+            [exact V_map_ok | exact Hnone_x' | unfold uf_rel_PER; exact Hpre]. }
+        assert (Hext_he : equiv_extends_inst e_alloc e_he).
+        { (* Derive via hash_entry_equiv_extends, specialized AFTER the destruct *)
+          pose proof (hash_entry_equiv_extends sort_of [x']) as Hhe_ext_he.
+          unfold vc in Hhe_ext_he.
+          specialize (Hhe_ext_he e_alloc).
+          rewrite Heq_he in Hhe_ext_he. cbn [fst snd] in Hhe_ext_he.
+          exact (Hhe_ext_he (ex_intro _ _ Hok_alloc) Hkeys_he_args). }
+        (* e_he -> e_u: use union_sound to get iff2 (union_closure_PER ...) (uf_rel_PER e_u),
+           then derive equiv_extends e_he e_u via the left-injection into union_closure_PER. *)
+        assert (Hext_u : equiv_extends_inst e_he e_u).
+        { pose proof (@union_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok
+                        V_trie X H t_v tx') as Hu.
+          unfold vc in Hu. specialize (Hu e_he).
+          rewrite Heq_union in Hu. cbn [fst snd] in Hu.
+          specialize (Hu (ex_intro _ roots_he Hroots_he)
+                        (is_root_has_key e_he t_v Htv_root_he)
+                        (is_root_has_key e_he tx' Htx'_root_he)).
+          destruct Hu as (_ & _ & Hper_iff & _).
+          unfold equiv_extends_inst, equiv_extends, uf_rel_PER. intros i j Hpre.
+          apply Hper_iff.
+          unfold Relations.union_closure_PER.
+          apply PER_clo_base. left. exact Hpre. }
+        assert (Hequiv_iu : forall i j,
+            uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e_inner) i j ->
+            uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e_u) i j).
+        { intros i j Hij.
+          exact (Hext_u _ _ (Hext_he _ _ (Hext_alloc _ _ (Hext_sort _ _ Hij)))). }
+        cbn [ctx_readback_gen]. rewrite Hns.
+        split; [|].
+        { (* exists xs, is_root e_u xs /\ atom_tree_sort X e_u base' t xs
+                     /\ exists tx', atom_in_db (sort_of,[x'],tx') (db e_u)
+                                 /\ uf_rel_PER (equiv e_u) tx' xs *)
+          exists t_v. split.
+          - exact Htv_root_u.
+          - split.
+            + eapply atom_tree_sort_db_incl; [exact Hincl_su | exact Htree_sort].
+            + exists tx'. split.
+              * rewrite <- Hdb_u. exact Htx'_atom.
+              * (* uf_rel_PER e_u tx' t_v = uf_rel_PER e_u tx' (fst (v_u, e_u)) *)
+                (* Htx'_demoted_u : map.get (parent (equiv e_u)) tx' = Some t_v *)
+                apply PER_clo_base. exact Htx'_demoted_u. }
+        { (* ctx_readback e_u base' c' *)
+          eapply ctx_readback_gen_mono;
+            [exact Hincl_iu | exact Hmono_iu | exact Hequiv_iu | exact Hrb_tail]. }
+        }
+        unfold vc; intros e_inner Htail.
+        unfold ctx_readback_post_gen.
+        intros Hok Hdb.
+        unfold ctx_readback_post_gen in Htail.
+        specialize (Htail Hok Hdb).
+        destruct Htail as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hrb_tail).
+        pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ
+                      V V_map V_map V_map_ok V_trie X H
+                      lt_asymmetric lt_succ lt_trans)
+          as Halloc.
+        unfold vc in Halloc. specialize (Halloc e_inner).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_inner) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc.
+        destruct Huf_tail as [roots_t Hroots_t].
+        specialize (Halloc roots_t Hroots_t).
+        destruct Halloc as (Hok_alloc & Hfresh_x' & Hx'_root & Hx'_rank0
+                           & Hkeys_alloc & Hmono_alloc & Hdb_alloc_eq
+                           & Hpar_alloc & Hwl_alloc).
+        cbn [fst snd] in *.
+        (* equiv extension e_inner -> e_alloc through the fresh alloc *)
+        assert (Hext_alloc : forall i j,
+            uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e_inner) i j ->
+            uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e_alloc) i j).
+        { pose proof (alloc_opaque_parent_eq e_inner) as Hpar_e.
+          cbn [fst snd] in Hpar_e.
+          rewrite Heq_alloc in Hpar_e. cbn [fst snd] in Hpar_e.
+          assert (Hnone_x' : map.get (parent (Defs.equiv e_inner)) x' = None).
+          { unfold Sep.has_key in Hfresh_x'.
+            destruct (map.get (parent (Defs.equiv e_inner)) x'); tauto. }
+          unfold uf_rel_PER. intros i j Hpre.
+          rewrite Hpar_e.
+          eapply uf_rel_PER_alloc_monotone;
+            [exact V_map_ok | exact Hnone_x' | unfold uf_rel_PER; exact Hpre]. }
+        split.
+        { exact (ex_intro _ _ Hok_alloc). }
+        split.
+        { unfold db_ctx_inv, db_inv in *.
+          intros a Ha.
+          rewrite <- Hdb_alloc_eq in Ha.
+          specialize (Hdb_tail a Ha).
+          destruct Hdb_tail as [Hargs_roots Hret_root].
+          split.
+          - eapply all_wkn; [|exact Hargs_roots].
+            intros z _ Hz. exact (Hmono_alloc z Hz).
+          - intro HPfn. exact (Hmono_alloc _ (Hret_root HPfn)). }
+        split.
+        { cbn [all].
+          split.
+          - exact Hx'_root.
+          - eapply all_wkn; [|exact Hall_tail].
+            intros [xn yn] _ Hyn.
+            exact (Hmono_alloc _ Hyn). }
+        split.
+        { cbn [map fst]. f_equal. exact Hfst_tail. }
+        cbn [ctx_readback_gen]. rewrite Hns.
+        split; [exact I|].
+        eapply ctx_readback_gen_mono;
+          [ | exact Hmono_alloc | exact Hext_alloc | exact Hrb_tail ].
+        intros a Ha. rewrite <- Hdb_alloc_eq. exact Ha.
+    Qed.
+
+
     (* ================================================================ *)
     (* [assum_db_frame_pre]: the add_ctx EXHAUSTIVENESS frame (F-pre).   *)
     (* ================================================================ *)
@@ -6505,6 +8056,22 @@ Section WithVar.
         a.(atom_fn) = sort_of ->
         exists nm x', a.(atom_args) = [x'] /\ In (nm, x') (fst res).
 
+    (* [_gen] post: like [ctx_sortof_frame_post] but additionally certifies the
+       recovered companion var [nm] is NON-skipped ([no_sort nm = false]).
+       Sound because a skipped var emits no sort_of atom, so any sort_of atom's
+       companion is non-skip. Consumed by the eq-adapter's sort_of-branch to
+       feed [ctx_readback_eF_lookup_gen]. *)
+    Definition ctx_sortof_frame_post_gen (no_sort : V -> bool) (c0 : ctx)
+        (e_in : instance X)
+        (res : named_list V * instance X) : Prop :=
+      (exists roots, union_find_ok lt (Defs.equiv e_in) roots) ->
+      db_ctx_inv e_in ->
+      (forall a, atom_in_egraph a e_in -> a.(atom_fn) <> sort_of) ->
+      forall a, atom_in_egraph a (snd res) ->
+        a.(atom_fn) = sort_of ->
+        exists nm x', a.(atom_args) = [x'] /\ In (nm, x') (fst res)
+                   /\ no_sort nm = false.
+
     Lemma assum_sortof_frame_pre c
       : wf_ctx l c ->
         vc (add_ctx succ sort_of l false false c) (ctx_sortof_frame_post c).
@@ -6669,6 +8236,460 @@ Section WithVar.
         + (* NEW atom: a = Build_atom sort_of [x'] tx', companion x' is the new sub entry *)
           subst a. cbn [atom_args atom_fn].
           exists name, x'. split; [ reflexivity | left; reflexivity ].
+    Qed.
+
+    (* ================================================================ *)
+    (* [_gen] ports of the two frame-pre lemmas, over [add_ctx_gen].     *)
+    (* A skipped ctx variable ([no_sort name = true]) only runs          *)
+    (* [alloc_opaque], which leaves the db unchanged, so it adds NO db   *)
+    (* atoms: every db atom of the result comes from the tail and the    *)
+    (* frame holds by the IH (with the fresh new var weakened in via     *)
+    (* [*_sub_cons_fresh]).  The non-skip branch is the original proof   *)
+    (* verbatim.                                                          *)
+    (* ================================================================ *)
+
+    Lemma assum_db_frame_pre_gen (no_sort : V -> bool) c
+      : wf_ctx l c ->
+        vc (add_ctx_gen succ sort_of l false false no_sort c) (ctx_frame_post c).
+    Proof.
+      intros Hctx.
+      unfold add_ctx_gen.
+      induction c as [|[name t] c' IH].
+      - (* nil case: snd res = e_in, and a non-sort_of atom contradicts He0 *)
+        cbn [list_Mfoldr].
+        unfold vc, Mret. cbn [StateMonad.state_monad].
+        unfold ctx_frame_post.
+        intros e_in Hok Hdb He0.
+        cbn [fst snd].
+        intros a Ha Hnsof.
+        specialize (He0 a Ha).
+        exfalso. exact (Hnsof He0).
+      - (* cons case *)
+        cbn [list_Mfoldr].
+        eapply vc_bind.
+        { apply vc_and; [ apply add_ctx_readback_gen | apply IH ];
+            (inversion Hctx; assumption). }
+        intros e_pre base'.
+        cbn [Mbind StateMonad.state_monad Mret].
+        destruct (no_sort name) eqn:Hns.
+        2:{
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hcombined.
+        unfold ctx_frame_post.
+        intros Hok Hdb He0.
+        destruct Hcombined as [Hrb_post Hframe_post].
+        assert (Hwfc' : wf_ctx l c') by (inversion Hctx; assumption).
+        assert (Hwfst : wf_sort l c' t) by (inversion Hctx; assumption).
+        assert (Hfresh_name : ~ In name (map fst c')) by (inversion Hctx; assumption).
+        pose proof (wf_lang_implies_ws_noext Hwf) as Hwsl.
+        unfold ctx_readback_post_gen in Hrb_post.
+        specialize (Hrb_post Hok Hdb).
+        destruct Hrb_post as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hrb_tail).
+        unfold ctx_frame_post in Hframe_post.
+        specialize (Hframe_post Hok Hdb He0).
+        destruct t as [nt st].
+        (* Step 1: add_open_sort_new_atoms_are_nodes (roots + atom_tree_sort + new=node) *)
+        assert (Hmaps : map fst c' = map fst base') by (symmetry; exact Hfst_tail).
+        pose proof (add_open_sort_new_atoms_are_nodes c' base' (scon nt st)
+                      Hwfc' Hwfst Hmaps) as Hnode_sort.
+        unfold vc in Hnode_sort. specialize (Hnode_sort e_inner).
+        unfold open_newatom_sort_post in Hnode_sort.
+        destruct (add_open_sort succ sort_of l false false base' (scon nt st) e_inner)
+          as [t_v e_sort] eqn:Heq_sort.
+        cbn [fst snd] in Hnode_sort.
+        specialize (Hnode_sort Huf_tail Hdb_tail Hall_tail).
+        destruct Hnode_sort as (Henv_sort & Htv_root & Htree_sort & Hext_sort & Hnew).
+        destruct Henv_sort as (Huf_sort & Hdb_sort & Hincl_sort & Hmono_sort).
+        (* Step 2: alloc_opaque_rank_zero *)
+        pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ
+                      V V_map V_map V_map_ok V_trie X H
+                      lt_asymmetric lt_succ lt_trans)
+          as Halloc.
+        unfold vc in Halloc. specialize (Halloc e_sort).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_sort) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc.
+        destruct Huf_sort as [roots_s Hroots_s].
+        specialize (Halloc roots_s Hroots_s).
+        destruct Halloc as (Hok_alloc & Hfresh_x' & Hx'_root & Hx'_rank0
+                           & Hkeys_alloc & Hmono_alloc & Hdb_alloc_eq
+                           & Hpar_alloc & Hwl_alloc).
+        cbn [fst snd] in *.
+        (* Derive db_ctx_inv e_alloc from db_ctx_inv e_sort + db unchanged *)
+        assert (Hdb_alloc : db_ctx_inv e_alloc).
+        { unfold db_ctx_inv, db_inv in *.
+          intros a Ha.
+          rewrite <- Hdb_alloc_eq in Ha.
+          specialize (Hdb_sort a Ha).
+          destruct Hdb_sort as [Hargs_roots Hret_root].
+          split.
+          - eapply all_wkn; [|exact Hargs_roots].
+            intros z _ Hz. exact (Hmono_alloc z Hz).
+          - intro HPfn. exact (Hmono_alloc _ (Hret_root HPfn)). }
+        (* Steps 3a and 3b: hash_entry_all_roots + hash_entry_fresh_rank_zero *)
+        assert (Hx'_key : Sep.has_key x' (parent (Defs.equiv e_alloc))).
+        { apply is_root_has_key. unfold is_root. exact Hx'_root. }
+        assert (Hno_sortof : forall r, ~ atom_in_db (Build_atom sort_of [x'] r) e_alloc.(Defs.db)).
+        { intros r Hin.
+          rewrite <- Hdb_alloc_eq in Hin.
+          unfold db_ctx_inv, db_inv in Hdb_sort.
+          specialize (Hdb_sort (Build_atom sort_of [x'] r) Hin).
+          destruct Hdb_sort as [Hargs_s _].
+          cbn [atom_args] in Hargs_s.
+          destruct Hargs_s as [Hx'_s _].
+          assert (Hx'_ks : Sep.has_key x' (parent (Defs.equiv e_sort))).
+          { apply is_root_has_key. unfold is_root. exact Hx'_s. }
+          exact (Hfresh_x' Hx'_ks). }
+        pose proof (@hash_entry_all_roots V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _ (fun s => s <> sort_of)
+                      lt_asymmetric lt_succ lt_trans sort_of [x']) as Hhe_roots.
+        pose proof (@hash_entry_fresh_rank_zero V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map_ok V_map V_map_ok V_trie V_trie_ok X H
+                      lt_asymmetric lt_succ lt_trans sort_of [x']) as Hhe_fresh.
+        unfold vc in Hhe_roots, Hhe_fresh.
+        specialize (Hhe_roots e_alloc).
+        specialize (Hhe_fresh e_alloc).
+        destruct (hash_entry succ sort_of [x'] e_alloc) as [tx' e_he] eqn:Heq_he.
+        cbn [fst snd] in Hhe_roots, Hhe_fresh.
+        assert (Hkeys_he_args : forall y, In y [x'] -> Sep.has_key y (parent (Defs.equiv e_alloc))).
+        { intros y Hy. cbn in Hy. destruct Hy as [Hy|]; [|contradiction].
+          subst y. exact Hx'_key. }
+        specialize (Hhe_roots (ex_intro _ _ Hok_alloc) Hdb_alloc Hkeys_he_args).
+        destruct Hhe_roots as (Huf_he & Hdb_he & Hincl_he & Hmono_he & _).
+        pose proof (@hash_entry_args_old_keys V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X H lt_asymmetric lt_succ lt_trans
+                      (fun s => s <> sort_of) sort_of [x']) as Hhe_old.
+        unfold vc in Hhe_old. specialize (Hhe_old e_alloc).
+        rewrite Heq_he in Hhe_old. cbn [fst snd] in Hhe_old.
+        specialize (Hhe_old (ex_intro _ _ Hok_alloc) Hdb_alloc Hkeys_he_args).
+        assert (Hx'_root_list : all (fun y => map.get (parent (Defs.equiv e_alloc)) y = Some y) [x']).
+        { cbn. split; [exact Hx'_root | exact I]. }
+        specialize (Hhe_fresh (ex_intro _ _ Hok_alloc) Hx'_root_list Hno_sortof).
+        destruct Hhe_fresh as (Htx'_rank0 & Htx'_root & Htx'_fresh & Htx'_atom).
+        (* Step 4: union_roots_demote_second *)
+        assert (Htv_root_alloc : is_root e_alloc t_v).
+        { unfold is_root. exact (Hmono_alloc t_v Htv_root). }
+        assert (Htv_root_he : is_root e_he t_v).
+        { unfold is_root. exact (Hmono_he t_v (Htv_root_alloc)). }
+        assert (Htx'_root_he : is_root e_he tx').
+        { unfold is_root. exact Htx'_root. }
+        assert (Htv_ne_tx' : t_v <> tx').
+        { intro Heq. subst t_v.
+          apply Htx'_fresh.
+          apply is_root_has_key. exact Htv_root_alloc. }
+        assert (Hrank_tx' : map.get (@rank _ _ _ (Defs.equiv e_he)) tx' = Some 0).
+        { exact Htx'_rank0. }
+        pose proof (@union_roots_demote_second V V_Eqb V_Eqb_ok lt V_default
+                      V V_map V_map V_map_ok V_trie X H t_v tx') as Hunion.
+        unfold vc in Hunion. specialize (Hunion e_he).
+        destruct (Defs.union t_v tx' e_he) as [v_u e_u] eqn:Heq_union.
+        cbn [fst snd] in Hunion.
+        destruct Huf_he as [roots_he Hroots_he].
+        specialize (Hunion roots_he Hroots_he Htv_root_he Htx'_root_he Htv_ne_tx' Hrank_tx').
+        destruct Hunion as (Hvu_tv & Htv_root_u & Htx'_demoted_u & Hothers_u
+                           & Hdb_u & Hpar_u & [improved Hwl_u] & [roots_u Hroots_u]).
+        cbn [fst snd] in *.
+        (* db inclusion facts (mirror add_ctx_readback) *)
+        assert (Hincl_su : forall a0, atom_in_db a0 (Defs.db e_sort) -> atom_in_db a0 (Defs.db e_u)).
+        { intros a0 Ha0. rewrite Hdb_alloc_eq in Ha0. apply Hincl_he in Ha0.
+          rewrite Hdb_u in Ha0. exact Ha0. }
+        assert (Hincl_iu : forall a0, atom_in_db a0 (Defs.db e_inner) -> atom_in_db a0 (Defs.db e_u)).
+        { intros a0 Ha0. apply Hincl_sort in Ha0. apply Hincl_su. exact Ha0. }
+        (* Expose the result shape ((name,x')::base', e_u) and take an atom. *)
+        cbn [Mret StateMonad.state_monad fst snd].
+        intros a Ha_in Ha_nsof.
+        (* Push [a] (a non-sort_of db atom of e_u) back to e_sort. *)
+        unfold atom_in_egraph in Ha_in.
+        rewrite <- Hdb_u in Ha_in.            (* a in e_he.db *)
+        destruct (Hhe_old a Ha_in) as [_ Ha_to_alloc].
+        specialize (Ha_to_alloc Ha_nsof).     (* a in e_alloc.db *)
+        rewrite <- Hdb_alloc_eq in Ha_to_alloc. (* a in e_sort.db *)
+        assert (Ha_sort : atom_in_egraph a e_sort)
+          by (unfold atom_in_egraph; exact Ha_to_alloc).
+        destruct (Hnew a Ha_sort) as [Ha_inner | Ha_node].
+        + (* OLD atom: in e_inner -> IH frame, then lift db (e_inner->e_u) + sub *)
+          destruct (Hframe_post a Ha_inner Ha_nsof)
+            as (x & n_x & s_x & xs_x & Hin_c' & Htree_x & Hnode_x).
+          assert (Hwfsx : wf_sort l c' (scon n_x s_x))
+            by (eapply in_ctx_wf; eauto).
+          assert (Hwsx : ws_sort (map fst c') (scon n_x s_x))
+            by (eapply wf_sort_implies_ws; eassumption).
+          assert (Hnotfv : ~ In name (flat_map (@fv V) s_x))
+            by (eapply ws_sort_fresh_not_fv; [ exact Hfresh_name | exact Hwsx ]).
+          exists x, n_x, s_x, xs_x.
+          split; [ right; exact Hin_c' |].
+          split.
+          * eapply atom_tree_sort_sub_cons_fresh; [ exact Hnotfv |].
+            eapply atom_tree_sort_db_incl; [ exact Hincl_iu | exact Htree_x ].
+          * eapply atom_node_sub_cons_fresh; [ cbn [fv]; exact Hnotfv |].
+            eapply atom_node_db_incl; [ exact Hincl_iu | exact Hnode_x ].
+        + (* NEW atom: node of (con nt st) at t_v -- the var (name, scon nt st) *)
+          assert (Hwsx : ws_sort (map fst c') (scon nt st))
+            by (eapply wf_sort_implies_ws; eassumption).
+          assert (Hnotfv : ~ In name (flat_map (@fv V) st))
+            by (eapply ws_sort_fresh_not_fv; [ exact Hfresh_name | exact Hwsx ]).
+          exists name, nt, st, t_v.
+          split; [ left; reflexivity |].
+          split.
+          * eapply atom_tree_sort_sub_cons_fresh; [ exact Hnotfv |].
+            eapply atom_tree_sort_db_incl; [ exact Hincl_su | exact Htree_sort ].
+          * eapply atom_node_sub_cons_fresh; [ cbn [fv]; exact Hnotfv |].
+            eapply atom_node_db_incl; [ exact Hincl_su | exact Ha_node ].
+        }
+        (* SKIP branch: only alloc_opaque runs, db unchanged, no new atoms. *)
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hcombined.
+        unfold ctx_frame_post.
+        intros Hok Hdb He0.
+        destruct Hcombined as [Hrb_post Hframe_post].
+        assert (Hwfc' : wf_ctx l c') by (inversion Hctx; assumption).
+        assert (Hfresh_name : ~ In name (map fst c')) by (inversion Hctx; assumption).
+        pose proof (wf_lang_implies_ws_noext Hwf) as Hwsl.
+        unfold ctx_readback_post_gen in Hrb_post.
+        specialize (Hrb_post Hok Hdb).
+        destruct Hrb_post as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hrb_tail).
+        unfold ctx_frame_post in Hframe_post.
+        specialize (Hframe_post Hok Hdb He0).
+        (* alloc_opaque: db unchanged *)
+        pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ
+                      V V_map V_map V_map_ok V_trie X H
+                      lt_asymmetric lt_succ lt_trans)
+          as Halloc.
+        unfold vc in Halloc. specialize (Halloc e_inner).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_inner) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc.
+        destruct Huf_tail as [roots_t Hroots_t].
+        specialize (Halloc roots_t Hroots_t).
+        destruct Halloc as (Hok_alloc & Hfresh_x' & Hx'_root & Hx'_rank0
+                           & Hkeys_alloc & Hmono_alloc & Hdb_alloc_eq
+                           & Hpar_alloc & Hwl_alloc).
+        cbn [fst snd] in *.
+        assert (Hincl_iu : forall a0, atom_in_db a0 (Defs.db e_inner) -> atom_in_db a0 (Defs.db e_alloc)).
+        { intros a0 Ha0. rewrite <- Hdb_alloc_eq. exact Ha0. }
+        cbn [Mret StateMonad.state_monad fst snd].
+        intros a Ha_in Ha_nsof.
+        unfold atom_in_egraph in Ha_in.
+        rewrite <- Hdb_alloc_eq in Ha_in.
+        assert (Ha_inner : atom_in_egraph a e_inner)
+          by (unfold atom_in_egraph; exact Ha_in).
+        destruct (Hframe_post a Ha_inner Ha_nsof)
+          as (x & n_x & s_x & xs_x & Hin_c' & Htree_x & Hnode_x).
+        assert (Hwfsx : wf_sort l c' (scon n_x s_x))
+          by (eapply in_ctx_wf; eauto).
+        assert (Hwsx : ws_sort (map fst c') (scon n_x s_x))
+          by (eapply wf_sort_implies_ws; eassumption).
+        assert (Hnotfv : ~ In name (flat_map (@fv V) s_x))
+          by (eapply ws_sort_fresh_not_fv; [ exact Hfresh_name | exact Hwsx ]).
+        exists x, n_x, s_x, xs_x.
+        split; [ right; exact Hin_c' |].
+        split.
+        * eapply atom_tree_sort_sub_cons_fresh; [ exact Hnotfv |].
+          eapply atom_tree_sort_db_incl; [ exact Hincl_iu | exact Htree_x ].
+        * eapply atom_node_sub_cons_fresh; [ cbn [fv]; exact Hnotfv |].
+          eapply atom_node_db_incl; [ exact Hincl_iu | exact Hnode_x ].
+    Qed.
+
+    Lemma assum_sortof_frame_pre_gen (no_sort : V -> bool) c
+      : wf_ctx l c ->
+        vc (add_ctx_gen succ sort_of l false false no_sort c) (ctx_sortof_frame_post_gen no_sort c).
+    Proof.
+      intros Hctx.
+      unfold add_ctx_gen.
+      induction c as [|[name t] c' IH].
+      - (* nil case: snd res = e_in, and a sort_of atom contradicts Hnosof *)
+        cbn [list_Mfoldr].
+        unfold vc, Mret. cbn [StateMonad.state_monad].
+        unfold ctx_sortof_frame_post_gen.
+        intros e_in Hok Hdb Hnosof.
+        cbn [fst snd].
+        intros a Ha Hsof_a.
+        exfalso. exact (Hnosof a Ha Hsof_a).
+      - (* cons case *)
+        cbn [list_Mfoldr].
+        eapply vc_bind.
+        { apply vc_and; [ apply add_ctx_readback_gen | apply IH ];
+            (inversion Hctx; assumption). }
+        intros e_pre base'.
+        cbn [Mbind StateMonad.state_monad Mret].
+        destruct (no_sort name) eqn:Hns.
+        2:{
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hcombined.
+        unfold ctx_sortof_frame_post_gen.
+        intros Hok Hdb Hnosof.
+        destruct Hcombined as [Hrb_post Hframe_sortof].
+        assert (Hwfc' : wf_ctx l c') by (inversion Hctx; assumption).
+        assert (Hwfst : wf_sort l c' t) by (inversion Hctx; assumption).
+        assert (Hfresh_name : ~ In name (map fst c')) by (inversion Hctx; assumption).
+        pose proof (wf_lang_implies_ws_noext Hwf) as Hwsl.
+        unfold ctx_readback_post_gen in Hrb_post.
+        specialize (Hrb_post Hok Hdb).
+        destruct Hrb_post as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hrb_tail).
+        unfold ctx_sortof_frame_post_gen in Hframe_sortof.
+        specialize (Hframe_sortof Hok Hdb Hnosof).
+        destruct t as [nt st].
+        (* Step 1: add_open_sort_new_atoms_are_nodes (roots + atom_tree_sort + new=node) *)
+        assert (Hmaps : map fst c' = map fst base') by (symmetry; exact Hfst_tail).
+        pose proof (add_open_sort_new_atoms_are_nodes c' base' (scon nt st)
+                      Hwfc' Hwfst Hmaps) as Hnode_sort.
+        unfold vc in Hnode_sort. specialize (Hnode_sort e_inner).
+        unfold open_newatom_sort_post in Hnode_sort.
+        destruct (add_open_sort succ sort_of l false false base' (scon nt st) e_inner)
+          as [t_v e_sort] eqn:Heq_sort.
+        cbn [fst snd] in Hnode_sort.
+        specialize (Hnode_sort Huf_tail Hdb_tail Hall_tail).
+        destruct Hnode_sort as (Henv_sort & Htv_root & Htree_sort & Hext_sort & Hnew).
+        destruct Henv_sort as (Huf_sort & Hdb_sort & Hincl_sort & Hmono_sort).
+        (* Step 2: alloc_opaque_rank_zero *)
+        pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ
+                      V V_map V_map V_map_ok V_trie X H
+                      lt_asymmetric lt_succ lt_trans)
+          as Halloc.
+        unfold vc in Halloc. specialize (Halloc e_sort).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_sort) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc.
+        destruct Huf_sort as [roots_s Hroots_s].
+        specialize (Halloc roots_s Hroots_s).
+        destruct Halloc as (Hok_alloc & Hfresh_x' & Hx'_root & Hx'_rank0
+                           & Hkeys_alloc & Hmono_alloc & Hdb_alloc_eq
+                           & Hpar_alloc & Hwl_alloc).
+        cbn [fst snd] in *.
+        (* Derive db_ctx_inv e_alloc from db_ctx_inv e_sort + db unchanged *)
+        assert (Hdb_alloc : db_ctx_inv e_alloc).
+        { unfold db_ctx_inv, db_inv in *.
+          intros a Ha.
+          rewrite <- Hdb_alloc_eq in Ha.
+          specialize (Hdb_sort a Ha).
+          destruct Hdb_sort as [Hargs_roots Hret_root].
+          split.
+          - eapply all_wkn; [|exact Hargs_roots].
+            intros z _ Hz. exact (Hmono_alloc z Hz).
+          - intro HPfn. exact (Hmono_alloc _ (Hret_root HPfn)). }
+        (* Steps 3a and 3b: hash_entry_all_roots + hash_entry_fresh_rank_zero *)
+        assert (Hx'_key : Sep.has_key x' (parent (Defs.equiv e_alloc))).
+        { apply is_root_has_key. unfold is_root. exact Hx'_root. }
+        assert (Hno_sortof : forall r, ~ atom_in_db (Build_atom sort_of [x'] r) e_alloc.(Defs.db)).
+        { intros r Hin.
+          rewrite <- Hdb_alloc_eq in Hin.
+          unfold db_ctx_inv, db_inv in Hdb_sort.
+          specialize (Hdb_sort (Build_atom sort_of [x'] r) Hin).
+          destruct Hdb_sort as [Hargs_s _].
+          cbn [atom_args] in Hargs_s.
+          destruct Hargs_s as [Hx'_s _].
+          assert (Hx'_ks : Sep.has_key x' (parent (Defs.equiv e_sort))).
+          { apply is_root_has_key. unfold is_root. exact Hx'_s. }
+          exact (Hfresh_x' Hx'_ks). }
+        pose proof (@hash_entry_all_roots V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _ (fun s => s <> sort_of)
+                      lt_asymmetric lt_succ lt_trans sort_of [x']) as Hhe_roots.
+        pose proof (@hash_entry_fresh_rank_zero V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map_ok V_map V_map_ok V_trie V_trie_ok X H
+                      lt_asymmetric lt_succ lt_trans sort_of [x']) as Hhe_fresh.
+        unfold vc in Hhe_roots, Hhe_fresh.
+        specialize (Hhe_roots e_alloc).
+        specialize (Hhe_fresh e_alloc).
+        destruct (hash_entry succ sort_of [x'] e_alloc) as [tx' e_he] eqn:Heq_he.
+        cbn [fst snd] in Hhe_roots, Hhe_fresh.
+        assert (Hkeys_he_args : forall y, In y [x'] -> Sep.has_key y (parent (Defs.equiv e_alloc))).
+        { intros y Hy. cbn in Hy. destruct Hy as [Hy|]; [|contradiction].
+          subst y. exact Hx'_key. }
+        specialize (Hhe_roots (ex_intro _ _ Hok_alloc) Hdb_alloc Hkeys_he_args).
+        destruct Hhe_roots as (Huf_he & Hdb_he & Hincl_he & Hmono_he & _).
+        assert (Hx'_root_list : all (fun y => map.get (parent (Defs.equiv e_alloc)) y = Some y) [x']).
+        { cbn. split; [exact Hx'_root | exact I]. }
+        specialize (Hhe_fresh (ex_intro _ _ Hok_alloc) Hx'_root_list Hno_sortof).
+        destruct Hhe_fresh as (Htx'_rank0 & Htx'_root & Htx'_fresh & Htx'_atom).
+        (* Step 4: union_roots_demote_second *)
+        assert (Htv_root_alloc : is_root e_alloc t_v).
+        { unfold is_root. exact (Hmono_alloc t_v Htv_root). }
+        assert (Htv_root_he : is_root e_he t_v).
+        { unfold is_root. exact (Hmono_he t_v (Htv_root_alloc)). }
+        assert (Htx'_root_he : is_root e_he tx').
+        { unfold is_root. exact Htx'_root. }
+        assert (Htv_ne_tx' : t_v <> tx').
+        { intro Heq. subst t_v.
+          apply Htx'_fresh.
+          apply is_root_has_key. exact Htv_root_alloc. }
+        assert (Hrank_tx' : map.get (@rank _ _ _ (Defs.equiv e_he)) tx' = Some 0).
+        { exact Htx'_rank0. }
+        pose proof (@union_roots_demote_second V V_Eqb V_Eqb_ok lt V_default
+                      V V_map V_map V_map_ok V_trie X H t_v tx') as Hunion.
+        unfold vc in Hunion. specialize (Hunion e_he).
+        destruct (Defs.union t_v tx' e_he) as [v_u e_u] eqn:Heq_union.
+        cbn [fst snd] in Hunion.
+        destruct Huf_he as [roots_he Hroots_he].
+        specialize (Hunion roots_he Hroots_he Htv_root_he Htx'_root_he Htv_ne_tx' Hrank_tx').
+        destruct Hunion as (Hvu_tv & Htv_root_u & Htx'_demoted_u & Hothers_u
+                           & Hdb_u & Hpar_u & [improved Hwl_u] & [roots_u Hroots_u]).
+        cbn [fst snd] in *.
+        (* db inclusion facts (mirror add_ctx_readback) *)
+        assert (Hincl_su : forall a0, atom_in_db a0 (Defs.db e_sort) -> atom_in_db a0 (Defs.db e_u)).
+        { intros a0 Ha0. rewrite Hdb_alloc_eq in Ha0. apply Hincl_he in Ha0.
+          rewrite Hdb_u in Ha0. exact Ha0. }
+        assert (Hincl_iu : forall a0, atom_in_db a0 (Defs.db e_inner) -> atom_in_db a0 (Defs.db e_u)).
+        { intros a0 Ha0. apply Hincl_sort in Ha0. apply Hincl_su. exact Ha0. }
+        (* Expose the result shape ((name,x')::base', e_u) and take a sort_of atom. *)
+        cbn [Mret StateMonad.state_monad fst snd].
+        intros a Ha_in Ha_sof.
+        (* Push [a] (a sort_of db atom of e_u) back through hash_entry *)
+        unfold atom_in_egraph in Ha_in.
+        rewrite <- Hdb_u in Ha_in.       (* a in e_he.db *)
+        (* hash_entry_new_atom_split: a in e_alloc.db  OR  a = Build_atom sort_of [x'] tx' *)
+        pose proof (@hash_entry_new_atom_split V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _ lt_asymmetric lt_succ lt_trans sort_of [x']) as Hsplit.
+        unfold vc in Hsplit. specialize (Hsplit e_alloc).
+        rewrite Heq_he in Hsplit. cbn [fst snd] in Hsplit.
+        specialize (Hsplit (ex_intro _ _ Hok_alloc) Hx'_root_list a Ha_in).
+        destruct Hsplit as [Ha_alloc | Ha_new].
+        + (* OLD sort_of atom: push back through alloc + add_open_sort, then IH *)
+          rewrite <- Hdb_alloc_eq in Ha_alloc.   (* a in e_sort.db *)
+          (* add_open_sort_no_new_sortof: sort_of atom in add_open_sort output was in input *)
+          pose proof (add_open_sort_no_new_sortof base' (scon nt st) e_inner a) as Hnosof_pull.
+          rewrite Heq_sort in Hnosof_pull. cbn [snd] in Hnosof_pull.
+          specialize (Hnosof_pull Ha_alloc Ha_sof).   (* a in e_inner.db *)
+          assert (Ha_inner : atom_in_egraph a e_inner)
+            by (unfold atom_in_egraph; exact Hnosof_pull).
+          destruct (Hframe_sortof a Ha_inner Ha_sof) as (nm & xx & Hargs & Hin_base & Hns_nm).
+          exists nm, xx. split; [ exact Hargs | split; [ right; exact Hin_base | exact Hns_nm ] ].
+        + (* NEW atom: a = Build_atom sort_of [x'] tx', companion x' is the new sub entry *)
+          subst a. cbn [atom_args atom_fn].
+          exists name, x'. split; [ reflexivity | split; [ left; reflexivity | exact Hns ] ].
+        }
+        (* SKIP branch: only alloc_opaque runs, db unchanged, no new sort_of atom. *)
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hcombined.
+        unfold ctx_sortof_frame_post_gen.
+        intros Hok Hdb Hnosof.
+        destruct Hcombined as [Hrb_post Hframe_sortof].
+        unfold ctx_readback_post_gen in Hrb_post.
+        specialize (Hrb_post Hok Hdb).
+        destruct Hrb_post as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hrb_tail).
+        unfold ctx_sortof_frame_post_gen in Hframe_sortof.
+        specialize (Hframe_sortof Hok Hdb Hnosof).
+        pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ
+                      V V_map V_map V_map_ok V_trie X H
+                      lt_asymmetric lt_succ lt_trans)
+          as Halloc.
+        unfold vc in Halloc. specialize (Halloc e_inner).
+        destruct (alloc_opaque V succ V V_map V_map V_trie X e_inner) as [x' e_alloc] eqn:Heq_alloc.
+        cbn [fst snd] in Halloc.
+        destruct Huf_tail as [roots_t Hroots_t].
+        specialize (Halloc roots_t Hroots_t).
+        destruct Halloc as (Hok_alloc & Hfresh_x' & Hx'_root & Hx'_rank0
+                           & Hkeys_alloc & Hmono_alloc & Hdb_alloc_eq
+                           & Hpar_alloc & Hwl_alloc).
+        cbn [fst snd] in *.
+        cbn [Mret StateMonad.state_monad fst snd].
+        intros a Ha_in Ha_sof.
+        unfold atom_in_egraph in Ha_in.
+        rewrite <- Hdb_alloc_eq in Ha_in.
+        assert (Ha_inner : atom_in_egraph a e_inner)
+          by (unfold atom_in_egraph; exact Ha_in).
+        destruct (Hframe_sortof a Ha_inner Ha_sof) as (nm & xx & Hargs & Hin_base & Hns_nm).
+        exists nm, xx. split; [ exact Hargs | split; [ right; exact Hin_base | exact Hns_nm ] ].
     Qed.
 
     (* ================================================================ *)

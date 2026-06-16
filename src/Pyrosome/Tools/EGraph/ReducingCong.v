@@ -345,7 +345,7 @@ Section ReducingStep.
       (schedule : list (nat * rule_set V V V_map V_map)) : Prop :=
       forall n rs, In (n, rs) schedule ->
         @rs_saturation_hyps V V_Eqb V_default V_map V_map_plus V_trie succ V_leb lt
-          (option positive) (depth V) spaced_list_intersect lang_model rs.
+          (option positive) (size V) spaced_list_intersect lang_model rs.
 
     (* Stronger form, exposing the resulting egraph's soundness and the input
        denotations regardless of [res]/[are_unified].  Chains: [empty] sound
@@ -385,7 +385,7 @@ Section ReducingStep.
       pose proof (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok V_map V_map_ok V_trie (option positive) lang_model) as Hempty.
       destruct Hempty as [Hok0 Hsnd0].
       assert (Hsub : forall (e:term V), e [/ with_names_from (@nil (V*sort V)) (@nil (term V)) /] = e) by (intro; cbn [with_names_from]; apply term_subst_nil).
-      pose proof (@add_open_term_sound V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans (option positive) (depth V) l wfl sort_of_fresh true [] [] [] a ta) as Hpa.
+      pose proof (@add_open_term_sound V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans (option positive) (size V) l wfl sort_of_fresh true [] [] [] a ta) as Hpa.
       specialize (Hpa ltac:(constructor) Ha ltac:(constructor) (eq_refl) map.empty); unfold vc in Hpa.
       assert (Haa' : add_open_term succ sort_of l true false [] a (empty_egraph V_default (option positive)) = (x1, ea)) by (exact Haa).
       specialize (Hpa (empty_egraph V_default (option positive))).
@@ -396,7 +396,7 @@ Section ReducingStep.
       cbn [fst snd] in Hext1, Hrel1.
       rewrite Hsub in Hrel1.
       destruct Hext1 as [ Hok_ea [ Hextmap1 [ Hsnd_ea Hkey1 ] ] ].
-      pose proof (@add_open_term_sound V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans (option positive) (depth V) l wfl sort_of_fresh true [] [] [] b tb) as Hpb.
+      pose proof (@add_open_term_sound V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans (option positive) (size V) l wfl sort_of_fresh true [] [] [] b tb) as Hpb.
       specialize (Hpb ltac:(constructor) Hb ltac:(constructor) (eq_refl) i1); unfold vc in Hpb.
       specialize (Hpb ea).
       rewrite Hab in Hpb.
@@ -415,11 +415,11 @@ Section ReducingStep.
         - rewrite (Hext _ _ Hgv); exact Hor.
         - discriminate Hor. }
       pose proof (@lang_model_ok V V_Eqb V_Eqb_ok sort_of l sort_of_fresh wfl) as Hmok.
-      pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (depth V) lang_model x1 eb i2 Hok_eb Hsnd_eb) as Hg1.
+      pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x1 eb i2 Hok_eb Hsnd_eb) as Hg1.
       rewrite Hga1 in Hg1; cbn [snd] in Hg1; destruct Hg1 as [Hok_e1 Hsnd_e1].
-      pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (depth V) lang_model x2 e1 i2 Hok_e1 Hsnd_e1) as Hg2.
+      pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x2 e1 i2 Hok_e1 Hsnd_e1) as Hg2.
       rewrite Hga2 in Hg2; cbn [snd] in Hg2; destruct Hg2 as [Hok_e2 Hsnd_e2].
-      pose proof (@rebuild_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok (option positive) (depth V) lang_model Hmok (fun _ => True) rfuel e2 Hok_e2) as Hrbs.
+      pose proof (@rebuild_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok (option positive) (size V) lang_model Hmok (fun _ => True) rfuel e2 Hok_e2) as Hrbs.
       rewrite Hrb in Hrbs; cbn [snd] in Hrbs; destruct Hrbs as [Hok_e3 Hiff3].
       assert (Hsnd_e3 : sound i2 e3) by (apply (Hiff3 i2); exact Hsnd_e2).
       match type of Hsat with
@@ -428,20 +428,20 @@ Section ReducingStep.
       assert (HP : forall ee ii, egraph_ok ee -> sound ii ee -> egraph_ok (snd (pred ee)) /\ sound ii (snd (pred ee)))
         by (intros ee ii Hoke Hsnde; subst pred; unfold weight_less_than;
             cbn [Mbind Mret StateMonad.state_monad];
-            pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (depth V) lang_model x1 ee ii Hoke Hsnde) as Hp1;
+            pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x1 ee ii Hoke Hsnde) as Hp1;
             destruct (get_analysis V V V_map V_map V_trie (option positive) x1 ee) as [a1 e1'] eqn:He1';
             cbn [snd] in Hp1; destruct Hp1 as [ Hok1 Hsnd1 ]; cbn [fst snd];
             destruct (oP_lt a1 w1);
             [ cbn [snd]; split; assumption | ];
             cbn [fst snd];
-            pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (depth V) lang_model x2 e1' ii Hok1 Hsnd1) as Hp2;
+            pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x2 e1' ii Hok1 Hsnd1) as Hp2;
             destruct (get_analysis V V V_map V_map V_trie (option positive) x2 e1') as [a2 e2'] eqn:He2';
             cbn [snd] in Hp2; destruct Hp2 as [ Hok2 Hsnd2 ];
             destruct (oP_lt a2 w2);
             [ cbn [snd]; split; assumption | ];
             pose proof (@are_unified_preserves_ok_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie (option positive) lang_model x1 x2 e2' ii Hok2 Hsnd2) as Hau;
             destruct Hau as [ Hoku Hsndu ]; split; assumption).
-      pose proof (@scheduled_saturate_until_sound V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok succ V_leb lt lt_asymmetric lt_succ lt_trans V_map_plus_ok (option positive) (depth V) spaced_list_intersect lang_model Hmok rfuel pred HP schedule Hsched sat_fuel i2 e3 Hok_e3 Hsnd_e3) as Hss.
+      pose proof (@scheduled_saturate_until_sound V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok succ V_leb lt lt_asymmetric lt_succ lt_trans V_map_plus_ok (option positive) (size V) spaced_list_intersect lang_model Hmok rfuel pred HP schedule Hsched sat_fuel i2 e3 Hok_e3 Hsnd_e3) as Hss.
       rewrite Hsat in Hss.
       destruct Hss as [ Hok_g [ i3 [ Hext3 Hsnd_g ] ] ].
       pose proof (Hlift i2 i3 x1 (inl a) Hext3 (Hlift i1 i2 x1 (inl a) Hextmap2 Hrel1)) as Hr1g.

@@ -71,10 +71,7 @@ Derive fix_cc
                                           fix_cc
                                           fix_cps_lang)
        as fix_cc_preserving.
-Proof.
-  (*auto_elab_compiler' (rule_named_in cc_bidirectional_rules) empty_inj_rules.*)
-  TODO_auto_elab_compiler.
-Qed.
+Proof. auto_elab_compiler' (rule_named_in cc_bidirectional_rules) empty_inj_rules. Qed.
 #[local] Definition fix_cc_cmp_entry :=
   cmp_entry (elab_compiler_implies_preserving fix_cc_preserving).
 #[export] Hint Resolve fix_cc_cmp_entry : preserving_db.
