@@ -35,7 +35,11 @@ Proof.
       cbn [list_Mmap canonicalize_worklist_entry Mbind Mret StateMonad.state_monad fst snd].
       assert (Hnew_root : map.get e.(equiv).(parent) new_idx = Some new_idx).
       { apply (Hroots_e old new_idx b). left. reflexivity. }
-      rewrite (@find_root_identity _ _ _ _ _ _ _ _ e new_idx Hnew_root).
+      pose proof (find_root_identity
+                    idx Eqb_idx Eqb_idx_ok symbol symbol_map idx_map idx_trie
+                    analysis_result new_idx) as Hfri.
+      unfold vc in Hfri. specialize (Hfri e).
+      rewrite (Hfri Hnew_root).
       unfold vc in IH. specialize (IH e).
       assert (Hroots_tail : forall old0 new_idx0 b0, In (@union_repair idx old0 new_idx0 b0) l ->
                   map.get e.(equiv).(parent) new_idx0 = Some new_idx0).
@@ -89,16 +93,18 @@ Lemma rebuild_canon
   (idx_trie : forall A, map.map (list idx) A) (idx_trie_ok : forall A, map.ok (idx_trie A))
   (analysis_result : Type) (HA : analysis idx symbol analysis_result)
   (m : model symbol) (Hm : model_ok symbol m)
-  fuel e1 ed_list
-  : @egraph_ok _ lt _ _ _ _ _ e1 ->
-    good_worklist idx symbol symbol_map idx_map idx_trie analysis_result e1 ed_list ->
-    @db_inv _ _ _ _ _ _ (fun _ => True) (snd (rebuild (S fuel) e1))
-    /\ (forall z, @is_root _ _ _ _ _ _ e1 z -> @is_root _ _ _ _ _ _ (snd (rebuild (S fuel) e1)) z)
-    /\ (forall b, @atom_in_db _ _ _ _ _ b (snd (rebuild (S fuel) e1)).(db) ->
-           exists a, @atom_in_db _ _ _ _ _ a e1.(db)
-             /\ a.(atom_fn) = b.(atom_fn) /\ a.(atom_args) = b.(atom_args)).
+  fuel ed_list
+  : vc (rebuild (S fuel))
+      (fun e1 res =>
+         @egraph_ok _ lt _ _ _ _ _ e1 ->
+         good_worklist idx symbol symbol_map idx_map idx_trie analysis_result e1 ed_list ->
+         @db_inv _ _ _ _ _ _ (fun _ => True) (snd res)
+         /\ (forall z, @is_root _ _ _ _ _ _ e1 z -> @is_root _ _ _ _ _ _ (snd res) z)
+         /\ (forall b, @atom_in_db _ _ _ _ _ b (snd res).(db) ->
+                exists a, @atom_in_db _ _ _ _ _ a e1.(db)
+                  /\ a.(atom_fn) = b.(atom_fn) /\ a.(atom_args) = b.(atom_args))).
 Proof.
-  intros Hok1 Hgwl.
+  unfold vc; intros e1 Hok1 Hgwl.
   destruct Hgwl as (Hwl_eq & Hnodup & Hall_good & Hdisj & Hdbinv & Hcov).
   cbn [rebuild].
   unfold pull_worklist. cbn [Mbind StateMonad.state_monad fst snd].

@@ -34,7 +34,6 @@ Lemma alloc_opaque_analyses_cover
   {idx_map : forall A, map.map idx A} {idx_map_ok : forall A, map.ok (idx_map A)}
   {idx_trie : forall A, map.map (list idx) A} {analysis_result : Type}
   {HA : analysis idx symbol analysis_result}
-  (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
   : vc (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie analysis_result)
       (fun e res =>
          egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e ->

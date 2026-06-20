@@ -85,7 +85,12 @@ Section Slice.
                     (nth cv clause_vars idx_zero)).
   Proof.
     intros Hsnd Hnd Hlen Ha_q Hqf Hclause Hcvars Hbound_args Hbound_cv Hhit.
-    pose proof (clause_ptr_atom_in_db q inst query_vars frontier_n f n clause_vars q_f (cargs,cv) sigma Hqf Hclause Hhit) as Hcp.
+    pose proof (clause_ptr_atom_in_db q query_vars frontier_n f n clause_vars q_f (cargs,cv) sigma) as Hcp0.
+    unfold vc in Hcp0. specialize (Hcp0 inst).
+    destruct (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                idx_map idx_map_plus idx_trie analysis_result window q inst) as [bt_v bt_s] eqn:Hbt.
+    cbn [fst snd] in Hcp0, Hhit.
+    pose proof (Hcp0 Hqf Hclause Hhit) as Hcp.
     destruct Hcp as [ args_db [ v_db [ Hdb Hmatch ] ] ].
     set (proj := map fst (filter snd (combine sigma (variable_flags idx Eqb_idx query_vars clause_vars)))) in *.
     pose proof (atom_interpretation m i inst Hsnd (Build_atom f args_db v_db) Hdb) as Hdb_snd.
@@ -171,7 +176,12 @@ Section Slice.
                     (nth cv clause_vars idx_zero)).
   Proof.
     intros Hsnd Hnd Hlen Ha_q Hqf Hclause Hcvars Hbound_args Hbound_cv Hhit.
-    pose proof (clause_ptr_atom_in_db_sn q inst query_vars frontier_pos pos f n clause_vars q_f (cargs,cv) sigma Hqf Hclause Hhit) as Hcp.
+    pose proof (clause_ptr_atom_in_db_sn q query_vars frontier_pos pos f n clause_vars q_f (cargs,cv) sigma) as Hcp0.
+    unfold vc in Hcp0. specialize (Hcp0 inst).
+    destruct (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+                idx_map idx_map_plus idx_trie analysis_result window q inst) as [bt_v bt_s] eqn:Hbt.
+    cbn [fst snd] in Hcp0, Hhit.
+    pose proof (Hcp0 Hqf Hclause Hhit) as Hcp.
     destruct Hcp as [ args_db [ v_db [ Hdb Hmatch ] ] ].
     set (proj := map fst (filter snd (combine sigma (variable_flags idx Eqb_idx query_vars clause_vars)))) in *.
     pose proof (atom_interpretation m i inst Hsnd (Build_atom f args_db v_db) Hdb) as Hdb_snd.
@@ -448,18 +458,18 @@ Section Slice.
                       (map fst (filter snd (combine sigma
                          (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))
               = Some tt)) ->
-    forall e_cur icur,
-      egraph_ok e_cur -> egraph_sound_for_interpretation icur e_cur -> map.extends icur i_snap ->
-    match list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) sigmas e_cur with
-    | (_, e') =>
-        egraph_ok e'
-        /\ exists i', map.extends i' i_snap /\ egraph_sound_for_interpretation i' e'
-    end.
+    vc (list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) sigmas)
+      (fun e_cur res =>
+       forall icur,
+         egraph_ok e_cur -> egraph_sound_for_interpretation icur e_cur -> map.extends icur i_snap ->
+         egraph_ok (snd res)
+         /\ exists i', map.extends i' i_snap /\ egraph_sound_for_interpretation i' (snd res)).
   Proof.
     intros db_tries Hsnd_inst Hnd_qv Hnd_wv Hrule Hwf Hcov Hdisj HcovC HcovU.
     intro sigmas. induction sigmas as [|sigma sigmas' IH];
-      intros Hprem e_cur icur Hok_cur Hsnd_cur Hext_cur.
-    - cbn [list_Miter]. split; [exact Hok_cur|].
+      intros Hprem; unfold vc; intro e_cur; cbn beta;
+      intros icur Hok_cur Hsnd_cur Hext_cur.
+    - cbn [list_Miter Mret StateMonad.state_monad fst snd]. split; [exact Hok_cur|].
       exists icur. split; [exact Hext_cur | exact Hsnd_cur].
     - cbn [list_Miter].
       destruct (Hprem sigma (or_introl eq_refl)) as (frontier_n & Hlen1 & Hsli_sigma).
@@ -505,19 +515,22 @@ Section Slice.
               [ left; exists (named_list_lookup idx_zero (combine (query_vars idx symbol r) sigma) (snd p));
                 unfold env0; exact (get_of_list_combine idx idx_zero (query_vars idx symbol r) sigma (snd p) Hnd_qv Hlen1 Hq)
               | right; exact Hw ] ]).
-      pose proof (@exec_write_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm Hlti Hlts Hltt Hm icur r sigma e_cur a_src
-                    Hnd_wv Hfresh Hsrc_wv Hcons Hcons_c Hcons_u Hsrc_c Hsrc_u Hok_cur Hsnd_cur) as Hew.
+      pose proof (@exec_write_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hlti Hlts Hltt Hm icur r sigma a_src) as Hew.
+      cbv zeta in Hew. unfold vc in Hew. specialize (Hew e_cur).
       cbn [Mseq Mbind Mret StateMonad.state_monad].
       destruct (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r sigma e_cur)
         as [u e_mid] eqn:Hew_eq.
+      cbn [fst snd] in Hew.
+      specialize (Hew Hnd_wv Hfresh Hsrc_wv Hcons Hcons_c Hcons_u Hsrc_c Hsrc_u Hok_cur Hsnd_cur).
       destruct Hew as (Hok_mid & _Hmono & i_mid & Hext_mid & Hsnd_mid).
       assert (Hext_mid_i : map.extends i_mid i_snap)
         by (intros k vv hh; apply Hext_mid; apply Hext_cur; exact hh).
-      pose proof (IH (fun s Hs => Hprem s (or_intror Hs))
-                    e_mid i_mid Hok_mid Hsnd_mid Hext_mid_i) as HIH.
+      pose proof (IH (fun s Hs => Hprem s (or_intror Hs))) as HIH0.
+      unfold vc in HIH0. specialize (HIH0 e_mid i_mid Hok_mid Hsnd_mid Hext_mid_i).
       destruct (list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) sigmas' e_mid)
         as [u2 e'] eqn:Hlm.
-      destruct HIH as (Hok' & i' & Hext'_snap & Hsnd').
+      cbn [fst snd] in HIH0 |- *.
+      destruct HIH0 as (Hok' & i' & Hext'_snap & Hsnd').
       split; [exact Hok'|].
       exists i'. split; [exact Hext'_snap | exact Hsnd'].
   Qed.
@@ -534,16 +547,13 @@ Section Slice.
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
     (i_snap i_start : idx_map (domain symbol m)) (inst : instance)
     (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol)
-    (frontier_n : idx) (e_start : instance) :
+    (frontier_n : idx) :
     let db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
                            idx_map idx_map_plus idx_trie analysis_result window q inst) in
     let tries := ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
                            (query_vars idx symbol r) db_tries frontier_n)
                         (query_clause_ptrs idx symbol r) in
     egraph_sound_for_interpretation i_snap inst ->
-    egraph_ok e_start ->
-    egraph_sound_for_interpretation i_start e_start ->
-    map.extends i_start i_snap ->
     List.NoDup (query_vars idx symbol r) ->
     List.NoDup (write_vars idx symbol r) ->
     erule_sound idx idx_zero symbol symbol_map idx_map m (query_clauses idx symbol symbol_map idx_map q) r ->
@@ -578,15 +588,18 @@ Section Slice.
                (map fst (filter snd (combine sigma
                   (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))
        = Some tt) ->
-    match @process_erule' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
-            analysis_result _ spaced_list_intersect db_tries r frontier_n e_start with
-    | (_, e') =>
-        egraph_ok e'
-        /\ exists i', map.extends i' i_snap /\ egraph_sound_for_interpretation i' e'
-    end.
+    vc (@process_erule' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
+            analysis_result _ spaced_list_intersect db_tries r frontier_n)
+      (fun e_start res =>
+         egraph_ok e_start ->
+         egraph_sound_for_interpretation i_start e_start ->
+         map.extends i_start i_snap ->
+         egraph_ok (snd res)
+         /\ exists i', map.extends i' i_snap /\ egraph_sound_for_interpretation i' (snd res)).
   Proof.
-    intros db_tries tries Hsnd_inst Hok_start Hsnd_start Hext_start Hnd_qv Hnd_wv Hrule
+    intros db_tries tries Hsnd_inst Hnd_qv Hnd_wv Hrule
            Hwf Hcov Hdisj HcovC HcovU Hlen_sig Hsli.
+    unfold vc; intro e_start; cbn beta; intros Hok_start Hsnd_start Hext_start.
     unfold process_erule'.
     fold tries.
     set (asn := intersection_keys idx idx_trie spaced_list_intersect tries) in *.
@@ -648,11 +661,13 @@ Section Slice.
                 [ left; exists (named_list_lookup idx_zero (combine (query_vars idx symbol r) sigma) (snd p));
                   unfold env0; exact (get_of_list_combine idx idx_zero (query_vars idx symbol r) sigma (snd p) Hnd_qv Hlen1 Hq)
                 | right; exact Hw ] ]).
-        pose proof (@exec_write_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm Hlti Hlts Hltt Hm icur r sigma e_cur a_src
-                      Hnd_wv Hfresh Hsrc_wv Hcons Hcons_c Hcons_u Hsrc_c Hsrc_u Hok_cur Hsnd_cur) as Hew.
+        pose proof (@exec_write_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hlti Hlts Hltt Hm icur r sigma a_src) as Hew.
+        cbv zeta in Hew. unfold vc in Hew. specialize (Hew e_cur).
         cbn [Mseq Mbind Mret StateMonad.state_monad].
         destruct (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r sigma e_cur)
           as [u e_mid] eqn:Hew_eq.
+        cbn [fst snd] in Hew.
+        specialize (Hew Hnd_wv Hfresh Hsrc_wv Hcons Hcons_c Hcons_u Hsrc_c Hsrc_u Hok_cur Hsnd_cur).
         destruct Hew as (Hok_mid & _Hmono & i_mid & Hext_mid & Hsnd_mid).
         assert (Hext_mid_i : map.extends i_mid i_snap)
           by (intros k vv hh; apply Hext_mid; apply Hext_cur; exact hh).
@@ -663,7 +678,10 @@ Section Slice.
         destruct HIH as (Hok' & i' & Hext'_snap & Hsnd').
         split; [exact Hok'|].
         exists i'. split; [exact Hext'_snap | exact Hsnd']. }
-    apply (Hloop asn Hlen_sig Hsli e_start i_start Hok_start Hsnd_start Hext_start).
+    pose proof (Hloop asn Hlen_sig Hsli e_start i_start Hok_start Hsnd_start Hext_start) as Hfin.
+    destruct (list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) asn e_start)
+      as [u e'] eqn:Hlmf.
+    cbn [fst snd]. exact Hfin.
   Qed.
 
   (* Proper semi-naive soundness for one frontier POSITION of a single erule:
@@ -676,7 +694,7 @@ Section Slice.
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
     (i_snap i_start : idx_map (domain symbol m)) (inst : instance)
     (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol)
-    (frontier_pos : nat) (e_start : instance) :
+    (frontier_pos : nat) :
     let db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
                            idx_map idx_map_plus idx_trie analysis_result window q inst) in
     let tries := ne_map_idx (fun pos ptr =>
@@ -684,9 +702,6 @@ Section Slice.
                                  (query_vars idx symbol r) db_tries frontier_pos pos ptr)
                             (query_clause_ptrs idx symbol r) in
     egraph_sound_for_interpretation i_snap inst ->
-    egraph_ok e_start ->
-    egraph_sound_for_interpretation i_start e_start ->
-    map.extends i_start i_snap ->
     List.NoDup (query_vars idx symbol r) ->
     List.NoDup (write_vars idx symbol r) ->
     erule_sound idx idx_zero symbol symbol_map idx_map m (query_clauses idx symbol symbol_map idx_map q) r ->
@@ -721,15 +736,18 @@ Section Slice.
                (map fst (filter snd (combine sigma
                   (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))
        = Some tt) ->
-    match @process_erule'_sn idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
-            analysis_result _ spaced_list_intersect db_tries r frontier_pos e_start with
-    | (_, e') =>
-        egraph_ok e'
-        /\ exists i', map.extends i' i_snap /\ egraph_sound_for_interpretation i' e'
-    end.
+    vc (@process_erule'_sn idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
+            analysis_result _ spaced_list_intersect db_tries r frontier_pos)
+      (fun e_start res =>
+         egraph_ok e_start ->
+         egraph_sound_for_interpretation i_start e_start ->
+         map.extends i_start i_snap ->
+         egraph_ok (snd res)
+         /\ exists i', map.extends i' i_snap /\ egraph_sound_for_interpretation i' (snd res)).
   Proof.
-    intros db_tries tries Hsnd_inst Hok_start Hsnd_start Hext_start Hnd_qv Hnd_wv Hrule
+    intros db_tries tries Hsnd_inst Hnd_qv Hnd_wv Hrule
            Hwf Hcov Hdisj HcovC HcovU Hlen_sig Hsli.
+    unfold vc; intro e_start; cbn beta; intros Hok_start Hsnd_start Hext_start.
     unfold process_erule'_sn.
     fold tries.
     set (asn := intersection_keys idx idx_trie spaced_list_intersect tries) in *.
@@ -793,11 +811,13 @@ Section Slice.
                 [ left; exists (named_list_lookup idx_zero (combine (query_vars idx symbol r) sigma) (snd p));
                   unfold env0; exact (get_of_list_combine idx idx_zero (query_vars idx symbol r) sigma (snd p) Hnd_qv Hlen1 Hq)
                 | right; exact Hw ] ]).
-        pose proof (@exec_write_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm Hlti Hlts Hltt Hm icur r sigma e_cur a_src
-                      Hnd_wv Hfresh Hsrc_wv Hcons Hcons_c Hcons_u Hsrc_c Hsrc_u Hok_cur Hsnd_cur) as Hew.
+        pose proof (@exec_write_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hlti Hlts Hltt Hm icur r sigma a_src) as Hew.
+        cbv zeta in Hew. unfold vc in Hew. specialize (Hew e_cur).
         cbn [Mseq Mbind Mret StateMonad.state_monad].
         destruct (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r sigma e_cur)
           as [u e_mid] eqn:Hew_eq.
+        cbn [fst snd] in Hew.
+        specialize (Hew Hnd_wv Hfresh Hsrc_wv Hcons Hcons_c Hcons_u Hsrc_c Hsrc_u Hok_cur Hsnd_cur).
         destruct Hew as (Hok_mid & _Hmono & i_mid & Hext_mid & Hsnd_mid).
         assert (Hext_mid_i : map.extends i_mid i_snap)
           by (intros k vv hh; apply Hext_mid; apply Hext_cur; exact hh).
@@ -808,7 +828,10 @@ Section Slice.
         destruct HIH as (Hok' & i' & Hext'_snap & Hsnd').
         split; [exact Hok'|].
         exists i'. split; [exact Hext'_snap | exact Hsnd']. }
-    apply (Hloop asn Hlen_sig Hsli e_start i_start Hok_start Hsnd_start Hext_start).
+    pose proof (Hloop asn Hlen_sig Hsli e_start i_start Hok_start Hsnd_start Hext_start) as Hfin.
+    destruct (list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) asn e_start)
+      as [u e'] eqn:Hlmf.
+    cbn [fst snd]. exact Hfin.
   Qed.
 
 End Slice.
@@ -836,14 +859,10 @@ Lemma process_erule_sound
   (window : nat)
   (i_snap i_start : idx_map (domain symbol m))
   (inst : instance idx symbol symbol_map idx_map idx_trie analysis_result)
-  (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol)
-  (e_start : instance idx symbol symbol_map idx_map idx_trie analysis_result) :
+  (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol) :
   let db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
                          idx_map idx_map_plus idx_trie analysis_result window q inst) in
   egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i_snap inst ->
-  egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e_start ->
-  egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i_start e_start ->
-  map.extends i_start i_snap ->
   List.NoDup (query_vars idx symbol r) ->
   List.NoDup (write_vars idx symbol r) ->
   erule_sound idx idx_zero symbol symbol_map idx_map m (query_clauses idx symbol symbol_map idx_map q) r ->
@@ -888,16 +907,19 @@ Lemma process_erule_sound
              (map fst (filter snd (combine sigma
                 (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))
      = Some tt) ->
-  match @process_erule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
-          analysis_result _ spaced_list_intersect db_tries r e_start with
-  | (_, e') =>
-      egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e'
-      /\ exists i', map.extends i' i_snap
-                    /\ egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i' e'
-  end.
+  vc (@process_erule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
+          analysis_result _ spaced_list_intersect db_tries r)
+    (fun e_start res =>
+       egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e_start ->
+       egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i_start e_start ->
+       map.extends i_start i_snap ->
+       egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result (snd res)
+       /\ exists i', map.extends i' i_snap
+                     /\ egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i' (snd res)).
 Proof.
-  intros db_tries Hsnd_inst Hok_start Hsnd_start Hext_start Hnd_qv Hnd_wv Hrule
+  intros db_tries Hsnd_inst Hnd_qv Hnd_wv Hrule
          Hwf Hcov Hdisj HcovC HcovU Hlen_sig Hsli.
+  unfold vc; intro e_start; cbn beta; intros Hok_start Hsnd_start Hext_start.
   (* The proper semi-naive [process_erule] iterates [process_erule'_sn] over the
      frontier positions [seq 0 nclauses], threading the egraph.  Each position is
      sound by [process_erule'_sn_sound] (fixed snapshot [i_snap], evolving loop
@@ -919,15 +941,18 @@ Proof.
     - cbn [list_Miter]. split; [exact Hok_cur|].
       exists icur. split; [exact Hext_cur | exact Hsnd_cur].
     - cbn [list_Miter].
-      pose proof (process_erule'_sn_sound window Hlti Hlts Hltt i_snap icur inst q r p e_cur
-                    Hsnd_inst Hok_cur Hsnd_cur Hext_cur Hnd_qv Hnd_wv Hrule
+      pose proof (process_erule'_sn_sound window Hlti Hlts Hltt i_snap icur inst q r p
+                    Hsnd_inst Hnd_qv Hnd_wv Hrule
                     Hwf Hcov Hdisj HcovC HcovU (Hlen_sig p) (Hsli p)) as Hstep.
       cbv zeta in Hstep.
       fold db_tries in Hstep.
+      unfold vc in Hstep. specialize (Hstep e_cur).
       cbn [Mseq Mbind Mret StateMonad.state_monad].
       destruct (@process_erule'_sn idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
                   analysis_result _ spaced_list_intersect db_tries r p e_cur)
         as [u e_mid] eqn:Hpe.
+      cbn [fst snd] in Hstep.
+      specialize (Hstep Hok_cur Hsnd_cur Hext_cur).
       destruct Hstep as (Hok_mid & i_mid & Hext_mid & Hsnd_mid).
       pose proof (IH e_mid i_mid Hok_mid Hsnd_mid Hext_mid) as HIH.
       destruct (list_Miter (@process_erule'_sn idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
@@ -936,5 +961,10 @@ Proof.
       destruct HIH as (Hok' & i' & Hext'_snap & Hsnd').
       split; [exact Hok'|].
       exists i'. split; [exact Hext'_snap | exact Hsnd']. }
-  apply (Hloop _ e_start i_start Hok_start Hsnd_start Hext_start).
+  lazymatch goal with
+  | |- context [ list_Miter ?f ?l ?s ] =>
+      pose proof (Hloop l e_start i_start Hok_start Hsnd_start Hext_start) as Hfin;
+      destruct (list_Miter f l s) as [u e'] eqn:Hlmf
+  end.
+  cbn [fst snd]. exact Hfin.
 Qed.

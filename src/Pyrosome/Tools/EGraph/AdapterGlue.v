@@ -395,7 +395,7 @@ Section WithVar.
                     V_trie V_trie_ok unit HX
                     (lang_model l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    (fun _ => True) rf)
+                    rf)
         as Hvc_rb.
       unfold vc in Hvc_rb.
       specialize (Hvc_rb (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))).
@@ -468,7 +468,7 @@ Section WithVar.
                     V_trie V_trie_ok unit HX
                     (lang_model l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    (fun _ => True) rf)
+                    rf)
         as Hvc_rb2.
       unfold vc in Hvc_rb2.
       specialize (Hvc_rb2 e_open).
@@ -1437,7 +1437,7 @@ Section WithVar.
                     V_trie V_trie_ok unit HX
                     (lang_model l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    (fun _ => True) rf)
+                    rf)
         as Hvc_rb2.
       unfold vc in Hvc_rb2.
       specialize (Hvc_rb2 e_open).
@@ -1989,7 +1989,7 @@ Section WithVar.
                     V_trie V_trie_ok unit HX
                     (lang_model l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    (fun _ => True) rf)
+                    rf)
         as Hvc_rb.
       unfold vc in Hvc_rb.
       specialize (Hvc_rb e_open).
@@ -2118,7 +2118,7 @@ Section WithVar.
                     V_trie V_trie_ok unit HX
                     (lang_model l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    (fun _ => True) rf)
+                    rf)
         as Hvc_rb.
       unfold vc in Hvc_rb. specialize (Hvc_rb e_union). cbn [snd] in Hvc_rb.
       specialize (Hvc_rb Hvc_union_ok).
@@ -2807,7 +2807,7 @@ Section WithVar.
                     V_trie V_trie_ok unit HX
                     (lang_model l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    (fun _ => True) rf)
+                    rf)
         as Hvc_rb.
       unfold vc in Hvc_rb.
       specialize (Hvc_rb e_open).
@@ -2925,7 +2925,7 @@ Section WithVar.
                     V_trie V_trie_ok unit HX
                     (lang_model l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    (fun _ => True) rf)
+                    rf)
         as Hvc_rb.
       unfold vc in Hvc_rb. specialize (Hvc_rb e_union). cbn [snd] in Hvc_rb.
       specialize (Hvc_rb Hvc_union_ok).
