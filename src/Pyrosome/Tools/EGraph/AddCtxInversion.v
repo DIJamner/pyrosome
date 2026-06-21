@@ -133,11 +133,11 @@ Section WithVar.
         pose proof (@rebuild_canon V V_Eqb V_Eqb_ok lt succ V_default
                       V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                       X _ lang_model (lang_model_ok l Hsof Hwf)
-                      fuel e1 ed_list Hok Hgwl) as [HdbT [Hmono _] ].
+                      fuel ed_list e1 Hok Hgwl) as [HdbT [Hmono _] ].
         eapply (@L_survive_canonical' V V_Eqb V_Eqb_ok lt succ V_default
                       V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                       X _ lang_model (lang_model_ok l Hsof Hwf)
-                      (S fuel) e1 a).
+                      (S fuel) a e1).
         + exact Hok.
         + exact Hup.
         + exact HdbT.
@@ -272,7 +272,7 @@ Section WithVar.
       pose proof (@rebuild_canon V V_Eqb V_Eqb_ok lt succ V_default
                     V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                     X _ lang_model (lang_model_ok l Hsof Hwf)
-                    fuel e1 ed_list Hok1 Hgwl) as (HdbT & Hmono & Hrev).
+                    fuel ed_list e1 Hok1 Hgwl) as (HdbT & Hmono & Hrev).
       (* --- canonicalizing survival --- *)
       pose proof (rebuild_survives_canonical e1 (S fuel) Hok1 (ex_intro _ _ Hgwl) Hsucc) as Hsurv.
       (* --- build Hsurv_exact from Hsurv (for use with atom_tree_sort_survives) --- *)
@@ -388,7 +388,7 @@ Section WithVar.
       pose proof (@rebuild_canon V V_Eqb V_Eqb_ok lt succ V_default
                     V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                     X _ lang_model (lang_model_ok l Hsof Hwf)
-                    fuel e1 ed_list Hok1 Hgwl) as (HdbT & Hmono & Hrev).
+                    fuel ed_list e1 Hok1 Hgwl) as (HdbT & Hmono & Hrev).
       unfold ain, Semantics.atom_in_egraph in Hb. fold eF in Hb.
       destruct (Hrev b Hb) as (a & Ha_e1_db & Hafn & Haargs).
       assert (Ha_e1_in : ain a e1) by (unfold ain, Semantics.atom_in_egraph; exact Ha_e1_db).
@@ -606,7 +606,7 @@ Section WithVar.
         pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc.
         pose proof (@alloc_opaque_egraph_ok V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc_eg.
         pose proof (@alloc_opaque_parents_keys_in_equiv V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc_pke.
-        pose proof (@alloc_opaque_analyses_cover V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc_ac.
+        pose proof (@alloc_opaque_analyses_cover V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX) as Halloc_ac.
         unfold vc in Halloc, Halloc_eg, Halloc_pke, Halloc_ac.
         specialize (Halloc e_sort). specialize (Halloc_eg e_sort). specialize (Halloc_pke e_sort). specialize (Halloc_ac e_sort).
         destruct (alloc_opaque V succ V V_map V_map V_trie X e_sort) as [x' e_alloc] eqn:Heq_alloc.
@@ -940,7 +940,7 @@ Section WithVar.
         pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc.
         pose proof (@alloc_opaque_egraph_ok V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc_eg.
         pose proof (@alloc_opaque_parents_keys_in_equiv V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc_pke.
-        pose proof (@alloc_opaque_analyses_cover V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc_ac.
+        pose proof (@alloc_opaque_analyses_cover V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX) as Halloc_ac.
         unfold vc in Halloc, Halloc_eg, Halloc_pke, Halloc_ac.
         specialize (Halloc e_sort). specialize (Halloc_eg e_sort). specialize (Halloc_pke e_sort). specialize (Halloc_ac e_sort).
         destruct (alloc_opaque V succ V V_map V_map V_trie X e_sort) as [x' e_alloc] eqn:Heq_alloc.
@@ -1190,7 +1190,7 @@ Section WithVar.
         pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc.
         pose proof (@alloc_opaque_egraph_ok V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc_eg.
         pose proof (@alloc_opaque_parents_keys_in_equiv V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc_pke.
-        pose proof (@alloc_opaque_analyses_cover V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX lt_asymmetric lt_succ lt_trans) as Halloc_ac.
+        pose proof (@alloc_opaque_analyses_cover V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X HX) as Halloc_ac.
         unfold vc in Halloc, Halloc_eg, Halloc_pke, Halloc_ac.
         specialize (Halloc e_inner). specialize (Halloc_eg e_inner). specialize (Halloc_pke e_inner). specialize (Halloc_ac e_inner).
         destruct (alloc_opaque V succ V V_map V_map V_trie X e_inner) as [x' e_alloc] eqn:Heq_alloc.
@@ -2345,7 +2345,7 @@ Section WithVar.
                     V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                     X HX (Theorems.lang_model V sort_of l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    fuel e_open ed_list Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
+                    fuel ed_list e_open Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
       destruct (Hrev b Hb) as (a & Ha_eopen_db & Hafn & Haargs).
       assert (Hafn_sof : atom_fn a = sort_of) by (rewrite Hafn; exact Hbfn).
       pose proof (@Theorems.add_open_term'_keeps_sortof V V_Eqb V_Eqb_ok V_default V_map V_map_ok
@@ -2498,7 +2498,7 @@ Section WithVar.
                     V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                     X HX (Theorems.lang_model V sort_of l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    fuel e_open ed_list Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
+                    fuel ed_list e_open Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
       destruct (Hrev b Hb) as (a & Ha_eopen_db & Hafn & Haargs).
       assert (Hafn_sof : atom_fn a = sort_of) by (rewrite Hafn; exact Hbfn).
       pose proof (@Theorems.add_open_term'_keeps_sortof V V_Eqb V_Eqb_ok V_default V_map V_map_ok
@@ -2707,7 +2707,7 @@ Section WithVar.
                     V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                     X HX (Theorems.lang_model V sort_of l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    fuel e_open ed_list Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
+                    fuel ed_list e_open Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
       destruct (Hrev b Hb) as (a & Ha_eopen_db & Hafn & Haargs).
       assert (Ha_eopen : @Semantics.atom_in_egraph V V V_map V_map V_trie X a e_open) by exact Ha_eopen_db.
       assert (Hafn_ne : atom_fn a <> sort_of) by (rewrite Hafn; exact Hbfn).
@@ -2949,7 +2949,7 @@ Section WithVar.
                     V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                     X HX (Theorems.lang_model V sort_of l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    fuel e_open ed_list Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
+                    fuel ed_list e_open Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
       destruct (Hrev b Hb) as (a & Ha_eopen_db & Hafn & Haargs).
       assert (Ha_eopen : @Semantics.atom_in_egraph V V V_map V_map V_trie X a e_open) by exact Ha_eopen_db.
       assert (Hafn_ne : atom_fn a <> sort_of) by (rewrite Hafn; exact Hbfn).
@@ -4028,7 +4028,7 @@ Section WithVar.
                     V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                     X HX (Theorems.lang_model V sort_of l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    fuel e_open ed_list Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
+                    fuel ed_list e_open Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
       destruct (Hrev b Hb) as (a & Ha_eopen_db & Hafn & Haargs).
       assert (Hafn_sof : atom_fn a = sort_of) by (rewrite Hafn; exact Hbfn).
       pose proof (@Theorems.add_open_sort'_keeps_sortof V V_Eqb V_Eqb_ok V_default V_map V_map_ok
@@ -4190,7 +4190,7 @@ Section WithVar.
                     V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                     X HX (Theorems.lang_model V sort_of l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    fuel e_open ed_list Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
+                    fuel ed_list e_open Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
       destruct (Hrev b Hb) as (a & Ha_eopen_db & Hafn & Haargs).
       assert (Ha_eopen : @Semantics.atom_in_egraph V V V_map V_map V_trie X a e_open) by exact Ha_eopen_db.
       assert (Hafn_ne : atom_fn a <> sort_of) by (rewrite Hafn; exact Hbfn).
@@ -4494,7 +4494,7 @@ Section WithVar.
                     V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                     X HX (Theorems.lang_model V sort_of l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    fuel e_open ed_list Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
+                    fuel ed_list e_open Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
       destruct (Hrev b Hb) as (a & Ha_eopen_db & Hafn & Haargs).
       assert (Hafn_sof : atom_fn a = sort_of) by (rewrite Hafn; exact Hbfn).
       pose proof (@Theorems.add_open_sort'_keeps_sortof V V_Eqb V_Eqb_ok V_default V_map V_map_ok
@@ -4657,7 +4657,7 @@ Section WithVar.
                     V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
                     X HX (Theorems.lang_model V sort_of l)
                     (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
-                    fuel e_open ed_list Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
+                    fuel ed_list e_open Hok_open Hgwl_open) as (HdbT & Hmono & Hrev).
       destruct (Hrev b Hb) as (a & Ha_eopen_db & Hafn & Haargs).
       assert (Ha_eopen : @Semantics.atom_in_egraph V V V_map V_map V_trie X a e_open) by exact Ha_eopen_db.
       assert (Hafn_ne : atom_fn a <> sort_of) by (rewrite Hafn; exact Hbfn).

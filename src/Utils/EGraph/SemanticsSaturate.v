@@ -50,10 +50,13 @@ Section Slice.
     (egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m).
 
   (* increment_epoch_preserves *)
-  Lemma increment_epoch_preserves (e : instance) :
-    (egraph_ok e -> egraph_ok (snd (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e)))
-    /\ (forall i, egraph_sound_for_interpretation i e -> egraph_sound_for_interpretation i (snd (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e))).
+  Lemma increment_epoch_preserves :
+    vc (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie analysis_result)
+      (fun e res =>
+         (egraph_ok e -> egraph_ok (snd res))
+         /\ (forall i, egraph_sound_for_interpretation i e -> egraph_sound_for_interpretation i (snd res))).
   Proof.
+    unfold vc; intro e.
     destruct e as [db equiv parents epoch worklist analyses log].
     cbn [increment_epoch snd].
     split.
@@ -128,28 +131,27 @@ Section Slice.
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
     (rebuild_fuel : nat) (window : nat)
     (i_0 : idx_map (domain symbol m))
-    (rs : rule_set idx symbol symbol_map idx_map)
-    (e_0 : instance) :
-    egraph_ok e_0 ->
-    egraph_sound_for_interpretation i_0 e_0 ->
-    (forall r, In r (compiled_rules idx symbol symbol_map idx_map rs) ->
-       run1iter_rule_hyps idx Eqb_idx idx_zero idx_succ idx_leb window symbol symbol_map symbol_map_plus
-         idx_map idx_map_plus idx_trie analysis_result spaced_list_intersect m rs e_0 r) ->
-    match Defs.run1iter idx Eqb_idx idx_succ idx_zero idx_leb symbol symbol_map symbol_map_plus
-            idx_map idx_map_plus idx_trie analysis_result spaced_list_intersect rebuild_fuel window rs e_0 with
-    | (_, e') => egraph_ok e' /\ exists i', map.extends i' i_0 /\ egraph_sound_for_interpretation i' e'
-    end.
+    (rs : rule_set idx symbol symbol_map idx_map) :
+    vc (Defs.run1iter idx Eqb_idx idx_succ idx_zero idx_leb symbol symbol_map symbol_map_plus
+          idx_map idx_map_plus idx_trie analysis_result spaced_list_intersect rebuild_fuel window rs)
+      (fun e_0 res =>
+         egraph_ok e_0 ->
+         egraph_sound_for_interpretation i_0 e_0 ->
+         (forall r, In r (compiled_rules idx symbol symbol_map idx_map rs) ->
+            run1iter_rule_hyps idx Eqb_idx idx_zero idx_succ idx_leb window symbol symbol_map symbol_map_plus
+              idx_map idx_map_plus idx_trie analysis_result spaced_list_intersect m rs e_0 r) ->
+         egraph_ok (snd res) /\ exists i', map.extends i' i_0 /\ egraph_sound_for_interpretation i' (snd res)).
   Proof.
-    intros Hok_0 Hsnd_0 Hrules.
+    unfold vc; intro e_0; cbn beta; intros Hok_0 Hsnd_0 Hrules.
     unfold Defs.run1iter.
     cbn [Mbind Mseq Mret StateMonad.state_monad].
     destruct (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus idx_map idx_map_plus idx_trie analysis_result window rs e_0) as [tries e0'] eqn:Hbt.
     cbn [build_tries] in Hbt. inversion Hbt as [ [Htries He0'] ]. subst e0'.
     cbn [max_id worklist_empty].
     clear Hbt Htries tries.
+    pose proof increment_epoch_preserves as Hiep; unfold vc in Hiep; specialize (Hiep e_0).
     destruct (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e_0) as [u1 e_1] eqn:Hie.
-    pose proof (increment_epoch_preserves e_0) as [Hok1f Hs1f].
-    rewrite Hie in Hok1f, Hs1f. cbn [snd] in Hok1f, Hs1f.
+    cbn [fst snd] in Hiep. destruct Hiep as [Hok1f Hs1f].
     specialize (Hok1f Hok_0).
     set (db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus idx_map idx_map_plus idx_trie analysis_result window rs e_0)).
     change (map_intersect (build_tries_for_symbol idx Eqb_idx idx_succ idx_leb idx_map idx_map_plus idx_trie analysis_result (epoch e_0) window) (query_clauses idx symbol symbol_map idx_map rs) (db e_0)) with db_tries.
@@ -168,9 +170,12 @@ Section Slice.
         assert (Hin : In r (r :: rules')) by (left; reflexivity).
         pose proof (Hrh r Hin) as Hrhr.
         destruct Hrhr as (Hnd_qv & Hnd_wv & Hrule & Hwf & Hcov & Hdisj & HcovC & HcovU & Hlen & Hsli).
-        pose proof (@process_erule_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero idx_leb symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_plus symbol_map_plus_ok symbol_map_ok idx_map idx_map_plus idx_map_ok idx_trie idx_trie_ok analysis_result idx_map_plus_ok spaced_list_intersect H m Hm Hlti Hlts Hltt window i_0 i_cur e_0 rs r e_cur Hsnd_0 Hok_cur Hsnd_cur Hext_cur Hnd_qv Hnd_wv Hrule Hwf Hcov Hdisj HcovC HcovU Hlen Hsli) as Hpe.
+        pose proof (@process_erule_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero idx_leb symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_plus symbol_map_plus_ok symbol_map_ok idx_map idx_map_plus idx_map_ok idx_trie idx_trie_ok analysis_result idx_map_plus_ok spaced_list_intersect H m Hm Hlti Hlts Hltt window i_0 i_cur e_0 rs r Hsnd_0 Hnd_qv Hnd_wv Hrule Hwf Hcov Hdisj HcovC HcovU Hlen Hsli) as Hpe.
+        unfold vc in Hpe; specialize (Hpe e_cur).
         fold db_tries in Hpe.
         destruct (process_erule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result spaced_list_intersect db_tries r e_cur) as [u e_mid] eqn:Hpe_eq.
+        cbn [fst snd] in Hpe.
+        specialize (Hpe Hok_cur Hsnd_cur Hext_cur).
         destruct Hpe as (Hok_mid & i_mid & Hext_mid & Hsnd_mid).
         assert (Hrh' : forall r0, In r0 rules' -> run1iter_rule_hyps idx Eqb_idx idx_zero idx_succ idx_leb window symbol symbol_map symbol_map_plus
                                                      idx_map idx_map_plus idx_trie analysis_result spaced_list_intersect m rs e_0 r0) by (intros r0 Hr0; apply Hrh; right; exact Hr0).
@@ -181,10 +186,11 @@ Section Slice.
     pose proof (Hloop (compiled_rules idx symbol symbol_map idx_map rs) e_1 i_0 Hrules Hok1f Hsnd_1 Hrefl) as Hrl.
     destruct (list_Miter (process_erule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result spaced_list_intersect db_tries) (compiled_rules idx symbol symbol_map idx_map rs) e_1) as [u_loop e_2] eqn:Hlm.
     destruct Hrl as (Hok_2 & i_2 & Hext_2 & Hsnd_2).
-    pose proof (@rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm (fun _ => True) rebuild_fuel e_2) as Hrb.
-    specialize (Hrb Hok_2). destruct Hrb as (Hok_3 & Hde).
+    pose proof (@rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm rebuild_fuel) as Hrb.
+    unfold vc in Hrb; specialize (Hrb e_2).
     destruct (rebuild rebuild_fuel e_2) as [u3 e_3] eqn:Hrbeq.
-    cbn [snd] in Hok_3, Hde.
+    cbn [fst snd] in Hrb.
+    specialize (Hrb Hok_2). destruct Hrb as (Hok_3 & Hde).
     split; [exact Hok_3|].
     exists i_2. split; [exact Hext_2|].
     apply (proj1 (Hde i_2)). exact Hsnd_2.
@@ -205,14 +211,15 @@ Section Slice.
        run1iter_rule_hyps idx Eqb_idx idx_zero idx_succ idx_leb w symbol symbol_map symbol_map_plus
          idx_map idx_map_plus idx_trie analysis_result spaced_list_intersect m rs e r)
     (fuel : nat) :
-    forall (window : nat) (i_0 : idx_map (domain symbol m)) (e_0 : instance),
-    egraph_ok e_0 ->
-    egraph_sound_for_interpretation i_0 e_0 ->
-    match Defs.saturate_until' idx_succ idx_zero idx_leb spaced_list_intersect rebuild_fuel window rs P fuel e_0 with
-    | (_, e') => egraph_ok e' /\ exists i', map.extends i' i_0 /\ egraph_sound_for_interpretation i' e'
-    end.
+    forall (window : nat) (i_0 : idx_map (domain symbol m)),
+    vc (Defs.saturate_until' idx_succ idx_zero idx_leb spaced_list_intersect rebuild_fuel window rs P fuel)
+      (fun e_0 res =>
+         egraph_ok e_0 ->
+         egraph_sound_for_interpretation i_0 e_0 ->
+         egraph_ok (snd res) /\ exists i', map.extends i' i_0 /\ egraph_sound_for_interpretation i' (snd res)).
   Proof.
-    induction fuel as [|fuel IH]; intros window i_0 e_0 Hok_0 Hsnd_0.
+    induction fuel as [|fuel IH]; intros window i_0;
+      unfold vc; intro e_0; cbn beta; intros Hok_0 Hsnd_0.
     - cbn [Defs.saturate_until' Mret StateMonad.state_monad].
       split; [exact Hok_0|]. exists i_0. split; [apply Properties.map.extends_refl | exact Hsnd_0].
     - cbn [Defs.saturate_until'].
@@ -222,13 +229,19 @@ Section Slice.
       cbn [snd] in HokP, HsndP.
       destruct doneP.
       { split; [exact HokP|]. exists i_0. split; [apply Properties.map.extends_refl | exact HsndP]. }
-      pose proof (run1iter_sound Hlti Hlts Hltt rebuild_fuel window i_0 rs eP HokP HsndP (fun r Hr => Hrules window eP r Hr)) as Hri.
+      pose proof (run1iter_sound Hlti Hlts Hltt rebuild_fuel window i_0 rs) as Hri.
+      unfold vc in Hri; specialize (Hri eP).
       destruct (Defs.run1iter idx Eqb_idx idx_succ idx_zero idx_leb symbol symbol_map symbol_map_plus idx_map idx_map_plus idx_trie analysis_result spaced_list_intersect rebuild_fuel window rs eP) as [nc e2] eqn:Hru.
+      cbn [fst snd] in Hri.
+      specialize (Hri HokP HsndP (fun r Hr => Hrules window eP r Hr)).
       destruct Hri as (Hok2 & i_1 & Hext1 & Hsnd2).
       destruct nc.
       { split; [exact Hok2|]. exists i_1. split; [exact Hext1 | exact Hsnd2]. }
-      pose proof (IH 0 i_1 e2 Hok2 Hsnd2) as HIH.
+      pose proof (IH 0 i_1) as HIH.
+      unfold vc in HIH; specialize (HIH e2).
       destruct (saturate_until' idx_succ idx_zero idx_leb spaced_list_intersect rebuild_fuel 0 rs P fuel e2) as [b e_final] eqn:Hsat.
+      cbn [fst snd] in HIH.
+      specialize (HIH Hok2 Hsnd2).
       destruct HIH as (Hok_final & i_f & Hext_f & Hsnd_final).
       split; [exact Hok_final|]. exists i_f.
       split; [eapply map_extends_trans; [exact Hext_f | exact Hext1] | exact Hsnd_final].
@@ -273,28 +286,32 @@ Lemma saturate_until_sound
      run1iter_rule_hyps idx Eqb_idx idx_zero idx_succ idx_leb w symbol symbol_map symbol_map_plus
        idx_map idx_map_plus idx_trie analysis_result spaced_list_intersect m rs e r)
   (fuel : nat)
-  (i_0 : idx_map (domain symbol m)) (e_0 : Defs.instance idx symbol symbol_map idx_map idx_trie analysis_result) :
-  Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e_0 ->
-  Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i_0 e_0 ->
-  match Defs.saturate_until idx_succ idx_zero idx_leb spaced_list_intersect rebuild_fuel window rs P fuel e_0 with
-  | (_, e') => Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e'
-               /\ exists i', map.extends i' i_0 /\ Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i' e'
-  end.
+  (i_0 : idx_map (domain symbol m)) :
+  vc (Defs.saturate_until idx_succ idx_zero idx_leb spaced_list_intersect rebuild_fuel window rs P fuel)
+    (fun e_0 res =>
+       Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e_0 ->
+       Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i_0 e_0 ->
+       Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result (snd res)
+       /\ exists i', map.extends i' i_0 /\ Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i' (snd res)).
 Proof.
-  intros Hok_0 Hsnd_0.
+  unfold vc; intro e_0; cbn beta; intros Hok_0 Hsnd_0.
   unfold Defs.saturate_until.
   cbn [Mseq Mbind StateMonad.state_monad].
   pose proof (Hconst e_0 i_0 Hok_0 Hsnd_0) as Hc.
   destruct (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result rs e_0) as [u_c e_a] eqn:Hpc.
   cbn [snd] in Hc.
   destruct Hc as (Hok_a & i_a & Hext_a & Hsnd_a).
-  pose proof (@rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm (fun _ => True) rebuild_fuel e_a) as Hrb.
-  specialize (Hrb Hok_a). destruct Hrb as (Hok_b & Hde).
+  pose proof (@rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm rebuild_fuel) as Hrb.
+  unfold vc in Hrb; specialize (Hrb e_a).
   destruct (rebuild rebuild_fuel e_a) as [u_b e_b] eqn:Hrbeq.
-  cbn [snd] in Hok_b, Hde.
+  cbn [fst snd] in Hrb.
+  specialize (Hrb Hok_a). destruct Hrb as (Hok_b & Hde).
   pose proof (proj1 (Hde i_a) Hsnd_a) as Hsnd_b.
-  pose proof (saturate_until'_sound (spaced_list_intersect:=spaced_list_intersect) (m:=m) Hlti Hlts Hltt rebuild_fuel rs P HP Hrules fuel window i_a e_b Hok_b Hsnd_b) as Hsat.
+  pose proof (saturate_until'_sound (spaced_list_intersect:=spaced_list_intersect) (m:=m) Hlti Hlts Hltt rebuild_fuel rs P HP Hrules fuel window i_a) as Hsat.
+  unfold vc in Hsat; specialize (Hsat e_b).
   destruct (saturate_until' idx_succ idx_zero idx_leb spaced_list_intersect rebuild_fuel window rs P fuel e_b) as [b e_final] eqn:Hsf.
+  cbn [fst snd] in Hsat.
+  specialize (Hsat Hok_b Hsnd_b).
   destruct Hsat as (Hok_f & i_f & Hext_f & Hsnd_f).
   split; [exact Hok_f|]. exists i_f.
   split; [eapply map_extends_trans; [exact Hext_f | exact Hext_a] | exact Hsnd_f].
