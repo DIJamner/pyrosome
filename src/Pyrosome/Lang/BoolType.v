@@ -5,6 +5,10 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
+
+From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
+Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
+
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
   Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
@@ -13,6 +17,8 @@ Import Core.Notations.
 Require Coq.derive.Derive.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst SimpleVSTLC.
 From Pyrosome.Lang Require Import UTLC. 
+
+From Pyrosome.Compilers Require Import Parameterizer. (* for id_compiler *)
 
 
 Definition typed_bool_def : lang :=
@@ -76,7 +82,7 @@ Definition untyped_bool_def : lang :=
   ]}.
 
 Derive untyped_bool
-       SuchThat (elab_lang_ext (usubst++exp_subst++value_subst) untyped_bool_def untyped_bool)
+       SuchThat (elab_lang_ext (star_type ++ exp_subst++value_subst) untyped_bool_def untyped_bool)
        As untyped_bool_wf.
 Proof. auto_elab. Qed. 
 #[local] Definition untyped_bool_entry :=
@@ -112,7 +118,7 @@ Definition boolhuh_def : lang :=
   ]}.
 
 Derive boolhuh
-       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) boolhuh_def boolhuh)
+       SuchThat (elab_lang_ext (utlc ++ untyped_bool ++ star_type ++ exp_subst++value_subst) boolhuh_def boolhuh)
        As boolhuh_wf.
 Proof. auto_elab. Qed.
 #[local] Definition boolhuh_entry :=
@@ -148,7 +154,7 @@ Definition utlc_bool_def : lang :=
   ]}.
 
 Derive utlc_bool
-       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) utlc_bool_def utlc_bool)
+       SuchThat (elab_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++ exp_subst++value_subst) utlc_bool_def utlc_bool)
        As utlc_bool_wf.
 Proof. auto_elab. Qed.
 #[local] Definition utlc_bool_entry :=
@@ -197,7 +203,7 @@ Definition uif_def : lang :=
   ]}.
 
 Derive uif
-       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) uif_def uif)
+       SuchThat (elab_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) uif_def uif)
        As uif_wf. (* leftmost is newest *)
 Proof. auto_elab. Qed.
 #[local] Definition uif_entry :=
@@ -248,11 +254,60 @@ Definition mif_def : lang :=
       = #"Error" "A" : #"exp" "G" "A" 
   ]
   ]}.
-
 Derive mif
-       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) mif_def mif)
+       SuchThat (elab_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) mif_def mif)
        As mif_wf.
 Proof. auto_elab. Qed.
 #[local] Definition mif_entry :=
   lang_entry (elab_lang_implies_wf mif_wf).
 #[export] Hint Resolve mif_entry : wf_lang_db.
+
+Definition dyn_lang_no_conditional := boolhuh ++ utlc_bool ++ untyped_bool ++ utlc ++ error_t ++ star_type ++ exp_subst ++ value_subst.
+Hint Unfold dyn_lang_no_conditional : auto_elab.
+
+(* NOTE: commenting out to see if it's ever necessary *)
+(* Lemma dyn_lang_no_conditional_wf : wf_lang dyn_lang_no_conditional.
+Proof. prove_by_lang_db. Qed.
+#[local] Definition dyn_lang_no_conditional_entry :=
+  lang_entry dyn_lang_no_conditional_wf.
+#[export] Hint Resolve dyn_lang_no_conditional_entry : wf_lang_db. *)
+
+Local Notation compiler := (compiler string).
+
+Local Notation preserving_compiler_ext tgt cmp_pre cmp src := (* copied from Paramaterizer, 2523 *)
+(preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src).
+
+Definition dynamic_id_compiler := id_compiler dyn_lang_no_conditional.
+
+Lemma dyn_lang_no_conditional_id_compiler_preserving : preserving_compiler_ext dyn_lang_no_conditional [] dynamic_id_compiler dyn_lang_no_conditional.
+Proof.
+  apply id_compiler_preserving. 2: prove_by_lang_db. typeclasses eauto.
+Qed.
+#[local] Definition dyn_lang_no_conditional_id_compiler_entry :=
+  cmp_entry dyn_lang_no_conditional_id_compiler_preserving.
+#[export] Hint Resolve dyn_lang_no_conditional_id_compiler_entry : preserving_db.
+
+Definition simple_dynamic_lang_uif := uif ++ utlc_bool ++ boolhuh ++ untyped_bool ++ utlc ++ error_t ++ star_type ++ exp_subst ++ value_subst. 
+
+Definition simple_dynamic_lang_mif := mif ++ utlc_bool ++ boolhuh ++ untyped_bool ++ utlc ++ error_t ++ star_type ++ exp_subst ++ value_subst.
+
+
+Definition uif_to_mif_compiler_def : compiler :=
+    match # from uif with
+    | {{e #"uif" "G" "c" "thn" "els"}} => {{e #"mif" "c" "thn" "els" }}
+    end.
+Derive uif_to_mif_compiler 
+        SuchThat (elab_preserving_compiler 
+                    dynamic_id_compiler
+                    simple_dynamic_lang_mif
+                    uif_to_mif_compiler_def
+                    uif_to_mif_compiler
+                    uif
+                    ) 
+        As uif_to_mif_compiler_preserving. 
+Proof. auto_elab_compiler. Qed.
+#[local] Definition uif_to_mif_compiler_entry :=
+  cmp_entry (elab_compiler_implies_preserving uif_to_mif_compiler_preserving).
+#[export] Hint Resolve uif_to_mif_compiler_entry : preserving_db.
+
+(* Now, we don't need to have uif at all in the Multilanguages.v file! *)
