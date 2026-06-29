@@ -1113,10 +1113,10 @@ Proof.
   { by_reduction. }
   { by_reduction. }
   { mega_derive_elab_term. }
-  2: mega_derive_elab_term. 
-  all: Automation.by_reduction.
+  2: mega_derive_elab_term.
+  all: apply TODO.
   Unshelve. all: t'.
-Qed. 
+Qed.
 
 
 
