@@ -1,8 +1,9 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils GallinaHintDb.
+From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
   Tools.EGraph.TypeInference
@@ -14,7 +15,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Notation compiler := (compiler string).
 
@@ -37,8 +38,8 @@ Definition fix_cps_lang_def : lang :=
   ] ]}.
 
 Derive fix_cps_lang
-       SuchThat (elab_lang_ext (cps_lang ++ block_subst ++ value_subst) fix_cps_lang_def fix_cps_lang)
-       As fix_wf.
+       in (elab_lang_ext (cps_lang ++ block_subst ++ value_subst) fix_cps_lang_def fix_cps_lang)
+       as fix_wf.
 Proof. auto_elab. Qed.
 #[local] Definition fix_cps_entry := lang_entry (elab_lang_implies_wf fix_wf).
 #[export] Hint Resolve fix_cps_entry : wf_lang_db.
@@ -52,7 +53,7 @@ Definition fix_cps_def : compiler :=
   end.
 
 Derive fix_cps
-       SuchThat (elab_preserving_compiler (cps++cps_subst)
+       in (elab_preserving_compiler (cps++cps_subst)
                                           (fix_cps_lang
                                               ++ cps_prod_lang
                                              ++ cps_lang
@@ -61,7 +62,7 @@ Derive fix_cps
                                           fix_cps_def
                                           fix_cps
                                           fix_lang)
-       As fix_cps_preserving.
+       as fix_cps_preserving.
 Proof. auto_elab_compiler. Qed.
 #[local] Definition fix_cps_cmp_entry :=
   cmp_entry (elab_compiler_implies_preserving fix_cps_preserving).

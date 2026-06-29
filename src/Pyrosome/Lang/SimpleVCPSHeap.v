@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -14,7 +15,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 (*simple heap operations w/axioms avoiding an explicit heap *)
 Definition heap_cps_ops_def : lang :=
@@ -99,7 +100,7 @@ Definition heap_id_def : compiler :=
   | {{s #"heap"}} => {{s#"heap"}}
   end.
 
-Require Import Tools.EGraph.Automation.
+From Pyrosome.Tools.EGraph Require Import Automation.
 
 Derive heap_id
        in (elab_preserving_compiler cps_subst

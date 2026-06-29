@@ -1,11 +1,10 @@
 From coqutil Require Import Map.Interface.
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 
-Require Import Setoid.
-Require Import Coq.Classes.Morphisms.
+From Stdlib Require Import Classes.Morphisms.
 
-Require Import Coq.Sorting.Permutation.
+From Stdlib Require Import Sorting.Permutation.
 
 From Utils Require Import Base Booleans Eqb Options Lists ExtraMaps
   Permutation.
@@ -92,11 +91,11 @@ End Lifted.
 #[export] Existing Instance Uiff1_rel_Transitive.
 #[export] Existing Instance Uiff1_rel.
 
-Arguments Uiff1 {A}%type_scope (P1 P2)%function_scope.
-Arguments Uimpl1 {A}%type_scope (P1 P2)%function_scope.
-Arguments and1 {A}%type_scope (P1 P2)%function_scope.
-Arguments not1 {A}%type_scope (P)%function_scope.
-Arguments impl1 {A}%type_scope (P1 P2)%function_scope.
+Arguments Uiff1 {A}%_type_scope (P1 P2)%_function_scope.
+Arguments Uimpl1 {A}%_type_scope (P1 P2)%_function_scope.
+Arguments and1 {A}%_type_scope (P1 P2)%_function_scope.
+Arguments not1 {A}%_type_scope (P)%_function_scope.
+Arguments impl1 {A}%_type_scope (P1 P2)%_function_scope.
 
 
 #[export] Hint Resolve Uimpl1_and1_l : utils.
@@ -284,7 +283,7 @@ Section __.
     cbv [Proper respectful seps_Uiff1 Uiff1].
     basic_goal_prep;
       basic_utils_crush.
-    all: revert dependent a.
+    all: generalize dependent a.
     all:simple eapply sep_consequence; firstorder eauto.
   Qed.
 
@@ -510,7 +509,7 @@ Section __.
   Qed.
 
   (* TODO: move to permutation *)
-  Arguments permute {A}%type_scope (l perm)%list_scope.
+  Arguments permute {A}%_type_scope (l perm)%_list_scope.
 
   
   #[export] Instance seps_Uimpl1_iff1_mor
@@ -791,15 +790,15 @@ Section __.
 
 End __.
 
-Arguments sep {A}%type_scope {mem} (P1 P2)%function_scope t12.
-Arguments ptsto {A}%type_scope {mem} i j m.
-Arguments emp {A}%type_scope {mem} m.
-Arguments lift {A}%type_scope {mem} P%type_scope m.
+Arguments sep {A}%_type_scope {mem} (P1 P2)%_function_scope t12.
+Arguments ptsto {A}%_type_scope {mem} i j m.
+Arguments emp {A}%_type_scope {mem} m.
+Arguments lift {A}%_type_scope {mem} P%_type_scope m.
 
-Arguments seps {A}%type_scope {mem} l%list_scope _ : simpl never.
+Arguments seps {A}%_type_scope {mem} l%_list_scope _ : simpl never.
 
-Arguments seps_Uiff1 {A}%type_scope {mem} (l1 l2)%list_scope.
-Arguments seps_Uimpl1 {A}%type_scope {mem} (l1 l2)%list_scope.
+Arguments seps_Uiff1 {A}%_type_scope {mem} (l1 l2)%_list_scope.
+Arguments seps_Uimpl1 {A}%_type_scope {mem} (l1 l2)%_list_scope.
 
 
 #[export] Existing Instance seps_Uimpl1_rel_relation.
@@ -823,8 +822,8 @@ Arguments seps_Uimpl1 {A}%type_scope {mem} (l1 l2)%list_scope.
 #[export] Hint Rewrite ptsto_inv ptsto_inv_applied : utils.
 
 
-Arguments sep_emp_l A%type_scope {Eqb_A Eqb_A_ok mem mem_ok} P%function_scope a.
-Arguments sep_emp_r A%type_scope {Eqb_A Eqb_A_ok mem mem_ok} P%function_scope a.
+Arguments sep_emp_l A%_type_scope {Eqb_A Eqb_A_ok mem mem_ok} P%_function_scope a.
+Arguments sep_emp_r A%_type_scope {Eqb_A Eqb_A_ok mem mem_ok} P%_function_scope a.
 #[export] Hint Rewrite sep_emp_r using typeclasses eauto : utils.
 #[export] Hint Rewrite sep_emp_l using typeclasses eauto : utils.
 
@@ -872,8 +871,8 @@ Arguments sep_emp_r A%type_scope {Eqb_A Eqb_A_ok mem mem_ok} P%function_scope a.
 #[export] Hint Rewrite and1_emp_l and1_emp_r using typeclasses eauto : utils.
 
 
-Arguments seps_Uimpl1_cons_lift_l {A}%type_scope {Eqb_A Eqb_A_ok} 
-  {mem mem_ok} P%type_scope (l1 l2)%list_scope _%function_scope 
+Arguments seps_Uimpl1_cons_lift_l {A}%_type_scope {Eqb_A Eqb_A_ok} 
+  {mem mem_ok} P%_type_scope (l1 l2)%_list_scope _%_function_scope 
   a _.
 
 (* TODO: obselete this collection of definitions and tactics
@@ -903,8 +902,8 @@ Ltac seprewrite :=
 
 
 
-Arguments sep_sequent_focus' {A}%type_scope {Eqb_A} {Eqb_A_ok} {mem mem_ok}
-  (perm1 perm2 l1 l2)%list_scope.
+Arguments sep_sequent_focus' {A}%_type_scope {Eqb_A} {Eqb_A_ok} {mem mem_ok}
+  (perm1 perm2 l1 l2)%_list_scope.
 
 Ltac sep_focus' p1 p2 :=
   simple apply sep_sequent_focus' with (perm1 := p1) (perm2 := p2);

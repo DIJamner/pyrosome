@@ -1,4 +1,4 @@
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 From coqutil Require Import Map.Interface Map.Properties.
 
@@ -72,8 +72,8 @@ Section __.
 End __.
 
 
-Arguments map_keys_in {A B}%type_scope {mp m_ok A_Eqb A_Eqb_ok} m k _.
-Arguments map_keys_in' {A B}%type_scope {mp m_ok A_Eqb A_Eqb_ok} m k.
+Arguments map_keys_in {A B}%_type_scope {mp m_ok A_Eqb A_Eqb_ok} m k _.
+Arguments map_keys_in' {A B}%_type_scope {mp m_ok A_Eqb A_Eqb_ok} m k.
 
 
 #[export] Hint Rewrite map_keys_empty : utils.

@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -12,7 +13,7 @@ From Pyrosome Require Import
   Lang.Subst
   Lang.SubstEqnGen.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Import Core.Notations.
 Import PreRule.Notations.
@@ -22,8 +23,8 @@ Definition pi_injectivity :=
   [("app", ["G"]); ("lambda", ["e";"B"; "A"; "G"]); ("Pi", ["B"; "A"; "G"])].
 
 Derive pi
-       SuchThat (wf_lang_ext subst_lang pi)
-       As pi_wf.
+       in (wf_lang_ext subst_lang pi)
+       as pi_wf.
 Proof.
   setup_lang_interactive.
 

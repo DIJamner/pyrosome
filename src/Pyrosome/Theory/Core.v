@@ -1,9 +1,10 @@
 Set Implicit Arguments.
 
-Require Import Ltac2.Ltac2.
+From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -1924,13 +1925,13 @@ Notation wf_lang l := (wf_lang_ext [] l).
 
 #[export] Hint Rewrite wf_con_id_args_subst : lang_core.
 
-Arguments rule_in_ctx_wf {V}%type_scope {V_Eqb} [l]%lang_scope 
-  name r [c]%ctx_scope _ _ _.
+Arguments rule_in_ctx_wf {V}%_type_scope {V_Eqb} [l]%_lang_scope 
+  name r [c]%_ctx_scope _ _ _.
 #[export] Hint Resolve rule_in_ctx_wf : lang_core.
 
-Arguments term_con_congruence {V}%type_scope {V_Eqb V_Eqb_ok} 
-  [l]%lang_scope [c]%ctx_scope [t] name [s1 s2]%list_scope 
-  [c']%ctx_scope args%list_scope t' _ _ _ _.
+Arguments term_con_congruence {V}%_type_scope {V_Eqb V_Eqb_ok} 
+  [l]%_lang_scope [c]%_ctx_scope [t] name [s1 s2]%_list_scope 
+  [c']%_ctx_scope args%_list_scope t' _ _ _ _.
 
 
 (*TODO: duplicated; dedup?*)

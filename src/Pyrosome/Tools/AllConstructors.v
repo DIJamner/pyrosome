@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -128,7 +129,34 @@ Section WithVar.
       induction l; basic_goal_prep; basic_core_crush.
   Qed.
   Hint Resolve all_constructors_lang_weaken : lang_core.
-  
+
+  (* A well-formed judgment only mentions symbols declared in [l]. *)
+  Lemma wf_all_constructors (l : lang) :
+    (forall c t1 t2, eq_sort l c t1 t2 -> True)
+    /\ (forall c t e1 e2, eq_term l c t e1 e2 -> True)
+    /\ (forall c c' s1 s2, eq_subst (Model:=core_model l) c c' s1 s2 -> True)
+    /\ (forall c t, wf_sort l c t ->
+          all_constructors_sort (fun n => In n (map fst l)) t)
+    /\ (forall c e t, wf_term l c e t ->
+          all_constructors (fun n => In n (map fst l)) e)
+    /\ (forall c s c', wf_args (Model:=core_model l) c s c' ->
+          all (all_constructors (fun n => In n (map fst l))) s)
+    /\ (forall c, wf_ctx (Model:=core_model l) c -> True).
+  Proof.
+    apply judge_ind; basic_goal_prep; try exact I.
+    all: try assumption.
+    all: split; try assumption.
+    all: basic_utils_crush.
+  Qed.
+
+  Lemma wf_sort_all_constructors l c t
+    : wf_sort l c t -> all_constructors_sort (fun n => In n (map fst l)) t.
+  Proof. destruct (wf_all_constructors l) as (_ & _ & _ & H & _). apply H. Qed.
+
+  Lemma wf_term_all_constructors l c e t
+    : wf_term l c e t -> all_constructors (fun n => In n (map fst l)) e.
+  Proof. destruct (wf_all_constructors l) as (_ & _ & _ & _ & H & _). apply H. Qed.
+
 End WithVar.
 
 (*We use a notation so that auto recognizes it after

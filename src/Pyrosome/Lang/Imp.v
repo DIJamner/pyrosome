@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -14,7 +15,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 
 Definition ch8_def : lang :=
@@ -65,8 +66,8 @@ Definition ch8_def : lang :=
     ]}.
 
 Derive ch8
-       SuchThat (elab_lang_ext (heap++nat_lang) ch8_def ch8)
-       As ch8_wf.
+       in (elab_lang_ext (heap++nat_lang) ch8_def ch8)
+       as ch8_wf.
 Proof. auto_elab. Qed.
 #[local] Definition ch8_entry :=
   lang_entry (elab_lang_implies_wf ch8_wf).
@@ -135,8 +136,8 @@ Definition ch8_config_def : lang :=
   ]}.
 
 Derive ch8_config
-       SuchThat (elab_lang_ext (ch8 ++ heap++nat_lang) ch8_config_def ch8_config)
-       As ch8_config_wf.
+       in (elab_lang_ext (ch8 ++ heap++nat_lang) ch8_config_def ch8_config)
+       as ch8_config_wf.
 Proof.  auto_elab. Qed.
 #[local] Definition ch8_config_entry :=
   lang_entry (elab_lang_implies_wf ch8_config_wf).
@@ -227,8 +228,8 @@ Definition ch8_ectx_def : lang :=
   ]}.
 
 Derive ch8_ectx
-       SuchThat (elab_lang_ext (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx)
-       As ch8_ectx_wf.
+       in (elab_lang_ext (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx)
+       as ch8_ectx_wf.
 Proof.  auto_elab. Qed.
 #[local] Definition ch8_ectx_entry :=
   lang_entry (elab_lang_implies_wf ch8_ectx_wf).
@@ -385,16 +386,16 @@ Ltac clo_eta_cong :=
           try term_refl;[]).
 
 Derive ch8_cc
-       SuchThat (elab_preserving_compiler
+       in (elab_preserving_compiler
                    []
                    target_lang
                    ch8_cc_def
                    ch8_cc
                    (ch8_ectx++ch8_config++ch8++heap++nat_lang))
-       As ch8_cc_preserving.
+       as ch8_cc_preserving.
 Proof.
   (*Note: Automation.auto_elab_compiler doesn't work because the goals take too long to fail. *)
-  ElabCompilers.auto_elab_compiler.  
+  ElabCompilers.auto_elab_compiler.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
@@ -423,38 +424,23 @@ Definition cc_injectivity :=
   [("jmp", ["G"]); ("cont", ["e";"A"; "G"]); ("neg", ["A"])].
 
   TODO: clo_eta is expensive
-  *)
+     *)
     clo_eta_cong.
     Automation.by_reduction;Matches.t'.
-  - Automation.by_reduction; Matches.t'.
-  - Automation.by_reduction; Matches.t'.
-  - compute_eq_compilation.
+  - (* TODO: figure out whether the e-graph gets there eventually without the help.
+       Alternatively, figure out how to specify that e[/-/] is injective if e is a metavariable.
+     *)
     Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    progress clo_eta_cong.
+    term_cong; try term_refl; [].
+    term_cong; try term_refl; [].
     Automation.by_reduction; Matches.t'.
-  - compute_eq_compilation.
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    progress clo_eta_cong.
-    term_refl.
-  - compute_eq_compilation.
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-      eapply eq_term_trans;
-   [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"
-   |  ].
-      compute_eq_compilation; reduce_lhs.
-      (*Import UnElab. hide_implicits.*)
-      (*TODO: clo_eta <- on the RHS is too slow.
-        Check whether egraph is running <- rules.
-       *)
-      eapply eq_term_trans; cycle 1;
-        [ now eredex_steps_with cc_lang "clo_eta" |  ].
-      Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
-    Unshelve.
-    all: repeat Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  Unshelve.
+  all: repeat Matches.t'.
 Qed.
 #[local] Definition ch8_cc_entry :=
   cmp_entry (elab_compiler_implies_preserving ch8_cc_preserving).

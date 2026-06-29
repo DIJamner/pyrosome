@@ -1,12 +1,14 @@
 Set Implicit Arguments.
 
-Require Import Bool Datatypes.String Lists.List.
+From Stdlib Require Import Bool.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Import BoolNotations.
 Open Scope string.
 Open Scope list.
 
-From Utils Require Import Base Booleans Eqb Default Lists Pairs Options.
+From Utils Require Import Base Booleans Eqb Lists Pairs.
 
 
 Section __.
@@ -42,7 +44,7 @@ Section __.
       induction l;
         basic_goal_prep;
         basic_utils_crush.
-      my_case Heqb (eqb s s0);
+      destruct (eqb s s0) eqn:Heqb;
         basic_goal_prep;
         basic_utils_crush.
     Qed.
@@ -81,7 +83,7 @@ Section __.
       induction c; basic_goal_prep.
       { basic_utils_crush. }
       {
-        my_case Heq (eqb n s);
+        destruct (eqb n s) eqn:Heq;
           basic_utils_crush.
       }
     Qed.
@@ -99,7 +101,7 @@ Section __.
     Proof using EqbS_ok.
       induction c; basic_goal_prep.
       - basic_utils_crush.  
-      - my_case Heq (eqb n s); basic_utils_crush.
+      - destruct (eqb n s) eqn:Heq; basic_utils_crush.
     Qed.
 
     
@@ -108,7 +110,7 @@ Section __.
         ~ In (s, a) l.
     Proof using EqbS_ok.
       induction l; basic_goal_prep; basic_utils_crush.
-      my_case Hs (eqb s s0); basic_goal_prep; basic_utils_crush.
+      destruct (eqb s s0) eqn:Hs; basic_goal_prep; basic_utils_crush.
     Qed.
 
     
@@ -355,36 +357,36 @@ Section __.
 End __.
 
 
-Arguments fresh {S A}%type_scope n nl%list_scope : simpl never.
-Arguments all_fresh {S A}%type_scope !_%list_scope /.
+Arguments fresh {S A}%_type_scope n nl%_list_scope : simpl never.
+Arguments all_fresh {S A}%_type_scope !_%_list_scope /.
 
 
-Arguments use_compute_fresh {S}%type_scope {EqbS EqbS_ok} 
-  [A]%type_scope x l%list_scope _ _.
+Arguments use_compute_fresh {S}%_type_scope {EqbS EqbS_ok} 
+  [A]%_type_scope x l%_list_scope _ _.
 Ltac compute_fresh := eapply use_compute_fresh; vm_compute; exact I.
 
-Arguments use_compute_all_fresh {S}%type_scope {EqbS EqbS_ok} 
-  [A]%type_scope l _.
+Arguments use_compute_all_fresh {S}%_type_scope {EqbS EqbS_ok} 
+  [A]%_type_scope l _.
 Ltac compute_all_fresh := eapply use_compute_all_fresh; vm_compute; exact I.
 
 
 #[export] Hint Rewrite freshb_spec : utils.
 #[export] Hint Rewrite all_freshb_spec : utils.
 
-Arguments in_once {S A}%type_scope n e !l%list_scope /.
+Arguments in_once {S A}%_type_scope n e !l%_list_scope /.
 
-Arguments in_all_named_list {S A}%type_scope [_]%function_scope {_} {_} {_}.
+Arguments in_all_named_list {S A}%_type_scope [_]%_function_scope {_} {_} {_}.
 
-Arguments named_map {S A B}%type_scope f !l%list_scope/.
-Arguments with_names_from {S A B}%type_scope c l%list_scope.
+Arguments named_map {S A B}%_type_scope f !l%_list_scope/.
+Arguments with_names_from {S A B}%_type_scope c l%_list_scope.
 
-Arguments named_list_lookup_err_in {S}%type_scope {EqbS EqbS_ok} 
-  [A]%type_scope c%list_scope n [t] _.
+Arguments named_list_lookup_err_in {S}%_type_scope {EqbS EqbS_ok} 
+  [A]%_type_scope c%_list_scope n [t] _.
 
-Arguments named_list_lookup_prop_correct {S}%type_scope 
-  {EqbS EqbS_ok} [A]%type_scope d l s a.
+Arguments named_list_lookup_prop_correct {S}%_type_scope 
+  {EqbS EqbS_ok} [A]%_type_scope d l s a.
 
-Arguments named_list_lookup_none_iff {S}%type_scope {EqbS EqbS_ok} {A}%type_scope l%list_scope s.
+Arguments named_list_lookup_none_iff {S}%_type_scope {EqbS EqbS_ok} {A}%_type_scope l%_list_scope s.
 
 #[export] Hint Resolve pair_fst_in : utils.
 
@@ -399,7 +401,7 @@ TODO: reassess whether it's necessary
 
 #[export] Hint Rewrite @all_fresh_named_list_lookup_err_in : utils.
  *)
-Arguments named_list_lookup_none {S}%type_scope {EqbS EqbS_ok} [A]%type_scope l s a _ _.
+Arguments named_list_lookup_none {S}%_type_scope {EqbS EqbS_ok} [A]%_type_scope l s a _ _.
 #[export] Hint Resolve named_list_lookup_none : utils.
 #[export] Hint Resolve in_named_map : utils.
 #[export] Hint Rewrite @combine_map_fst_is_with_names_from : utils.

@@ -17,7 +17,12 @@ Goal (if false then True else False).
   exact_check_if fail I.
 Abort.
 
-(* Used to locally set a flag for checking computations during proof development *)
+(* Used to locally set a flag for checking computations during proof development.
+
+   Set to true as follows:
+   Require Ltac2.Ltac2 Ltac2.Bool Ltac.
+   Ltac2 Set do_check_computations := true.
+ *)
 Ltac2 mutable do_check_computations := false.
 
 Ltac2 flagged_exact p :=

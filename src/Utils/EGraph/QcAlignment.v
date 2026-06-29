@@ -1,0 +1,932 @@
+(* ============================================================================
+   Per-ptr clen alignment for the positive e-graph instantiation (S73).
+
+   [compiled_rules_ptr_clen]: for each ptr (fsym, nptr, cvars) in a compiled
+   erule, the map entry (cargs, cv) satisfies clen (cargs, cv) = length cvars.
+
+   This is piece (a) of trie #4 — the qc-alignment hash-threading needed to
+   show that trie_of_clause produces uniformly-depth tries.
+   ============================================================================ *)
+From Stdlib Require Import Lists.List BinNums PArith Arith Lia.
+Import ListNotations.
+From coqutil Require Import Map.Interface.
+From Utils Require Import Utils Monad Default ExtraMaps.
+From Utils Require Import FullPosTrie FullPosTrieConv PosListMap TrieMapFold.
+From Utils Require Import EGraph.Defs.
+From Utils.EGraph Require Import Semantics QueryOpt QueryOptSound BuildTriesDepth.
+
+(* Abbreviation for the positive build_rule_set instantiation. *)
+Definition brs (rf : nat) (rules : list (Semantics.sequent positive positive)) :=
+  @QueryOpt.build_rule_set positive positive_Eqb Pos.succ positive_default
+    positive TrieMap.trie_map TrieMap.ptree_map_plus
+    TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A) rf rules.
+
+Lemma compiled_rules_ptr_clen
+  (rf : nat) (rules : list (Semantics.sequent positive positive)) :
+  forall (er : erule positive positive),
+    In er (Defs.compiled_rules positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules)) ->
+    forall (fsym : positive) (nptr : positive) (cvars : list positive),
+      In (Build_erule_query_ptr positive positive fsym nptr cvars)
+         (uncurry cons (query_clause_ptrs positive positive er)) ->
+      exists q_f cargs cv,
+        map.get (Defs.query_clauses positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules)) fsym = Some q_f
+        /\ map.get q_f nptr = Some (cargs, cv)
+        /\ clen (cargs, cv) = length cvars.
+Proof.
+  intros er Hin fsym nptr cvars Hptr.
+  pose proof (@QueryOptSound.compiled_rules_ptr_shape
+    positive positive_Eqb BuildTriesDepth.positive_Eqb_ok' Pos.lt Pos.succ positive_default Pos.leb
+    positive positive_Eqb BuildTriesDepth.positive_Eqb_ok'
+    TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
+    TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A)
+    (fun A => @FullPosTrie.full_pos_trie_map A)
+    (fun x y h1 h2 => Pos.lt_irrefl x (Pos.lt_trans _ _ _ h1 h2))
+    Pos.lt_succ_diag_r Pos.lt_trans
+    TrieMap.ptree_map_plus_ok
+    rf rules er Hin fsym nptr cvars Hptr)
+    as (q_f & cargs & cv & out & args & HgetQc & Hgetm & HNoDup & Hincl & Hcvars & Hcargs_eq & Hcv_eq).
+  exists q_f, cargs, cv.
+  refine (conj HgetQc (conj Hgetm _)).
+  (* Reduce to clen_compiled_eq_length_cvars *)
+  rewrite Hcargs_eq, Hcv_eq.
+  rewrite Hcvars.
+  exact (clen_compiled_eq_length_cvars (query_vars positive positive er) args out HNoDup Hincl).
+Qed.
+
+(* ============================================================================
+   UNIT C: trie_of_clause_depth
+   For each compiled erule ptr, the trie produced by trie_of_clause has
+   fpt_depth equal to the length of the clause variable list.
+   ============================================================================ *)
+
+Lemma trie_of_clause_sn_depth
+  (rf : nat) (rules : list (Semantics.sequent positive positive))
+  (er : Defs.erule positive positive)
+  (Hin : In er (Defs.compiled_rules positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules)))
+  (e : Defs.instance positive positive TrieMap.trie_map TrieMap.trie_map
+         (fun A => @FullPosTrie.full_pos_trie_map A) (option positive))
+  (window frontier_pos pos : nat) (f n : positive) (cvars : list positive)
+  (Hptr : In (Defs.Build_erule_query_ptr positive positive f n cvars)
+             (uncurry cons (Defs.query_clause_ptrs positive positive er))) :
+  fpt_depth
+    (fst (@Defs.trie_of_clause_sn positive positive_Eqb positive
+            TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A)
+            (Defs.query_vars positive positive er)
+            (fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                    TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                    (fun A => @FullPosTrie.full_pos_trie_map A)
+                    (option positive) window (brs rf rules) e))
+            frontier_pos pos
+            (Defs.Build_erule_query_ptr positive positive f n cvars)))
+    (length cvars).
+Proof.
+  cbn [Defs.build_tries fst].
+  unfold Defs.trie_of_clause_sn.
+  set (DBT := map_intersect
+                (Defs.build_tries_for_symbol positive positive_Eqb Pos.succ Pos.leb TrieMap.trie_map
+                   TrieMap.ptree_map_plus (fun A => @FullPosTrie.full_pos_trie_map A)
+                   (option positive) (Defs.epoch e) window)
+                (Defs.query_clauses positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules))
+                (Defs.db e)).
+  destruct (compiled_rules_ptr_clen rf rules er Hin f n cvars Hptr)
+    as (q_f & cargs & cv & Hqc & Hgetn & Hclen).
+  destruct (map.get DBT f) as [trie_list|] eqn:Hdbt.
+  2: { cbn [fst fpt_depth]. exact I. }
+  cbn [fst].
+  unfold DBT in Hdbt.
+  cbn [map_intersect] in Hdbt.
+  rewrite (@intersect_spec positive TrieMap.trie_map TrieMap.ptree_map_plus TrieMap.ptree_map_plus_ok
+    (TrieMap.trie_map (list nat * nat))
+    (@FullPosTrie.full_pos_trie_map (Defs.db_entry positive (option positive)))
+    (TrieMap.trie_map (@FullPosTrie.full_pos_trie_map unit * @FullPosTrie.full_pos_trie_map unit * @FullPosTrie.full_pos_trie_map unit))
+    (Defs.build_tries_for_symbol positive positive_Eqb Pos.succ Pos.leb TrieMap.trie_map
+       TrieMap.ptree_map_plus (fun A => @FullPosTrie.full_pos_trie_map A)
+       (option positive) (Defs.epoch e) window)
+    f
+    (Defs.query_clauses positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules))
+    (Defs.db e)) in Hdbt.
+  rewrite Hqc in Hdbt.
+  destruct (map.get (Defs.db e) f) as [tbl_f|] eqn:Hdb.
+  { (* Some tbl_f: trie_list = build_tries_for_symbol ... q_f tbl_f *)
+    unfold Defs.db_map in Hdb.
+    rewrite Hdb in Hdbt.
+    injection Hdbt as Heq_tl.
+    pose proof (@BuildTriesDepth.build_tries_for_symbol_depth
+      TrieMap.trie_map TrieMap.ptree_map_plus TrieMap.ptree_map_plus_ok
+      (option positive)
+      Pos.leb
+      (Defs.epoch e) window q_f tbl_f n (cargs, cv) Hgetn)
+      as (ft & Hgetft & Hdf & Hdn & Hdo).
+    rewrite <- Heq_tl.
+    unfold unwrap_with_default.
+    rewrite Hgetft.
+    destruct ft as [[total new] old]. cbn [fst snd] in Hdf, Hdn, Hdo.
+    rewrite <- Hclen.
+    destruct (Nat.compare pos frontier_pos); cbn [fst]; assumption. }
+  { (* None: contradiction *)
+    unfold Defs.db_map in Hdb.
+    rewrite Hdb in Hdbt.
+    exact (match Hdbt with end). }
+Qed.
+
+(* ============================================================================
+   UNIT B2 helper lemmas and assembly:
+   combined_bools of the ne_map over clause ptrs = repeat true (length qv).
+   ============================================================================ *)
+
+(* Helper: nth j (map2 orb (combine a b)) false = orb (nth j a false) (nth j b false) *)
+Lemma nth_map2_orb_combine (a b : list bool) (j : nat) :
+  j < length a -> length a = length b ->
+  nth j (map2 orb (combine a b)) false = orb (nth j a false) (nth j b false).
+Proof.
+  revert b j. induction a as [|x a' IH]; intros b j Hlt Hlen.
+  - cbn in Hlt. Lia.lia.
+  - destruct b as [|y b']; cbn in Hlen; [discriminate|].
+    cbn [combine map2 map].
+    destruct j as [|j'].
+    + reflexivity.
+    + cbn [nth]. apply IH.
+      * cbn [length] in Hlt. Lia.lia.
+      * Lia.lia.
+Qed.
+
+(* Helper: length (map2 orb (combine a b)) = length a when |a|=|b| *)
+(* Helper: list with all elements true = repeat true L *)
+Lemma all_true_repeat_true (l : list bool) (L : nat) :
+  length l = L ->
+  (forall j, j < L -> nth j l false = true) ->
+  l = repeat true L.
+Proof.
+  revert l. induction L as [|L' IH]; intros l Hlen Hnth.
+  - destruct l; [reflexivity | discriminate].
+  - destruct l as [|x l']; [discriminate|].
+    cbn [repeat]. cbn [length] in Hlen.
+    assert (x = true). { apply (Hnth 0). Lia.lia. }
+    subst x. f_equal.
+    apply IH.
+    + Lia.lia.
+    + intros j Hj. apply (Hnth (S j)). Lia.lia.
+Qed.
+
+(* Main generic lemma: fold_left map2_orb is repeat true when coverage holds *)
+Lemma fold_left_map2_orb_all_true (head : list bool) (tails : list (list bool)) (L : nat) :
+  length head = L ->
+  (forall t, In t tails -> length t = L) ->
+  (forall j, j < L -> nth j head false = true
+             \/ exists t, In t tails /\ nth j t false = true) ->
+  fold_left (fun acc t => map2 orb (combine t acc)) tails head = repeat true L.
+Proof.
+  revert head. induction tails as [|t0 tails' IH]; intros head Hlen Hlens Hcov.
+  - cbn [fold_left]. apply all_true_repeat_true; [exact Hlen|].
+    intros j Hj. destruct (Hcov j Hj) as [H | (t & Hin & _)]; [exact H | inversion Hin].
+  - cbn [fold_left].
+    pose (Hlent0 := Hlens t0 (or_introl eq_refl)).
+    apply IH.
+    + unfold map2. rewrite length_map, length_combine, Hlent0, Hlen. Lia.lia.
+    + intros t Hin. apply Hlens. right. exact Hin.
+    + intros j Hj.
+      assert (Hj' : j < length t0) by (rewrite Hlent0; exact Hj).
+      assert (Hjeq : length t0 = length head) by (rewrite Hlent0, Hlen; reflexivity).
+      rewrite (nth_map2_orb_combine t0 head j Hj' Hjeq).
+      destruct (Hcov j Hj) as [Hh | (t & Hin & Ht)].
+      * left. rewrite Hh. apply Bool.orb_true_r.
+      * destruct Hin as [-> | Hin'].
+        { left. rewrite Ht. reflexivity. }
+        { right. exact (ex_intro _ t (conj Hin' Ht)). }
+Qed.
+
+(* Helper: fold_left extracting snd = fold_left over mapped snds *)
+Lemma fold_left_map2_orb_snd_eq {A} (g : A -> list bool) (tails : list A) :
+  forall (head : list bool),
+  fold_left (fun acc ptr => map2 orb (combine (g ptr) acc)) tails head
+  = fold_left (fun acc t => map2 orb (combine t acc)) (map g tails) head.
+Proof.
+  induction tails as [|t tails' IH]; intro head; cbn [fold_left map]; [reflexivity|].
+  apply IH.
+Qed.
+
+(* Helper: x ∈ atom_ret :: atom_args (built from cvars_i by cargs/cv) → x ∈ cvars_i *)
+Lemma atom_ret_args_in_cvars (cvars : list positive) (cargs : list nat) (cv : nat)
+  (Hcargs : forall t, In t cargs -> t < length cvars)
+  (Hcv : cv < length cvars)
+  (x : positive)
+  (Hx : In x (nth cv cvars positive_default :: map (fun k => nth k cvars positive_default) cargs)) :
+  In x cvars.
+Proof.
+  destruct Hx as [<- | Hargs].
+  - apply nth_In. exact Hcv.
+  - apply in_map_iff in Hargs. destruct Hargs as [k [<- Hk]].
+    apply nth_In. exact (Hcargs k Hk).
+Qed.
+
+(* Helper: nth on a mapped list at a valid index *)
+Lemma nth_map_lt {A B} (f : A -> B) (l : list A) (j : nat) (d : B) (da : A) :
+  j < length l -> nth j (map f l) d = f (nth j l da).
+Proof.
+  revert l. induction j as [|j' IH]; intros [|x l'] Hlt; cbn in *; try Lia.lia.
+  - reflexivity.
+  - apply IH. Lia.lia.
+Qed.
+
+(* ============================================================================
+   ne_map_idx membership helpers (proper semi-naive position recovery).
+
+   [ne_map_idx f (h,tl)] = (f 0 h, map (fun pr => f (fst pr) (snd pr))
+                                       (combine (seq 1 (length tl)) tl)).
+   To migrate the (ne_map -> ne_map_idx) intersection chain we need to (a)
+   recover, for any element of the produced list, the underlying clause ptr
+   together with its position, and (b) given a clause ptr in the tail, exhibit
+   its position so the corresponding tail bool list can be witnessed.
+   ============================================================================ *)
+
+(* If [a] occurs in [l], it occurs (paired with some position) in
+   [combine (seq base (length l)) l]. *)
+Lemma in_combine_seq_r_base {A} (l : list A) (a : A) (base : nat) :
+  In a l -> exists pos, In (pos, a) (combine (seq base (length l)) l).
+Proof.
+  revert base. induction l as [|x l' IH]; intros base Hin; [inversion Hin|].
+  cbn [length seq combine]. destruct Hin as [<-|Hin].
+  - exists base. left. reflexivity.
+  - destruct (IH (S base) Hin) as [pos Hpos]. exists pos. right. exact Hpos.
+Qed.
+
+(* Every element of [uncurry cons (ne_map_idx f l)] is [f pos a] for some
+   position [pos] and some [a] in [uncurry cons l]. *)
+Lemma in_ne_map_idx_uncurry_inv {A B} (f : nat -> A -> B) (l : ne_list A) (p : B) :
+  In p (uncurry cons (ne_map_idx f l)) ->
+  exists pos a, p = f pos a /\ In a (uncurry cons l).
+Proof.
+  destruct l as [h tl]. unfold ne_map_idx. cbn [uncurry fst snd].
+  intros [Hh | Ht].
+  - exists 0, h. split; [exact (eq_sym Hh) | left; reflexivity].
+  - apply in_map_iff in Ht. destruct Ht as [[pos a] [Heq Hpr]].
+    exists pos, a. split; [exact (eq_sym Heq)|].
+    right. exact (in_combine_r _ _ _ _ Hpr).
+Qed.
+
+(* Membership in the tail lifts to membership in [uncurry cons]. *)
+Lemma in_snd_uncurry_cons {A} (l : A * list A) (a : A) :
+  In a (snd l) -> In a (uncurry cons l).
+Proof. destruct l as [h tl]. cbn [uncurry fst snd]. intro. right. assumption. Qed.
+
+(* If [tl[k] = a] then [(base+k, a)] occurs in [combine (seq base (length tl)) tl]. *)
+Lemma nth_error_combine_seq {A} (tl : list A) (k : nat) (a : A) (base : nat) :
+  nth_error tl k = Some a -> In (base + k, a) (combine (seq base (length tl)) tl).
+Proof.
+  revert k base. induction tl as [|x tl' IH]; intros k base Hk; [destruct k; discriminate|].
+  cbn [length seq combine]. destruct k as [|k'].
+  - cbn [nth_error] in Hk. injection Hk as <-. left. f_equal. Lia.lia.
+  - cbn [nth_error] in Hk. right.
+    replace (base + S k') with (S base + k') by Lia.lia. apply IH. exact Hk.
+Qed.
+
+(* The element at position [pos] of [uncurry cons l] is either the head (pos 0)
+   or appears (paired with [pos]) in [combine (seq 1 (length (snd l))) (snd l)] —
+   i.e. exactly where [ne_map_idx] places it. *)
+Lemma nth_error_ne_map_idx_combine {A} (l : ne_list A) (pos : nat) (a : A) :
+  nth_error (uncurry cons l) pos = Some a ->
+  (pos = 0 /\ a = fst l) \/ In (pos, a) (combine (seq 1 (length (snd l))) (snd l)).
+Proof.
+  destruct l as [h tl]. cbn [uncurry fst snd].
+  destruct pos as [|k]; cbn [nth_error].
+  - intro Hk. injection Hk as <-. left. split; reflexivity.
+  - intro Hk. right.
+    pose proof (nth_error_combine_seq tl k a 1 Hk) as Hc.
+    cbn [Nat.add] in Hc. exact Hc.
+Qed.
+
+(* ============================================================================
+   UNIT B2 assembly: combined_bools of the intersection tries = repeat true N
+   ============================================================================ *)
+
+Lemma intersection_inputs_combined_bools
+  (rf : nat) (rules : list (Semantics.sequent positive positive))
+  (er : Defs.erule positive positive)
+  (Hin : In er (Defs.compiled_rules positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules)))
+  (e : Defs.instance positive positive TrieMap.trie_map TrieMap.trie_map
+         (fun A => @FullPosTrie.full_pos_trie_map A) (option positive))
+  (window frontier_pos : nat) :
+  let qv := Defs.query_vars positive positive er in
+  let DBT := fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                    TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                    (fun A => @FullPosTrie.full_pos_trie_map A)
+                    (option positive) window (brs rf rules) e) in
+  let toc := fun pos ptr => @Defs.trie_of_clause_sn positive positive_Eqb positive
+                TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A) qv DBT frontier_pos pos ptr in
+  let tries_ne := ne_map_idx toc (Defs.query_clause_ptrs positive positive er) in
+  let cvt := fun (q : @FullPosTrie.full_pos_trie_map unit * list bool) =>
+               (FullPosTrieConv.fpt_to_pt (fst q), snd q) in
+  @PosListMapIntersectSpec.combined_bools unit
+    (cvt (fst tries_ne), map cvt (snd tries_ne))
+  = repeat true (length qv).
+Proof.
+  intros qv DBT toc tries_ne cvt.
+  (* unfold combined_bools and ne_map_idx *)
+  unfold PosListMapIntersectSpec.combined_bools.
+  cbn [fst snd].
+  unfold tries_ne, ne_map_idx. cbn [fst snd].
+  (* Rewrite the fold to use t instead of snd p *)
+  rewrite (fold_left_map2_orb_snd_eq (@snd pos_trie (list bool))
+    (map cvt (map (fun pr => toc (fst pr) (snd pr))
+                  (combine (seq 1 (length (snd (query_clause_ptrs positive positive er))))
+                           (snd (query_clause_ptrs positive positive er)))))).
+  (* Step 2: apply fold_left_map2_orb_all_true *)
+  apply fold_left_map2_orb_all_true with (L := length qv).
+  { (* length head = L *)
+    destruct (fst (query_clause_ptrs positive positive er)) as [f_h n_h cvars_h].
+    cbn [Defs.trie_of_clause_sn toc snd cvt].
+    destruct (map.get DBT f_h) as [tl|].
+    - destruct (unwrap_with_default (map.get tl n_h)) as [[tot new] old].
+      destruct (Nat.compare 0 frontier_pos); cbn [snd]; apply variable_flags_length.
+    - cbn [snd]. apply variable_flags_length. }
+  { (* lengths of tails = L *)
+    intros t0 Hin_t0.
+    apply in_map_iff in Hin_t0. destruct Hin_t0 as [[trie0 bl0] [Heq0 Hin0]].
+    apply in_map_iff in Hin0. destruct Hin0 as [[trie1 bl1] [Heq1 Hin1]].
+    apply in_map_iff in Hin1. destruct Hin1 as [[pos2 [f2 n2 cvars2]] [Heq2 _]].
+    cbn [Defs.trie_of_clause_sn toc fst snd] in Heq2.
+    destruct (map.get DBT f2) as [tl2|].
+    - destruct (unwrap_with_default (map.get tl2 n2)) as [[tot2 new2] old2].
+      destruct (Nat.compare pos2 frontier_pos); cbn [snd] in Heq2;
+        injection Heq2 as _ <-;
+        cbn [snd cvt] in Heq1; injection Heq1 as _ <-;
+        cbn [snd] in Heq0; rewrite <- Heq0; apply variable_flags_length.
+    - cbn [snd] in Heq2. injection Heq2 as _ <-.
+      cbn [snd cvt] in Heq1. injection Heq1 as _ <-.
+      cbn [snd] in Heq0. rewrite <- Heq0. apply variable_flags_length. }
+  { (* Coverage *)
+    destruct er as [qvars (head_ptr & rest_ptrs) write_vars write_clauses write_unifs] eqn:Her.
+    cbn [Defs.query_clause_ptrs Defs.query_vars fst snd].
+    intros j Hj.
+    (* Get compile step for NoDup *)
+    pose proof (@QueryOptSound.in_compiled_rules_build_rule_set
+      positive positive_Eqb Pos.lt Pos.succ positive_default Pos.leb
+      positive TrieMap.trie_map TrieMap.ptree_map_plus
+      TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A)
+      rf rules _
+      Hin) as (rule & st0 & st1 & _ & Hcompile).
+    (* NoDup qvars *)
+    pose proof (@QueryOptSound.compile_rule_inl_NoDup_query_vars
+      positive positive_Eqb BuildTriesDepth.positive_Eqb_ok' Pos.succ positive_default
+      positive TrieMap.trie_map TrieMap.trie_map
+      (fun A => @FullPosTrie.full_pos_trie_map A)
+      rf rule st0 _ st1 Hcompile) as HNoDup_qvars.
+    cbn [Defs.query_vars] in HNoDup_qvars.
+    (* qvars[j] ∈ qvars *)
+    pose proof (@nth_In positive j qvars positive_default Hj) as Hj_in.
+    (* compiled_rules_qvar_coverage: get atom covering qvars[j] *)
+    pose proof (@QueryOptSound.compiled_rules_qvar_coverage
+      positive positive_Eqb BuildTriesDepth.positive_Eqb_ok' Pos.lt Pos.succ positive_default Pos.leb
+      positive positive_Eqb BuildTriesDepth.positive_Eqb_ok'
+      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
+      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A)
+      (fun A => @FullPosTrie.full_pos_trie_map A)
+      (fun x y h1 h2 => Pos.lt_irrefl x (Pos.lt_trans _ _ _ h1 h2))
+      Pos.lt_succ_diag_r Pos.lt_trans
+      TrieMap.ptree_map_plus_ok
+      rf rules
+      {| Defs.query_vars := qvars; Defs.query_clause_ptrs := (head_ptr, rest_ptrs);
+         Defs.write_vars := write_vars; Defs.write_clauses := write_clauses;
+         Defs.write_unifications := write_unifs |}
+      Hin (nth j qvars positive_default) Hj_in)
+      as (a & Ha_in & Hx_in_a).
+    cbn [Defs.query_clause_ptrs Defs.query_vars uncurry Semantics.query_atoms] in Ha_in.
+    apply in_map_iff in Ha_in.
+    destruct Ha_in as [ptr_i [Ha_eq Hptr_i_in]].
+    destruct ptr_i as [f_i n_i cvars_i].
+    (* compiled_rules_ptr_valid for bounds *)
+    pose proof (@QueryOptSound.compiled_rules_ptr_valid
+      positive positive_Eqb BuildTriesDepth.positive_Eqb_ok' Pos.lt Pos.succ positive_default Pos.leb
+      positive positive_Eqb BuildTriesDepth.positive_Eqb_ok'
+      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
+      TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A)
+      (fun A => @FullPosTrie.full_pos_trie_map A)
+      (fun x y h1 h2 => Pos.lt_irrefl x (Pos.lt_trans _ _ _ h1 h2))
+      Pos.lt_succ_diag_r Pos.lt_trans
+      TrieMap.ptree_map_plus_ok
+      rf rules
+      {| Defs.query_vars := qvars; Defs.query_clause_ptrs := (head_ptr, rest_ptrs);
+         Defs.write_vars := write_vars; Defs.write_clauses := write_clauses;
+         Defs.write_unifications := write_unifs |}
+      Hin f_i n_i cvars_i Hptr_i_in)
+      as (q_f' & cargs' & cv' & Pf & HgetQc' & Hgetm' & HcvarsEq' & Hcargs_lt & Hcv_lt).
+    (* Establish qvars[j] ∈ cvars_i *)
+    assert (Hx_cvars : In (nth j qvars positive_default) cvars_i). {
+      apply (atom_ret_args_in_cvars cvars_i cargs' cv' Hcargs_lt Hcv_lt).
+      (* Hx_in_a : In x (atom_ret a :: atom_args a) where a is built from cvars_i *)
+      rewrite HgetQc', Hgetm' in Ha_eq.
+      cbn [fst snd] in Ha_eq.
+      rewrite <- Ha_eq in Hx_in_a.
+      cbn [Defs.atom_ret Defs.atom_args] in Hx_in_a.
+      exact Hx_in_a. }
+    cbn [Defs.query_vars] in HcvarsEq'.
+    rewrite HcvarsEq' in Hx_cvars.
+    apply filter_In in Hx_cvars. destruct Hx_cvars as [_ Hpf_j].
+    (* Pick the branch: head_ptr or rest_ptrs *)
+    cbn [Defs.query_clause_ptrs uncurry fst snd] in Hptr_i_in.
+    destruct Hptr_i_in as [Hhead | Hrest].
+    { (* head_ptr = ptr_i *)
+      left.
+      rewrite Hhead.
+      cbn [Defs.trie_of_clause_sn toc snd cvt
+           Defs.query_ptr_symbol Defs.query_ptr_ptr Defs.query_ptr_args].
+      destruct (map.get DBT f_i) as [tl|].
+      { destruct (unwrap_with_default (map.get tl n_i)) as [[tot new] old].
+        destruct (Nat.compare 0 frontier_pos); cbn [snd].
+        all: (replace qv with qvars in * by reflexivity;
+              rewrite HcvarsEq';
+              rewrite (@BuildTriesDepth.variable_flags_eq_map_filter
+                         positive positive_Eqb BuildTriesDepth.positive_Eqb_ok' Pf qvars HNoDup_qvars);
+              erewrite (nth_map_lt Pf qvars j false positive_default Hj);
+              exact Hpf_j). }
+      { cbn [snd]. replace qv with qvars in * by reflexivity. rewrite HcvarsEq'.
+        rewrite (@BuildTriesDepth.variable_flags_eq_map_filter
+                   positive positive_Eqb BuildTriesDepth.positive_Eqb_ok' Pf qvars HNoDup_qvars).
+        erewrite (nth_map_lt Pf qvars j false positive_default Hj). exact Hpf_j. } }
+    { (* ptr_i ∈ rest_ptrs *)
+      right.
+      destruct (in_combine_seq_r_base rest_ptrs
+                  {| Defs.query_ptr_symbol := f_i; Defs.query_ptr_ptr := n_i;
+                     Defs.query_ptr_args := cvars_i |} 1 Hrest) as [pos Hpos].
+      refine (ex_intro _
+        (snd (cvt (toc pos {| Defs.query_ptr_symbol := f_i; Defs.query_ptr_ptr := n_i;
+                          Defs.query_ptr_args := cvars_i |}))) _).
+      split.
+      { apply in_map_iff.
+        refine (ex_intro _ (cvt (toc pos {| Defs.query_ptr_symbol := f_i; Defs.query_ptr_ptr := n_i;
+                                        Defs.query_ptr_args := cvars_i |})) (conj eq_refl _)).
+        apply in_map_iff.
+        refine (ex_intro _ (toc pos {| Defs.query_ptr_symbol := f_i; Defs.query_ptr_ptr := n_i;
+                                   Defs.query_ptr_args := cvars_i |}) (conj eq_refl _)).
+        apply in_map_iff.
+        exact (ex_intro _ (pos, {| Defs.query_ptr_symbol := f_i; Defs.query_ptr_ptr := n_i;
+                              Defs.query_ptr_args := cvars_i |}) (conj eq_refl Hpos)). }
+      { cbn [Defs.trie_of_clause_sn toc snd cvt
+             Defs.query_ptr_symbol Defs.query_ptr_ptr Defs.query_ptr_args].
+        destruct (map.get DBT f_i) as [tl|].
+        { destruct (unwrap_with_default (map.get tl n_i)) as [[tot new] old].
+          destruct (Nat.compare pos frontier_pos); cbn [snd].
+          all: (replace qv with qvars in * by reflexivity;
+                rewrite HcvarsEq';
+                rewrite (@BuildTriesDepth.variable_flags_eq_map_filter
+                           positive positive_Eqb BuildTriesDepth.positive_Eqb_ok' Pf qvars HNoDup_qvars);
+                erewrite (nth_map_lt Pf qvars j false positive_default Hj);
+                exact Hpf_j). }
+        { cbn [snd]. replace qv with qvars in * by reflexivity. rewrite HcvarsEq'.
+          rewrite (@BuildTriesDepth.variable_flags_eq_map_filter
+                     positive positive_Eqb BuildTriesDepth.positive_Eqb_ok' Pf qvars HNoDup_qvars).
+          erewrite (nth_map_lt Pf qvars j false positive_default Hj).
+          exact Hpf_j. } } } }
+Qed.
+
+(* ============================================================================
+   UNIT D: trie_join_H9 and trie_join_H10
+   The two trie obligations at Automation.v:468/469 and :504/505.
+   These discharge the last admits and make egraph_sound axiom-free.
+   ============================================================================ *)
+
+(* Local abbreviations for the fixed merge/merge_comm/merge_assoc at unit. *)
+Local Notation merge_fn := (fun _ _ : unit => tt).
+Local Notation merge_comm_pf := (fun (a b : unit) => @eq_refl unit tt).
+Local Notation merge_assoc_pf := (fun (a b c : unit) => @eq_refl unit tt).
+
+(* Helper: filter id (repeat true n) = repeat true n *)
+Lemma filter_id_repeat_true (n : nat) : filter id (repeat true n) = repeat true n.
+Proof.
+  induction n; cbn [repeat filter id]; [reflexivity|].
+  rewrite IHn; reflexivity.
+Qed.
+
+(* Helper: derive length cvars1 = length (filter id (variable_flags qv cvars1))
+   using compiled_rules_ptr_shape to get cvars1 = filter Pf qv. *)
+Lemma flags_filter_id_len
+  (rf : nat) (rules : list (Semantics.sequent positive positive))
+  (er : Defs.erule positive positive)
+  (Hin : In er (Defs.compiled_rules positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules)))
+  (f n : positive) (cvars : list positive)
+  (Hptr : In (Defs.Build_erule_query_ptr positive positive f n cvars)
+             (uncurry cons (Defs.query_clause_ptrs positive positive er))) :
+  length (filter id (Defs.variable_flags positive positive_Eqb
+                       (Defs.query_vars positive positive er) cvars))
+  = length cvars.
+Proof.
+  destruct (@QueryOptSound.compiled_rules_ptr_shape
+    positive positive_Eqb BuildTriesDepth.positive_Eqb_ok' Pos.lt Pos.succ positive_default Pos.leb
+    positive positive_Eqb BuildTriesDepth.positive_Eqb_ok'
+    TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A) TrieMap.ptree_map_plus
+    TrieMap.trie_map (fun A => @TrieMapFold.trie_map_ok A)
+    (fun A => @FullPosTrie.full_pos_trie_map A)
+    (fun x y h1 h2 => Pos.lt_irrefl x (Pos.lt_trans _ _ _ h1 h2))
+    Pos.lt_succ_diag_r Pos.lt_trans
+    TrieMap.ptree_map_plus_ok
+    rf rules er Hin f n cvars Hptr)
+    as (q_f & cargs & cv & out & args & HgetQc & Hgetm & HNoDup & Hincl & Hcvars & Hcargs_eq & Hcv_eq).
+  set (Pf := fun x => inb x (out :: args)) in *.
+  rewrite Hcvars.
+  exact (@BuildTriesDepth.variable_flags_filter_id_len
+           positive positive_Eqb BuildTriesDepth.positive_Eqb_ok' Pf
+           (Defs.query_vars positive positive er)).
+Qed.
+
+(* Helper: S2 - each input trie has uniform depth = # true flags.
+   Abstracted out because both H9 and H10 need it. *)
+Lemma trie_inputs_fpt_depth_sn
+  (rf : nat) (rules : list (Semantics.sequent positive positive))
+  (er : Defs.erule positive positive)
+  (Hin : In er (Defs.compiled_rules positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules)))
+  (e : Defs.instance positive positive TrieMap.trie_map TrieMap.trie_map
+         (fun A => @FullPosTrie.full_pos_trie_map A) (option positive))
+  (window frontier_pos : nat)
+  (p : @FullPosTrie.full_pos_trie_map unit * list bool) :
+  In p (uncurry cons (ne_map_idx
+    (fun pos ptr => @Defs.trie_of_clause_sn positive positive_Eqb positive
+       TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A)
+       (Defs.query_vars positive positive er)
+       (fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+               TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+               (fun A => @FullPosTrie.full_pos_trie_map A)
+               (option positive) window (brs rf rules) e))
+       frontier_pos pos ptr)
+    (Defs.query_clause_ptrs positive positive er))) ->
+  fpt_depth (fst p) (length (filter id (snd p))).
+Proof.
+  intros Hp.
+  destruct (in_ne_map_idx_uncurry_inv _ _ _ Hp) as [pos [ptr [Heqp Hptr]]].
+  destruct ptr as [f1 n1 cvars1].
+  subst p. cbn beta.
+  pose proof (trie_of_clause_sn_depth rf rules er Hin e window frontier_pos pos f1 n1 cvars1 Hptr) as Hd_fpt.
+  assert (Hsnd : snd (@Defs.trie_of_clause_sn positive positive_Eqb positive TrieMap.trie_map
+                        TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A)
+                        (Defs.query_vars positive positive er)
+                        (fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                                TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                                (fun A => @FullPosTrie.full_pos_trie_map A)
+                                (option positive) window (brs rf rules) e))
+                        frontier_pos pos
+                        (Defs.Build_erule_query_ptr positive positive f1 n1 cvars1))
+                = Defs.variable_flags positive positive_Eqb (Defs.query_vars positive positive er) cvars1).
+  { unfold Defs.trie_of_clause_sn. cbn [Defs.query_ptr_args snd].
+    destruct (map.get _ f1); [destruct (unwrap_with_default _) as [[tot new] old]; destruct (Nat.compare pos frontier_pos)|]; reflexivity. }
+  rewrite Hsnd.
+  rewrite (flags_filter_id_len rf rules er Hin f1 n1 cvars1 Hptr).
+  exact Hd_fpt.
+Qed.
+
+(* Helper: S3 - wf_tries at any key of length N.
+   Abstracted out because both H9 and H10 need it. *)
+Lemma trie_inputs_wf_at_sn
+  (rf : nat) (rules : list (Semantics.sequent positive positive))
+  (er : Defs.erule positive positive)
+  (Hin : In er (Defs.compiled_rules positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules)))
+  (e : Defs.instance positive positive TrieMap.trie_map TrieMap.trie_map
+         (fun A => @FullPosTrie.full_pos_trie_map A) (option positive))
+  (window frontier_pos : nat)
+  (x : list positive)
+  (Hlen : length x = length (Defs.query_vars positive positive er)) :
+  let cvt := fun (q : @FullPosTrie.full_pos_trie_map unit * list bool) =>
+               (FullPosTrieConv.fpt_to_pt (fst q), snd q) in
+  let toc := fun pos ptr => @Defs.trie_of_clause_sn positive positive_Eqb positive
+               TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A)
+               (Defs.query_vars positive positive er)
+               (fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                       TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                       (fun A => @FullPosTrie.full_pos_trie_map A)
+                       (option positive) window (brs rf rules) e))
+               frontier_pos pos ptr in
+  PosListMapIntersectSpec.wf_tries x
+    (cvt (fst (ne_map_idx toc (Defs.query_clause_ptrs positive positive er))),
+     map cvt (snd (ne_map_idx toc (Defs.query_clause_ptrs positive positive er)))).
+Proof.
+  intros cvt toc.
+  set (qv := Defs.query_vars positive positive er) in toc, Hlen |- *.
+  set (DBT := fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                    TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                    (fun A => @FullPosTrie.full_pos_trie_map A)
+                    (option positive) window (brs rf rules) e)) in toc |- *.
+  unfold PosListMapIntersectSpec.wf_tries.
+  (* Helper: for any pos and any ptr in query_clause_ptrs, wf_input x (cvt (toc pos ptr)).
+     The (old/new/full) selection only changes the trie, not its depth or its bools,
+     so wf_input holds at every position. *)
+  assert (Hwf_elem : forall pos ptr,
+    In ptr (uncurry cons (Defs.query_clause_ptrs positive positive er)) ->
+    PosListMapIntersectSpec.wf_input x (cvt (toc pos ptr))).
+  { intros pos [f0 n0 cvars0] Hptr0.
+    unfold PosListMapIntersectSpec.wf_input. cbn [toc cvt].
+    assert (Hsnd0 : snd (toc pos (Defs.Build_erule_query_ptr positive positive f0 n0 cvars0))
+                   = Defs.variable_flags positive positive_Eqb qv cvars0).
+    { unfold toc. unfold Defs.trie_of_clause_sn. cbn [Defs.query_ptr_args snd].
+      destruct (map.get DBT f0) as [tl0|].
+      - destruct (unwrap_with_default (map.get tl0 n0)) as [[tot new] old].
+        destruct (Nat.compare pos frontier_pos); reflexivity.
+      - reflexivity. }
+    split.
+    + (* length (snd (cvt (toc pos ptr))) = length x *)
+      cbn [cvt snd fst]. rewrite Hsnd0.
+      rewrite @BuildTriesDepth.variable_flags_length. symmetry. exact Hlen.
+    + (* depth *)
+      pose proof (trie_of_clause_sn_depth rf rules er Hin e window frontier_pos pos f0 n0 cvars0 Hptr0) as Hfd.
+      cbn [cvt fst snd].
+      rewrite Hsnd0.
+      unfold qv.
+      rewrite (flags_filter_id_len rf rules er Hin f0 n0 cvars0 Hptr0).
+      set (t0 := fst (toc pos (Defs.Build_erule_query_ptr positive positive f0 n0 cvars0))).
+      unfold qv in Hfd.
+      pose proof (FullPosTrieConv.fpt_to_pt_has_depth' t0 (length cvars0) Hfd) as Hdepth_pt.
+      unfold depth in Hdepth_pt.
+      destruct (FullPosTrieConv.fpt_to_pt t0) as [pt'|].
+      * exact (@FullPosTrieConv.depth'_to_has_depth' unit _ pt' Hdepth_pt).
+      * exact I. }
+  split.
+  - (* head: fst (ne_map_idx toc ptrs) = toc 0 (fst ptrs) *)
+    unfold ne_map_idx. cbn [fst].
+    apply Hwf_elem.
+    destruct (Defs.query_clause_ptrs positive positive er) as [hptr rptrs].
+    cbn [uncurry fst]. left. reflexivity.
+  - (* tail *)
+    rewrite Forall_forall.
+    intros cp Hcp.
+    apply in_map_iff in Hcp.
+    destruct Hcp as [p [Heq_cp Hp_in_rest]].
+    subst cp.
+    unfold ne_map_idx in Hp_in_rest. cbn [snd] in Hp_in_rest.
+    apply in_map_iff in Hp_in_rest.
+    destruct Hp_in_rest as [[pos ptr] [Heq_p Hpr_in]].
+    subst p. cbn [fst snd].
+    apply Hwf_elem.
+    apply in_snd_uncurry_cons. exact (in_combine_r _ _ _ _ Hpr_in).
+Qed.
+
+(* Helper: the compat_intersect R has uniform depth N.
+   Derived from pt_spaced_intersect_depth using wf_tries at repeat xH N and Hbools. *)
+Lemma trie_intersect_depth_sn
+  (rf : nat) (rules : list (Semantics.sequent positive positive))
+  (er : Defs.erule positive positive)
+  (Hin : In er (Defs.compiled_rules positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules)))
+  (e : Defs.instance positive positive TrieMap.trie_map TrieMap.trie_map
+         (fun A => @FullPosTrie.full_pos_trie_map A) (option positive))
+  (window frontier_pos : nat) :
+  let qv := Defs.query_vars positive positive er in
+  let N := length qv in
+  let DBT := fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                    TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                    (fun A => @FullPosTrie.full_pos_trie_map A)
+                    (option positive) window (brs rf rules) e) in
+  let toc := fun pos ptr => @Defs.trie_of_clause_sn positive positive_Eqb positive
+               TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A) qv DBT frontier_pos pos ptr in
+  let tries_ne := ne_map_idx toc (Defs.query_clause_ptrs positive positive er) in
+  let cvt := fun (q : @FullPosTrie.full_pos_trie_map unit * list bool) =>
+               (FullPosTrieConv.fpt_to_pt (fst q), snd q) in
+  depth (compat_intersect merge_fn (cvt (fst tries_ne), map cvt (snd tries_ne))) N.
+Proof.
+  (* The let-binders in the statement match the concrete terms below by definitional equality.
+     We use `change` to convert the goal to a form with explicit `set`-bound names. *)
+  intros qv N DBT toc tries_ne cvt.
+  set (qv' := Defs.query_vars positive positive er).
+  set (N' := length qv').
+  set (DBT' := fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                     TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                     (fun A => @FullPosTrie.full_pos_trie_map A)
+                     (option positive) window (brs rf rules) e)).
+  set (toc_fn := fun pos ptr => @Defs.trie_of_clause_sn positive positive_Eqb positive
+                    TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A) qv' DBT' frontier_pos pos ptr).
+  set (tries_ne' := ne_map_idx toc_fn (Defs.query_clause_ptrs positive positive er)).
+  set (cvt' := fun (q : @FullPosTrie.full_pos_trie_map unit * list bool) =>
+                 (FullPosTrieConv.fpt_to_pt (fst q), snd q)).
+  (* The intro'd let-binders are definitionally equal to the set-bound ones *)
+  change (depth (compat_intersect merge_fn (cvt' (fst tries_ne'), map cvt' (snd tries_ne'))) N').
+  (* B2 via intersection_inputs_combined_bools *)
+  pose proof (intersection_inputs_combined_bools rf rules er Hin e window frontier_pos) as Hb.
+  change (PosListMapIntersectSpec.combined_bools
+            (cvt' (fst tries_ne'), map cvt' (snd tries_ne')) = repeat true N') in Hb.
+  (* wf_tries at repeat xH N' *)
+  assert (Hwf_dummy : PosListMapIntersectSpec.wf_tries (repeat xH N')
+    (cvt' (fst tries_ne'), map cvt' (snd tries_ne'))).
+  { apply (trie_inputs_wf_at_sn rf rules er Hin e window frontier_pos (repeat xH N')).
+    rewrite repeat_length. reflexivity. }
+  (* pt_spaced_intersect_depth *)
+  pose proof (@PosListMapIntersectSpec.pt_spaced_intersect_depth unit _
+                merge_fn merge_comm_pf merge_assoc_pf
+                (cvt' (fst tries_ne'), map cvt' (snd tries_ne'))
+                (repeat xH N')
+                Hwf_dummy) as Hdepth_raw.
+  assert (Hlf : length (filter id (PosListMapIntersectSpec.combined_bools
+                  (cvt' (fst tries_ne'), map cvt' (snd tries_ne')))) = N').
+  { rewrite Hb. rewrite filter_id_repeat_true. apply repeat_length. }
+  rewrite <- Hlf.
+  exact Hdepth_raw.
+Qed.
+
+(* ============================================================================
+   trie_join_H9: intersection key sigma has length = number of query vars.
+   ============================================================================ *)
+Lemma trie_join_H9_sn
+  (rf : nat) (rules : list (Semantics.sequent positive positive))
+  (er : Defs.erule positive positive)
+  (Hin : In er (Defs.compiled_rules positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules)))
+  (e : Defs.instance positive positive TrieMap.trie_map TrieMap.trie_map
+         (fun A => @FullPosTrie.full_pos_trie_map A) (option positive))
+  (window : nat) :
+  forall frontier_pos sigma,
+    In sigma (@Defs.intersection_keys positive (fun A => @FullPosTrie.full_pos_trie_map A)
+                (@FullPosTrieConv.fpt_spaced_intersect)
+                (ne_map_idx (fun pos ptr => @Defs.trie_of_clause_sn positive positive_Eqb positive
+                           TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A)
+                           (Defs.query_vars positive positive er)
+                           (fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                                   TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                                   (fun A => @FullPosTrie.full_pos_trie_map A)
+                                   (option positive) window (brs rf rules) e))
+                           frontier_pos pos ptr)
+                         (Defs.query_clause_ptrs positive positive er))) ->
+    length (Defs.query_vars positive positive er) = length sigma.
+Proof.
+  intros frontier_pos sigma Hin_sig.
+  set (qv := Defs.query_vars positive positive er).
+  set (N := length qv).
+  set (DBT := fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                    TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                    (fun A => @FullPosTrie.full_pos_trie_map A)
+                    (option positive) window (brs rf rules) e)).
+  set (toc_fn := fun pos ptr => @Defs.trie_of_clause_sn positive positive_Eqb positive
+                   TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A) qv DBT frontier_pos pos ptr).
+  set (tries_ne := ne_map_idx toc_fn (Defs.query_clause_ptrs positive positive er)).
+  set (cvt := fun (q : @FullPosTrie.full_pos_trie_map unit * list bool) =>
+               (FullPosTrieConv.fpt_to_pt (fst q), snd q)).
+  (* Get depth *)
+  pose proof (trie_intersect_depth_sn rf rules er Hin e window frontier_pos) as Hdepth.
+  change (depth (compat_intersect merge_fn (cvt (fst tries_ne), map cvt (snd tries_ne))) N)
+    in Hdepth.
+  (* Hbools: combined_bools = repeat true N *)
+  pose proof (intersection_inputs_combined_bools rf rules er Hin e window frontier_pos) as Hbools.
+  change (PosListMapIntersectSpec.combined_bools
+            (cvt (fst tries_ne), map cvt (snd tries_ne)) = repeat true N) in Hbools.
+  (* Hfd: each input has uniform fpt_depth = #true flags *)
+  pose proof (fun q Hq => trie_inputs_fpt_depth_sn rf rules er Hin e window frontier_pos q Hq) as Hfd.
+  (* Hlenp: each input's bool list has length = N.
+     For each p = toc_fn pos ptr, snd p = variable_flags qv cvars,
+     and length (variable_flags qv cvars) = length qv = N. *)
+  (* Helper to compute snd (toc_fn pos ptr) = variable_flags qv cvars for any pos, ptr *)
+  assert (Htoc_snd : forall pos f0 n0 cvars0,
+    snd (toc_fn pos (Defs.Build_erule_query_ptr positive positive f0 n0 cvars0))
+    = Defs.variable_flags positive positive_Eqb qv cvars0).
+  { intros pos f0 n0 cvars0.
+    unfold toc_fn. unfold Defs.trie_of_clause_sn. cbn [Defs.query_ptr_args snd].
+    destruct (map.get DBT f0) as [tl0|].
+    - destruct (unwrap_with_default (map.get tl0 n0)) as [[tot new] old].
+      destruct (Nat.compare pos frontier_pos); reflexivity.
+    - reflexivity. }
+  assert (Hlenp : forall p, In p (fst tries_ne :: snd tries_ne) -> length (snd p) = N).
+  { intros p Hp.
+    (* Each element is toc_fn pos ptr for some pos, ptr *)
+    change (In p (uncurry cons tries_ne)) in Hp.
+    destruct (in_ne_map_idx_uncurry_inv _ _ _ Hp) as [pos [[f0 n0 cvars0] [Heqp _]]].
+    subst p. cbn beta.
+    rewrite (Htoc_snd pos f0 n0 cvars0).
+    exact (@BuildTriesDepth.variable_flags_length positive positive_Eqb qv cvars0). }
+  (* HnatD: fpt_spaced_intersect_native has uniform depth N *)
+  pose proof (@FullPosTrieConv.fpt_spaced_intersect_native_depth unit _
+                merge_fn merge_comm_pf merge_assoc_pf
+                (fst tries_ne) (snd tries_ne) N
+                Hdepth Hbools Hfd Hlenp) as HnatD.
+  (* Unfold intersection_keys in Hin_sig, then expose native *)
+  unfold Defs.intersection_keys in Hin_sig.
+  change (In sigma (@map.keys (list positive) unit (@FullPosTrie.full_pos_trie_map unit)
+             (FullPosTrieConv.fpt_spaced_intersect merge_fn tries_ne))) in Hin_sig.
+  unfold FullPosTrieConv.fpt_spaced_intersect in Hin_sig.
+  (* in_keys_inv on the native map *)
+  assert (Hbs : forall x y : list positive,
+    BoolSpec (x = y) (x <> y) (if list_eq_dec Pos.eq_dec x y then true else false)).
+  { intros x y. destruct (list_eq_dec Pos.eq_dec x y); constructor; assumption. }
+  pose proof (@Properties.map.in_keys_inv (list positive) unit
+                (@FullPosTrie.full_pos_trie_map unit) (@FullPosTrie.full_pos_trie_map_ok unit)
+                _ Hbs sigma
+                (FullPosTrieConv.fpt_spaced_intersect_native merge_fn (fst tries_ne, snd tries_ne))
+                Hin_sig) as Hget_ne.
+  change (@map.get (list positive) unit (@FullPosTrie.full_pos_trie_map unit)
+            (FullPosTrieConv.fpt_spaced_intersect_native merge_fn (fst tries_ne, snd tries_ne)) sigma)
+    with (FullPosTrie.fpt_get
+            (FullPosTrieConv.fpt_spaced_intersect_native merge_fn (fst tries_ne, snd tries_ne))
+            sigma) in Hget_ne.
+  (* HnatD mentions (fst tries_ne, snd tries_ne) which is tries_ne by eta *)
+  change (fpt_depth (FullPosTrieConv.fpt_spaced_intersect_native merge_fn
+                       (fst tries_ne, snd tries_ne)) N) in HnatD.
+  destruct (FullPosTrie.fpt_get
+              (FullPosTrieConv.fpt_spaced_intersect_native merge_fn (fst tries_ne, snd tries_ne))
+              sigma) as [v|] eqn:Hfget.
+  - symmetry.
+    exact (@FullPosTrieConv.fpt_depth_key_length unit
+             (FullPosTrieConv.fpt_spaced_intersect_native merge_fn (fst tries_ne, snd tries_ne))
+             N HnatD sigma v Hfget).
+  - exfalso. apply Hget_ne. reflexivity.
+Qed.
+
+(* ============================================================================
+   trie_join_H10: for each sigma in intersection keys and each clause ptr,
+   the projected lookup in that ptr's trie hits Some tt.
+   ============================================================================ *)
+Lemma trie_join_H10_sn
+  (rf : nat) (rules : list (Semantics.sequent positive positive))
+  (er : Defs.erule positive positive)
+  (Hin : In er (Defs.compiled_rules positive positive TrieMap.trie_map TrieMap.trie_map (brs rf rules)))
+  (e : Defs.instance positive positive TrieMap.trie_map TrieMap.trie_map
+         (fun A => @FullPosTrie.full_pos_trie_map A) (option positive))
+  (window : nat) :
+  forall frontier_pos sigma,
+    In sigma (@Defs.intersection_keys positive (fun A => @FullPosTrie.full_pos_trie_map A)
+                (@FullPosTrieConv.fpt_spaced_intersect)
+                (ne_map_idx (fun pos ptr => @Defs.trie_of_clause_sn positive positive_Eqb positive
+                           TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A)
+                           (Defs.query_vars positive positive er)
+                           (fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                                   TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                                   (fun A => @FullPosTrie.full_pos_trie_map A)
+                                   (option positive) window (brs rf rules) e))
+                           frontier_pos pos ptr)
+                         (Defs.query_clause_ptrs positive positive er))) ->
+    forall pos fsym nptr cvars,
+      nth_error (uncurry cons (Defs.query_clause_ptrs positive positive er)) pos
+        = Some (Defs.Build_erule_query_ptr positive positive fsym nptr cvars) ->
+      @map.get (list positive) unit (@FullPosTrie.full_pos_trie_map unit)
+        (fst (@Defs.trie_of_clause_sn positive positive_Eqb positive
+                TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A)
+                (Defs.query_vars positive positive er)
+                (fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                        TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                        (fun A => @FullPosTrie.full_pos_trie_map A)
+                        (option positive) window (brs rf rules) e))
+                frontier_pos pos
+                (Defs.Build_erule_query_ptr positive positive fsym nptr cvars)))
+        (map fst (filter snd (combine sigma
+           (Defs.variable_flags positive positive_Eqb
+              (Defs.query_vars positive positive er) cvars))))
+      = Some tt.
+Proof.
+  intros frontier_pos sigma Hin_sig pos fsym nptr cvars Hnth.
+  set (qv := Defs.query_vars positive positive er).
+  set (N := length qv).
+  set (DBT := fst (@Defs.build_tries positive positive_Eqb Pos.succ Pos.leb positive TrieMap.trie_map
+                    TrieMap.ptree_map_plus TrieMap.trie_map TrieMap.ptree_map_plus
+                    (fun A => @FullPosTrie.full_pos_trie_map A)
+                    (option positive) window (brs rf rules) e)).
+  set (toc_fn := fun pos ptr => @Defs.trie_of_clause_sn positive positive_Eqb positive
+                   TrieMap.trie_map TrieMap.trie_map (fun A => @FullPosTrie.full_pos_trie_map A) qv DBT frontier_pos pos ptr).
+  set (tries_ne := ne_map_idx toc_fn (Defs.query_clause_ptrs positive positive er)).
+  set (cvt := fun (q : @FullPosTrie.full_pos_trie_map unit * list bool) =>
+               (FullPosTrieConv.fpt_to_pt (fst q), snd q)).
+  set (R := compat_intersect merge_fn (cvt (fst tries_ne), map cvt (snd tries_ne))).
+  (* H9: length sigma = N *)
+  pose proof (trie_join_H9_sn rf rules er Hin e window frontier_pos sigma Hin_sig) as Hlen.
+  (* Hlen : N = length sigma; so length sigma = N via symmetry *)
+  (* Hbools *)
+  pose proof (intersection_inputs_combined_bools rf rules er Hin e window frontier_pos) as Hbools.
+  change (PosListMapIntersectSpec.combined_bools
+            (cvt (fst tries_ne), map cvt (snd tries_ne)) = repeat true N) in Hbools.
+  (* Hdepth *)
+  pose proof (trie_intersect_depth_sn rf rules er Hin e window frontier_pos) as Hdepth.
+  change (depth (compat_intersect merge_fn (cvt (fst tries_ne), map cvt (snd tries_ne))) N)
+    in Hdepth.
+  (* wf_tries sigma *)
+  pose proof (trie_inputs_wf_at_sn rf rules er Hin e window frontier_pos sigma (eq_sym Hlen)) as Hwf.
+  change (PosListMapIntersectSpec.wf_tries sigma
+            (cvt (fst tries_ne), map cvt (snd tries_ne))) in Hwf.
+  (* Unfold intersection_keys in Hin_sig *)
+  unfold Defs.intersection_keys in Hin_sig.
+  change (In sigma (@map.keys (list positive) unit (@FullPosTrie.full_pos_trie_map unit)
+             (FullPosTrieConv.fpt_spaced_intersect merge_fn tries_ne))) in Hin_sig.
+  (* Hin_sig is already in native form; fpt_spaced_intersect_inputs_hit takes native keys *)
+  (* p = toc_fn pos (Build_erule_query_ptr fsym nptr cvars) at position pos in tries::rest *)
+  set (p := toc_fn pos (Defs.Build_erule_query_ptr positive positive fsym nptr cvars)).
+  assert (Hp_in : In p (fst tries_ne :: snd tries_ne)).
+  { unfold p, tries_ne.
+    destruct (nth_error_ne_map_idx_combine (Defs.query_clause_ptrs positive positive er) pos
+                (Defs.Build_erule_query_ptr positive positive fsym nptr cvars) Hnth)
+      as [[Hpos0 Hhead] | Hcomb].
+    - subst pos. unfold ne_map_idx. cbn [fst]. left. rewrite <- Hhead. reflexivity.
+    - right. unfold ne_map_idx. cbn [snd]. apply in_map_iff.
+      exact (ex_intro _ (pos, Defs.Build_erule_query_ptr positive positive fsym nptr cvars)
+                      (conj eq_refl Hcomb)). }
+  (* Apply fpt_spaced_intersect_inputs_hit *)
+  (* snd p = variable_flags qv cvars *)
+  assert (Hsnd_p : snd p = Defs.variable_flags positive positive_Eqb qv cvars).
+  { unfold p. unfold toc_fn. unfold Defs.trie_of_clause_sn. cbn [Defs.query_ptr_args snd].
+    destruct (map.get DBT fsym) as [tl0|].
+    - destruct (unwrap_with_default (map.get tl0 nptr)) as [[tot new] old].
+      destruct (Nat.compare pos frontier_pos); reflexivity.
+    - reflexivity. }
+  (* Apply fpt_spaced_intersect_inputs_hit *)
+  pose proof (@FullPosTrieConv.fpt_spaced_intersect_inputs_hit unit _
+                merge_fn merge_comm_pf merge_assoc_pf
+                (fst tries_ne) (snd tries_ne) sigma N
+                Hin_sig (eq_sym Hlen) Hdepth Hbools Hwf
+                (fun q Hq => trie_inputs_fpt_depth_sn rf rules er Hin e window frontier_pos q Hq)
+                p Hp_in) as (v & Hv).
+  (* Hv : fpt_get (fst p) (map fst (filter snd (combine sigma (snd p)))) = Some v *)
+  (* Goal has variable_flags qv cvars. Rewrite <-Hsnd_p to get snd p in goal. *)
+  rewrite <- Hsnd_p.
+  (* Now goal: map.get (fst p) (... snd p ...) = Some tt *)
+  (* map.get = fpt_get by defeq *)
+  change (@map.get (list positive) unit (@FullPosTrie.full_pos_trie_map unit) (fst p)
+    (map fst (filter snd (combine sigma (snd p)))))
+    with (FullPosTrie.fpt_get (fst p) (map fst (filter snd (combine sigma (snd p))))).
+  destruct v. exact Hv.
+Qed.

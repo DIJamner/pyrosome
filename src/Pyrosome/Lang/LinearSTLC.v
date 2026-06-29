@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -10,7 +11,7 @@ From Pyrosome Require Import Theory.Core Elab.Elab
   Lang.LinearSubst.
 Import Core.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Local Notation "'ext' e t" := ({{e #"conc" {e} (#"only" {t} )}})
     (in custom term at level 40, e custom arg at level 0, t custom arg at level 0).
@@ -117,8 +118,8 @@ Definition linear_stlc_def : lang :=
 *)
 
 Derive linear_stlc
-       SuchThat (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
-       As linear_stlc_wf.
+       in (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
+       as linear_stlc_wf.
 Proof. auto_elab. Qed.
 #[local] Definition linear_stlc_entry :=
   lang_entry (elab_lang_implies_wf linear_stlc_wf).

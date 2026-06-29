@@ -3,8 +3,9 @@
  *)
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List Uint63.
-Require PArray.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List Uint63.
+From Stdlib Require PArray.
 Import PArray (array, get, set).
 Import ListNotations.
 Open Scope string.
@@ -12,7 +13,7 @@ Open Scope list.
 From Utils Require Import Utils Monad.
 (*TODO: deprecate computewf at some point (in favor of more general tactic based on reduction proofs) *)
 From Pyrosome Require Import Theory.Core Elab.Elab Tools.ComputeWf Tools.Linter
-  Proof.TreeProofs Tools.Int63Renaming.
+  Proof.TreeProofs Tools.Int63Renaming Tools.Resolution.
 
 Import Core.Notations.
 
@@ -560,15 +561,12 @@ Ltac prove_ident_from_known_elabs :=
   | auto with utils
   | compute_all_fresh].
 
-#[deprecated(note="Use `Tools.Resolution.prove_by_lang_db` instead")]
-Ltac prove_from_known_elabs := fail "Use `Tools.Resolution.prove_by_lang_db` instead".
-
 Ltac term_cong :=
   eapply term_con_congruence;
   [ solve_in
   (*| solve_len_eq*)
   | try (right; vm_compute; reflexivity)
-  | solve[prove_from_known_elabs]
+  | solve[prove_by_lang_db]
   | repeat match goal with [|- eq_args _ _ _ _] =>
                            simple apply eq_args_nil
                            || simple eapply eq_args_cons2
@@ -624,7 +622,7 @@ Ltac compute_wf_subjects :=
         let c' := eval vm_compute in c in
         let t' := eval vm_compute in t in
         change_no_check (wf_sort l c' t'); eapply wf_sort_by
-  | [|- wf_lang _] => solve[prove_from_known_elabs]
+  | [|- wf_lang _] => solve[prove_by_lang_db]
   (*Don't use vm_compute here*)
   | [|- _ = _] => compute; reflexivity
   end.
@@ -918,7 +916,7 @@ Ltac split_rule_elab :=
   | compute; reflexivity
   | apply (use_compute_fresh _); compute; reflexivity |
   (*fail 2 since this will be used in a repeat *)
-  | solve [ prove_from_known_elabs ] || fail 2 "Could not prove base language wf" |].
+  | solve [ prove_by_lang_db ] || fail 2 "Could not prove base language wf" |].
 
 Ltac setup_elab_lang :=
   lazymatch goal with

@@ -1,7 +1,7 @@
-Require Import Bool.
+From Stdlib Require Import Bool.
 Import BoolNotations.
 
-From Utils Require Import Base Booleans Eqb Default.
+From Utils Require Import Base Eqb Default.
 
 Section __.
   Context (A B : Type)
@@ -39,9 +39,9 @@ Section __.
 End __.
 
 
-Arguments pair_eqb {A B}%type_scope {Eqb_A Eqb_B} _ _ : rename.
+Arguments pair_eqb {A B}%_type_scope {Eqb_A Eqb_B} _ _ : rename.
 
-Arguments pair_default {A B}%type_scope {Default_A Default_B} : rename.
+Arguments pair_default {A B}%_type_scope {Default_A Default_B} : rename.
 
 Arguments pair_map_snd {A B C} f !p/.
 

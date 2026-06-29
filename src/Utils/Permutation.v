@@ -1,8 +1,8 @@
 From coqutil Require Import Map.Interface.
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 
-From Coq.Sorting Require Import Permutation Mergesort.
+From Stdlib.Sorting Require Import Permutation Mergesort.
 Import NatSort.
 
 From Utils Require Import Base Booleans Eqb Lists.
@@ -99,7 +99,7 @@ Section __.
           basic_utils_crush.
         {
           replace (S (length l0)) with (length (l0++[a])).
-          2:rewrite app_length; simpl; Lia.lia.
+          2:rewrite length_app; simpl; Lia.lia.
           change (l0 ++ a :: l)
             with (l0 ++ [a] ++ l).
           rewrite app_assoc.
@@ -111,7 +111,7 @@ Section __.
         {
           
           replace (S (length l0)) with (length (l0++[a])).
-          2:rewrite app_length; simpl; Lia.lia.
+          2:rewrite length_app; simpl; Lia.lia.
           change (l0 ++ a :: l)
             with (l0 ++ [a] ++ l).
           rewrite app_assoc.
@@ -135,7 +135,7 @@ Section __.
     { apply nth_middle. }
     {
       replace (S (length l0)) with (length (l0++[a0])).
-      2:rewrite app_length; simpl; Lia.lia.
+      2:rewrite length_app; simpl; Lia.lia.
       change (fun n : nat => nth n (l0 ++ a0 :: l) a)
         with  (fun n : nat => nth n (l0 ++ [a0] ++ l) a).
       rewrite app_assoc.
@@ -165,7 +165,7 @@ Section __.
     {
       rewrite permute_nil; reflexivity.
     }
-    revert dependent l.
+    generalize dependent l.
     intro l; generalize (a::l); clear l.
     intros.
     apply Permutation_map
@@ -281,7 +281,7 @@ Section __.
     2:{
       apply filter_ext.
       intros.
-      rewrite seq_length.
+      rewrite length_seq.
       (*replace (n-0) with n by Lia.lia.*)
       auto.
     }
@@ -316,8 +316,8 @@ Section __.
     induction l;
       basic_goal_prep;
       basic_utils_crush.
-    my_case Hg (g a);
-    my_case Hf (f a);
+    destruct (g a) eqn:Hg;
+    destruct (f a) eqn:Hf;
       basic_goal_prep;
       basic_utils_crush.
     {
@@ -557,7 +557,7 @@ Section __.
   Proof.
     intros.
     enough ((length (filter (Nat.leb n) perm)) <= m) by Lia.lia.
-    replace m with (length (seq n m)) by (rewrite seq_length; eauto).
+    replace m with (length (seq n m)) by (rewrite length_seq; eauto).
     eapply NoDup_max_list_len with (P := (fun x : nat => n <= x < n + m)); eauto.
     1: apply NoDup_filter; eauto.
     2:{
@@ -675,7 +675,7 @@ Section __.
   Proof.
     intros.
     unfold extend_perm.
-    rewrite app_length.
+    rewrite length_app.
     rewrite remove_all_filter.
     unfold remove_all.
 
@@ -709,7 +709,7 @@ Section __.
       basic_utils_crush.
     }
     rewrite length_remove_all'; eauto.
-    all: rewrite seq_length; eauto.
+    all: rewrite length_seq; eauto.
     rewrite filter_true_In; try Lia.lia.
     basic_goal_prep; basic_utils_crush.
   Qed.
@@ -747,7 +747,7 @@ Section __.
     2:{
       basic_goal_prep;
       basic_utils_crush.
-      my_case Hin (inb a (seq 0 n));
+      destruct (inb a (seq 0 n)) eqn:Hin;
         basic_utils_crush;
         try Lia.lia.
     }
@@ -769,11 +769,11 @@ Section __.
     intros.
     apply NoDup_Permutation_bis.
     { apply NoDup_extend_perm; eauto. }
-    { rewrite seq_length, len_extend_perm; eauto. }
+    { rewrite length_seq, len_extend_perm; eauto. }
     { apply extend_perm_incl; eauto. }
   Qed.
       
 End __.
 
 
-Arguments select_all {A}%type_scope (l perm)%list_scope.
+Arguments select_all {A}%_type_scope (l perm)%_list_scope.

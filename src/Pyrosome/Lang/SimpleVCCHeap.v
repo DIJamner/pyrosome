@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -15,7 +16,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 (*TODO: make this divide more sensible*)
 Definition heap_id'_def : compiler :=
@@ -58,10 +59,10 @@ Definition forget_eq_wkn'_def : lang :=
       ]
   ]}.
 Derive forget_eq_wkn'
-       SuchThat (elab_lang_ext value_subst
+       in (elab_lang_ext value_subst
                                forget_eq_wkn'_def
                                forget_eq_wkn')
-       As forget_eq_wkn'_wf.
+       as forget_eq_wkn'_wf.
 Proof. auto_elab. Qed.
 #[local] Definition forget_eq_wkn'_entry :=
   lang_entry (elab_lang_implies_wf forget_eq_wkn'_wf).

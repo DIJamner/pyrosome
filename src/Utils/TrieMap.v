@@ -1,10 +1,10 @@
-Require Import ZArith Lists.List Coq.Classes.RelationClasses Coq.Classes.Morphisms.
-Require Import coqutil.Map.Interface coqutil.Sorting.Permutation.
-Require Import Tries.Canonical.
+From Stdlib Require Import ZArith Lists.List Classes.RelationClasses Classes.Morphisms.
+From coqutil Require Import Map.Interface Sorting.Permutation.
+From Tries Require Import Canonical.
 Import PTree.
 
-Require Utils.ArrayList.
-From Utils Require Import Booleans Base Lists Options ExtraMaps Default Monad.
+From Utils Require ArrayList.
+From Utils Require Import Booleans Base Lists ExtraMaps Monad.
 
 (* TODO: move this somewhere? *)
 (*reverses the bits in a positive number*)
@@ -369,25 +369,6 @@ Section __.
       map.remove m k := PTree.remove k m;
       map.fold := @trie_fold value;
     |}.
-
-  (* TODO: prove map.ok *)
-  #[export] Instance trie_map_ok : map.ok trie_map.
-  Proof.
-    constructor; basic_goal_prep.
-    { eapply extensionality; eauto. }
-    { reflexivity. }
-    { eapply gss. }
-    { eapply gso; eauto. }
-    { eapply grs; eauto. }
-    { eapply gro; eauto. }
-    {
-      revert m.
-      eapply tree_ind;
-        basic_goal_prep;
-        basic_utils_crush.
-      destruct l, o, r;
-        basic_goal_prep; try tauto.
-  Abort.
   
 End __.
 
@@ -398,7 +379,7 @@ Section MapIntersect.
   Context {A B C} (elt_intersect : A -> B -> C).
 
   Import Canonical.PTree.
-  Arguments empty {A}%type_scope.
+  Arguments empty {A}%_type_scope.
                                             
   Fixpoint intersect' m1 m2 : tree _ :=
     match m1, m2 with
@@ -486,7 +467,7 @@ Section MapIntersectList.
 
   Import Lists.List.
   Import Canonical.PTree List.ListNotations.
-  Arguments empty {A}%type_scope.
+  Arguments empty {A}%_type_scope.
   
   Section __.
     Context {A : Type}.
@@ -971,7 +952,7 @@ Section MapIntersectList.
   Proof. destruct ma; reflexivity. Qed.
   Hint Rewrite Mbind_option_map : utils.
 
-  #[local] Hint Rewrite rev_length : utils.
+  #[local] Hint Rewrite length_rev : utils.
 
   Fixpoint flip_by_length i b :=
     match i with
@@ -1476,7 +1457,7 @@ it's dependent on the length of i. use flip_by_length (could be backwards?)
   Qed.
 
   
-  Arguments get' {A}%type_scope !p%positive_scope !m.
+  Arguments get' {A}%_type_scope !p%_positive_scope !m.
   
   Lemma list_intersect_correct' x hd tl is_rev
     : map_elts_wf is_rev hd tl ->

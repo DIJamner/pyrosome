@@ -1,6 +1,8 @@
 Set Implicit Arguments.
 
-Require Import Bool Datatypes.String Lists.List.
+From Stdlib Require Import Bool.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Import BoolNotations.
 Open Scope string.
@@ -45,7 +47,7 @@ Notation "x <$> P" :=
 Fixpoint nth_tail {A} (n: nat) (l : list A) : list A :=
   match n,l with
   | 0,_ => l
-  | S_,[]=> []
+  | S _,[]=> []
   | S n', _::l'=> nth_tail n' l'
   end.
 

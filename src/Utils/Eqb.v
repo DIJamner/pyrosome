@@ -1,5 +1,6 @@
-Require Import Utils.Base Datatypes.Bool Datatypes.String Uint63.
-Require Export coqutil.Eqb.
+From coqutil Require Import Datatypes.Bool Datatypes.String.
+From coqutil Require Export Eqb.
+From Utils Require Import Base.
 
 
 Section __.
@@ -44,7 +45,7 @@ Section __.
 
 End __.
 
-Arguments dec {A}%type_scope {DecidableEq} s1 s2.
+Arguments dec {A}%_type_scope {DecidableEq} s1 s2.
 
   
 (*TODO: also account for _=_->False *)

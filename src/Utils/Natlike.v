@@ -1,4 +1,4 @@
-Require Import Orders.
+From Stdlib Require Import Orders.
 
 From Utils Require Import Utils.
 

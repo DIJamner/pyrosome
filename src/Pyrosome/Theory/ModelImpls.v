@@ -1,12 +1,13 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Core.
+From Pyrosome.Theory Require Import Core.
 
 
 (*TODO: should this be split differently? Model_ok for core should be in Core.v*)

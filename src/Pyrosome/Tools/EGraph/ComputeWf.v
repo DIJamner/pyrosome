@@ -4,7 +4,6 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Monad GallinaHintDb Ltac Result.
-From Utils Require Import EGraph.Defs.
 From Pyrosome.Theory Require Import Core ModelImpls.
 From Pyrosome.Tools Require Import Matches Resolution EGraph.Defs EGraph.Automation.
 From Pyrosome.Compilers Require Import Compilers CompilerFacts
@@ -565,14 +564,12 @@ Section __.
     repeat case_match; cbn; try tauto.
     intros.
     eapply compute_preserving_compiler_sound; eauto.
-    1,2:apply lang_wf_in_db_correct with (db:=proj1_sig db);
-    [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush].
-    1:apply cmp_wf_in_db_correct with (db:=proj1_sig db_cmp);
-      [typeclasses eauto|apply (proj2_sig db_cmp) | basic_utils_crush].
-    (*apply lang_wf_in_db_correct with (db:=proj1_sig db);
-    [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush].
-  Qed.*)
-  Admitted.
+    all: try (apply cmp_wf_in_db_correct with (db:=proj1_sig db_cmp);
+              [typeclasses eauto|apply (proj2_sig db_cmp) | basic_utils_crush]).
+    all: try (apply lang_wf_in_db_correct with (db:=proj1_sig db);
+              [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush]).
+    all: rewrite case_match_eqn2; exact I.
+  Qed.
 
   Definition compute_wf_lang_with_side_conditions db l_pre l fuel
     : result unit :=
@@ -722,7 +719,7 @@ Ltac compute_args_wf :=
   (* TODO: use flagged_exact *)
   | vm_compute; reflexivity].
 
-Require Import Pyrosome.Elab.Elab.
+From Pyrosome.Elab Require Import Elab.
 
 
 Notation wf_args l :=
@@ -765,7 +762,7 @@ Notation wf_args l :=
         let c' := eval vm_compute in c in
         let t' := eval vm_compute in t in
         change_no_check (wf_sort l c' t'); eapply wf_sort_by
-  | [|- wf_lang _] => solve[prove_from_known_elabs]
+  | [|- wf_lang _] => solve[prove_by_lang_db]
   (*Don't use vm_compute here*)
   | [|- _ = _] => compute; reflexivity
   end.

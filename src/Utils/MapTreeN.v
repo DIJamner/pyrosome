@@ -1,8 +1,8 @@
-Require Import NArith Lists.List.
+From Stdlib Require Import NArith Lists.List.
 Import ListNotations.
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Base Options ExtraMaps Monad.
+From Utils Require Import Base ExtraMaps Monad.
 From Utils Require TrieMap.
 
 
@@ -83,7 +83,7 @@ Section __.
           | _ => None
           end
     end.
-  Arguments ntree_get [n]%nat_scope _ _%list_scope.
+  Arguments ntree_get [n]%_nat_scope _ _%_list_scope.
 
   
   (*TODO: DUPLICATED! move this somewhere?
@@ -120,7 +120,7 @@ Section __.
                  end
         end
     end.
-  Arguments ntree_remove [n]%nat_scope _ _%list_scope.
+  Arguments ntree_remove [n]%_nat_scope _ _%_list_scope.
 
   (*
     Assumes k has length exactly n.
@@ -157,7 +157,7 @@ Section __.
 
   End __.
 
-  Arguments ntree_get {A}%type_scope [n]%nat_scope _ _%list_scope.
+  Arguments ntree_get {A}%_type_scope [n]%_nat_scope _ _%_list_scope.
 
   (* Question: Should I handle empty ntree 0s?
    *)
@@ -170,7 +170,7 @@ Section __.
     | S n' =>
         fun m1 m2 => map_intersect (ntree_intersect n') m1 m2
     end.
-  Arguments ntree_intersect [n]%nat_scope _ _.
+  Arguments ntree_intersect [n]%_nat_scope _ _.
   
     Lemma ntree_intersect_spec n (t1 : ntree A n) (t2 : ntree B n) k
       : ntree_get (ntree_intersect t1 t2) k
@@ -205,6 +205,6 @@ Section __.
   
 End __.
 
-Arguments ntree key%type_scope {m}%function_scope A%type_scope n%nat_scope.
-Arguments ntree_get {key}%type_scope {m}%function_scope {A}%type_scope [n]%nat_scope _ _%list_scope.
-Arguments ntree_intersect {key}%type_scope {m}%function_scope {A B C}%type_scope merge%function_scope {H} [n]%nat_scope _ _.
+Arguments ntree key%_type_scope {m}%_function_scope A%_type_scope n%_nat_scope.
+Arguments ntree_get {key}%_type_scope {m}%_function_scope {A}%_type_scope [n]%_nat_scope _ _%_list_scope.
+Arguments ntree_intersect {key}%_type_scope {m}%_function_scope {A B C}%_type_scope merge%_function_scope {H} [n]%_nat_scope _ _.

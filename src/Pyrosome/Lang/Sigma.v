@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -12,7 +13,7 @@ From Pyrosome Require Import
   Lang.Subst
   Lang.SubstEqnGen.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Import Core.Notations.
 Import PreRule.Notations.
@@ -27,8 +28,8 @@ Definition sigma_injectivity :=
    ("Sig", ["B"; "A"; "G"])].
 
 Derive sigma
-       SuchThat (wf_lang_ext subst_lang sigma)
-       As sigma_wf.
+       in (wf_lang_ext subst_lang sigma)
+       as sigma_wf.
 Proof.
   setup_lang_interactive.
 

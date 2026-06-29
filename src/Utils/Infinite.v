@@ -1,6 +1,8 @@
 Set Implicit Arguments.
 
-Require Import Lists.List Datatypes.String Ascii.
+From Stdlib Require Import Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Strings.Ascii.
 From Utils Require Import Utils.
 
 (* A class for using the infiniteness of types,
@@ -49,7 +51,7 @@ End WithInstance.
 #[export] Hint Resolve gensym_ok : utils.
 
   
-Arguments Infinite_ok V%type_scope {Inf}.
+Arguments Infinite_ok V%_type_scope {Inf}.
  
 #[export] Instance string_infinite : Infinite string :=
   {

@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -14,20 +15,20 @@ From Pyrosome Require Import
   Tools.EGraph.Automation
   Tools.Interactive.
 
-Require Import Pyrosome.Compilers.Parameterizer.
+From Pyrosome.Compilers Require Import Parameterizer.
 
 From Pyrosome.Lang Require Import
   Subst SubstEqnGen
   Pi Sigma.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Import Core.Notations.
 Import PreRule.Notations.
 
 Derive levels
-       SuchThat (wf_lang (levels : lang))
-       As levels_wf.
+       in (wf_lang (levels : lang))
+       as levels_wf.
 Proof.
   setup_lang_interactive.
   elab_rule {[r

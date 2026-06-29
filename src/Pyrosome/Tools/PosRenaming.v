@@ -1,11 +1,9 @@
 (* TODO: largely duped from Int63Renaming. Adapt to a generic abstracion. *)
-Set Implicit Arguments.
 
-Require Import Lists.List NArith.
+From Stdlib Require Import Lists.List NArith.
 Import ListNotations.
 Open Scope list.
 Open Scope positive.
-
 
 From coqutil Require Import Map.Interface.
 
@@ -107,5 +105,43 @@ Section WithVar.
                  @! let r' <- rename_rule r in
                    let x' <- to_p x in
                    ret (x',r')).
+
+  Section Unrename.
+
+    Context (r : renaming).
+
+    Definition of_p (p : positive) : V :=
+      unwrap_with_default (map.get r.(p_to_v) p). 
+    
+    Fixpoint unrename_term (e : Term.term positive) : Term.term V :=
+      match e with
+      | var x => var (of_p x)
+      | con n s => con (of_p n) (map unrename_term s)
+      end.
+
+    Definition unrename_sort (t : Term.sort positive) : Term.sort V :=
+      match t with
+      | scon n s => scon (of_p n) (map unrename_term s)
+      end.
+
+    Definition unrename_ctx (c : Term.ctx positive) : Term.ctx V :=
+      map (fun '(x,t) => (of_p x, unrename_sort t)) c.
+
+  End Unrename.
           
 End WithVar.
+
+
+Arguments rename_term {V}%_type_scope {V_Eqb} e _.
+Arguments rename_sort {V}%_type_scope {V_Eqb} t _.
+Arguments rename_ctx {V}%_type_scope {V_Eqb} c _.
+Arguments rename_lang {V}%_type_scope {V_Eqb} l _.
+Arguments unrename_term {V}%_type_scope {V_default} r e.
+Arguments unrename_sort {V}%_type_scope {V_default} r t.
+Arguments unrename_ctx {V}%_type_scope {V_default} r c.
+Arguments of_p {V}%_type_scope {V_default} r p.
+
+
+Arguments v_to_p {V}%_type_scope r.
+Arguments p_to_v {V}%_type_scope r.
+Arguments to_p {V}%_type_scope {V_Eqb} v _.

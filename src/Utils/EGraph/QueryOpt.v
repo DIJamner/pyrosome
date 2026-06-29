@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List Coq.Classes.RelationClasses.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List Classes.RelationClasses.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -6,7 +7,7 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind Monad ExtraMaps Relations Maps.
+From Utils Require Import Utils UnionFind Monad ExtraMaps Relations Maps VC.
 From Utils.EGraph Require Import Defs Semantics.
 Import Monad.StateMonad.
 
@@ -135,12 +136,6 @@ Section WithMap.
   
   (*TODO: duplicated. move*)
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
-
-  Definition remove_atom a {A} : state (instance A) unit :=
-    fun '(Build_instance _ _ _ _ _ _ db equiv parents epoch wl an log) =>
-      let tbl_upd tbl := map.remove tbl a.(atom_args) in
-      let db' := map_update db a.(atom_fn) tbl_upd in
-      (tt,Build_instance _ _ _ _ _ _ db' equiv parents epoch wl an log).
 
   (*TODO: would this be a better signature for UnionFind.find? *)
   Definition uf_find_stateful i : state (union_find idx (idx_map idx) (idx_map nat)) idx :=
@@ -273,24 +268,27 @@ Section WithMap.
   (*TODO: duplicated: move to utils*)
   Hint Resolve Properties.map.extends_refl : utils.
   
-  Lemma force_equiv_sound X m i
-    : state_sound_for_model (analysis_result:=X) lt m i force_equiv (fun i' _ => i = i').
+  Lemma force_equiv_sound X
+    : vc (force_equiv (X:=X)) (fun e res =>
+                        (exists roots, union_find_ok (equiv e) roots) ->
+                        e.(db) = (snd res).(db) /\
+                          (exists roots, union_find_ok (snd res).(equiv) roots) /\
+                          iff2 (uf_rel_PER _ _ _ e.(equiv)) (uf_rel_PER _ _ _ (snd res).(equiv)) /\
+                          e.(parents) = (snd res).(parents) /\
+                          e.(worklist) = (snd res).(worklist) /\
+                          (forall z, Sep.has_key z e.(equiv).(parent)
+                                     <-> Sep.has_key z (snd res).(equiv).(parent))).
   Proof.
-    open_ssm'.
-    intuition cbn; eauto with utils.
-    {
-      destruct e, e0; constructor; basic_goal_prep; eauto.
-      eexists; eauto using force_uf_ok.
-    }
-    {
-      destruct e, e1; constructor; basic_goal_prep; eauto.
-      { destruct e0 as [ [] ]; eapply force_uf_same_domain; eauto. }
-      {
-        apply rel_interpretation;
-          destruct e0 as [ [] ];
-          eapply force_uf_equivalent; eauto.
-      }
-    }
+    unfold vc, force_equiv.
+    intros [db equiv parents epoch wl an log].
+    cbn.
+    intros [roots Hroots].
+    repeat split; auto.
+    - eexists. eapply force_uf_ok; eauto.
+    - eapply force_uf_equivalent; eauto.
+    - eapply force_uf_equivalent; eauto.
+    - eapply force_uf_same_domain; eauto.
+    - eapply force_uf_same_domain; eauto.
   Qed.
   
   (*TODO: duplicated*)  
@@ -304,46 +302,7 @@ Section WithMap.
         destruct ma eqn:Hma; cbn;[| tauto]
     end.
 
-  Lemma remove_atom_sound X m i a
-   : state_sound_for_model lt m i (remove_atom a (A:=X))
-       (fun (i'' : idx_map (domain symbol m)) (_ : unit) => i = i'').
-  Proof.
-    open_ssm; destruct e; cbn.
-    { destruct e0; constructor; intuition eauto. }
-    {
-      destruct e1; constructor; intuition eauto.
-      apply atom_interpretation.
-      unfold atom_in_egraph, atom_in_db in *; cbn in *.
-      intros; repeat iss_case.
-      eqb_case (atom_fn a) (atom_fn a0).
-      {
-        rewrite H0 in *.
-        rewrite get_update_same in Hma; eauto.
-        inversions.
-        unfold default, map_default in Hma0.
-        rewrite Properties.map.remove_empty in Hma0.
-        case_match; rewrite ?map.get_empty in *; try congruence.
-        cbn.
-        eqb_case (atom_args a) (atom_args a0).
-        {
-          rewrite H1 in *.
-          rewrite map.get_remove_same in *; congruence.
-        }
-        {
-          rewrite map.get_remove_diff in * by auto.
-          rewrite Hma0.
-          cbn.
-          eauto.
-        }
-      }
-      {
-        rewrite get_update_diff in Hma by auto.
-        rewrite Hma; cbn.
-        rewrite Hma0; cbn; auto.
-      }
-    }
-  Qed.
-
+  (*TODO: outdated
   Lemma dedup_computation_sound X m i l `{model_ok _ m}
     (* TODO this assumption should be packaged somewhere*)
     : all (atom_sound_for_model idx symbol idx_map m i) l ->
@@ -364,6 +323,7 @@ Section WithMap.
     cbn beta in *; break; subst.
     apply remove_atom_sound.
     Qed.
+   *)
 
 (* TODO: split in 2: egraph comps to sequent, and sequent to egraph comps *)
 Section SequentOfStates.
@@ -378,11 +338,21 @@ Section SequentOfStates.
      TODO: make sure to take in a sufficient fuel.
      Must be an input to be sound.
    *)
+  (* The assumption egraph, together with the result of its [rebuild].
+     Binding [res] lets a failed rebuild (insufficient fuel) be propagated
+     upward and turned into an outright failure of the whole reduction,
+     rather than silently producing a sequent built from a non-canonical
+     egraph.  The monad annotations [{state (instance X)}] pin the monad so
+     typeclass inference does not diverge. *)
   Let assumption_inst :=
-        (@! let a <- assumptions in
-           let _ <- rebuild r_fuel in
-           ret a)
+        (@! let {state (instance X)} a <- assumptions in
+           let {state (instance X)} res <- rebuild r_fuel in
+           ret (a, res))
           (empty_egraph idx_zero X).
+  (* [a] of the assumption run (the value [conclusions] is applied to). *)
+  Let assumption_val := fst (fst assumption_inst).
+  (* the assumption-side rebuild result. *)
+  Let assumption_status : Result.result unit := snd (fst assumption_inst).
   Let assumption_atoms := db_to_atoms (snd assumption_inst).(db).
 
   (*
@@ -402,7 +372,11 @@ Section SequentOfStates.
                         let _ <- rebuild r_fuel in
                         let _ <- force_equiv in
                         ret b) in
-        snd (uncurry comp assumption_inst).
+        snd (comp assumption_val (snd assumption_inst)).
+
+  (*TODO: move to the defining file *)
+  Arguments db_remove {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+    {analysis_result}%_type_scope a _.
 
   (* Remove the atoms of the assumptions.
      We remove them rather than not adding them in the first place
@@ -410,9 +384,7 @@ Section SequentOfStates.
      an assumption.
    *)
   Let conclusion_inst_dedup :=
-        snd (list_Miter
-               (fun a => Mbind (fun a => remove_atom a (A:=X))
-                           (canonicalize a))
+        snd (list_Miter (fun a => Mbind db_remove (canonicalize a))
                assumption_atoms
                conclusion_inst).
 
@@ -450,10 +422,21 @@ Section SequentOfStates.
   Definition sequent'_of_states := 
     (assumption_atoms, conclusion_atoms , conclusion_eqs_final).
 
-  (* Generates an (optimized) sequent from two egraph state monad values *)
-  Definition sequent_of_states := 
+  (* The (optimized) sequent from two egraph state monad values, ignoring
+     whether the assumption-side rebuild succeeded.  Used by the optimizer,
+     whose soundness holds regardless of the rebuild's fuel. *)
+  Definition sequent_of_states_seq : sequent :=
     Build_sequent _ _ (map atom_clause assumption_atoms)
       (map (uncurry eq_clause) conclusion_eqs_final++(map atom_clause conclusion_atoms)).
+
+  (* The same sequent, or the rebuild's [Failure] if it ran out of fuel.
+     Used by the source-rule compiler so a failed rebuild fails the whole
+     reduction instead of silently producing a non-canonical sequent. *)
+  Definition sequent_of_states : Result.result sequent :=
+    match assumption_status with
+    | Result.Success _ => Result.Success sequent_of_states_seq
+    | Result.Failure e => Result.Failure e
+    end.
 (*
   Notation state_sound_for_model :=
     (state_sound_for_model _ idx_succ _ _ _ _ _).
@@ -509,15 +492,15 @@ Section SequentOfStates.
 
       
       Lemma remove_atom_incl (i0 : instance X) a0 i1 u
-        : remove_atom a0 i0 = (u, i1) ->
-          incl (db_to_atoms (db i1))  (db_to_atoms (db i0)).
+        : db_remove a0 i0 = (u, i1) ->
+          incl (db_to_atoms (db i1)) (db_to_atoms (db i0)).
       Proof using lt symbol_map_ok idx_trie_ok Eqb_symbol_ok Eqb_symbol Eqb_idx_ok
 Eqb_idx.
         clear conclusion_eqs_final live_eqn conclusion_var_in_atoms
           conclusion_eqs_verbose conclusion_atoms conclusion_inst_dedup
-          conclusion_inst assumption_atoms  assumption_inst
+          conclusion_inst assumption_atoms assumption_status assumption_val assumption_inst
           idx_zero idx_succ.
-        unfold remove_atom.
+        unfold db_remove.
         destruct i0; cbn.
         basic_goal_prep;
           basic_utils_crush.
@@ -525,7 +508,6 @@ Eqb_idx.
         unfold map_update.
         case_match; unfold default, map_default; cbn.
         2:{
-          rewrite Properties.map.remove_empty.
           unfold db_to_atoms.
           intros ? ?.
           rewrite in_flat_map in *.
@@ -535,8 +517,9 @@ Eqb_idx.
           {
             rewrite map.get_put_same in *.
             autorewrite with inversion in *; subst.
+            unfold Basics.flip in H1.
+            rewrite Properties.map.remove_empty in H1.
             unfold map.tuples in H1.
-            cbn in H1.
             rewrite Properties.map.fold_empty in H1.
             basic_goal_prep;
               basic_utils_crush.
@@ -561,22 +544,24 @@ Eqb_idx.
           apply Properties.map.tuples_spec in H0.
           eqb_case (atom_fn a0) s.
           {
-            rewrite map.get_put_same in *.
-            autorewrite with inversion in *; subst.
-            rewrite in_map_iff in *.
+            rewrite map.get_put_same in H0.
+            autorewrite with inversion in H0; subst.
+            rewrite in_map_iff in H1.
             basic_goal_prep; subst.
-            rewrite Properties.map.tuples_spec in *.
+            unfold Basics.flip in H1.
+            rewrite Properties.map.tuples_spec in H1.
             eqb_case l (atom_args a0).
             {
               exfalso.
-              rewrite map.get_remove_same in *.
+              rewrite map.get_remove_same in H1.
               congruence.
             }
-            rewrite map.get_remove_diff in * by auto.
+            rewrite map.get_remove_diff in H1 by auto.
             exists ((atom_fn a0), r).
             rewrite Properties.map.tuples_spec.
             basic_goal_prep;
               basic_utils_crush.
+            unfold table_atoms.
             let x := open_constr:(_) in
             replace ({| atom_fn := atom_fn a0; atom_args := l; atom_ret := entry_value idx X d |}) with x;[ eapply in_map |].
             {
@@ -585,18 +570,18 @@ Eqb_idx.
             { reflexivity. }
           }
           {
-            rewrite map.get_put_diff in * by auto.
+            rewrite map.get_put_diff in H0 by auto.
             rewrite in_map_iff in H1.
             basic_goal_prep; subst.
             exists (s, r0).
             rewrite Properties.map.tuples_spec.
             intuition auto.
-            unfold table_atoms.          
+            unfold table_atoms.
             let x := open_constr:(_) in
             replace ({| atom_fn := s; atom_args := l; atom_ret := entry_value idx X d |}) with x;[ eapply in_map |].
             { rewrite Properties.map.tuples_spec in *; eauto. }
             { reflexivity. }
-          }          
+          }
         }
       Qed.
         
@@ -605,7 +590,7 @@ Eqb_idx.
                    (db
                       (snd
                          (list_Miter
-                            (fun a : atom => @! let a0 <- canonicalize a in (remove_atom a0))
+                            (fun a : atom => @! let a0 <- canonicalize a in (db_remove a0))
                             al i)))))
             (db_to_atoms
                (db
@@ -614,7 +599,7 @@ Eqb_idx.
 Eqb_idx.
         clear conclusion_eqs_final live_eqn conclusion_var_in_atoms
           conclusion_eqs_verbose conclusion_atoms conclusion_inst_dedup
-          conclusion_inst assumption_atoms  assumption_inst
+          conclusion_inst assumption_atoms assumption_status assumption_val assumption_inst
           idx_zero idx_succ.
         revert i; induction al;
           intros.
@@ -678,31 +663,7 @@ Eqb_idx.
         (egraph_sound_for_interpretation _ _ symbol_map _ _ _).
 
 
-      Hint Rewrite @map.get_empty : utils.
-
-      
-      Lemma empty_egraph_sound m
-        : egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero X).
-      Proof.
-        revert idx_map_ok symbol_map_ok.
-        clear.
-        constructor; basic_goal_prep;
-          basic_utils_crush.
-        {
-          exfalso.
-          unfold atom_in_egraph, atom_in_db in *.
-          basic_goal_prep;
-            basic_utils_crush.
-        }
-        {
-          exfalso; unfold uf_rel_PER in *.
-          eapply PER_empty; try eassumption; eauto.
-          basic_goal_prep;
-            basic_utils_crush.
-        }
-      Qed.
-
-      
+      Hint Rewrite @map.get_empty : utils.      
       
     Lemma sequent_of_states_sound (*m*) (*Post_i Post Post2 i3*)
       : (* state_sound_for_model m map.empty assumptions Post_i Post ->
@@ -982,7 +943,7 @@ Section Optimize.
   (*A variant that preserves in the type that the assumption has no equations*)
   Definition optimize_sequent' := sequent'_of_states sub_and_assumptions conclusions.
   
-  Definition optimize_sequent := sequent_of_states sub_and_assumptions conclusions.
+  Definition optimize_sequent rf := sequent_of_states_seq sub_and_assumptions conclusions rf.
 
   
   (* Diagnostics. For debugging only*)
@@ -1090,11 +1051,16 @@ End Optimize.
 End WithMap.
 
 
-Arguments build_rule_set {idx}%type_scope {Eqb_idx} idx_succ%function_scope idx_zero 
-  {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus} 
-  {idx_map}%function_scope {idx_trie}%function_scope rf rules%list_scope.
+Arguments build_rule_set {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope idx_zero 
+  {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus} 
+  {idx_map}%_function_scope {idx_trie}%_function_scope rf rules%_list_scope.
 
-Arguments QueryOpt.sequent_of_states {idx}%type_scope {Eqb_idx} 
-  {idx_zero} {symbol}%type_scope {symbol_map idx_map}%function_scope
-  {idx_trie}%function_scope {X A}%type_scope {H} 
-  assumptions {B}%type_scope conclusions%function_scope r_fuel.
+Arguments QueryOpt.sequent_of_states {idx}%_type_scope {Eqb_idx}
+  {idx_zero} {symbol}%_type_scope {symbol_map idx_map}%_function_scope
+  {idx_trie}%_function_scope {X A}%_type_scope {H}
+  assumptions {B}%_type_scope conclusions%_function_scope r_fuel.
+
+Arguments QueryOpt.sequent_of_states_seq {idx}%_type_scope {Eqb_idx}
+  {idx_zero} {symbol}%_type_scope {symbol_map idx_map}%_function_scope
+  {idx_trie}%_function_scope {X A}%_type_scope {H}
+  assumptions {B}%_type_scope conclusions%_function_scope r_fuel.

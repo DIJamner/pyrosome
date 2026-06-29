@@ -1,17 +1,19 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
 From Utils Require Export GoalDisplay.
 From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
 
 (*TODO: move to the right place*)
 Definition as_ctx {V} (c:ctx V) :=c.
-Notation "'{{c' c }}" := (as_ctx c) (at level 0, c custom ctx, only printing).
+(* Renamed from "{{c c }}" to avoid notation-incompatible-prefix with Term.v's
+   "{{c _, .., _}}" parsing notation. *)
+Notation "'{{actx' c }}" := (as_ctx c) (at level 0, c custom ctx, only printing).
 
 Ltac hide_implicits :=
   lazymatch goal with

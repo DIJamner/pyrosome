@@ -1,10 +1,11 @@
 Set Implicit Arguments.
 
-Require Import Coq.Lists.List. Import ListNotations.
-Require Import Bool.
-Require Import Coq.Classes.Morphisms Coq.Classes.RelationClasses.
-Require Import Coq.Sorting.Permutation.
-Require Export Datatypes.List.
+From Stdlib Require Import Lists.List.
+From Stdlib Require Import Bool.
+From Stdlib Require Import Classes.Morphisms Classes.RelationClasses.
+From Stdlib Require Import Sorting.Permutation.
+From coqutil Require Export Datatypes.List.
+Import ListNotations.
 Import BoolNotations.
 Open Scope list.
 
@@ -162,14 +163,14 @@ Section __.
       {
         eapply all2_len_False; eauto.
         cbn.
-        rewrite app_length.
+        rewrite length_app.
         Lia.lia.
       }
       {
         destruct l; basic_goal_prep; try tauto.
         eapply all2_len_False; eauto.
         cbn.
-        rewrite app_length.
+        rewrite length_app.
         cbn.
         Lia.lia.
       }
@@ -248,7 +249,7 @@ Section __.
         destruct b;
         basic_goal_prep;
         basic_utils_crush.
-      my_case Ha (eqb a a1);
+      destruct (eqb a a1) eqn:Ha;
         basic_goal_prep;
         basic_utils_crush.
       specialize (IHa b).
@@ -433,17 +434,17 @@ End __.
 
 
 
-Arguments sublist {A}%type_scope (s l)%list_scope.
-Arguments all {A}%type_scope P%function_scope l%list_scope.
-Arguments set_eq {A}%type_scope (l1 l2)%list_scope.
+Arguments sublist {A}%_type_scope (s l)%_list_scope.
+Arguments all {A}%_type_scope P%_function_scope l%_list_scope.
+Arguments set_eq {A}%_type_scope (l1 l2)%_list_scope.
 
-Arguments sublistb {A}%type_scope {Eqb_A} (s l)%list_scope : rename.
+Arguments sublistb {A}%_type_scope {Eqb_A} (s l)%_list_scope : rename.
 
-Arguments use_sublistb {A}%type_scope {H H0} (s l)%list_scope _.
+Arguments use_sublistb {A}%_type_scope {H H0} (s l)%_list_scope _.
 Ltac compute_sublist := apply use_sublistb; vm_compute; exact I.
 
 
-Arguments use_inclb {A}%type_scope {H H0} (l1 l2)%list_scope _ a _.
+Arguments use_inclb {A}%_type_scope {H H0} (l1 l2)%_list_scope _ a _.
 Ltac compute_incl := apply use_inclb; vm_compute; exact I.
 
 #[export] Hint Rewrite inclb_spec : utils.
@@ -452,7 +453,7 @@ Ltac compute_incl := apply use_inclb; vm_compute; exact I.
 #[export] Hint Resolve in_eq : utils.
 #[export] Hint Resolve in_cons : utils.
 
-#[export] Hint Rewrite map_length : utils.
+#[export] Hint Rewrite length_map : utils.
 #[export] Hint Rewrite in_app_iff : utils.
 #[export] Hint Rewrite app_nil_r : utils.
 

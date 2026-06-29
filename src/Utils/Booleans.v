@@ -1,7 +1,7 @@
-Require Export Datatypes.List (forallb2).
-Require Export Datatypes.Bool.
+From coqutil Require Export Datatypes.List (forallb2).
+From coqutil Require Export Datatypes.Bool.
 
-Require Import Utils.Base Utils.Default.
+From Utils Require Import Default.
 
 (*TODO: move to Booleans or a new file *)
 Definition compute_checked {b A} : (Is_true b -> A) -> option A :=

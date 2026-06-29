@@ -12,7 +12,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 (*TODO: move to utils*)
 Lemma all_app A (P : A -> Prop) l1 l2
@@ -455,103 +455,163 @@ Section WithVar.
   Hint Resolve use_compute_all_fresh : utils.
   
 
+
+  Local Ltac mred H := cbn [Mbind Mret result_monad true_or] in H.
+  Local Ltac res_kill H := cbn [Mbind Mret result_monad true_or Is_Success] in H; destruct H.
+  Local Ltac b2p H lem :=
+    apply Is_true_eq_left in H; apply lem in H; try typeclasses eauto.
+  (* discharge a compile_strengthen_* side condition: an all_fresh/incl fact
+     (by eassumption) or an all_constructors_* fact (some projection of H). *)
+  Local Ltac disch H :=
+    first [ eassumption
+          | exact (proj1 H) | exact (proj2 H)
+          | exact (proj1 (proj2 H)) | exact (proj2 (proj2 H))
+          | exact (proj1 (proj2 (proj2 H))) | exact (proj2 (proj2 (proj2 H))) ].
+
+  (* From the per-name [case_wf_in_db ... = true] fact, extract the matching db
+     entry [e] and produce:
+       Hpres : preserving_compiler_ext (core_model e.(entry_tgt)) e.(entry_cmp_pre)
+                  (map (pair n)(option_to_list mc)) [(n, r)]
+       Hac   : all_constructors_rule (In . map fst e.(entry_cmp_pre)) r
+       Ht    : incl e.(entry_tgt) tgt
+       Hcp   : incl e.(entry_cmp_pre) (cmp ++ cmp_pre)
+       Hfv   : fresh n e.(entry_cmp_pre)
+       Hfe   : all_fresh e.(entry_cmp_pre)
+     (r, mc are already the concrete rule/option shapes for the current case.) *)
+  Local Ltac get_entry Hdb :=
+    lazymatch goal with
+    | Hcase : case_wf_in_db ?db ?tgt ?cp ?n ?r ?mc = true |- _ =>
+        unfold case_wf_in_db in Hcase;
+        let entries := fresh "entries" in
+        let Hnll := fresh "Hnll" in
+        destruct (named_list_lookup_err db n) as [entries|] eqn:Hnll; [| discriminate Hcase];
+        symmetry in Hnll; apply named_list_lookup_err_in in Hnll;
+        let e := fresh "e" in
+        let Hin_e := fresh "Hin_e" in
+        let Hef := fresh "Hef" in
+        apply existsb_exists in Hcase; destruct Hcase as [e [Hin_e Hef]];
+        cbn beta in Hef;
+        rewrite !Bool.andb_true_iff in Hef;
+        destruct Hef as [ [ [ [ [Hr Hmc] Ht] Hcp] Hfv] Hfe];
+        b2p Hr eqb_prop_iff; b2p Hmc eqb_prop_iff;
+        b2p Ht use_inclb; b2p Hcp use_inclb;
+        b2p Hfv freshb_spec; b2p Hfe all_freshb_spec;
+        let Hstep1 := fresh "Hstep1" in
+        pose proof (in_all _ db (n, entries) Hdb Hnll) as Hstep1;
+        pose proof (in_all (wf_entry n) entries e Hstep1 Hin_e) as Hwfe;
+        unfold wf_entry in Hwfe; destruct Hwfe as [Hpres Hac];
+        rewrite <- Hr in Hpres, Hac; rewrite <- Hmc in Hpres;
+        cbn [option_to_list map] in Hpres
+    end.
+
   Lemma cmp_wf_in_db_correct db tgt cmp_pre cmp src
     : cmp_db_sound db ->
       Is_Success(cmp_wf_in_db db tgt cmp_pre cmp src) ->
       preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src.
   Proof.
-  Admitted. (*
-    unfold cmp_db_sound, cmp_wf_in_db.
-    intro Hdb.
-    autorewrite with rw_prop inversion bool utils in *; eauto.
-    revert cmp.
-    induction src;
-      basic_goal_prep.
-    1: basic_core_crush.
-    unfold case_wf_in_db in *.
-
-
-    destruct (named_list_lookup_err db v) eqn:Hnll.
-    2:{
-      destruct r; destruct cmp;
-      basic_goal_prep;
-      basic_core_crush.
-    }
-    lazymatch goal with
-    | H : named_list_lookup_err ?db _ = Some _,
-        Hall: all (fun '(n, l) => all (wf_entry n) l) ?db |-_=>
-        symmetry in H;
-        apply named_list_lookup_err_in in H;
-        eapply in_all in H; eauto;
-        unfold wf_entry in H;
-        cbn in *;
-        basic_core_crush;
-        try safe_invert H
-    end.
-    revert H; destruct r; cbn; repeat case_match;
-      basic_goal_prep;
-      autorewrite with rw_prop inversion bool utils in *; eauto; try typeclasses eauto;
-      intuition subst.
-    all: basic_goal_prep.
-    all: eapply in_all in Hnll; eauto; basic_goal_prep.
-    all: repeat (lazymatch goal with
-                 | x : rule |- _ => destruct x
-                 | x : compiler_case |- _ => destruct x
-                 | x : option compiler_case |- _ => destruct x
-                 | x : compiler_db_entry |- _ => destruct x
-                 end;
-                 basic_goal_prep;
-                 autorewrite with rw_prop inversion bool utils in *; eauto; try typeclasses eauto;
-                 intuition subst).
-    all: try lazymatch goal with
-        | H : preserving_compiler_ext _ (_::_) (_::_) |-_=>
-            try safe_invert H
-        | H : preserving_compiler_ext _ [] (_::_) |-_=>
-            try safe_invert H
-           end.
-    all: econstructor; eauto.
-    all: [> eapply wf_sort_lang_monotonicity
-         | eapply wf_term_lang_monotonicity
-         | eapply eq_sort_lang_monotonicity
-         | eapply eq_term_lang_monotonicity]; eauto.
-    {
-      erewrite <- compile_strengthen_ctx_incl; [eassumption| ..];
-        eauto.
-      all: basic_utils_crush.
-      intros [x c] Hin.
-      assert (x <> v0).
-      {
-        intro; subst.
-        basic_utils_crush.
-      }
-      basic_goal_prep.
-      eapply H12 in Hin.
-      basic_goal_prep;basic_core_crush.
-    }
-    {
-      erewrite <- compile_strengthen_sort_incl,
-         <- compile_strengthen_ctx_incl;
-        [eassumption| ..];
-        eauto.
-      all: basic_utils_crush.
-      all:intros [x c] Hin;
-      assert (x <> v0) by (basic_goal_prep;basic_core_crush).                   
-      all:eapply H12 in Hin; basic_goal_prep;basic_core_crush.
-    }
-    {
-      erewrite <- compile_strengthen_sort_incl,
-         <- compile_strengthen_ctx_incl; eauto.
-      1:erewrite <- compile_strengthen_sort_incl with (t:=s2); eauto.
-    }
-    {
-      erewrite <- compile_strengthen_sort_incl,
-         <- compile_strengthen_incl,
-         <- compile_strengthen_ctx_incl; eauto.
-      1:erewrite <- compile_strengthen_incl with (e:=t2); eauto.
-    }
+    intros [Hdbfresh Hdball] H.
+    unfold cmp_wf_in_db in H.
+    destruct (all_freshb (cmp ++ cmp_pre)) eqn:Hfb; [ mred H | res_kill H ].
+    assert (Haf : all_fresh (cmp ++ cmp_pre))
+      by (apply (proj1 (all_freshb_spec _)); apply Is_true_eq_left; exact Hfb).
+    clear Hfb.
+    revert cmp Haf H.
+    induction src as [| [v r] src' IHsrc]; intros cmp Haf H.
+    { (* src = [] *)
+      cbn [cmp_wf_in_db'] in H.
+      destruct (eqb cmp []) eqn:Hc; [ mred H | res_kill H ].
+      b2p Hc eqb_prop_iff; rewrite Hc.
+      constructor. }
+    cbn [cmp_wf_in_db'] in H.
+    destruct r as [c args | c args t | c t1 t2 | c e1 e2 t].
+    - (* sort_rule c args *)
+      cbn [rule_is_eqn] in H.
+      destruct cmp as [| [v' cc] cmpt]; [ res_kill H | ].
+      destruct (eqb v v') eqn:Hvv; [ mred H | res_kill H ].
+      b2p Hvv eqb_prop_iff; subst v'.
+      assert (Haf' : all_fresh (cmpt ++ cmp_pre))
+        by (apply all_fresh_tail with (l1 := [(v, cc)]); exact Haf).
+      destruct (case_wf_in_db db tgt (((v, cc) :: cmpt) ++ cmp_pre) v (sort_rule c args) (Some cc))
+        eqn:Hcase; [ mred H | res_kill H ].
+      get_entry Hdball.
+      safe_invert Hpres.
+      lazymatch goal with Hw : Model.wf_sort _ _ |- _ => rename Hw into Hwf | Hw : wf_sort _ _ _ |- _ => rename Hw into Hwf end.
+      assert (Hcp' : incl e.(entry_cmp_pre) (cmpt ++ cmp_pre)).
+      { intros p Hp. specialize (Hcp p Hp). cbn in Hcp.
+        destruct Hcp as [Heq | HB]; [ | exact HB].
+        exfalso. subst p. apply Hfv. apply (pair_fst_in _ _ _ Hp). }
+      cbn [AllConstructors.all_constructors_rule] in Hac.
+      apply CompilerDefs.preserving_compiler_sort.
+      + apply IHsrc; [ exact Haf' | exact H ].
+      + eapply wf_sort_lang_monotonicity; [ exact Ht | ].
+        erewrite <- compile_strengthen_ctx_incl with (cmp1 := entry_cmp_pre e) (cmp2 := cmpt ++ cmp_pre)
+          by disch Hac.
+        exact Hwf.
+    - (* term_rule c args t *)
+      cbn [rule_is_eqn] in H.
+      destruct cmp as [| [v' cc] cmpt]; [ res_kill H | ].
+      destruct (eqb v v') eqn:Hvv; [ mred H | res_kill H ].
+      b2p Hvv eqb_prop_iff; subst v'.
+      assert (Haf' : all_fresh (cmpt ++ cmp_pre))
+        by (apply all_fresh_tail with (l1 := [(v, cc)]); exact Haf).
+      destruct (case_wf_in_db db tgt (((v, cc) :: cmpt) ++ cmp_pre) v (term_rule c args t) (Some cc))
+        eqn:Hcase; [ mred H | res_kill H ].
+      get_entry Hdball.
+      safe_invert Hpres.
+      lazymatch goal with Hw : Model.wf_term _ _ _ |- _ => rename Hw into Hwf | Hw : wf_term _ _ _ _ |- _ => rename Hw into Hwf end.
+      assert (Hcp' : incl e.(entry_cmp_pre) (cmpt ++ cmp_pre)).
+      { intros p Hp. specialize (Hcp p Hp). cbn in Hcp.
+        destruct Hcp as [Heq | HB]; [ | exact HB].
+        exfalso. subst p. apply Hfv. apply (pair_fst_in _ _ _ Hp). }
+      cbn [AllConstructors.all_constructors_rule] in Hac.
+      apply CompilerDefs.preserving_compiler_term.
+      + apply IHsrc; [ exact Haf' | exact H ].
+      + eapply wf_term_lang_monotonicity; [ exact Ht | ].
+        erewrite <- compile_strengthen_ctx_incl with (cmp1 := entry_cmp_pre e) (cmp2 := cmpt ++ cmp_pre)
+          by disch Hac.
+        erewrite <- compile_strengthen_sort_incl with (cmp1 := entry_cmp_pre e) (cmp2 := cmpt ++ cmp_pre) (t := t)
+          by disch Hac.
+        exact Hwf.
+    - (* sort_eq_rule c t1 t2 *)
+      cbn [rule_is_eqn] in H.
+      destruct (case_wf_in_db db tgt (cmp ++ cmp_pre) v (sort_eq_rule c t1 t2) None)
+        eqn:Hcase; [ mred H | res_kill H ].
+      get_entry Hdball.
+      safe_invert Hpres.
+      lazymatch goal with Hw : Model.eq_sort _ _ _ |- _ => rename Hw into Hwf | Hw : eq_sort _ _ _ _ |- _ => rename Hw into Hwf end.
+      cbn [AllConstructors.all_constructors_rule] in Hac.
+      apply CompilerDefs.preserving_compiler_sort_eq.
+      + apply IHsrc; [ exact Haf | exact H ].
+      + eapply eq_sort_lang_monotonicity; [ exact Ht | ].
+        erewrite <- compile_strengthen_ctx_incl with (cmp1 := entry_cmp_pre e) (cmp2 := cmp ++ cmp_pre)
+          by disch Hac.
+        erewrite <- compile_strengthen_sort_incl with (cmp1 := entry_cmp_pre e) (cmp2 := cmp ++ cmp_pre) (t := t1)
+          by disch Hac.
+        erewrite <- compile_strengthen_sort_incl with (cmp1 := entry_cmp_pre e) (cmp2 := cmp ++ cmp_pre) (t := t2)
+          by disch Hac.
+        exact Hwf.
+    - (* term_eq_rule c e1 e2 t *)
+      cbn [rule_is_eqn] in H.
+      destruct (case_wf_in_db db tgt (cmp ++ cmp_pre) v (term_eq_rule c e1 e2 t) None)
+        eqn:Hcase; [ mred H | res_kill H ].
+      get_entry Hdball.
+      safe_invert Hpres.
+      lazymatch goal with Hw : Model.eq_term _ _ _ _ |- _ => rename Hw into Hwf | Hw : eq_term _ _ _ _ _ |- _ => rename Hw into Hwf end.
+      cbn [AllConstructors.all_constructors_rule] in Hac.
+      apply CompilerDefs.preserving_compiler_term_eq.
+      + apply IHsrc; [ exact Haf | exact H ].
+      + eapply eq_term_lang_monotonicity; [ exact Ht | ].
+        erewrite <- compile_strengthen_ctx_incl with (cmp1 := entry_cmp_pre e) (cmp2 := cmp ++ cmp_pre)
+          by disch Hac.
+        erewrite <- compile_strengthen_sort_incl with (cmp1 := entry_cmp_pre e) (cmp2 := cmp ++ cmp_pre) (t := t)
+          by disch Hac.
+        erewrite <- compile_strengthen_incl with (cmp1 := entry_cmp_pre e) (cmp2 := cmp ++ cmp_pre) (e := e1)
+          by disch Hac.
+        erewrite <- compile_strengthen_incl with (cmp1 := entry_cmp_pre e) (cmp2 := cmp ++ cmp_pre) (e := e2)
+          by disch Hac.
+        exact Hwf.
   Qed.
-*)
-  
+
   Lemma cmp_db_insert_sound n l db
     : all (wf_entry n) l ->
       cmp_db_sound db ->
@@ -896,6 +956,3 @@ Ltac prove_by_cmp_db :=
   apply (cmp_wf_in_db_correct _ _ _ _ (proj2_sig (db_append_cmp_list (V:=string) db)));
   flagged_exact I.
 
-(*TODO: get rid of this *)
-Require Pyrosome.Tools.Matches.
-Ltac Matches.prove_from_known_elabs ::= prove_by_lang_db.

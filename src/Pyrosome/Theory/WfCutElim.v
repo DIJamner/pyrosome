@@ -1,7 +1,7 @@
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope list.
-From Utils Require Import Utils SymmetricInduction.
+From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core (*CutElim*) .
 
 
@@ -31,7 +31,7 @@ Section WithVar.
     Context (c : ctx).
 
     (*TODO: move this to the definition*)
-    Arguments eq_sort {V}%type_scope {V_Eqb} l c _ _.
+    Arguments eq_sort {V}%_type_scope {V_Eqb} l c _ _.
 
     Inductive wf_term : term -> sort -> Prop :=
     | wf_term_cong : forall name c' args t s,

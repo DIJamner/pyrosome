@@ -60,8 +60,8 @@ coqutil:
 clean_coqutil:
 	$(MAKE) -C $(ABS_ROOT_DIR)/coqutil clean
 
-clean: Makefile.coq
-	$(MAKE) -f Makefile.coq clean
+clean:
+	@if [ -f Makefile.coq ]; then $(MAKE) -f Makefile.coq clean; fi
 	find . -type f \( -name '*~' -o -name '*.glob' -o -name '*.aux' -o -name '.lia.cache' -o -name '.nia.cache' \) -delete
 	rm -f Makefile.coq Makefile.coq.conf _CoqProject
 

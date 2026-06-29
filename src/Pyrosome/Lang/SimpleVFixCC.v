@@ -1,8 +1,9 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils GallinaHintDb.
+From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
   Tools.EGraph.TypeInference
@@ -14,7 +15,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Definition fix_cc_lang_def : lang :=
   {[l/subst [(cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)]
@@ -35,10 +36,10 @@ Definition fix_cc_lang_def : lang :=
   ]]}.
 
 Derive fix_cc_lang
-       SuchThat (elab_lang_ext (cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
+       in (elab_lang_ext (cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
                                fix_cc_lang_def
                                fix_cc_lang)
-       As fix_cc_wf.
+       as fix_cc_wf.
 Proof. auto_elab. Qed.
 #[local] Definition fix_cc_entry := lang_entry (elab_lang_implies_wf fix_cc_wf).
 #[export] Hint Resolve fix_cc_entry : wf_lang_db.
@@ -56,7 +57,7 @@ Definition fix_cc_def : compiler :=
   end.
 
 Derive fix_cc
-       SuchThat (elab_preserving_compiler (cc++prod_cc_compile++subst_cc)
+       in (elab_preserving_compiler (cc++prod_cc_compile++subst_cc)
                                           (fix_cc_lang
                                              ++ cc_lang
                                              ++ forget_eq_wkn
@@ -69,10 +70,8 @@ Derive fix_cc
                                           fix_cc_def
                                           fix_cc
                                           fix_cps_lang)
-       As fix_cc_preserving.
-Proof.
-  auto_elab_compiler' (rule_named_in cc_bidirectional_rules) empty_inj_rules.
-Qed.
+       as fix_cc_preserving.
+Proof. auto_elab_compiler' (rule_named_in cc_bidirectional_rules) empty_inj_rules. Qed.
 #[local] Definition fix_cc_cmp_entry :=
   cmp_entry (elab_compiler_implies_preserving fix_cc_preserving).
 #[export] Hint Resolve fix_cc_cmp_entry : preserving_db.

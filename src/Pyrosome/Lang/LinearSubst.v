@@ -1,7 +1,8 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
-Require Import Coq.Strings.Ascii.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
+From Stdlib Require Import Strings.Ascii.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -9,7 +10,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Tools.Resolution.
 Import Core.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 
 Notation named_list := (@named_list string).
@@ -255,8 +256,8 @@ Definition linear_value_subst_def : lang :=
 
 (*TODO: use modern inference procedure *)
 Derive linear_value_subst
-       SuchThat (elab_lang_ext [] linear_value_subst_def linear_value_subst)
-       As linear_value_subst_wf.
+       in (elab_lang_ext [] linear_value_subst_def linear_value_subst)
+       as linear_value_subst_wf.
 Proof. auto_elab. Qed.
 
 #[local] Definition linear_value_entry :=
@@ -301,8 +302,8 @@ Definition linear_exp_subst_def : lang :=
   ]}.
 
 Derive linear_exp_subst
-       SuchThat (elab_lang_ext linear_value_subst linear_exp_subst_def linear_exp_subst)
-       As linear_exp_subst_wf.
+       in (elab_lang_ext linear_value_subst linear_exp_subst_def linear_exp_subst)
+       as linear_exp_subst_wf.
 Proof. auto_elab. Qed.
 #[local] Definition linear_exp_entry :=
   lang_entry (elab_lang_implies_wf linear_exp_subst_wf).
@@ -335,8 +336,8 @@ Definition linear_block_subst_def : lang :=
   ]}.
 
 Derive linear_block_subst
-       SuchThat (elab_lang_ext linear_value_subst linear_block_subst_def linear_block_subst)
-       As linear_block_subst_wf.
+       in (elab_lang_ext linear_value_subst linear_block_subst_def linear_block_subst)
+       as linear_block_subst_wf.
 Proof. auto_elab. Qed.
 #[local] Definition linear_block_entry :=
   lang_entry (elab_lang_implies_wf linear_block_subst_wf).

@@ -6,7 +6,8 @@
  *)
 Set Implicit Arguments.
 
-Require Import Lists.List Datatypes.String.
+From Stdlib Require Import Lists.List.
+From coqutil Require Import Datatypes.String.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -108,14 +109,14 @@ Proof.
     destruct b;
     basic_goal_prep;
     Term.basic_term_crush.
-  my_case Hn (eqb n v);
+  destruct (eqb n v) eqn:Hn;
     basic_goal_prep;
     Term.basic_term_crush.
   revert l0 H; induction l;
     destruct l0;
     basic_goal_prep;
     Term.basic_term_crush.
-  my_case Ha (term_eqb a t);
+  destruct (term_eqb a t) eqn:Ha;
     basic_goal_prep;
     Term.basic_term_crush.
   2: solve [eauto using term_eqb_refl].
@@ -164,7 +165,7 @@ Section WithArgs.
     all: case_match;
       Term.basic_term_crush.
     f_equal.
-    revert dependent l.
+    generalize dependent l.
     induction l;
       basic_goal_prep;
       Term.basic_term_crush.
@@ -196,7 +197,7 @@ End WithEqb.
 
 End WithVar.
 
-Arguments con {V}%type_scope _ _%list_scope.
+Arguments con {V}%_type_scope _ _%_list_scope.
 
 #[export] Hint Rewrite invert_eq_con_con : term.
   

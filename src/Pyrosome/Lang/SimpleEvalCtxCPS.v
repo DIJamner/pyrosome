@@ -1,8 +1,9 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils GallinaHintDb.
+From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
   Tools.EGraph.TypeInference
@@ -14,7 +15,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Notation compiler := (compiler string).
 
@@ -32,14 +33,14 @@ Definition Ectx_cps_def : compiler :=
   end.
 
 Derive Ectx_cps
-       SuchThat (elab_preserving_compiler cps_subst
+       in (elab_preserving_compiler cps_subst
                                           (cps_lang
                                              ++ block_subst
                                              ++ value_subst)
                                           Ectx_cps_def
                                           Ectx_cps
                                           eval_ctx)
-       As Ectx_cps_preserving.
+       as Ectx_cps_preserving.
 Proof. auto_elab_compiler. Qed.
 #[local] Definition Ectx_cps_entry :=
   cmp_entry (elab_compiler_implies_preserving Ectx_cps_preserving).

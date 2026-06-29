@@ -1,9 +1,9 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Uint63.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Uint63.
 Local Open Scope string_scope.
 
-From Utils Require Import Base.
 
 Section __.
   Context (A : Type).
@@ -20,7 +20,7 @@ Section __.
 End __.
 
 
-Arguments default {A}%type_scope {d}.
+Arguments default {A}%_type_scope {d}.
 
 #[export] Instance string_default : WithDefault string := "".
 #[export] Instance unit_default : WithDefault unit := tt.

@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Lists.List Datatypes.String.
+From Stdlib Require Import Lists.List.
+From coqutil Require Import Datatypes.String.
 Import List.ListNotations.
 Open Scope string.
 From Utils Require Import Utils.
@@ -186,10 +187,10 @@ End WithLang.
 
 
 
-Require Coq.derive.Derive.
-Require Import Pyrosome.Theory.Renaming.
-Require Import coqutil.Tactics.ident_of_string.
-Require Import Ltac2.Ltac2. Import Ltac2.Message.
+From Stdlib Require derive.Derive.
+From Pyrosome.Theory Require Import Renaming.
+From coqutil.Tactics Require Import ident_of_string.
+From Ltac2 Require Import Ltac2. Import Ltac2.Message.
 
 Module Example.
 

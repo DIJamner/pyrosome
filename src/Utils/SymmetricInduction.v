@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Ltac2.Ltac2 Ltac2.Constr Ltac2.Message.
+From Ltac2 Require Import Ltac2 Constr.
 Set Default Proof Mode "Classic".
 
 Ltac2 rec head (x:constr) : constr :=
@@ -30,7 +30,7 @@ Ltac2 enter_n n (tac : int -> unit) :=
 Ltac2 symmetric_induction (x : constr) :=
   let t := type x in
   match Unsafe.kind (head t) with
-  | Unsafe.Ind ind l =>
+  | Unsafe.Ind ind _l =>
       let ind_data := Ind.data ind in
       let constr_count := Ind.nconstructors ind_data in
       constr_ind x;
@@ -69,7 +69,7 @@ Qed.
 
 Ltac2 constructor_range (x : constr) :=
   match Unsafe.kind (head x) with
-  | Unsafe.Ind ind l =>
+  | Unsafe.Ind ind _l =>
       let ind_data := Ind.data ind in
       let constr_count := Ind.nconstructors ind_data in
       (range_inclusive 1 constr_count)

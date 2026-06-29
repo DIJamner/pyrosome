@@ -15,10 +15,11 @@ Import ListNotations.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind Monad Result ExtraMaps.
+From Utils Require Import Utils Monad Result.
 From Utils.EGraph Require Import Semantics Defs QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
+From Pyrosome.Theory Require Import SyntacticSorts.
 From Pyrosome.Theory Require ClosedTerm.
 Import Core.Notations.
 
@@ -87,7 +88,11 @@ Section WithVar.
   Notation atom := (atom V V).
 
   Context (succ : V -> V).
-  
+
+  (* epoch order for the semi-naive "new" window (passed to Utils.saturate_until);
+     all instantiations provide a real <= (e.g. Pos.leb). *)
+  Context (V_leb : V -> V -> bool).
+
   (* Include sort_of as special symbol/fn in db. *)
   Context (sort_of : V).
 
@@ -202,6 +207,43 @@ Section WithVar.
     (alloc_opaque V succ V V_map V_map V_trie _).
 
 
+  (* Like [add_ctx], but skips emitting the sort subterm, [sort_of] atom, and
+     [union] for any context variable [x] with [no_sort x = true].  Such a
+     variable is still allocated a fresh node and recorded in the returned
+     substitution, so it can still be looked up while opening a term/sort; only
+     its sort *requirement* is dropped from the query.  This is sound for the
+     query side of an equational rule when [x] appears in the LHS: the LHS atoms
+     already bind [x]'s node, and a term's sort is unique up to equivalence, so
+     the dropped [sort_of] constraint is redundant. *)
+  Definition add_ctx_gen (no_sort : V -> bool) (c : ctx) : state instance _ :=
+    list_Mfoldr (fun '(x,t) sub =>
+                   if no_sort x
+                   then (@! let {(state instance)} x' <- alloc_opaque in
+                            ret (x,x')::sub)
+                   else
+                   (*use the empty substitution to indicate the identity.
+                      Assumes that the input egraph starts with an allocator
+                    *)
+                   @! let t_v <- add_open_sort sub t in
+                     (* using the variables from ctx isn't sound,
+                          so we make sure to allocate a fresh one.
+                          We also write a default analysis value
+                          so that things are analyzable and rebuilding doesn't loop
+                      *)
+                     let {(state instance)} x' <- alloc_opaque in
+                     (*Note: do not replace with update_entry.
+                       It does not work correctly, likely with
+                       the unmapped variables in rule compilation.
+                      *)
+                     let tx' <- hash_entry sort_of [x'] in
+                     let _ <- union t_v tx' in
+                     ret (x,x')::sub) c [].
+
+  (* [add_ctx] is kept as its own standalone definition (rather than
+     [add_ctx_gen (fun _ => false)]) so that the many existing tactics that
+     [unfold add_ctx; cbn [list_Mfoldr]] to step through the fold keep working
+     verbatim.  It is extensionally equal to [add_ctx_gen (fun _ => false)]
+     (see [add_ctx_eq_gen] below). *)
   Definition add_ctx (c : ctx) : state instance _ :=
     list_Mfoldr (fun '(x,t) sub =>
                    (*use the empty substitution to indicate the identity.
@@ -376,17 +418,26 @@ Section WithVar.
     Context (rf : nat).
     Notation sequent_of_states a c := (sequent_of_states a c rf).
   (*
-    
+
    TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
 
    *)
-  Definition rule_to_log_rule n (r : rule) : sequent V V :=
+  (* The compiled sequent for [r], or the assumption-side rebuild's [Failure]
+     if it ran out of fuel (via [sequent_of_states : result sequent]).  A failed
+     rebuild means the sequent would be built from a non-canonical egraph, so it
+     is propagated rather than silently used. *)
+  (* The syntactic-sort-equality gate scans the whole language, so compute it
+     once (shared via this [Let]) rather than re-evaluating it for every ctx
+     var in the skip predicate below. *)
+  Let syntactic_sort_gate : bool := syntactic_sort_eq_langb l.
+
+  Definition rule_to_log_rule n (r : rule) : Result.result (sequent V V) :=
     match r with
-    | sort_rule c args =>        
+    | sort_rule c args =>
         sequent_of_states
           (add_ctx false false c)
           (fun sub => add_open_sort true false sub (scon n (id_args c)))
-    | term_rule c args t => 
+    | term_rule c args t =>
         sequent_of_states
           (add_ctx false false c)
           (* add_open_term sees the language, so it handles t *)
@@ -395,16 +446,35 @@ Section WithVar.
        As a design question, is that what I want?
      *)
     | sort_eq_rule c t1 t2 =>
+        (* Drop the query's sort requirements for ctx vars appearing in the LHS
+           [t1]: their nodes are bound by the LHS atoms and their sorts are
+           determined up to equivalence.  A sort is always a [scon], so every
+           free var of [t1] occurs as an atom argument (no bare-var case).
+
+           GATED on [syntactic_sort_eq_langb l]: the "sort determined up to
+           equivalence" justification holds only when [l] has syntactic sort
+           equality (see Theory.SyntacticSorts).  Otherwise the skip list is
+           empty and [add_ctx_gen] reduces to [add_ctx]. *)
+        let skip x := andb syntactic_sort_gate (inb x (fv_sort t1)) in
         sequent_of_states
-          (@!let sub <- add_ctx false false c in
+          (@!let sub <- add_ctx_gen false false skip c in
              let x1 <- add_open_sort false false sub t1 in
              ret (sub,x1))
           (fun '(sub,x1) =>
              @! let x2 <- add_open_sort true false sub t2 in
                (union x1 x2))
-    | term_eq_rule c e1 e2 t => 
+    | term_eq_rule c e1 e2 t =>
+        (* As above, drop query sort requirements for ctx vars in the LHS [e1].
+           Guard the degenerate [e1 = var x] case: then [x]'s node is the whole
+           LHS and is referenced by no atom, so dropping its sort would leave it
+           unbound. *)
+        let skip x := andb syntactic_sort_gate
+                        (match e1 with
+                         | con _ _ => inb x (fv e1)
+                         | var _ => false
+                         end) in
         sequent_of_states
-          (@!let sub <- add_ctx false false c in
+          (@!let sub <- add_ctx_gen false false skip c in
              let x1 <- add_open_term false false sub e1 in
              ret (sub,x1))
           (* TODO: should I add that t is its sort?*)
@@ -424,9 +494,14 @@ Section WithVar.
 
      Assumes incl l l'
    *)
-  Definition rule_set_from_lang rf (l l': lang) : rule_set :=
-    build_rule_set succ _ rf (map (uncurry (rule_to_log_rule l'
-                                           (analysis_result:=unit) rf)) l).
+  (* Compile each rule to its [result sequent] and, if all succeeded, build the
+     rule_set; a single failed rebuild propagates as the result's [Failure].
+     One pass over the rules ([list_Mmap] in the result monad), so no rebuild is
+     run twice. *)
+  Definition rule_set_from_lang rf (l l': lang) : Result.result rule_set :=
+    Mbind (M:=Result.result)
+      (fun seqs => Result.Success (build_rule_set succ _ rf seqs))
+      (list_Mmap (fun '(n,r) => rule_to_log_rule l' (analysis_result:=unit) rf n r) l).
 
  
   Section AnalysisExtract.
@@ -473,13 +548,13 @@ Section WithVar.
       (*TODO: move this somewhere better*)
       Existing Instance PositiveIdx.positive_Eqb.
 
-      Instance weighted_depth_analysis : analysis V V (option positive) :=
+      Instance weighted_size_analysis : analysis V V (option positive) :=
         {
           analyze a arg_as :=
             match arg_as with
             | [] => (symbol_weight a)
             | arg0::arg_as' =>
-                oP_add (symbol_weight a) (List.fold_left oP_maximum arg_as' arg0)
+                oP_add (symbol_weight a) (List.fold_left oP_add arg_as' arg0)
             end;
           analysis_meet := oP_minimum;
         }.
@@ -545,7 +620,7 @@ Section WithVar.
       Section Memoize.
         Context {A B} {mp : map.map A B} {M} `{Monad M}
           (f : forall {MT} `{MonadTrans MT}, (A -> MT M B) -> A -> MT M B).
-        Arguments f [MT]%function_scope {H0} _%function_scope _.
+        Arguments f [MT]%_function_scope {H0} _%_function_scope _.
 
         Definition memoizeF (rec : A -> stateT mp M B) (a: A) : stateT mp M B :=
           @! let s <- stateT_get in
@@ -619,8 +694,8 @@ Section WithVar.
       Local Notation hash_entry := (hash_entry (symbol:=V) succ (analysis_result:=option positive)).
       Local Notation instance := (instance (option positive)).
 
-      Instance depth : analysis V V (option positive) :=
-        weighted_depth_analysis (fun _ => Some xH).
+      Instance size : analysis V V (option positive) :=
+        weighted_size_analysis (fun _ => Some xH).
       
     Definition egraph_sort_of (x t : V) : state instance bool :=
       @! let t0 <- hash_entry sort_of [x] in
@@ -650,15 +725,21 @@ Section WithVar.
     
     (*TODO: move to Utils.EGraph.Defs *)
     Fixpoint scheduled_saturate_until rfuel
-      {X} `{analysis V V X} 
+      {X} `{analysis V V X}
        schedule p fuel
       : state (Defs.instance V V _ _ _ X) bool :=
+      (* Total schedule weight = max epoch ticks in one outer pass.  When row [e]
+         fires, every OTHER row fired since [e] last ran, advancing the epoch by at
+         most [W_total - fst e] ticks; so its catch-up "new" window is exactly that.
+         This makes a phase re-match every fact added since it last fired, fixing
+         the cross-phase incompleteness of plain semi-naive. *)
+      let W_total := list_sum (map fst schedule) in
       match fuel with
       | 0 => Mret false
       | S fuel =>
           let process e : state (Defs.instance V V _ _ _ X) bool :=
-            saturate_until succ V_default (analysis_result:= X)
-              spaced_list_intersect rfuel (snd e) p (fst e) in
+            saturate_until succ V_default V_leb (analysis_result:= X)
+              spaced_list_intersect rfuel (W_total - fst e) (snd e) p (fst e) in
           @! let (done : bool) <- list_Miter_breakable process schedule in
             if done then ret true
             else (scheduled_saturate_until rfuel schedule p fuel)
@@ -678,8 +759,8 @@ Section WithVar.
       in (comp (empty_egraph default _)).
 
     (*TODO: move to Utils Defs.v*)
-    Arguments get_analysis {idx symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
+    Arguments get_analysis {idx symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope {analysis_result}%_type_scope
   {H} x _.
 
     Definition weight_less_than x w : state instance bool :=
@@ -700,9 +781,9 @@ Section WithVar.
         @!let {state instance} x <- add_open_term l true false [] e in
           let w <- get_analysis x in
           let {state instance} _ <- rebuild rfuel in
-          let {state instance} _ <- saturate_until succ V_default
+          let {state instance} _ <- saturate_until succ V_default V_leb
                                       (*TODO: short-circuit as soon as the subject weight decreases*)
-        spaced_list_intersect rfuel rws (weight_less_than x w) fuel in
+        spaced_list_intersect rfuel 0 rws (weight_less_than x w) fuel in
           ret {state instance} x
       in
       let (x,g) := comp (empty_egraph default _) in
@@ -793,7 +874,17 @@ Section WithVar.
        When it does, it furthermore tries to use knowledge of injective
        constructors to break down the goal.
        TODO: deduplicate goals
-      Note: l has to contain the ctx_to_rules of the context *)
+      Note: l has to contain the ctx_to_rules of the context.
+
+      The saturation step's termination predicate fires on either
+      (a) [are_unified x y] in the egraph or (b) a weight decrease at
+      x or y (i.e. the e-class found a simpler representative).  Only
+      (a) lets us conclude semantic equality, so when [res = true] we
+      double-check [are_unified] in the resulting state: if it holds,
+      return Success; otherwise treat it like a non-converged step and
+      recurse on the extracted simpler forms.  When [res = false] the
+      saturation ran to completion without convergence, so we report a
+      fuel-exhaustion failure rather than recursing endlessly. *)
     Fixpoint egraph_reducing_cong l schedule
       rfuel sat_fuel efuel red_fuel inj_list
       (goals : list (Term.term V * Term.term V))
@@ -807,15 +898,18 @@ Section WithVar.
           let process '(e1,e2) :=
             let '(res,x,y,g) := egraph_reducing_equal_step l schedule
                                   rfuel sat_fuel e1 e2 in
-            if res then Success tt
+            if res then
+              let (unified, _) := are_unified x y g in
+              if (unified : bool) then Success tt
+              else
+                @!let e1' <- extract_weighted g efuel x in
+                  let e2' <- extract_weighted g efuel y in
+                  (egraph_reducing_cong l schedule
+                     rfuel sat_fuel efuel red_fuel inj_list [(e1',e2')])
             else
-              @!let e1' <- extract_weighted g efuel x in
-                let e2' <- extract_weighted g efuel y in
-                (* TODO: is there a reason to do this? *)
-                (*let t' <- extract_weighted g efuel y in*)
-                (*TODO: take injectivity into account*)
-                (egraph_reducing_cong l schedule
-                   rfuel sat_fuel efuel red_fuel inj_list [(e1',e2')])
+              Failure (dlist.dcons
+                         "saturation fuel exhausted in egraph_reducing_cong"
+                         dlist.dnil)
           in
           list_Miter process goals'
       end.
@@ -827,18 +921,18 @@ Section WithVar.
       Note: l has to contain the ctx_to_rules of the context
       TODO: currently drops t! decide whether t is useful.
      *)
-    Fixpoint egraph_reducing_equal l schedule inj_list
+    Definition egraph_reducing_equal l schedule inj_list
       rfuel sat_fuel efuel red_fuel (e1 e2 : Term.term V) (*t : Term.sort V*)
       : result unit :=
       egraph_reducing_cong l schedule
         rfuel sat_fuel efuel red_fuel inj_list [(e1,e2)].
 
     (*TODO: move to defining file*)
-    Arguments run1iter {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
-      idx_zero {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus}
-      {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope 
-      {analysis_result}%type_scope {H} spaced_list_intersect%function_scope
-      rebuild_fuel%nat_scope rs _.
+    Arguments run1iter {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope
+      idx_zero idx_leb%_function_scope {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
+      {idx_map}%_function_scope {idx_map_plus} {idx_trie}%_function_scope
+      {analysis_result}%_type_scope {H} spaced_list_intersect%_function_scope
+      rebuild_fuel%_nat_scope window%_nat_scope rs _.
 
     (*
     Fixpoint egraph_simpl_capped'
@@ -863,7 +957,7 @@ Section WithVar.
       match cap with
       | O => Mret error:("Terms not reduced within" cap "iterations")
       | S cap =>
-          @! let _ <- lift (run1iter succ _ spaced_list_intersect rn rws) in
+          @! let _ <- lift (run1iter succ _ V_leb spaced_list_intersect rn 0 rws) in
             let e1' <- get_extract en x1 in
             let _ <- lift (log_event cap) in
             let _ <- lift (log_event "extracted e1 and e2. cap is") in
@@ -900,30 +994,43 @@ Section WithVar.
 End WithVar.
 
 (*TODO: move most of this to Utils*)
-Require Import NArith Tries.Canonical.
+From Stdlib Require Import NArith.
 From Utils Require Import TrieMap (*SpacedMapTreeN *).
 From Pyrosome.Tools Require Import PosRenaming.
 From Utils Require PosListMap StringListMap.
+From Utils Require Import FullPosTrie FullPosTrieConv.
 Module PositiveInstantiation.
   Export PosListMap.
-  
+
+
   (*TODO: the default is biting me*)
   Definition egraph_equal
     : lang positive -> _ -> nat ->
       nat -> Term.term positive -> Term.term positive -> Term.sort positive -> _ :=
-    (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
+    (egraph_equal ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ Pos.leb sort_of (@fpt_spaced_intersect)).
+
+  Definition egraph_simpl
+    : lang positive -> _ -> nat -> nat ->
+      nat -> Term.term positive -> _ :=
+    (egraph_simpl ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ Pos.leb sort_of (@fpt_spaced_intersect)).
 
   Definition egraph_reducing_equal
     : lang positive -> _ -> _ -> nat ->
       nat -> nat -> nat -> Term.term positive -> Term.term positive -> _ :=
-    (egraph_reducing_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
+    (egraph_reducing_equal ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ Pos.leb sort_of (@fpt_spaced_intersect)).
 
   (*TODO: move somewhere?*)
   Definition filter_eqn_rules {V} : lang V -> lang V :=
     filter (fun '(n,r) => match r with term_rule _ _ _ | sort_rule _ _ => false | _ => true end).
 
-  Definition build_rule_set : nat -> lang positive -> lang positive -> rule_set positive positive trie_map trie_map :=
-    rule_set_from_lang ptree_map_plus _ Pos.succ sort_of (*fold_right Pos.max xH *).
+  (* The rule_set, or the [Failure] of the first rule whose assumption rebuild
+     ran out of fuel.  We pin the db trie to [full_pos_trie_map] so that the
+     compiled sequents match the query-side trie used by schedule_sound /
+     rs_saturation_hyps. *)
+  Definition build_rule_set
+    : nat -> lang positive -> lang positive ->
+      Result.result (rule_set positive positive trie_map trie_map) :=
+    rule_set_from_lang ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ sort_of.
 
   (*TODO: move *)
   Definition rev_rule {V} (r : rule V) :=
@@ -931,16 +1038,29 @@ Module PositiveInstantiation.
     | sort_eq_rule x x0 x1 => sort_eq_rule x x1 x0
     | term_eq_rule x x0 x1 t => term_eq_rule x x1 x0 t
     | _ => r
-    end.      
-
+    end.
   
-  (* all-in-one when it's not worth separating out the rule-building.
-     Handles renaming.
-     
-   (*TODO: handle sort matching*)
+  Definition egraph_simpl' {V} `{Eqb V} `{WithDefault V} {X} `{analysis V V X}
+    (l : lang V) rn n en (c : Term.ctx _) (e : Term.term V) :=
+    let rename_and_run : state (renaming V) _ :=
+      @!let l' : lang positive <- rename_lang (ctx_to_rules c ++ l) in
+        let e' : term positive <- rename_term (var_to_con e) in
+        ret (match build_rule_set rn (filter_eqn_rules l') l' with
+             | Result.Success rs => egraph_simpl l' rs rn n en e'
+             | Result.Failure err => Result.Failure err
+             end)
+    in
+    (*2 so that sort_of is distict*)
+    let (re,r) := rename_and_run
+                    ({| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})
+    in
+    match re with
+    | Success e => con_to_var (map fst c) (unrename_term r e)
+    | _ => e
+    end.
+  
 
    (* TODO: extract magic numbers?*)
-   *)
   Definition egraph_equal' {V} `{Eqb V} {X} `{analysis V V X}
     (l : lang V)
     (lang_filter : V * rule V -> bool)
@@ -959,10 +1079,15 @@ Module PositiveInstantiation.
                                              && lang_filter p)
                               l) in
         let pos_rev_rules <- rename_lang (ctx_to_rules c ++ rev_rules) in       
-        ret (egraph_equal l'
-               [(10%nat,build_rule_set rn pos_rules l');
-                (1%nat,build_rule_set rn pos_rev_rules l')]
-               rn n e1' e2' t')
+        ret (match build_rule_set rn pos_rules l',
+                   build_rule_set rn pos_rev_rules l' with
+             | Result.Success rsR, Result.Success rsRR =>
+                 egraph_equal l' [(10%nat,rsR); (1%nat,rsRR)] rn n e1' e2' t'
+             (* a rule's assumption rebuild ran out of fuel; fall back to running
+                with no rules (benign -- this completeness-only entry point then
+                simply fails to rewrite) *)
+             | _, _ => egraph_equal l' [] rn n e1' e2' t'
+             end)
     in
     (*2 so that sort_of is distict*)
     (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
@@ -974,20 +1099,6 @@ Module PositiveInstantiation.
                      error:(x1 "not identified with" x2
                               "Extracted term 1:" e1'
                               "Extracted term 2:" e2'), g)) *)
-  
-  Fixpoint unrename_term {V} `{WithDefault V} (r : renaming V)
-    (e : Term.term positive) : Term.term V :=
-    match e with
-    | var x => var (unwrap_with_default (Interface.map.get r.(p_to_v) x))
-    | con n s =>
-        con (unwrap_with_default (Interface.map.get r.(p_to_v) n))
-          (map (unrename_term r) s)
-    end.
-  
-  Definition egraph_simpl
-    : lang positive -> rule_set positive positive trie_map trie_map -> nat ->
-      nat -> nat -> Term.term positive -> _ :=
-    (egraph_simpl ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
 
   Definition rename_inj {V} `{Eqb V} '(n,args) : state (renaming V) (positive * list positive) :=
     @! let n' <- to_p n in
@@ -1014,20 +1125,40 @@ Module PositiveInstantiation.
                               l) in
         let {state (renaming V)} pos_rev_rules <- rename_lang (ctx_to_rules c ++ rev_rules) in
         let renamed_inj_rules <- list_Mmap rename_inj inj_rules in
-        ret {state (renaming V)} (egraph_reducing_equal l'
-               [(10%nat,build_rule_set rn pos_rules l');
-                (1%nat,build_rule_set rn pos_rev_rules l')]
-               renamed_inj_rules
-               rn n efuel red_fuel e1' e2')
+        (* Guard: if any rule's assumption-side rebuild ran out of fuel, the
+           compiled rule_set is built from a non-canonical egraph and is
+           unsound.  [build_rule_set] returns [Failure] when a rule's assumption
+           rebuild ran out of fuel; fail outright in that case so that
+           [Is_Success] of the whole reduction guarantees both rebuilds
+           succeeded (mirrors the freshness guard below). *)
+        ret {state (renaming V)}
+          (match build_rule_set rn pos_rules l',
+                 build_rule_set rn pos_rev_rules l' with
+           | Result.Success rsR, Result.Success rsRR =>
+               egraph_reducing_equal l'
+                 [(10%nat, rsR); (1%nat, rsRR)]
+                 renamed_inj_rules
+                 rn n efuel red_fuel e1' e2'
+           | Result.Failure e, _ => Result.Failure e
+           | _, Result.Failure e => Result.Failure e
+           end)
     in
-    (*2 so that sort_of is distict*)
-    (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
+    (* Guard: the context variable names must be disjoint from the language
+       symbols, otherwise [ctx_to_rules c ++ l] is not [all_fresh] and the
+       e-graph reduction would be unsound.  Failing here lets callers derive
+       the disjointness fact from [Is_Success] rather than assuming it. *)
+    if forallb (fun x => freshb x l) (map fst c)
+    then
+      (*2 so that sort_of is distict*)
+      (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |}))
+    else
+      (error:("egraph_reducing_equal': context variable clashes with a language symbol"),
+        {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |}).
 
-  
 End PositiveInstantiation.
 
 
-Require Ascii.
+From Stdlib Require Strings.Ascii.
 Module StringInstantiation.
   Export StringListMap.
 
@@ -1038,14 +1169,17 @@ Module StringInstantiation.
     fun l rw rn n en c e1 e2 t =>
     let l' := ctx_to_rules c ++ l in
     egraph_equal string_ptree_map_plus (@string_list_trie_map)
-      string_succ sort_of
+      string_succ (* epoch leb: the string reference engine runs naive
+        (every row "new") since a precise order on string_succ's little-endian
+        numeric suffix isn't worth implementing here; naive is complete+sound. *)
+      (fun _ _ => true) sort_of
       (@PosListMap.compat_intersect) l' [(n,rw)] rn 1
       (var_to_con e1) (var_to_con e2) (sort_var_to_con t).
   
   Definition build_rule_set : nat ->
                               lang string ->
                             lang string ->
-                            rule_set string string string_trie_map string_trie_map :=
+                            Result.result (rule_set string string string_trie_map string_trie_map) :=
     rule_set_from_lang string_ptree_map_plus _ string_succ sort_of
       (* fold_right string_max "x0" *).
 

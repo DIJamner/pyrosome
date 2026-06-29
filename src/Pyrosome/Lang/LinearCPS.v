@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -15,8 +16,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
-Require Import Pyrosome.Tools.UnElab.
+From Stdlib Require derive.Derive.
 
 Local Notation compiler := (compiler string).
 
@@ -82,10 +82,10 @@ Definition linear_cps_lang :=
 *)
 
 Derive linear_cps_lang
-       SuchThat (elab_lang_ext (linear_block_subst ++ linear_value_subst)
+       in (elab_lang_ext (linear_block_subst ++ linear_value_subst)
                                linear_cps_lang_def
                                linear_cps_lang)
-       As cps_lang_wf.
+       as cps_lang_wf.
 Proof.
   auto_elab.
 Qed.
@@ -104,14 +104,14 @@ Definition linear_cps_subst_def : compiler :=
   end.
 
 Derive linear_cps_subst
-       SuchThat (elab_preserving_compiler []
+       in (elab_preserving_compiler []
                                           (linear_cps_lang
                                              ++ linear_block_subst
                                              ++ linear_value_subst)
                                           linear_cps_subst_def
                                           linear_cps_subst
                                           (linear_exp_subst ++ linear_value_subst))
-       As linear_cps_subst_preserving.
+       as linear_cps_subst_preserving.
 Proof.
   auto_elab_compiler.
 Qed.
@@ -168,8 +168,8 @@ Definition linear_cps_prod_lang_def : lang :=
   ] ]}.
 
 Derive linear_cps_prod_lang
-       SuchThat (elab_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang_def linear_cps_prod_lang)
-       As linear_cps_prod_wf.
+       in (elab_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang_def linear_cps_prod_lang)
+       as linear_cps_prod_wf.
 Proof. auto_elab. Qed.
 #[local] Definition linear_cps_prod_entry :=
   lang_entry (elab_lang_implies_wf linear_cps_prod_wf).
@@ -216,19 +216,69 @@ Definition linear_cps_def : compiler :=
     {{e #"blk_subst" (#"exch" "G" (#"only" (#"neg" "A"))) (#"jmp" (#"hd" (#"neg" "A")) "v")}}
   end.
 
+Ltac by_reduction := Matches.by_reduction.
+Ltac reduce_by l r :=
+  eapply eq_term_trans;
+  [> eredex_steps_with l r | ..].
 
-Ltac solve_wf_term :=
-  first [eapply wf_term_by';
-         [> solve_in | solve_wf_args
-         | first [left; reflexivity | right; sort_cong; by_reduction; t'] ]
-        | eapply wf_term_var; solve_in]
-    with solve_wf_args :=
-    first [apply wf_args_nil | constructor; [> solve_wf_term | solve_wf_args ]].
-
-Ltac s :=
+Ltac normalize_env_step :=
+  compute_eq_compilation;
   match goal with
+  | |- eq_term _ _ {{s #"env"}} {{e #"conc" #"emp" {_} }} _ =>
+    reduce_by linear_value_subst "conc_emp_l"
+  | |- eq_term _ _ {{s #"env"}} {{e #"conc" {_} #"emp" }} _ =>
+    reduce_by linear_value_subst "conc_emp_r"
+  | |- eq_term _ _ {{s #"env"}} {{e #"conc" (#"conc" {_} {_}) {_} }} _ =>
+    reduce_by linear_value_subst "conc_assoc"
+  | |- eq_term _ _ {{s #"env"}} {{e #"conc" {_} {_} }} _ => term_cong
+  | _ => term_refl
+  end.
+
+Ltac normalize_env :=
+  eapply eq_term_trans;
+  [> repeat normalize_env_step; term_refl | .. ].
+
+
+Ltac solve_wf_term := first [eapply wf_term_by';
+  [> solve_in | solve_wf_args | first [left; reflexivity | right; solve_sort] ]
+  | eapply wf_term_var; solve_in]
+with solve_wf_args :=
+  first [apply wf_args_nil | constructor; [> solve_wf_term | solve_wf_args ]]
+with env_eq :=
+  compute_eq_compilation;
+  normalize_env;
+  eapply eq_term_sym;
+  normalize_env;
+  apply eq_term_refl;
+  solve_wf_term
+with solve_sort := sort_cong; [> env_eq .. ].
+
+Ltac solve_wf_subst :=
+  repeat (eapply wf_subst_cons; [> .. | solve_wf_term ]);
+  eapply wf_subst_nil.
+
+Ltac blk_cmp :=
+  eapply eq_term_trans;
+  [> lazymatch goal with
+    | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_}
+      (#"cmp" {?G1} {?G2} {?G3} {?g1} {?g2})
+      {?e} }} _ ] =>
+      instantiate (1:=
+        {{e #"blk_subst" {G1} {G2} {g1}
+            (#"blk_subst" {G2} {G3} {g2} {e})}});
+      apply eq_term_sym;
+      eapply eq_term_conv;
+      [> eredex_steps_with linear_block_subst "blk_subst_cmp";
+        solve_wf_subst
+      | solve_sort]
+    end
+  | .. ].
+
+ Ltac s :=
+   match goal with
   | [|- fresh _ _ ]=> compute_fresh
   | [|- sublist _ _ ]=> compute_sublist
+   (* TODO: if this works, use this pattern for other typeclass occurances *)
   | [|- In _ _ ]=> solve_in
   | [|- len_eq _ _] => econstructor
   | [|-elab_sort _ _ _ _] => eapply elab_sort_by
@@ -237,11 +287,119 @@ Ltac s :=
   | [|-elab_term _ _ _ _ _] => eapply elab_term_by' || eapply elab_term_var
   | [|-wf_term _ _ _ _] => solve_wf_term || shelve
   | [|-elab_rule _ _ _] => econstructor
+  (* | [|- ?eq \/ ?seq ] => tryif (has_evar ?Goal) then shelve else (left; reflexivity) || shelve *)
   | [|- _ = _] => compute; reflexivity
+ end.
+
+Ltac reduce_to e :=
+  eapply eq_term_trans;
+  [> instantiate (1:=e); try by_reduction | .. ].
+
+Ltac break_cmp :=
+  term_cong; cycle 1;
+  [> term_refl | term_refl | term_refl |
+      compute_eq_compilation | compute_eq_compilation |
+      left; solve_sort ].
+
+Ltac normalize_perm :=
+  lazymatch goal with
+  | [|- eq_term _ _ {{s #"sub" {?s1} {?s2} }} ?e _ ] =>
+    lazymatch e with
+    | {{e #"cmp" {_} {_} {_} {_} {_} }} =>
+      eapply eq_term_trans;
+      [> break_cmp;
+        [> normalize_perm | term_refl ] |
+        compute_eq_compilation ]
+    | _ => term_refl
+    end
   end.
 
+Ltac csub_join G G' H H' g h :=
+  match h with
+  | {{e #"csub" {?H1} {?H1'} {?H2} {?H2'} {?h1} {?h2} }} =>
+    csub_join
+      {{e #"conc" {G} {H1} }} {{e #"conc" {G'} {H1'} }} H2 H2'
+      {{e #"csub" {g} {h1} }} h2
+  | _ => constr:({{e #"csub" {G} {G'} {H} {H'} {g} {h} }})
+  end.
+
+Ltac csub_normalize cs :=
+  match cs with
+  | {{e #"csub" {?G} {?G'} {?H} {?H'} {?g} {?h} }} =>
+    let g' := csub_normalize g in
+    let h' := csub_normalize h in
+    csub_join G G' H H' g' h'
+  | {{e #"id" (#"conc" {?G} {?H}) }} =>
+    csub_normalize {{e #"csub" {G} {G} {H} {H} (#"id" {G}) (#"id" {H}) }}
+  | _ => cs
+  end.
+
+Ltac exch_invert :=
+  compute_eq_compilation;
+  eapply eq_term_conv;
+  [> eapply eq_term_trans;
+    [> term_cong; [> .. | term_refl ] |
+      compute_eq_compilation;
+      eredex_steps_with linear_value_subst "exch_cmp" ] |
+    solve_sort ];
+  [> env_eq .. | solve_wf_subst ].
+
+Ltac unapply l r :=
+  eapply eq_term_sym;
+  eredex_steps_with l r.
+
+Ltac trans t :=
+  eapply eq_term_trans;
+  [> t | .. ].
+
+Ltac eredex_general l r :=
+  eapply eq_term_conv;
+      [>
+        eapply eq_term_trans;
+        [> term_cong | .. ];
+        [> .. | eredex_steps_with l r ] |
+        .. ].
+
+(* Defer every side-condition goal (the term metavariables left after
+   [solve_wf_term]); keep only the equational [eq_term] goals in focus.
+   Applied as [all: try shelve_if_not_eqterm], this is a position-independent
+   replacement for the old [N: shelve] selectors. *)
+Ltac shelve_if_not_eqterm :=
+  lazymatch goal with
+  | |- eq_term _ _ _ _ _ => fail
+  | |- _ => shelve
+  end.
+
+(* left-assoc cmp of three subs -> split into two cmps *)
+Ltac reassoc_cmp4 :=
+  lazymatch goal with
+  | [|- eq_term _ _ _ {{e #"cmp" {?G1} {?G4} {?G5}
+        (#"cmp" {?G1} {?G3} {?G4} (#"cmp" {?G1} {?G2} {?G3} {?c1} {?c2}) {?c3})
+        {?c4} }} _ ] =>
+      reduce_to {{e #"cmp" {G1} {G3} {G5}
+        (#"cmp" {G1} {G2} {G3} {c1} {c2}) (#"cmp" {G3} {G4} {G5} {c3} {c4}) }}
+  end.
+
+(* cmp (cmp p cs) e -> cmp p (cmp cs e) *)
+Ltac reassoc_cmp3 :=
+  lazymatch goal with
+  | [|- eq_term _ _ _ {{e #"cmp" {?G1} {?G3} {?G4}
+        (#"cmp" {?G1} {?G2} {?G3} {?p} {?cs}) {?e} }} _ ] =>
+      reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs} {e}) }}
+  end.
+
+(* shared prefix of the two "csub_id dances" *)
+Ltac csub_id_dance :=
+  trans ltac:(unapply linear_value_subst "csub_id");
+  compute_eq_compilation;
+  trans ltac:(term_cong; cycle 1;
+    [> term_refl .. |
+       unapply linear_value_subst "id_left" |
+       unapply linear_value_subst "exch_inv" |
+       right; reflexivity ]).
+
 Derive linear_cps
-       SuchThat (elab_preserving_compiler linear_cps_subst
+       in (elab_preserving_compiler linear_cps_subst
                                           (linear_cps_prod_lang
                                              ++ linear_cps_lang
                                              ++ linear_block_subst
@@ -249,12 +407,12 @@ Derive linear_cps
                                           linear_cps_def
                                           linear_cps
                                           linear_stlc)
-       As linear_cps_preserving.
+       as linear_cps_preserving.
 Proof.
   setup_elab_compiler.
   { repeat t. }
   { repeat t. }
-  { by_reduction; now t'. }
+  { Automation.by_reduction; now t'. }
   {
     (*TODO: figure out what t does wrong here,
       or use e-graph inference machinery.
@@ -265,10 +423,368 @@ Proof.
                              "A" }}).
     30:instantiate (1 := {{e ext "H" (#"neg" "B")}}).
     all: first [left; vm_compute; reflexivity
-               | right; sort_cong; by_reduction; now t'].
+               | right; sort_cong; Automation.by_reduction; now t'].
   }
-  { by_reduction; now t'. }
-  { by_reduction; now t'. }
+  { Automation.by_reduction; now t'. }
+  (* ===== obligation 6 (Linear-STLC-beta): reduce + verified explicit proof ===== *)
+  reduce. compute_eq_compilation.
+  
+  (*TODO: still seems like too much here.
+    Could be related to sorts in queries.
+    Automation.by_reduction; repeat t'.*)
+  (* ===== dance 1 ===== *)
+  match goal with
+  | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_} (#"cmp" {_} {_} {_} (#"exch" {?G} {?H}) (#"csub" {?H} {?H'} {?G} {?G'} {?h} {?g})) (#"jmp" {?H'} {?G'} {?A} {?b} {?a})}} _ ] =>
+    reduce_to {{e #"blk_subst" (#"conc" {G} {H}) (#"conc" {H} {G}) (#"exch" {G} {H}) (#"blk_subst" (#"conc" {H} {G}) (#"conc" {H'} {G'}) (#"csub" {H} {H'} {G} {G'} {h} {g}) (#"jmp" {H'} {G'} {A} {b} {a}))}}
+  end.
+  match goal with
+  | [|- eq_term _ _ _ {{e #"blk_subst" {?Ga} {?Gb} (#"exch" {?G} {?H}) (#"blk_subst" {_} {_} (#"csub" {?H2} {?H'} {?G2} {?G'} {?h} {?g}) (#"jmp" {?H'} {?G'} {?A} {?b} {?a}))}} _ ] =>
+    eapply eq_term_trans; [ instantiate (1 := {{e #"blk_subst" {Ga} {Gb} (#"exch" {G} {H}) (#"jmp" {H} {G} {A} (#"val_subst" {H2} {H'} {h} (#"neg" {A}) {b}) (#"val_subst" {G2} {G'} {g} {A} {a}))}}) | ]
+  end.
+  {
+    Automation.by_reduction; repeat t'.
+  }
+  reduce.
+  lazymatch goal with
+  | [|- eq_term _ _ _ {{e #"blk_subst" {?G1} {?G5} (#"cmp" {?G1} {?G4} {?G5} (#"cmp" {?G1} {?G3} {?G4} (#"cmp" {?G1} {?G2} {?G3} {?a} {?b}) {?c}) {?d}) {?j} }} _ ] =>
+    reduce_to {{e #"blk_subst" {G1} {G3} (#"cmp" {G1} {G2} {G3} {a} {b}) (#"blk_subst" {G3} {G5} (#"cmp" {G3} {G4} {G5} {c} {d}) {j}) }}
+  end.
+  (* ===== dance 2 ===== *)
+  eapply eq_term_trans.
+  {
+    term_cong.
+    { left; solve_sort. }
+    1-3:term_refl.
+    {
+      compute_eq_compilation.
+      match goal with | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_} (#"cmp" {_} {_} {_} (#"exch" {?G} {?H}) (#"csub" {?H} {?H'} {?G} {?G'} {?h} {?g})) (#"jmp" {?H'} {?G'} {?A} {?b} {?a})}} _ ] => reduce_to {{e #"blk_subst" (#"conc" {G} {H}) (#"conc" {H} {G}) (#"exch" {G} {H}) (#"blk_subst" (#"conc" {H} {G}) (#"conc" {H'} {G'}) (#"csub" {H} {H'} {G} {G'} {h} {g}) (#"jmp" {H'} {G'} {A} {b} {a}))}}
+      end.
+      match goal with | [|- eq_term _ _ _ {{e #"blk_subst" {?Ga} {?Gb} (#"exch" {?G} {?H}) (#"blk_subst" {_} {_} (#"csub" {?H2} {?H'} {?G2} {?G'} {?h} {?g}) (#"jmp" {?H'} {?G'} {?A} {?b} {?a}))}} _ ] => instantiate (1 := {{e #"blk_subst" {Ga} {Gb} (#"exch" {G} {H}) (#"jmp" {H} {G} {A} (#"val_subst" {H2} {H'} {h} (#"neg" {A}) {b}) (#"val_subst" {G2} {G'} {g} {A} {a}))}})
+      end.
+      Automation.by_reduction; repeat t'.
+    }
+  }
+  (* ===== push jmp ===== *)
+  reduce.
+  
+  lazymatch goal with
+  | [|- eq_term _ _ _ {{e #"blk_subst" {?H1} {?H2} {?c} (#"jmp" {?G1} {?G2} {?A} (#"hd" {?B}) (#"val_subst" {?G2} {?G3} {?s} {?A} {?p})) }} _ ] =>
+    reduce_to {{e #"blk_subst" {H1} {H2} {c} (#"blk_subst" {H2} (#"conc" {G1} {G3}) (#"csub" {G1} {G1} {G2} {G3} (#"id" (#"only" {B})) {s}) (#"jmp" {G1} {G3} {A} (#"hd" {B}) {p})) }};
+    reduce_to {{e #"blk_subst" {H1} (#"conc" {G1} {G3}) (#"cmp" {H1} {H2} (#"conc" {G1} {G3}) {c} (#"csub" {G1} {G1} {G2} {G3} (#"id" (#"only" {B})) {s})) (#"jmp" {G1} {G3} {A} (#"hd" {B}) {p}) }}
+  end.
+  (* ===== continuation ===== *)
+  { Automation.by_reduction; repeat t'. }
+
+  Unshelve.
+  all:[> | now repeat t'..].
+
+  Optimize Proof.
+  
+  eapply eq_term_trans.
+
+  {
+    term_cong; cycle 1.
+    1, 2, 4: term_refl.
+    2: unshelve (left; solve_sort); now repeat t'.
+
+    compute_eq_compilation.
+    normalize_perm.
+
+    Optimize Proof.
+    Optimize Heap.
+
+    { term_refl. }
+    {
+      lazymatch goal with
+      | [|- eq_term _ _ _ {{e #"cmp"
+          {?G1} {?G3} {?G4}
+          (#"cmp" {?G1} {?G2} {?G3} {?p} {?cs} )
+          {?e}
+        }} _ ] =>
+          let cs' := csub_normalize cs in
+          reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs'} {e}) }}         
+      end.
+      
+      eapply eq_term_trans.
+      {
+        break_cmp.
+        { term_refl. }
+        eapply eq_term_trans.
+        { break_cmp; [ now eredex_steps_with linear_value_subst "csub_assoc" |  term_refl ]. }
+        { now exch_invert. }
+      }
+      reduce_lhs; break_cmp; [ | term_refl ].
+
+      lazymatch goal with
+      | [|- eq_term _ _ _ {{e #"cmp"
+          {?G1} {?G2} {?G3}
+          {?g1} {?g2}
+        }} _ ] => reduce_to {{e
+          #"cmp" {G1} {G2} {G3}
+          (#"cmp" {G1} {G2} {G2}
+            {g1} (#"id" {G2}))
+          {g2}
+        }}
+      end.
+      
+      trans break_cmp.
+      {
+        trans break_cmp.
+        1: term_refl.
+        {
+          csub_id_dance.
+          unapply linear_value_subst "cmp_csub".          
+        }
+
+        eredex_steps_with linear_value_subst "cmp_assoc".
+
+        Unshelve.
+        all: repeat t'; shelve.
+      }
+      { term_refl. }
+      {
+        compute_eq_compilation.
+        reassoc_cmp4.
+
+        trans break_cmp.
+        {
+          trans break_cmp.
+          { term_refl. }
+          { unapply linear_value_subst "exch_triple". }
+          compute_eq_compilation.
+          reduce_lhs.
+          trans break_cmp.
+          {
+            reduce_to {{e #"cmp" (#"conc" "G" (ext "H" (#"neg" "B"))) (
+                            #"conc" (ext "H" (#"neg" "B")) "G") (
+                            #"conc" "G" (ext "H" (#"neg" "B"))) (
+                            #"exch" "G" (ext "H" (#"neg" "B"))) (
+                            #"exch" (ext "H" (#"neg" "B")) "G")}};
+              eredex_steps_with linear_value_subst "exch_inv".
+          }
+          { term_refl. }
+
+          Unshelve.
+          all: repeat t';try shelve_if_not_eqterm.
+          Optimize Heap.
+
+          reduce_lhs.
+
+          lazymatch goal with
+          | [|- eq_term _ _ {{s #"sub" {?X} {?Y} }} ?e _ ] =>
+              reduce_to {{e #"cmp" {X} {X} {Y} (#"id" {X}) {e} }}
+          end.
+          
+          trans break_cmp.
+          {
+            csub_id_dance.
+            compute_eq_compilation.
+            trans ltac:(unapply linear_value_subst "cmp_csub").
+            compute_eq_compilation.
+            break_cmp.
+            1: term_refl.
+            unapply linear_value_subst "exch_triple".
+
+            Unshelve.
+            all: repeat t'; shelve.
+          }
+          { term_refl. }
+          {
+            reduce_lhs.
+            reassoc_cmp4.
+
+            break_cmp.
+            { term_refl. }
+            {
+              eredex_general linear_value_subst "cmp_csub".
+              4-5: term_refl.
+              1-3: try env_eq.
+              {
+                lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end.
+              }
+              { solve_sort. }
+              Unshelve.
+              all: repeat t'; shelve.
+            }
+          }
+        }
+        {
+          unshelve (eredex_general linear_value_subst "exch_cmp";
+                    cycle 3;
+                    [> term_refl | term_refl |
+                      solve_wf_subst |
+                      solve_sort |
+                      try env_eq .. ]);
+            repeat t'; shelve.
+        }
+        {
+          reduce_lhs.
+
+          trans break_cmp.
+          {
+            trans ltac:(unapply linear_value_subst "cmp_assoc").
+            compute_eq_compilation.
+            trans break_cmp.
+            { term_refl. }
+            {
+              reduce_to {{e #"cmp"
+                            (#"conc" (ext "G" (#"neg" "B")) "H")
+                            (#"conc" "H" (ext "G" (#"neg" "B")))
+                            (#"conc" (ext "G" (#"neg" "B")) "H")
+                            (#"exch" (ext "G" (#"neg" "B")) "H")
+                            (#"exch" "H" (ext "G" (#"neg" "B")))}}.
+              eapply eq_term_conv.
+              1: eredex_steps_with linear_value_subst "exch_inv".
+              solve_sort.
+
+              Unshelve.
+              all: repeat t'; shelve.
+            }
+            reduce_lhs.
+            unapply linear_value_subst "exch_triple".
+          }
+          { term_refl. }
+          {
+            reduce_lhs.
+
+            trans ltac:(unapply linear_value_subst "cmp_assoc").
+            all: try (lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end).
+
+            Unshelve.
+            all: try solve_wf_term.
+            all: try shelve_if_not_eqterm.
+
+            compute_eq_compilation.
+
+            break_cmp.
+            { term_refl. }
+            {
+              eredex_general linear_value_subst "cmp_csub";
+                cycle 3;
+                [> term_refl | term_refl |
+                  solve_wf_subst |
+                  solve_sort |
+                  try env_eq .. ].
+              Unshelve.
+              all: repeat t'; shelve.
+            }
+          }
+        }
+      }
+    }
+    {
+      reassoc_cmp3.
+      eapply eq_term_trans.
+      {
+        break_cmp; [> term_refl |  ].
+        eapply eq_term_trans.
+        {
+          break_cmp; [> .. | term_refl ].
+          lazymatch goal with
+            | [|- eq_term _ _ _ {{e
+              #"csub" {?A} {?A'} {_} {_}
+              {?a}
+              (#"csub" {?B} {?B'} {?C} {?C'} {?b} {?c})
+            }} _ ] =>
+              instantiate (1:= {{e #"csub" (#"conc" {A} {B}) (#"conc" {A'} {B'}) {C} {C'}
+                (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); Automation.by_reduction; repeat t'
+            end.
+        }
+
+        eapply eq_term_conv;
+          [ eapply eq_term_trans;
+            [ term_cong | .. ];
+            [ .. | eredex_steps_with linear_value_subst "cmp_csub" ]
+          | ].
+
+        all: try compute_eq_compilation.
+        5: term_refl.
+        4: term_refl.
+        all: try now env_eq.
+        all: try (lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end).
+        solve_sort.
+
+        Unshelve.
+        all: repeat t'; shelve.
+        Optimize Proof.
+      }
+      term_refl.
+
+      Unshelve.
+      all: repeat t'; shelve.
+    }
+    
+    {
+      
+      reduce_lhs.
+      reassoc_cmp3.
+
+      eapply eq_term_trans.
+      {
+        break_cmp; [ term_refl | ].
+        eapply eq_term_trans.
+        {
+          break_cmp; [ | term_refl ].
+          lazymatch goal with
+            | [|- eq_term _ _ _ {{e
+              #"csub" {?A} {?A'} {_} {_}
+              {?a}
+              (#"csub" {?B} {?B'} {?C} {?C'} {?b} {?c})
+            }} _ ] =>
+              instantiate (1:= {{e #"csub" (#"conc" {A} {B}) (#"conc" {A'} {B'}) {C} {C'}
+                (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); Automation.by_reduction; repeat t'
+            end.
+        }
+        
+        Unshelve.
+        all: repeat t'; try shelve_if_not_eqterm.
+
+        trans ltac:(eredex_general linear_value_subst "cmp_csub").
+        4-5: term_refl.
+        1-3: try env_eq.
+        all: try (lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end).
+        { solve_sort. }
+
+        Unshelve.
+        all: repeat t'; try shelve_if_not_eqterm.
+
+        compute_eq_compilation.
+        reduce_lhs.
+
+        lazymatch goal with
+          | [|- eq_term _ _ _ {{e
+            #"csub" {?G1} {?G2} {?H1} {?H2}
+            {?g} {?h}
+          }} _ ] => reduce_to {{e
+            #"csub" {G1} {G2} {H1} {H2}
+            {g} (#"cmp" {H1} {H1} {H2} (#"id" {H1}) {h})
+          }}
+        end.
+
+        eapply eq_term_conv;
+          [> unapply linear_value_subst "cmp_csub" |
+             solve_sort ].
+
+        Unshelve.
+        all: repeat t'; try shelve_if_not_eqterm.
+      }
+
+      reduce_lhs.
+      break_cmp; [|term_refl].
+      Unshelve.
+      all: repeat t'; try shelve_if_not_eqterm.
+      instantiate (1:= {{e
+                           #"csub"
+                           "G" "G"
+                           (ext "H" (#"neg" "B")) (#"conc" (#"only" (#"neg" "B")) "H")
+                           (#"id" "G")
+                           (#"exch" "H" (#"only" (#"neg" "B")))
+                  }}).
+      Automation.by_reduction; repeat t'.
+    }
+    term_refl.
+  }
+  Automation.by_reduction; repeat t'.
   Unshelve.
   all: repeat t'.
 Qed.

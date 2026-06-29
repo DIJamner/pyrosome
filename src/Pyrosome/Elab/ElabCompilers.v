@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Lists.List Datatypes.String.
+From Stdlib Require Import Lists.List.
+From coqutil Require Import Datatypes.String.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -139,29 +140,9 @@ End WithModel.
     
 End Extension.
 
-
 End WithVar.
 
 (*TODO: review how much of the following code is necessary/ put in better places*)
-
-(*TODO: tactics might need fixing up below this line*)
- Ltac t :=
-   match goal with
-  | [|- fresh _ _ ]=> compute_fresh
-  | [|- sublist _ _ ]=> compute_sublist
-   (* TODO: if this works, use this pattern for other typeclass occurances *)
-   | [|- In _ _ ]=> apply named_list_lookup_err_in with (EqbS_ok := _)
-                    ; compute; reflexivity
-  | [|- len_eq _ _] => econstructor
-  | [|-elab_sort _ _ _ _] => eapply elab_sort_by
-  | [|-elab_ctx _ _ _] => econstructor
-  | [|-elab_args _ _ _ _ _ _] => eapply elab_args_cons_ex' || econstructor
-  | [|-elab_term _ _ _ _ _] => eapply elab_term_var || eapply elab_term_by'
-  | [|-wf_term _ _ _ _] => shelve
-  | [|-elab_rule _ _ _] => econstructor
-  | [|- _ = _] => compute; reflexivity
-  end.
-
   
  Ltac safe_eexists :=
    lazymatch goal with
@@ -183,13 +164,13 @@ End WithVar.
 (*
   TODO: remove dependency on Matches or no?
  *)
-From Pyrosome.Tools Require Import Matches.
+From Pyrosome.Tools Require Import Matches Resolution.
 
 Ltac setup_elab_compiler :=
   match goal with
   | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
         rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp); rewrite (as_nth_tail src);
-      assert (wf_lang tgt) by prove_from_known_elabs
+      assert (wf_lang tgt) by prove_by_lang_db
   end; break_preserving.
 
 Tactic Notation "cleanup_elab_after" tactic(tc) :=

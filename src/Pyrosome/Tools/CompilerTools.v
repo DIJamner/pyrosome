@@ -1,17 +1,18 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Tools.AllConstructors Compilers.Compilers
-  Elab.Elab Elab.ElabCompilers.
+  Elab.Elab.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 
 Section WithVar.
@@ -31,19 +32,6 @@ Section WithVar.
   Notation lang := (@lang V).
   Notation compiler := (@compiler V).
 
-Lemma elab_preserving_compiler_embed cmp_pre tgt cmp ecmp src tgt'
-    : elab_preserving_compiler cmp_pre tgt cmp ecmp src ->
-      incl tgt tgt' ->
-      elab_preserving_compiler cmp_pre tgt' cmp ecmp src.
-Proof.
-  induction 1; basic_goal_prep; constructor.
-  6:eapply eq_sort_lang_monotonicity; now eauto.
-  7:eapply eq_term_lang_monotonicity; now eauto.
-  all:basic_core_firstorder_crush.
-Qed.
-Hint Resolve elab_preserving_compiler_embed : auto_elab.
-
-
 Lemma strengthen_named_list_lookup {A} (cmp : named_list A) n
   : forall cmp', incl cmp cmp' ->
                  all_fresh cmp' ->
@@ -55,7 +43,7 @@ Proof.
     (* TODO: add as resolve hint? *)
     apply all_fresh_named_list_lookup_err_in; eauto.
   }
-  my_case neq (eqb n v); basic_goal_prep; basic_utils_crush.
+  destruct (eqb n v) eqn:neq; basic_goal_prep; basic_utils_crush.
   {
     (* TODO: add as resolve hint? *)
     apply all_fresh_named_list_lookup_err_in; eauto.
@@ -79,7 +67,7 @@ Proof.
   f_equal.
   f_equal.
  
-  revert dependent l.
+  generalize dependent l.
   induction l; basic_goal_prep; f_equal; firstorder.
 Qed.
 
@@ -223,7 +211,7 @@ Lemma strengthen_named_list_lookup' {A} (ecmp cmp : named_list A) n
 Proof.
   induction ecmp; basic_goal_prep; basic_utils_crush.
   - eapply strengthen_named_list_lookup; eauto.
-  - my_case neq (eqb n v); basic_goal_prep; basic_utils_crush.
+  - destruct (eqb n v) eqn:neq; basic_goal_prep; basic_utils_crush.
 Qed.
 
 
@@ -240,7 +228,7 @@ Proof.
   f_equal.
   f_equal.
  
-  revert dependent l.
+  generalize dependent l.
   induction l; basic_goal_prep; f_equal; firstorder.
 Qed.
 

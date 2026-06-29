@@ -1,0 +1,272 @@
+# Native conversion-free `fpt_spaced_intersect` — implementation design
+
+Goal: the running e-graph join must operate directly on the lawful `fpt'` carrier
+with **no fold-rebuild conversion**. Proofs may still use the conversion reference
+`fpt_spaced_intersect_via_conv`. Public name `fpt_spaced_intersect` and the two
+consumed lemma *statements* stay stable.
+
+Status: **M0 done** (commit c6e8d28): `fpt_spaced_intersect_via_conv` = old conversion
+body; `fpt_spaced_intersect` is currently a definitional alias of it. M1+ below.
+
+All new code lives in `src/Utils/FullPosTrieConv.v`. Reference algorithm:
+`pt_spaced_intersect'` / `pt_spaced_intersect` (`PosListMap.v:852-898`).
+
+## Carrier facts
+- `fpt' = fpt_leaf a | fpt_node (m:tree' fpt') | fpt_both a (m:tree' fpt')` (FullPosTrie.v:31).
+- `pos_trie' = pos_trie_leaf a | pos_trie_node (m:tree' pos_trie')` (PosListMap.v:279).
+- Join inputs satisfy `fpt_depth'` (FullPosTrieConv.v:107) which has NO `fpt_both`
+  constructor ⇒ `fpt_both` is dead in inputs; handle it as a node (drop value).
+- `list_intersect` (TrieMap.v:472 `Section MapIntersectList`, `Context {B C}
+  (elts_intersect : bool -> B -> list B -> option C)`) is element-type polymorphic;
+  post-section signature: `list_intersect elts_intersect (hd:tree' B) (args:list (tree' B))
+  : option (tree' C)`. The native join reuses THE SAME `list_intersect`, instantiated at
+  `B:=fpt'`, `C:=fpt'`.
+
+## M1 — native definitions (proof-free; just need to typecheck)
+
+Put inside a `Section` with `Context {B:Type} (Hdef: WithDefault B) (merge:B->B->B)`
+(mirror PosListMap's `Section __. Context WithDefault A. Context (merge:A->A->A).`).
+
+### proj (O(1), runtime)
+```
+Definition fpt_proj_node_unchecked (p:fpt') : PTree.tree' fpt' :=
+  match p with
+  | fpt_leaf a => PTree.Node010 (fpt_leaf default)
+  | fpt_node m => m
+  | fpt_both _ m => m
+  end.
+```
+
+### leaf_intersect (runtime, structural on list)
+```
+Fixpoint fpt_leaf_intersect (a:B) (ptl:list fpt') : B :=
+  match ptl with
+  | [] => a
+  | (fpt_leaf a')::ptl' => fpt_leaf_intersect (merge a a') ptl'
+  | (fpt_node _ | fpt_both _ _)::ptl' => fpt_leaf_intersect a ptl'  (* dead *)
+  end.
+```
+
+### partition (mirror `partition_result` + `partition_tries`, carrier fpt')
+Clone `Variant partition_result` (PosListMap.v:468) and `Fixpoint partition_tries`
+(476-502) verbatim with `pos_trie'`→`fpt'`. Name them `fpt_partition_result` /
+`fpt_partition_tries`.
+
+### the fixpoint (mirror pt_spaced_intersect' 852-889, carrier fpt')
+```
+Fixpoint fpt_spaced_intersect'' fuel cil ptl (ci0:list bool) cil' pt0 ptl'
+  : option fpt' :=
+  match fuel, ci0, pt0 with
+  | S _, [], fpt_node _   | S _, [], fpt_both _ _  (* both treated as node: dead *)
+  | O, _, _ => None
+  | S fuel, [], fpt_leaf a =>
+      Some (fpt_leaf (fpt_leaf_intersect (fpt_leaf_intersect a ptl) ptl'))
+  | S fuel, ci0_hd::ci0_tl, _ =>
+      let initial_part := if ci0_hd then have_true_part [] [] ci0_tl pt0 [] []
+                          else just_false_part ci0_tl pt0 [] [] in
+      let part := fpt_partition_tries cil' ptl' (fpt_partition_tries cil ptl initial_part) in
+      match part with
+      | just_false_part ci0 pt0 oc ot => fpt_spaced_intersect'' fuel oc ot ci0 [] pt0 []
+      | have_true_part oc ot t_ci0 t_pt0 t_cil t_ptl =>
+          let true_cil_rev := rev t_cil in
+          let pt_intersect :=
+            list_intersect
+              (fun is_forward => fpt_spaced_intersect'' fuel oc ot t_ci0
+                                   (if is_forward then t_cil else true_cil_rev))
+              (fpt_proj_node_unchecked t_pt0)
+              (map fpt_proj_node_unchecked t_ptl)
+          in option_map fpt_node pt_intersect
+      end
+  end.
+```
+NOTE the matched `pt0` in the `S _,[],fpt_node`/`fpt_both` "should-never-happen" arms
+returns None — mirror pt_spaced_intersect' which returns None for `S _,[],pos_trie_node`.
+
+### wrapper (mirror pt_spaced_intersect 891)
+```
+Definition fpt_spaced_intersect_native (tries : ne_list (fpt * list bool)) : fpt :=
+  let '(ptl, cil) := split (snd tries) in
+  let '(pt0, ci0) := fst tries in
+  let fuel := S (length ci0) in
+  @!let pt0' <- pt0 in
+    let ptl' <- list_Mmap id ptl in
+    (fpt_spaced_intersect'' fuel cil ptl' ci0 [] pt0' []).
+```
+End Section. Then the top-level `fpt_spaced_intersect` (the public name) is set to this
+native wrapper with merge arg threaded — matching the via_conv signature
+`(merge) (tries : (fpt*list bool) * list (fpt*list bool))`. Note via_conv takes the
+PAIR-form `(fst, list)`, while the wrapper takes `ne_list = (fst, list)` — same shape.
+
+Guard checker: the fixpoint is structural on `fuel` (like the original) — no nested-fix
+problem. `list_intersect` is already defined. Only thing to watch: the `option_map
+fpt_node` and that `list_intersect`'s `C := fpt'` is inferred.
+
+## M1b — structural injection (PROOF ONLY, efficiency irrelevant)
+```
+Definition pt'_of_fpt' : fpt' B -> pos_trie' B   (* leaf→leaf, node→node-map, both→node-map drop val *)
+```
+Define via the nested-fix / `trie_fold'`-inlined pattern (like `fpt_elements'`,
+FullPosTrie.v:612) OR via `fpt'_strong_ind` if defined as a Fixpoint fails the guard
+checker. Need a `tree'_map' : (X->Y)->tree' X->tree' Y` (structural on tree', plain
+Fixpoint, fine) — define locally if not present (Canonical only has `map_filter'`).
+Then `pt'_of_fpt' (fpt_node m) = pos_trie_node (tree'_map' pt'_of_fpt' m)` — guard
+needs the nested-fix inline; clone the `fpt'_strong_ind` body shape.
+
+Get lemma (a): `fpt_depth' t n -> length k = n -> fpt_get' t k = pt_get' (pt'_of_fpt' t) k`.
+Proof by `fpt'_strong_ind` (both case vacuous under fpt_depth').
+
+## M2 — simulation lemma (THE CRUX)
+```
+Lemma sim : forall fuel cil ptl ci0 cil' pt0 ptl',
+  option_map pt'_of_fpt' (fpt_spaced_intersect'' fuel cil ptl ci0 cil' pt0 ptl')
+  = pt_spaced_intersect'  fuel cil (map pt'_of_fpt' ptl) ci0 cil'
+                          (pt'_of_fpt' pt0) (map pt'_of_fpt' ptl').
+```
+By induction on fuel. The leaf base case: `pt'_of_fpt' (fpt_leaf x) = pos_trie_leaf x`
+and `fpt_leaf_intersect` vs `leaf_intersect` agree under `map pt'_of_fpt'` (leaf images
+are leaves; node/both images are nodes → both skip). The have_true_part case: the
+`list_intersect` step — use the existing cross-type congruence lemma
+**`list_intersect_Perm_combined` (PosListMap.v:2354)** (or a thinner naturality sibling)
+to relate `list_intersect (fpt elts) (fpt_proj t_pt0) (map fpt_proj t_ptl)` mapped
+through `tree'_map' pt'_of_fpt'` to `list_intersect (pt elts) (pt_proj …) …`. Key
+sub-facts: `tree'_map' pt'_of_fpt' (fpt_proj_node_unchecked t) = proj_node_map_unchecked
+(pt'_of_fpt' t)` (holds for all 3 ctors, incl both), and the elts closures correspond by
+the fuel-IH. `partition_tries` commutes with `map pt'_of_fpt'` (structural, carries
+values opaquely) — prove a small `partition_tries` map-commute helper.
+
+Fallback if `list_intersect_Perm_combined` doesn't fit: prove a dedicated
+`list_intersect` naturality lemma via `list_intersect_correct` + `tree'` get-extensionality.
+
+Also need: depth of native result. `fpt_depth (option-of native result) N` where
+N = #true flags — mirror `pt_spaced_intersect_depth`; OR derive from sim +
+`pt_spaced_intersect_depth` + a `pt'_of_fpt'`-reflects-depth lemma.
+
+## M3 — bridge lemma + keys corollary
+```
+Lemma fpt_spaced_intersect_native_eq_via_conv :
+  (call-site hyps: each input fpt_depth-uniform, wf_tries, combined_bools=repeat true N)
+  -> length k = N
+  -> fpt_get (fpt_spaced_intersect_native (tries,rest)) k
+   = fpt_get (fpt_spaced_intersect_via_conv merge (tries,rest)) k.
+```
+RHS: `fpt_get (pt_to_fpt (compat_intersect …)) k = pt_get (compat_intersect …) k`
+(pt_to_fpt_get + Hdepth) = merge-fold of `fpt_get (fst pᵢ) (proj k)` via
+`pt_spaced_intersect_correct` spec + `fpt_to_pt_get`.
+LHS: `fpt_get' native k = pt_get' (pt'_of_fpt' native) k` (get-lemma (a) + native-depth)
+= `pt_get (pt_spaced_intersect on pt'_of_fpt'-mapped inputs) k` (sim) = same merge-fold
+via `pt_spaced_intersect_correct` + get-lemma (a). Both sides equal ⇒ done.
+
+Keys corollary: `In sigma (map.keys native) <-> In sigma (map.keys via_conv)` from
+get-eq at length-N keys + `full_pos_trie_map_ok` extensionality (`fpt_map_ext`,
+FullPosTrie.v:991); all keys length N under hyps.
+
+## M4 — swap + re-route
+- Replace the M0 alias body of `fpt_spaced_intersect` with `fpt_spaced_intersect_native`
+  (threaded merge). 
+- `fpt_spaced_intersect_inputs_hit` (FullPosTrieConv.v:534): the opening
+  `assert (Heq: … = pt_to_fpt R) … reflexivity` (now ~595) no longer holds
+  definitionally → replace with the keys corollary (rewrite `In sigma (map.keys native)`
+  to `In sigma (map.keys via_conv)`); rest unchanged.
+- QcAlignment `trie_join_H9` (~760) / `trie_join_H10` (~854): same `Hsimp …
+  reflexivity` → keys corollary.
+
+## M5 — verify
+Build FullPosTrieConv.vo → QcAlignment.vo → Automation.vo (absolute-path targets:
+`make -f Makefile.coq /root/pyrosome-ai/src/Utils/FullPosTrieConv.vo`).
+`Print Assumptions egraph_sound` must stay "Closed under the global context".
+rocq_assumptions on the new bridge lemmas: no new axioms. Perf: `Time` a saturating
+EGraph/Test goal before/after.
+
+## Build note
+Makefile.coq targets are ABSOLUTE paths. Build e.g.
+`make -f Makefile.coq /root/pyrosome-ai/src/Utils/FullPosTrieConv.vo`.
+
+## M2 breakdown (simulation) — sub-lemmas (added after M1 verified, commit b582381)
+
+Top statement (hypothesis-free; arg order matches both fixpoints
+`fuel cil ptl ci0 cil' pt0 ptl'`):
+```
+Lemma fpt_spaced_intersect''_sim : forall fuel cil ptl ci0 cil' pt0 ptl',
+  option_map pt'_of_fpt' (fpt_spaced_intersect'' merge fuel cil ptl ci0 cil' pt0 ptl')
+  = pt_spaced_intersect' merge fuel cil (map pt'_of_fpt' ptl) ci0 cil'
+                          (pt'_of_fpt' pt0) (map pt'_of_fpt' ptl').
+```
+By `induction fuel; intros cil ptl ci0 cil' pt0 ptl'` (IH universally quantified over
+all non-fuel args). Easy sub-lemmas (all Qed-able, hypothesis-free):
+- `fpt_leaf_intersect_sim : fpt_leaf_intersect merge a ptl = leaf_intersect merge a (map pt'_of_fpt' ptl)` (induction ptl; leaf→leaf merges, node/both→skip both sides).
+- `pr_map : fpt_partition_result -> partition_result` (apply pt'_of_fpt'/map to carriers) and
+  `fpt_partition_tries_sim : pr_map (fpt_partition_tries cil ptl acc) = partition_tries cil (map pt'_of_fpt' ptl) (pr_map acc)` (induction cil; destruct ptl, acc).
+- `fpt_proj_sim : tree'_map' pt'_of_fpt' (fpt_proj_node_unchecked t) = proj_node_map_unchecked (pt'_of_fpt' t)` (3 ctor cases; uses pt'_of_fpt'_fpt_node).
+- leaf base aligns via fpt_leaf_intersect_sim; the dead fpt_node/fpt_both empty arms are None on
+  both sides (pt'_of_fpt' image is pos_trie_node → pt None arm).
+- recursive case: rewrite initial_part + double fpt_partition_tries through pr_map (uses
+  fpt_partition_tries_sim twice), destruct the native `part`, the pt `part` follows by pr_map;
+  just_false branch → IH; have_true branch → list_intersect naturality below.
+
+HARD (Admitted placeholders to discharge in M2b):
+- `list_intersect_natural {Bf Bp} (g:Bf->Bp) (ef eg) (Helts: forall b x xs,
+   option_map g (ef b x xs) = eg b (g x) (map g xs)) hd args :
+   option_map (tree'_map' g) (TrieMap.list_intersect ef hd args)
+   = TrieMap.list_intersect eg (tree'_map' g hd) (map (tree'_map' g) args).`
+   Route: `apply otree_injective; apply PTree.extensionality; intro i; erewrite
+   !list_intersect_correct` (TrieMap.v:1520) on both sides with `elts_wf := fun _ _ _=>True`;
+   discharge `elts_intersect_rev` from a rev-symmetry lemma of ef/eg (for our use:
+   `fpt_spaced_intersect''_rev` + the pt-side rev lemma already in PosListMapIntersectSpec /
+   `list_intersect_rev` TrieMap:1220), then Helts aligns the get-level RHS. Template:
+   `list_intersect_Perm_combined` (PosListMap.v:2354) does exactly this erewrite-both-sides
+   pattern across element types. May also need `fpt_spaced_intersect''_rev :
+   fpt..'' fuel oc ot tci (rev l) x (rev ys) = fpt..'' fuel oc ot tci l x ys`-style (mirror pt).
+- native-depth: `fpt_depth (fpt_spaced_intersect_native (tries,rest)) N` where
+  N = length (filter id (combined_bools (cvt-equivalent))). Either (i) direct induction on
+  fuel mirroring `pt_spaced_intersect_depth` (PosListMapIntersectSpec.v:3802), or (ii) via sim
+  + pt_spaced_intersect_depth + a both-free + depth-correspondence argument. Prefer (ii) if the
+  sim is available; native results are both-free (only build fpt_leaf/fpt_node).
+
+In the have_true branch the final wrap is `option_map fpt_node (list_intersect …)`; combine with
+`pt'_of_fpt'_fpt_node` so `option_map pt'_of_fpt' (option_map fpt_node X)
+= option_map pos_trie_node (option_map (tree'_map' pt'_of_fpt') X)`, then apply naturality.
+
+## STATUS after M0–M6 (commit 5f03186, pushed long_horizon)
+
+DONE: the running e-graph join is conversion-free. Public `fpt_spaced_intersect` =
+`fpt_spaced_intersect_native` (direct fpt' join, no fpt_to_pt/pt_to_fpt rebuilds).
+`Print Assumptions egraph_sound` = EXACTLY TWO localized admits (independently verified
+via scratch coqc), nothing else:
+  1. `FullPosTrieConv.list_intersect_natural`
+  2. `FullPosTrieConv.fpt_spaced_intersect_native_depth`
+FullPosTrieConv / QcAlignment / Automation all build.
+
+REMAINING (restore axiom-free): discharge the two admits.
+
+### Admit 1: list_intersect_natural (FullPosTrieConv.v ~line 974)
+`forall {Bf Bp} (g) (ef eg), (forall b x xs, option_map g (ef b x xs) = eg b (g x) (map g xs))
+ -> forall hd args, option_map (tree'_map' g) (TrieMap.list_intersect ef hd args)
+    = TrieMap.list_intersect eg (tree'_map' g hd) (map (tree'_map' g) args).`
+IMPORTANT: the per-`b` elts-correspondence hypothesis is sufficient; do NOT route through
+`list_intersect_correct` (that drags in spurious `map_elts_wf`/`elts_intersect_rev`
+obligations that are NOT generally true for arbitrary ef/eg). Prove by DIRECT induction on
+the `list_intersect'_pre_cbv` fix structure (induct on `hd : tree' Bf`), pushing `tree'_map' g`
+through `tree'_tuple_k`/`gather_tries`/`tree'_of_tuple_k` and applying the hypothesis at the
+`elts_intersect`/leaf positions. The recursion alternates `is_rev`; the same flag logic runs on
+both sides so it cancels. Template for tree'-level reasoning: `list_intersect_correct'`
+(TrieMap.v:1481) and the `gather_tries`/`tree'_tuple` helper lemmas in TrieMap.v.
+
+### Admit 2: fpt_spaced_intersect_native_depth (FullPosTrieConv.v ~line 1268)
+`<Hdepth Hbools Hfd Hlen> -> fpt_depth (fpt_spaced_intersect_native merge (tries,rest)) N.`
+Route (preferred, reuses sim once natural is discharged):
+  - native is BOTH-FREE: define `fpt_both_free'` (leaf ok, node ok if all children ok, both NOT)
+    and prove `fpt_spaced_intersect'' merge fuel … = Some t -> fpt_both_free' t` by induction on
+    fuel; the node case needs "list_intersect of both-free-producing elts has all-both-free
+    elements" — a `list_intersect` predicate-preservation lemma (generic, similar shape to
+    natural). 
+  - `fpt_both_free' t -> depth' (pt'_of_fpt' t) n -> fpt_depth' t n` (clean structural; on
+    both-free trees pt'_of_fpt' is leaf↔leaf node↔node so depth reflects).
+  - then: sim (`fpt_spaced_intersect_native_sim`) gives option_map pt'_of_fpt' native =
+    pt_spaced_intersect (cvt' inputs); `pt_spaced_intersect_depth` (PosListMapIntersectSpec.v:3802)
+    gives depth N of that (needs wf_tries(cvt') — build from Hfd via pt'_of_fpt'_has_depth' +
+    combined_bools(cvt')=combined_bools(cvt)=repeat true N); reflect via both-free → fpt_depth.
+  Alternative: direct fuel-induction mirroring `pt_spaced_intersect_depth` (also needs a
+  `list_intersect` depth/predicate lemma). Either way one more generic list_intersect lemma.
+
+Both admits reduce to generic structural lemmas about `TrieMap.list_intersect` (naturality +
+predicate-preservation). Discharging them restores `egraph_sound` to axiom-free.

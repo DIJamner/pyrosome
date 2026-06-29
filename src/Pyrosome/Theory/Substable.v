@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope list.
 From Utils Require Import Utils.
@@ -120,7 +120,7 @@ Section WithVar.
           well_scoped (map fst s) a ->
           well_scoped args (apply_subst s a)
       }.
-    Arguments Substable_ok B%type_scope {Substable}.
+    Arguments Substable_ok B%_type_scope {Substable}.
     
     Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
 
@@ -147,7 +147,7 @@ Section WithVar.
 
     (*TODO: use separate DB*)
     Local Hint Rewrite subst_assoc0 : utils.
-    Arguments subst_id0 {Substable0_ok} B%type_scope _ _.
+    Arguments subst_id0 {Substable0_ok} B%_type_scope _ _.
     Local Hint Rewrite subst_id0 : utils.
     Local Hint Rewrite strengthen_subst0 : utils.
     Local Hint Resolve well_scoped_subst0 : utils.
@@ -274,30 +274,22 @@ does not get in the way of automation *)
 Notation id_subst c := (with_names_from c (id_args c)).
 
 
-Arguments subst_lookup [V]%type_scope {A}%type_scope {Substable0 H} !s n/.
-Arguments args_subst [V]%type_scope {A}%type_scope {Substable0} s !a%list_scope/.
-Arguments ws_args [V]%type_scope {A}%type_scope {Substable0} (_ !_)%list_scope/.
+Arguments subst_lookup [V]%_type_scope {A}%_type_scope {Substable0 H} !s n/.
+Arguments args_subst [V]%_type_scope {A}%_type_scope {Substable0} s !a%_list_scope/.
+Arguments ws_args [V]%_type_scope {A}%_type_scope {Substable0} (_ !_)%_list_scope/.
 
-Arguments ws_subst [V]%type_scope {A}%type_scope {Substable0} args !s/.
+Arguments ws_subst [V]%_type_scope {A}%_type_scope {Substable0} args !s/.
 
-Arguments Substable0_ok [V]%type_scope _%type_scope {_}.
-Arguments Substable [V]%type_scope A%type_scope _%type_scope.
-Arguments Substable_ok [V]%type_scope A%type_scope {Substable0} B%type_scope {Substable}.
+Arguments Substable0_ok [V]%_type_scope _%_type_scope {_}.
+Arguments Substable [V]%_type_scope A%_type_scope _%_type_scope.
+Arguments Substable_ok [V]%_type_scope A%_type_scope {Substable0} B%_type_scope {Substable}.
 
-Arguments well_scoped [V]%type_scope {A B}%type_scope {_} _%list_scope !_.
-Arguments apply_subst [V]%type_scope {A B}%type_scope {_} _%list_scope !_.
+Arguments well_scoped [V]%_type_scope {A B}%_type_scope {_} _%_list_scope !_.
+Arguments apply_subst [V]%_type_scope {A B}%_type_scope {_} _%_list_scope !_.
 
-Arguments args_subst [V]%type_scope {A}%type_scope {Substable0} s !a%list_scope/.
-Arguments ws_args [V]%type_scope {A}%type_scope {Substable0} (_ !_)%list_scope/.
-Arguments subst_id0 [V]%type_scope {A}%type_scope {Substable0 Substable0_ok} B%type_scope _ _ : rename.
+Arguments args_subst [V]%_type_scope {A}%_type_scope {Substable0} s !a%_list_scope/.
+Arguments ws_args [V]%_type_scope {A}%_type_scope {Substable0} (_ !_)%_list_scope/.
+Arguments subst_id0 [V]%_type_scope {A}%_type_scope {Substable0 Substable0_ok} B%_type_scope _ _ : rename.
 
-
-#[export] Hint Rewrite id_args_nil : term.
-
-
-#[global] Hint Rewrite subst_assoc using solve[typeclasses eauto] : term.
-#[global] Hint Rewrite subst_id using solve[typeclasses eauto] : term.
-#[global] Hint Rewrite strengthen_subst using solve[typeclasses eauto] : term.
-#[global] Hint Resolve well_scoped_subst : term.
 
 Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).

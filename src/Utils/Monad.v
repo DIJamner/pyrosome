@@ -1,6 +1,6 @@
 Set Implicit Arguments.
 
-Require Lists.List.
+From Stdlib Require Lists.List.
 From Utils Require Import Utils.
 
 Class Monad (M : Type -> Type) : Type :=
@@ -483,8 +483,8 @@ Module StateMonad.
           acc pattern at level 0,
           m constr, b custom monadic_do).
   
-  Arguments stateT S%type_scope M%function_scope A%type_scope : clear implicits.
-  Arguments state S%type_scope A%type_scope : clear implicits.
+  Arguments stateT S%_type_scope M%_function_scope A%_type_scope : clear implicits.
+  Arguments state S%_type_scope A%_type_scope : clear implicits.
   
   #[export] Instance default_state S {A} `{WithDefault A} : WithDefault (state S A) :=
     fun s => (default, s).

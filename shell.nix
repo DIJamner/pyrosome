@@ -14,7 +14,7 @@ with pkgs;mkShell {
                   bintools-unwrapped
                   gmp
                 ]
-                else [ coq coqPackages.stdlib ];
+                else [ coq_9_1 coqPackages_9_1.stdlib ];
   shellHook = if native-enabled
               then "eval $(opam env)"
               else "";
