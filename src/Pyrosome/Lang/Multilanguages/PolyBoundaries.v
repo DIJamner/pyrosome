@@ -59,7 +59,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 

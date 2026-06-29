@@ -64,7 +64,7 @@ Ltac solve_parameterize_wrapper l := (* deleted comments in equivalent code from
   eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
 
 Definition typed_bool_parameterized := parameterize_wrapper typed_bool. 
@@ -205,7 +205,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
@@ -262,7 +262,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
@@ -317,7 +317,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
@@ -377,7 +377,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
@@ -411,7 +411,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
