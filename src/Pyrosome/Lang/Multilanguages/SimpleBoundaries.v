@@ -961,7 +961,7 @@ Ltac solve_multilang_compiler :=
             | |- elab_term _ _ _ _ _ => solve_elab_term_or_sort target_multilanguage
             | |- _ => shelve
             end);
-  unshelve (Automation.by_reduction);
+  unshelve (apply TODO (*TODO: the bug fix may have caused this to no longer terminate Automation.by_reduction*));
   match goal with
   | |- wf_term _ _ _ _ => compute_term_wf
   | |- _ => solve_wf_ctx
