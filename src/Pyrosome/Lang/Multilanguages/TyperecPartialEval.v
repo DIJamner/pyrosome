@@ -109,8 +109,7 @@ Ltac invert_wf_args :=
         end.
 
 Lemma no_sort_eqns_in_sml : Is_true (no_sort_eqns source_multilanguage).
-Proof. apply I. Qed. 
-Check sort_names_equal.
+Proof. apply I. Qed.
 
 Lemma source_multilanguage_wf : wf_lang source_multilanguage.
 Proof. prove_by_lang_db. Qed.
@@ -191,7 +190,7 @@ Qed.
 
 Ltac compute_match t :=
   let v := eval vm_compute in t in
-    replace t with v by (vm_compute; reflexivity).
+    change_no_check t with v.
 
 Theorem can_eliminate_typerec :
   forall (t: sort) (e : term),
@@ -217,8 +216,7 @@ Lemma target_multilanguage_wf : wf_lang target_multilanguage.
 Proof. prove_by_lang_db. Qed.
 
 Lemma no_sort_eqns_in_tml : Is_true (no_sort_eqns target_multilanguage).
-Proof. apply I. Qed. 
-Check sort_names_equal.
+Proof. apply I. Qed.
 
 Lemma ty_env_eq_sort_lemma_tml : forall (t : sort), Core.wf_sort target_multilanguage [] t -> eq_sort target_multilanguage [] t {{s #"ty_env"}} <-> t = {{s #"ty_env" }}.
 Proof.
@@ -341,9 +339,6 @@ Ltac first_pass :=
 Ltac solve_eq_goal :=
   with_strategy opaque [compile simple_multilang_compiler interoperating_langs_compiler] first_pass; with_strategy transparent [compile simple_multilang_compiler interoperating_langs_compiler] simpl; repeat sv.
 
-Check (elab_compiler_implies_preserving simple_multilang_compiler_preserving).
-
-
 Lemma eq_sort_sml_implies_eq_sort_tml :
   forall (t t' : sort),
     eq_sort source_multilanguage [] t t' ->
@@ -351,7 +346,11 @@ Lemma eq_sort_sml_implies_eq_sort_tml :
       (compile_sort (simple_multilang_compiler ++ interoperating_langs_compiler) t)
       (compile_sort (simple_multilang_compiler ++ interoperating_langs_compiler) t').
 Proof. Admitted. 
-  
+
+(* Restore the old behavior because the new one broke this proof*)
+Ltac compute_match t ::=
+   let v := eval vm_compute in t in
+     replace t with v by (vm_compute; reflexivity).
 
 Theorem partial_eval_preserves_equality :
 forall (t: sort) (e : term),
