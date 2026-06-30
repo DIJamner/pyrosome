@@ -1,7 +1,6 @@
 Set Implicit Arguments.
 
-From coqutil Require Import Datatypes.String.
-From Stdlib Require Import Lists.List.
+Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -12,28 +11,38 @@ From Pyrosome Require Import Theory.Core Elab.Elab
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 Import Core.Notations.
 
-From Stdlib Require derive.Derive.
+Require Coq.derive.Derive.
 
-Definition usubst_def : lang :=
+Definition star_type_def : lang :=
   {[l/subst [exp_subst++value_subst]
   [:| 
       -----------------------------------------------
       #"*" : #"ty"
-  ];
+  ]
+  ]}.
+Derive star_type
+       SuchThat (elab_lang_ext (exp_subst++value_subst) star_type_def star_type)
+       As star_type_wf.
+Proof. auto_elab. Qed.
+#[local] Definition star_type_entry :=
+  lang_entry (elab_lang_implies_wf star_type_wf).
+#[export] Hint Resolve star_type_entry : wf_lang_db.
+
+Definition error_t_def : lang :=
+  {[l/subst [exp_subst++value_subst]
   [:| "G" : #"env",
       "t" : #"ty"
       -----------------------------------------------
       #"Error" "t" : #"exp" "G" "t"
   ]
   ]}.
-
-Derive usubst
-       in (elab_lang_ext (exp_subst++value_subst) usubst_def usubst)
-       as usubst_wf.
+Derive error_t
+       SuchThat (elab_lang_ext (exp_subst++value_subst) error_t_def error_t)
+       As error_t_wf.
 Proof. auto_elab. Qed.
-#[local] Definition usubst_entry :=
-  lang_entry (elab_lang_implies_wf usubst_wf).
-#[export] Hint Resolve usubst_entry : wf_lang_db.
+#[local] Definition error_t_entry :=
+  lang_entry (elab_lang_implies_wf error_t_wf).
+#[export] Hint Resolve error_t_entry : wf_lang_db.
 
 Definition utlc_def : lang :=
   {[l/subst [exp_subst++value_subst]
@@ -59,8 +68,8 @@ Definition utlc_def : lang :=
   ]}.
 
 Derive utlc
-       in (elab_lang_ext (usubst++exp_subst++value_subst) utlc_def utlc)
-       as utlc_wf.
+       SuchThat (elab_lang_ext (star_type ++ exp_subst ++ value_subst) utlc_def utlc)
+       As utlc_wf.
 Proof. auto_elab. Qed.
 #[local] Definition utlc_entry :=
   lang_entry (elab_lang_implies_wf utlc_wf).
