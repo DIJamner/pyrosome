@@ -279,22 +279,13 @@ Definition build_injection_rules (schemas: list (string * list string)) (L: lang
    env is recovered from [blk (conc G H)]-style result sorts, where [H] is the
    shared left factor, so LEFT cancellation is the one that fires).
 
-   To declare such facts we let the caller pass explicit, sound injection
-   sequents.  [inj_input] bundles the ordinary name-based schemas with any extra
-   sequents; [build_injection_rule_seqs] is what the engine actually consumes. *)
-Record inj_input :=
-  {
-    inj_schemas : list (string * list string);
-    inj_extra_seqs : list (sequent string string);
-  }.
-
-(* The common case: just name-based schemas, no extra sequents. *)
-Definition inj_of_schemas (schemas : list (string * list string)) : inj_input :=
-  {| inj_schemas := schemas; inj_extra_seqs := [] |}.
-
-Definition build_injection_rule_seqs (ii : inj_input) (L : lang)
-  : list (sequent string string) :=
-  build_injection_rules ii.(inj_schemas) L ++ ii.(inj_extra_seqs).
+   The engine's injection input is therefore just a function [lang -> list
+   sequent] -- "the injection sequents to run against this language".  The common
+   case is [build_injection_rules schemas] (name-based congruence rules); to add
+   explicit sound sequents a caller writes [fun L => build_injection_rules
+   schemas L ++ extra_seqs], concatenating them onto [build_injection_rules]'s
+   result.  ([of_lang]-style schema building stays per-rule, since it looks up
+   constructor contexts in the language as it grows.) *)
 
 (* Cancellation sequents for a binary operation [f] (sound whenever [f] is
    cancellative, e.g. concatenation on a free monoid).  Left: from [f Z A = f Z
@@ -606,9 +597,10 @@ Definition rename_lang_ctx (l_full : lang) (ctx_holes : named_list sort)
     let ctx_pos <- rename_ctx_holes ctx_holes in
     ret (l_pos, ctx_pos).
 
-Definition rename_inj (l_full : lang) (inj_rules : inj_input)
+Definition rename_inj (l_full : lang)
+  (inj_rules : lang -> list (sequent string string))
   : state (renaming string) (list (sequent positive positive)) :=
-  list_Mmap rename_sequent (build_injection_rule_seqs inj_rules l_full).
+  list_Mmap rename_sequent (inj_rules l_full).
 
 (* A renamed positive is a hole iff its original string starts with "?"
    (gensym'd names and their dummy sorts). *)
@@ -625,7 +617,8 @@ Definition is_hole (rn : renaming string) (p : positive) : bool :=
    (sharing one [infer_state] run so gensym keeps allocating fresh names),
    rename language/ctx/conclusion/injections into positives (in that fixed
    order), run the matching engine entry point, and unrename. *)
-Definition infer_rule_gen (l : lang) (inj_rules : inj_input) (r : prerule) : rule :=
+Definition infer_rule_gen (l : lang)
+  (inj_rules : lang -> list (sequent string string)) (r : prerule) : rule :=
   match r with
   | presort_rule c args =>
       let '(ctx_holes, s) :=
@@ -696,9 +689,10 @@ Definition infer_rule_gen (l : lang) (inj_rules : inj_input) (r : prerule) : rul
    preserves the original [infer_rule] interface, e.g. for [Interactive.v]. *)
 Definition infer_rule (l : lang) (schemas : list (string * list string))
   (r : prerule) : rule :=
-  infer_rule_gen l (inj_of_schemas schemas) r.
+  infer_rule_gen l (build_injection_rules schemas) r.
 
-Fixpoint infer_lang_ext_gen l_base (l : prelang) (inj_rules : inj_input) :=
+Fixpoint infer_lang_ext_gen l_base (l : prelang)
+  (inj_rules : lang -> list (sequent string string)) :=
   match l with
   | [] => []
   | (n,r)::l =>
@@ -708,17 +702,18 @@ Fixpoint infer_lang_ext_gen l_base (l : prelang) (inj_rules : inj_input) :=
       (n,r')::l'
   end.
 
-Definition infer_lang_ext_simple_gen l_base (l : lang) (inj_rules : inj_input) :=
+Definition infer_lang_ext_simple_gen l_base (l : lang)
+  (inj_rules : lang -> list (sequent string string)) :=
   infer_lang_ext_gen l_base (of_lang l) inj_rules.
 
 (* Schema-only wrappers preserving the original interface. *)
 Definition infer_lang_ext l_base (l : prelang)
   (schemas : list (string * list string)) :=
-  infer_lang_ext_gen l_base l (inj_of_schemas schemas).
+  infer_lang_ext_gen l_base l (build_injection_rules schemas).
 
 Definition infer_lang_ext_simple l_base (l : lang)
   (schemas : list (string * list string)) :=
-  infer_lang_ext_simple_gen l_base l (inj_of_schemas schemas).
+  infer_lang_ext_simple_gen l_base l (build_injection_rules schemas).
 
 Section __.
   Context (tgt:lang).
@@ -732,7 +727,8 @@ Section __.
     (@compiler_case string term sort).
   (* takes in a prelab cc and an elaborated rule r *)
   Definition infer_compiler_case_simple
-    cmp (cc : compiler_case) r (inj_rules : inj_input) :=
+    cmp (cc : compiler_case) r
+    (inj_rules : lang -> list (sequent string string)) :=
     match cc,r with
     | sort_case cnames t, sort_rule c _ =>
         let c' := (compile_ctx cmp c) in
@@ -792,7 +788,8 @@ Section __.
     | _,_ => sort_case [] default (* failure case *)
     end.
 
-  Fixpoint infer_compiler_simple_gen cmp_pre cmp src (inj_rules : inj_input) :=
+  Fixpoint infer_compiler_simple_gen cmp_pre cmp src
+    (inj_rules : lang -> list (sequent string string)) :=
     match cmp,src with
     | [], [] => []
     | (n,cc)::cmp', (n',r)::src' =>
@@ -811,6 +808,6 @@ Section __.
   (* Schema-only wrapper preserving the original interface. *)
   Definition infer_compiler_simple cmp_pre cmp src
     (schemas : list (string * list string)) :=
-    infer_compiler_simple_gen cmp_pre cmp src (inj_of_schemas schemas).
+    infer_compiler_simple_gen cmp_pre cmp src (build_injection_rules schemas).
 
 End __.

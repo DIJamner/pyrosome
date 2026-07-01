@@ -90,10 +90,11 @@ Definition linear_cps_lang :=
     (infer_lang_ext_simple_gen
        (linear_block_subst ++ linear_value_subst)
        linear_cps_lang_def
-       {| inj_schemas := linear_cps_injectivity
-                           ++linear_block_subst_injectivity
-                           ++linear_value_subst_injectivity;
-          inj_extra_seqs := linear_ext_injectivity |}).
+       (fun L => build_injection_rules
+                   (linear_cps_injectivity
+                      ++linear_block_subst_injectivity
+                      ++linear_value_subst_injectivity) L
+                 ++ linear_ext_injectivity)).
 
 Lemma cps_lang_wf
   : wf_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_lang.
@@ -187,11 +188,12 @@ Definition linear_cps_prod_lang :=
     (infer_lang_ext_simple_gen
        (linear_block_subst ++ linear_value_subst)
        linear_cps_prod_lang_def
-       {| inj_schemas := linear_cps_prod_injectivity
-                           ++linear_cps_injectivity
-                           ++linear_block_subst_injectivity
-                           ++linear_value_subst_injectivity;
-          inj_extra_seqs := linear_ext_injectivity |}).
+       (fun L => build_injection_rules
+                   (linear_cps_prod_injectivity
+                      ++linear_cps_injectivity
+                      ++linear_block_subst_injectivity
+                      ++linear_value_subst_injectivity) L
+                 ++ linear_ext_injectivity)).
 
 Lemma linear_cps_prod_wf
   : wf_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang.
