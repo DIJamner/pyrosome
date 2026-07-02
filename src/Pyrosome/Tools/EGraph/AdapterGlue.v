@@ -285,7 +285,12 @@ Section WithVar.
     (* Gated on [syntactic_sort_eq_langb l] to match [Defs.rule_to_log_rule]:
        the skip (dropping a ctx var's sort_of requirement) is only taken when
        [l] has syntactic sort equality.  The bare-var case stays [false]
-       regardless ([_ && false = false]). *)
+       regardless ([_ && false = false]).  The downstream soundness lemmas now
+       consume [sort_transport_at l []] rather than [syntactic_sort_eq l]
+       directly; the adapter discharges this via [syntactic_sort_eq_transport_at]
+       applied to [syntactic_sort_eq_sound].  The weakened poly checker
+       ([syntactic_sort_eq_langb']) will discharge [sort_transport_at l []]
+       directly once its transport soundness proof lands. *)
     Definition term_eq_skip (e1 : term) (x : V) : bool :=
       andb (syntactic_sort_eq_langb l)
         (match e1 with
@@ -2615,13 +2620,13 @@ Section WithVar.
         rewrite Bool.andb_true_iff in Hx. apply Is_true_eq_left. exact (proj2 Hx). }
       assert (Hbare : forall ev, e1 = var ev -> forall x, term_eq_skip e1 x = false).
       { intros ev Hev x. subst e1. unfold term_eq_skip. apply Bool.andb_false_r. }
-      assert (Hsyn_skip : forall x, term_eq_skip e1 x = true -> syntactic_sort_eq l).
+      assert (Htr_skip : forall x, term_eq_skip e1 x = true -> sort_transport_at l []).
       { intros x Hx. unfold term_eq_skip in Hx.
         apply Bool.andb_true_iff in Hx.
-        exact (syntactic_sort_eq_sound (proj1 Hx) Hwf). }
+        eapply syntactic_sort_eq_transport_at; exact (syntactic_sort_eq_sound (proj1 Hx) Hwf). }
       pose proof (@eq_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                    (term_eq_skip e1) rf a c e1 t Hwfc Hwfe1 Hskip Hsyn_skip Hbare Hsucc_uf Hsnd_atoms_uf) as Hinv.
+                    (term_eq_skip e1) rf a c e1 t Hwfc Hwfe1 Hskip Htr_skip Hbare Hsucc_uf Hsnd_atoms_uf) as Hinv.
       destruct Hinv as (sg & Hsg & Hmapfst_sg & Hfaith).
       (* Hfaith uses (fst (add_ctx ...)) - rewrite to sub_c *)
       assert (Hfaith' : forall x, In x (map fst sub_c) ->
@@ -3403,13 +3408,13 @@ Section WithVar.
       { intros x Hx. unfold sort_eq_skip in Hx.
         rewrite Bool.andb_true_iff in Hx.
         apply (proj1 (inb_is_In _ _)). apply Is_true_eq_left. exact (proj2 Hx). }
-      assert (Hsyn_skip : forall x, sort_eq_skip t1 x = true -> syntactic_sort_eq l).
+      assert (Htr_skip : forall x, sort_eq_skip t1 x = true -> sort_transport_at l []).
       { intros x Hx. unfold sort_eq_skip in Hx.
         apply Bool.andb_true_iff in Hx.
-        exact (syntactic_sort_eq_sound (proj1 Hx) Hwf). }
+        eapply syntactic_sort_eq_transport_at; exact (syntactic_sort_eq_sound (proj1 Hx) Hwf). }
       pose proof (@AddCtxInversion.eq_sort_ctx_inversion_gen V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
                     succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof
-                    (sort_eq_skip t1) rf a c t1 Hwfc Hwft1 Hskip Hsyn_skip Hsucc_uf Hsnd_atoms_uf) as Hinv.
+                    (sort_eq_skip t1) rf a c t1 Hwfc Hwft1 Hskip Htr_skip Hsucc_uf Hsnd_atoms_uf) as Hinv.
       destruct Hinv as (sg & Hsg & Hmapfst_sg & Hfaith).
       assert (Hfaith' : forall x, In x (map fst sub_c) ->
                 map.get a (named_list_lookup default sub_c x)

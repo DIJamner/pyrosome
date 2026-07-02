@@ -2742,27 +2742,35 @@ Section WithVar.
     Qed.
 
     (* =============================================================== *)
-    (* wf_subst-FREE faithful representation, gated on [syntactic_sort_eq]. *)
+    (* wf_subst-FREE faithful representation, gated on                  *)
+    (* [sort_transport_at l []].                                         *)
     (*                                                                  *)
     (* The min-sorts skip discharge needs the WHOLE-LHS image wf        *)
-    (* [wf_term l [] (e[/sg/]) (t[/sg/])] to feed [covering_var_leaf_syn].*)
-    (* [add_open_faithful_rep] delivers it but requires [wf_subst l []   *)
-    (* sg c] -- the very thing being built.  Under [syntactic_sort_eq]   *)
-    (* the wf_subst is unnecessary: the final rule-sort->declared        *)
-    (* transport collapses to syntactic equality, and var ARGS are typed *)
-    (* off the model [wf_args] rather than via a wf_subst-dependent var   *)
-    (* base case.  var ROOTS carry no                                    *)
+    (* [wf_term l [] (e[/sg/]) (t[/sg/])] to feed the covering lemmas   *)
+    (* ([covering_var_leaf_tr]).  [add_open_faithful_rep] delivers it    *)
+    (* but requires [wf_subst l [] sg c] -- the very thing being built.  *)
+    (* Under [sort_transport_at l []] the wf_subst is unnecessary, but   *)
+    (* the transport hypothesis needs BOTH substituted sorts wf; so the  *)
+    (* conclusion is stated in "T-form": an eq_term at the substituted   *)
+    (* rule-output sort T (available unconditionally, from the model),   *)
+    (* PLUS a conditional eq_term at the declared sort [t[/sg/]] gated   *)
+    (* on [wf_sort l [] (t[/sg/])].  The gate is needed because the ROOT *)
+    (* caller cannot supply that wf -- it is exactly the wf_subst being  *)
+    (* constructed -- while ARGS positions derive it from the tail       *)
+    (* [eq_args] (via [eq_sort_subst] on the rule sort).  var ARGS are   *)
+    (* typed off the model [wf_args] rather than via a wf_subst-dependent*)
+    (* var base case.  var ROOTS carry no                                *)
     (* parent atom, hence the [match e with var => True] (and var roots  *)
     (* are never in the skip set).                                       *)
     (*                                                                  *)
-    (* [faithful_args_syn]: the args walk producing the faithful         *)
+    (* [faithful_args_tr]: the args walk producing the faithful          *)
     (* [eq_args].  At a var head it reads the image wf off the model     *)
     (* [wf_args] and converts the sort using the TAIL [eq_args]          *)
     (* (computed first) via [eq_args_implies_eq_subst]+[eq_sort_subst].  *)
-    (* At a con head it uses the per-arg term IH (no [syntactic_sort_eq] *)
-    (* needed there).                                                    *)
-    Lemma faithful_args_syn
-      (Hsyn : syntactic_sort_eq l)
+    (* At a con head it uses the per-arg term IH: the same tail-derived  *)
+    (* sort wf discharges the IH's wf_sort gate.                         *)
+    Lemma faithful_args_tr
+      (Htr : sort_transport_at l [])
       (a : interp) (eF : instance X) (sg : subst)
       (Hsound : forall al, atom_in_egraph al eF ->
                   atom_sound_for_model V V V_map lang_model a al)
@@ -2776,8 +2784,9 @@ Section WithVar.
                  | con _ _ => forall c t, wf_ctx l c -> wf_term l c e t ->
                                 incl (map fst c) (map fst sg) ->
                                 forall xe, represents a eF sg e xe ->
-                                exists e', map.get a xe = Some (inl e')
-                                         /\ eq_term l [] t[/sg/] e' (e[/sg/])
+                                exists e' T, map.get a xe = Some (inl e')
+                                         /\ eq_term l [] T e' (e[/sg/])
+                                         /\ (wf_sort l [] (t[/sg/]) -> eq_term l [] (t[/sg/]) e' (e[/sg/]))
                  | var _ => True
                  end) s ->
           forall sids, Forall2 (represents a eF sg) s sids ->
@@ -2857,10 +2866,25 @@ Section WithVar.
         { (* con head: use the term IH *)
           specialize (IHe0 c (tnm[/with_names_from c'0 s/])
                         Hctx Hwfe0 Hdom i Hrep_e0).
-          destruct IHe0 as (e' & Hge' & Heq0).
+          destruct IHe0 as (e' & T & Hge' & HeqT & Himpl).
           match goal with
             Hgi : map.get a i = Some (inl _) |- _ =>
               rewrite Hge' in Hgi; safe_invert Hgi end.
+          (* Build wf_sort l [] ((tnm[/with_names_from c'0 s/])[/sg/]) *)
+          assert (eq_sort l [] (tnm[/with_names_from c'0 l'0/])
+                               (tnm[/with_names_from c'0 (map (apply_subst0 sg) s)/])) as Heqsort.
+          { eapply (eq_sort_subst (l:=l) (c:=[]) (c':=c'0) (t1':=tnm) (t2':=tnm)
+                      (s1:=with_names_from c'0 l'0)
+                      (s2:=with_names_from c'0 (map (apply_subst0 sg) s))).
+            - eapply eq_sort_refl; exact Hwstnm.
+            - eapply eq_args_implies_eq_subst; exact Heqtail.
+            - exact Hwfc'0. }
+          assert (wf_sort l [] ((tnm[/with_names_from c'0 s/])[/sg/])) as Hwfr.
+          { rewrite faithful_sort_align by
+              (first [eapply wf_sort_implies_ws; eauto with lang_core
+                     | eapply wf_args_length_eq; eauto]).
+            eapply eq_sort_wf_r; eauto with lang_core. }
+          pose proof (Himpl Hwfr) as Heq0.
           rewrite faithful_sort_align in Heq0;
             [ exact Heq0
             | eapply wf_sort_implies_ws; eauto with lang_core
@@ -2870,8 +2894,8 @@ Section WithVar.
     (* The con-root consumer: every [con] LHS, source-typed in [c] and      *)
     (* faithfully represented, has its image wf-at-declared-sort recoverable *)
     (* via the [eq_term] to its egraph value.  var roots: [True].           *)
-    Lemma faithful_rep_syn
-      (Hsyn : syntactic_sort_eq l)
+    Lemma faithful_rep_tr
+      (Htr : sort_transport_at l [])
       (a : interp) (eF : instance X) (sg : subst)
       (Hsound : forall al, atom_in_egraph al eF ->
                   atom_sound_for_model V V V_map lang_model a al)
@@ -2879,8 +2903,9 @@ Section WithVar.
           incl (map fst c) (map fst sg) ->
           forall xe, represents a eF sg e xe ->
           match e with
-          | con _ _ => exists e', map.get a xe = Some (inl e')
-                                /\ eq_term l [] t[/sg/] e' (e[/sg/])
+          | con _ _ => exists e' T, map.get a xe = Some (inl e')
+                                  /\ eq_term l [] T e' (e[/sg/])
+                                  /\ (wf_sort l [] (t[/sg/]) -> eq_term l [] (t[/sg/]) e' (e[/sg/]))
           | var _ => True
           end.
     Proof.
@@ -2926,8 +2951,8 @@ Section WithVar.
           discriminate Hbad. }
         { (* interprets_to_term : the real case.
              Heqe : eq_term l [] t0 (con n args_terms) e_out *)
-          exists e_out; split; [solve [reflexivity | exact Hgxe]|].
-          (* goal: eq_term l [] t[/sg/] e_out ((con n s)[/sg/]) *)
+          (* goal: exists e' T, map.get a xe = Some (inl e') /\ eq_term l [] T e' (e[/sg/])
+                              /\ (wf_sort l [] (t[/sg/]) -> eq_term l [] (t[/sg/]) e' (e[/sg/])) *)
           change ((con n s)[/sg/]) with (con n s[/sg/]).
           assert (wf_ctx l c') as Hwfc'.
           { eapply rule_in_ctx_wf with (r:=term_rule c' args t');
@@ -2947,13 +2972,14 @@ Section WithVar.
           { eapply (list_Mmap_get_nth_inl term sort).
             change (domain V lang_model) with (term + sort)%type in Hargs.
             exact Hargs. }
-          (* the per-arg IH (match-form) for faithful_args_syn *)
+          (* the per-arg IH (match-form) for faithful_args_tr *)
           assert (all (fun e => match e with
                    | con _ _ => forall c t, wf_ctx l c -> wf_term l c e t ->
                                   incl (map fst c) (map fst sg) ->
                                   forall xe, represents a eF sg e xe ->
-                                  exists e', map.get a xe = Some (inl e')
-                                           /\ eq_term l [] t[/sg/] e' (e[/sg/])
+                                  exists e' T, map.get a xe = Some (inl e')
+                                           /\ eq_term l [] T e' (e[/sg/])
+                                           /\ (wf_sort l [] (t[/sg/]) -> eq_term l [] (t[/sg/]) e' (e[/sg/]))
                    | var _ => True
                    end) s) as IHs'.
           { eapply all_wkn; [| exact IHs].
@@ -2962,7 +2988,7 @@ Section WithVar.
             intros c0 t0' Hctx0 Hwt0 Hdom0 xe0 Hrep0.
             exact (He0 c0 t0' Hctx0 Hwt0 Hdom0 xe0 Hrep0). }
           assert (eq_args l [] c' args_terms s[/sg/]) as Heqargs.
-          { exact (faithful_args_syn Hsyn a eF sg Hsound s c c' Hctx Hwfc'
+          { exact (faithful_args_tr Htr a eF sg Hsound s c c' Hctx Hwfc'
                      Hwfa Hdom IHs' sids Hrepargs args_terms Hlk HwfaM). }
           (* congruence: con n args_terms = con n s[/sg/] at the rule's sort *)
           assert (eq_term l [] (t'[/with_names_from c' s[/sg/]/])
@@ -2985,25 +3011,21 @@ Section WithVar.
           assert (ws_sort (map fst c') t') as Hwst'.
           { eapply wf_sort_implies_ws; eauto with lang_core.
             eapply term_rule_in_sort_wf; eauto. }
-          (* the declared/rule sort equality collapses syntactically (Hsyn) *)
-          assert (t'[/with_names_from c' s/] = t) as Hsorteq2.
-          { destruct Hsort as [Hsort|Hsort];
-              [ exact (Hsyn _ _ _ Hsort) | exact Hsort ]. }
-          eapply eq_term_conv; [exact Hchain|].
-          (* goal: eq_sort l [] (t'[/with_names_from c' s[/sg/]/]) (t[/sg/]) *)
-          rewrite <- faithful_sort_align by
-            (first [ assumption | eapply wf_args_length_eq; eauto ]).
-          (* goal: eq_sort l [] ((t'[/with_names_from c' s/])[/sg/]) (t[/sg/]) *)
-          rewrite Hsorteq2.
-          (* goal: eq_sort l [] (t[/sg/]) (t[/sg/]) *)
-          eapply eq_sort_refl.
-          (* wf_sort l [] (t[/sg/]) from [Hcong]'s sort *)
           assert (wf_sort l [] (t'[/with_names_from c' s[/sg/]/])) as Hwss.
           { eapply (eq_term_wf_sort (l:=l) (c:=[]) Hwf ltac:(constructor) Hcong). }
-          rewrite <- faithful_sort_align in Hwss by
+          assert (wf_sort l [] ((t'[/with_names_from c' s/])[/sg/])) as Hwss'.
+          { rewrite faithful_sort_align by (first [assumption | eapply wf_args_length_eq; eauto]).
+            exact Hwss. }
+          exists e_out, (t'[/with_names_from c' s[/sg/]/]).
+          split; [solve [reflexivity | exact Hgxe]|].
+          split; [exact Hchain|].
+          intro Hwft.
+          eapply eq_term_conv; [exact Hchain|].
+          rewrite <- faithful_sort_align by
             (first [ assumption | eapply wf_args_length_eq; eauto ]).
-          rewrite Hsorteq2 in Hwss.
-          exact Hwss. } }
+          destruct Hsort as [Hsort|Hsort].
+          - exact (Htr _ _ _ _ Hsort Hwss' Hwft).
+          - rewrite Hsort. eapply eq_sort_refl. exact Hwft. } }
     Qed.
 
 
@@ -3119,10 +3141,13 @@ Section WithVar.
        faithfully represented, the (term) args [s0] have BOTH a source
        [wf_args l c s0 c'] and a wf_subst-FREE image [wf_args l [] (s0[/sg/])
        c'] at the shared rule ctx [c'].  This is exactly what the skip-sort
-       covering ([covering_var_leaf_syn_args_aux]) consumes.  Mirrors
-       [add_open_faithful_rep_sort] but uses [faithful_args_syn] (no wf_subst). *)
-    Lemma faithful_rep_sort_args_syn
-      (Hsyn : syntactic_sort_eq l)
+       covering args walk ([covering_var_leaf_tr_args_aux]) consumes.
+       Mirrors [add_open_faithful_rep_sort] but uses [faithful_args_tr]
+       gated on [sort_transport_at l []] (no wf_subst); the per-arg IH is
+       [faithful_rep_tr]'s T-form + wf-gated conditional, whose gate the
+       args walk discharges internally from the tail [eq_args]. *)
+    Lemma faithful_rep_sort_args_tr
+      (Htr : sort_transport_at l [])
       (a : interp) (eF : instance X) (sg : subst)
       (Hsound : forall al, atom_in_egraph al eF ->
                   atom_sound_for_model V V V_map lang_model a al)
@@ -3182,22 +3207,23 @@ Section WithVar.
                           ltac:(eauto with lang_core) HinM Hin0) as Hpin;
             safe_invert Hpin; rename HwaM into HwfaM
         end.
-        (* per-arg con IH from faithful_rep_syn *)
+        (* per-arg con IH from faithful_rep_tr *)
         assert (Hall : forall sx, all (fun e => match e with
                  | con _ _ => forall c t, wf_ctx l c -> wf_term l c e t ->
                                 incl (map fst c) (map fst sg) ->
                                 forall xe, represents a eF sg e xe ->
-                                exists e', map.get a xe = Some (inl e')
-                                         /\ eq_term l [] t[/sg/] e' (e[/sg/])
+                                exists e' T, map.get a xe = Some (inl e')
+                                         /\ eq_term l [] T e' (e[/sg/])
+                                         /\ (wf_sort l [] (t[/sg/]) -> eq_term l [] (t[/sg/]) e' (e[/sg/]))
                  | var _ => True
                  end) sx).
         { intro sx; induction sx as [|e0 sx' IH]; cbn; [exact I|]; split; [|exact IH].
           destruct e0 as [|ne0 se0]; [exact I|].
           intros c0 t0' Hctx0 Hwt0 Hdom0 xe0 Hrep0.
-          exact (faithful_rep_syn Hsyn a eF sg Hsound (con ne0 se0) c0 t0'
+          exact (faithful_rep_tr Htr a eF sg Hsound (con ne0 se0) c0 t0'
                    Hctx0 Hwt0 Hdom0 xe0 Hrep0). }
         assert (eq_args l [] c' args_terms s0[/sg/]) as Heqargs.
-        { exact (faithful_args_syn Hsyn a eF sg Hsound s0 c c' Hctx Hwfc'
+        { exact (faithful_args_tr Htr a eF sg Hsound s0 c c' Hctx Hwfc'
                    Hwfa Hdom (Hall s0) sids Hrepargs args_terms Hlk HwfaM). }
         exists c'.
         split. { exact Hwfc'. }
