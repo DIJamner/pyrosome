@@ -47,11 +47,16 @@ Definition nat_lang_def : lang :=
   ]
   ]}.
 
-Derive nat_lang
-       in (elab_lang_ext [] nat_lang_def nat_lang)
-       as nat_lang_wf.
-Proof. auto_elab. Qed.
-#[local] Definition nat_lang_entry := lang_entry (elab_lang_implies_wf nat_lang_wf).
+Definition nat_lang_injectivity :=
+  [("1+", ["n"]); ("neq_0_l", ["n"]); ("neq_0_r", ["n"]); ("neq", ["m"; "n"]); ("neq_1+", ["p"; "m"; "n"])].
+
+Definition nat_lang :=
+  Eval vm_compute in
+    (infer_lang_ext_simple [] nat_lang_def nat_lang_injectivity).
+
+Lemma nat_lang_wf : wf_lang_ext [] nat_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition nat_lang_entry := lang_entry nat_lang_wf.
 #[export] Hint Resolve nat_lang_entry : wf_lang_db.
 
 Definition nat_exp_def : lang :=
@@ -65,13 +70,18 @@ Definition nat_exp_def : lang :=
        #"nv" "n" : #"val" "G" #"nat"
   ]]}.
 
-Derive nat_exp
-       in (elab_lang_ext (nat_lang ++ value_subst)
-                               nat_exp_def
-                               nat_exp)
-       as nat_exp_wf.
-Proof. auto_elab. Qed.
-#[local] Definition nat_exp_entry := lang_entry (elab_lang_implies_wf nat_exp_wf).
+Definition nat_exp_injectivity :=
+  [("val_subst", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("neq_1+", ["p"; "m"; "n"]); ("cmp", ["G3"; "G1"]);
+   ("neq_0_r", ["n"]); ("nv", ["n"; "G"]); ("wkn", ["A"; "G"]); ("neq_0_l", ["n"]); ("ext", ["A"; "G"]); ("1+", ["n"]);
+   ("sub", ["G'"; "G"]); ("val", ["A"; "G"]); ("id", ["G"]); ("hd", ["A"; "G"]); ("forget", ["G"]); ("neq", ["m"; "n"])].
+
+Definition nat_exp :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (nat_lang ++ value_subst) nat_exp_def nat_exp_injectivity).
+
+Lemma nat_exp_wf : wf_lang_ext (nat_lang ++ value_subst) nat_exp.
+Proof. compute_wf_lang. Qed.
+#[local] Definition nat_exp_entry := lang_entry nat_exp_wf.
 #[export] Hint Resolve nat_exp_entry : wf_lang_db.
   
 Definition heap_def : lang :=
@@ -140,13 +150,16 @@ Definition heap_def : lang :=
   ]
   ]}.
 
-Derive heap
-       in (elab_lang_ext nat_lang
-                               heap_def
-                               heap)
-       as heap_wf.
-Proof. auto_elab. Qed.
-#[local] Definition heap_entry := lang_entry (elab_lang_implies_wf heap_wf).
+Definition heap_injectivity :=
+  [("lookup", ["l"]); ("neq_0_r", ["n"]); ("neq", ["m"; "n"]); ("1+", ["n"]); ("neq_1+", ["p"; "m"; "n"]); ("neq_0_l", ["n"])].
+
+Definition heap :=
+  Eval vm_compute in
+    (infer_lang_ext_simple nat_lang heap_def heap_injectivity).
+
+Lemma heap_wf : wf_lang_ext nat_lang heap.
+Proof. compute_wf_lang. Qed.
+#[local] Definition heap_entry := lang_entry heap_wf.
 #[export] Hint Resolve heap_entry : wf_lang_db.
 
 Definition heap_ops_def : lang :=
@@ -192,13 +205,20 @@ Definition heap_ops_def : lang :=
   ]
   ]}.
 
-Derive heap_ops
-       in (elab_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst)
-                               heap_ops_def
-                               heap_ops)
-       as heap_ops_wf.
-Proof. auto_elab. Qed.
-#[local] Definition heap_ops_entry := lang_entry (elab_lang_implies_wf heap_ops_wf).
+Definition heap_ops_injectivity :=
+  [("tt", ["G"]); ("hd", ["A"; "G"]); ("ret", ["v"; "A"; "G"]); ("cmp", ["G3"; "G1"]); ("neq_0_r", ["n"]);
+   ("val", ["A"; "G"]); ("id", ["G"]); ("lookup", ["l"]); ("nv", ["n"; "G"]); ("neq", ["m"; "n"]);
+   ("configuration", ["A"; "G"]); ("1+", ["n"]); ("ext", ["A"; "G"]); ("config", ["A"; "G"]); ("exp_subst", ["A"; "G"]);
+   ("neq_1+", ["p"; "m"; "n"]); ("val_subst", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("set", ["e'"; "e"; "G"]);
+   ("sub", ["G'"; "G"]); ("get", ["e"; "G"]); ("neq_0_l", ["n"]); ("exp", ["A"; "G"]); ("forget", ["G"]); ("wkn", ["A"; "G"])].
+
+Definition heap_ops :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst) heap_ops_def heap_ops_injectivity).
+
+Lemma heap_ops_wf : wf_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst) heap_ops.
+Proof. compute_wf_lang. Qed.
+#[local] Definition heap_ops_entry := lang_entry heap_ops_wf.
 #[export] Hint Resolve heap_ops_entry : wf_lang_db.
 
 Definition heap_ctx_def : lang :=
@@ -276,15 +296,27 @@ Definition heap_ctx_def : lang :=
   ]
   ]}.
 
-Derive heap_ctx
-       in (elab_lang_ext (eval_ctx ++ heap_ops
+Definition heap_ctx_injectivity :=
+  [("exp_subst", ["A"; "G"]); ("ext", ["A"; "G"]); ("[ ]", ["A"; "G"]); ("id", ["G"]); ("config", ["A"; "G"]);
+   ("Eset_l", ["e'"; "E"; "A"; "G"]); ("neq_0_l", ["n"]); ("Ectx", ["B"; "A"; "G"]); ("sub", ["G'"; "G"]); ("hd", ["A"; "G"]);
+   ("Eget", ["E"; "A"; "G"]); ("get", ["e"; "G"]); ("cmp", ["G3"; "G1"]); ("set", ["e'"; "e"; "G"]); ("neq_1+", ["p"; "m"; "n"]);
+   ("nv", ["n"; "G"]); ("val", ["A"; "G"]); ("wkn", ["A"; "G"]); ("configuration", ["A"; "G"]); ("forget", ["G"]); ("lookup", ["l"]);
+   ("plug", ["e"; "E"; "B"; "A"; "G"]); ("val_subst", ["A"; "G"]); ("neq_0_r", ["n"]); ("exp", ["A"; "G"]); ("tt", ["G"]);
+   ("neq", ["m"; "n"]); ("ret", ["v"; "A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("Eset_r", ["E"; "v"; "A"; "G"]); ("1+", ["n"])].
+
+Definition heap_ctx :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (eval_ctx ++ heap_ops
                                   ++ unit_lang
                                   ++ heap ++ nat_exp
                                   ++ nat_lang ++ exp_subst
-                                  ++ value_subst)
-                               heap_ctx_def
-                               heap_ctx)
-       as heap_ctx_wf.
-Proof. auto_elab. Qed.
-#[local] Definition heap_ctx_entry := lang_entry (elab_lang_implies_wf heap_ctx_wf).
+                                  ++ value_subst) heap_ctx_def heap_ctx_injectivity).
+
+Lemma heap_ctx_wf : wf_lang_ext (eval_ctx ++ heap_ops
+                                  ++ unit_lang
+                                  ++ heap ++ nat_exp
+                                  ++ nat_lang ++ exp_subst
+                                  ++ value_subst) heap_ctx.
+Proof. compute_wf_lang. Qed.
+#[local] Definition heap_ctx_entry := lang_entry heap_ctx_wf.
 #[export] Hint Resolve heap_ctx_entry : wf_lang_db.

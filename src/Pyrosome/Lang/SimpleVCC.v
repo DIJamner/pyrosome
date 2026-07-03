@@ -54,11 +54,19 @@ Definition prod_cc_def : lang :=
   ]]}.
 
 
-Derive prod_cc
-       in (elab_lang_ext (cps_prod_lang ++ block_subst ++value_subst) prod_cc_def prod_cc)
-       as prod_cc_wf.
-Proof. auto_elab. Qed.
-#[local] Definition prod_cc_entry := lang_entry (elab_lang_implies_wf prod_cc_wf).
+Definition prod_cc_injectivity :=
+  [("pm_pair", ["e"; "v"; "B"; "A"; "G"]); ("blk", ["G"]); (".1", ["v"; "B"; "A"; "G"]); ("wkn", ["A"; "G"]);
+   ("val_subst", ["A"; "G"]); ("forget", ["G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("hd", ["A"; "G"]); ("val", ["A"; "G"]);
+   ("blk_subst", ["G"]); ("ext", ["A"; "G"]); (".2", ["v"; "B"; "A"; "G"]); ("id", ["G"]); ("sub", ["G'"; "G"]);
+   ("prod", ["B"; "A"]); ("pair", ["e2"; "e1"; "B"; "A"; "G"]); ("cmp", ["G3"; "G1"])].
+
+Definition prod_cc :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (cps_prod_lang ++ block_subst ++value_subst) prod_cc_def prod_cc_injectivity).
+
+Lemma prod_cc_wf : wf_lang_ext (cps_prod_lang ++ block_subst ++value_subst) prod_cc.
+Proof. compute_wf_lang. Qed.
+#[local] Definition prod_cc_entry := lang_entry prod_cc_wf.
 #[export] Hint Resolve prod_cc_entry : wf_lang_db.
 
 Definition cc_lang_def : lang :=
@@ -104,14 +112,24 @@ Definition cc_lang_def : lang :=
       : #"val" (#"ext" #"emp" "A") (#"neg" "B")
   ]]}.
 
-Derive cc_lang
-  in (elab_lang_ext (prod_cc ++ cps_prod_lang
+Definition cc_lang_injectivity :=
+  [("neg", ["A"]); ("val", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("prod", ["B"; "A"]); ("blk_subst", ["G"]);
+   ("pm_pair", ["e"; "v"; "B"; "A"; "G"]); ("cmp", ["G3"; "G1"]); (".1", ["v"; "B"; "A"; "G"]); ("pair", ["e2"; "e1"; "B"; "A"; "G"]);
+   ("jmp", ["v2"; "v1"; "A"; "G"]); ("ext", ["A"; "G"]); ("wkn", ["A"; "G"]); ("sub", ["G'"; "G"]); ("blk", ["G"]);
+   ("hd", ["A"; "G"]); ("forget", ["G"]); ("id", ["G"]); ("closure", ["v"; "e"; "B"; "A"; "G"]); (".2", ["v"; "B"; "A"; "G"]);
+   ("val_subst", ["A"; "G"])].
+
+Definition cc_lang :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (prod_cc ++ cps_prod_lang
                              ++ block_subst ++value_subst)
                                cc_lang_def
-                               cc_lang)
-       as cc_lang_wf.
-Proof. auto_elab. Qed.
-#[local] Definition cc_entry := lang_entry (elab_lang_implies_wf cc_lang_wf).
+                               cc_lang_injectivity).
+
+Lemma cc_lang_wf : wf_lang_ext (prod_cc ++ cps_prod_lang
+                             ++ block_subst ++value_subst) cc_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition cc_entry := lang_entry cc_lang_wf.
 #[export] Hint Resolve cc_entry : wf_lang_db.
 
 Definition subst_cc_def : compiler :=
@@ -175,14 +193,18 @@ Definition forget_eq_wkn_def : lang :=
          : #"sub" (#"ext" #"emp" "A") #"emp"
       ]
   ]}.
-Derive forget_eq_wkn
-       in (elab_lang_ext value_subst
-                               forget_eq_wkn_def
-                               forget_eq_wkn)
-       as forget_eq_wkn_wf.
-Proof. auto_elab. Qed.
+Definition forget_eq_wkn_injectivity :=
+  [("wkn", ["A"; "G"]); ("cmp", ["G3"; "G1"]); ("ext", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("val", ["A"; "G"]);
+   ("forget", ["G"]); ("id", ["G"]); ("hd", ["A"; "G"]); ("sub", ["G'"; "G"]); ("val_subst", ["A"; "G"])].
+
+Definition forget_eq_wkn :=
+  Eval vm_compute in
+    (infer_lang_ext_simple value_subst forget_eq_wkn_def forget_eq_wkn_injectivity).
+
+Lemma forget_eq_wkn_wf : wf_lang_ext value_subst forget_eq_wkn.
+Proof. compute_wf_lang. Qed.
 #[local] Definition forget_eq_wkn_entry :=
-  lang_entry (elab_lang_implies_wf forget_eq_wkn_wf).
+  lang_entry forget_eq_wkn_wf.
 #[export] Hint Resolve forget_eq_wkn_entry : wf_lang_db.
 
 Definition cc_bidirectional_rules :=
