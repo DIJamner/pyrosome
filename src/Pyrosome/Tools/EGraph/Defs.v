@@ -20,6 +20,7 @@ From Utils.EGraph Require Import Semantics Defs QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Theory Require Import SyntacticSorts.
+From Pyrosome.Theory Require Import PatternRigidity.
 From Pyrosome.Theory Require ClosedTerm.
 Import Core.Notations.
 
@@ -426,11 +427,6 @@ Section WithVar.
      if it ran out of fuel (via [sequent_of_states : result sequent]).  A failed
      rebuild means the sequent would be built from a non-canonical egraph, so it
      is propagated rather than silently used. *)
-  (* The syntactic-sort-equality gate scans the whole language, so compute it
-     once (shared via this [Let]) rather than re-evaluating it for every ctx
-     var in the skip predicate below. *)
-  Let syntactic_sort_gate : bool := syntactic_sort_eq_langb l.
-
   Definition rule_to_log_rule n (r : rule) : Result.result (sequent V V) :=
     match r with
     | sort_rule c args =>
@@ -447,17 +443,14 @@ Section WithVar.
      *)
     | sort_eq_rule c t1 t2 =>
         (* Drop the query's sort requirements for ctx vars appearing in the LHS
-           [t1]: their nodes are bound by the LHS atoms and their sorts are
-           determined up to equivalence.  A sort is always a [scon], so every
-           free var of [t1] occurs as an atom argument (no bare-var case).
-
-           GATED on [syntactic_sort_eq_langb l]: the "sort determined up to
-           equivalence" justification holds only when [l] has syntactic sort
-           equality (see Theory.SyntacticSorts).  Otherwise the skip list is
-           empty and [add_ctx_gen] reduces to [add_ctx]. *)
-        let skip x := andb syntactic_sort_gate (inb x (fv_sort t1)) in
+           [t1]: per-variable PATTERN-RIGIDITY gate (Theory.PatternRigidity).
+           [rigid_sort_skip l c t1 x] holds when all sort-conversion obligations
+           incurred by the skip are between syntactically equal sorts.  A sort
+           is always a [scon], so every free var of [t1] occurs as an atom
+           argument (no bare-var case).  The gate subsumes syntactic sort
+           equality and covers ~98% of the polymorphic stack. *)
         sequent_of_states
-          (@!let sub <- add_ctx_gen false false skip c in
+          (@!let sub <- add_ctx_gen false false (rigid_sort_skip l c t1) c in
              let x1 <- add_open_sort false false sub t1 in
              ret (sub,x1))
           (fun '(sub,x1) =>
@@ -465,16 +458,12 @@ Section WithVar.
                (union x1 x2))
     | term_eq_rule c e1 e2 t =>
         (* As above, drop query sort requirements for ctx vars in the LHS [e1].
-           Guard the degenerate [e1 = var x] case: then [x]'s node is the whole
-           LHS and is referenced by no atom, so dropping its sort would leave it
-           unbound. *)
-        let skip x := andb syntactic_sort_gate
-                        (match e1 with
-                         | con _ _ => inb x (fv e1)
-                         | var _ => false
-                         end) in
+           Per-variable PATTERN-RIGIDITY gate (Theory.PatternRigidity).
+           [rigid_term_skip l c e1 x] already embeds the degenerate
+           [e1 = var x] guard (returns false for var-rooted e1) and the
+           [inb x (fv e1)] conjunct. *)
         sequent_of_states
-          (@!let sub <- add_ctx_gen false false skip c in
+          (@!let sub <- add_ctx_gen false false (rigid_term_skip l c e1) c in
              let x1 <- add_open_term false false sub e1 in
              ret (sub,x1))
           (* TODO: should I add that t is its sort?*)

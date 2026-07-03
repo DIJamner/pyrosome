@@ -22,7 +22,7 @@ From coqutil Require Import Map.Interface Datatypes.Result.
 From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations Result.
 From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsParents SemanticsAreUnified SemanticsSaturate SemanticsUnionSem SemanticsLSurvive SemanticsRebuildCanon SemanticsAnalysesCover SemanticsHashDb.
 Import Monad.StateMonad.
-From Pyrosome.Theory Require Import Core ModelImpls SyntacticSortCovering.
+From Pyrosome.Theory Require Import Core ModelImpls SyntacticSortCovering PatternRigidity.
 From Pyrosome.Theory Require WfCutElim.
 Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.
@@ -463,7 +463,7 @@ Section WithVar.
     (* in turn comes from the LHS image, so it cannot be done here (the       *)
     (* [wf_subst]-needs-[wf_subst] circularity).  [eq_ctx_inversion_gen]      *)
     (* closes it by feeding [sg]+[Hfaith] (plus the image) through            *)
-    (* [skip_decl_wf_from_image] / [Core.covering_var_leaf_syn]. *)
+    (* [skip_decl_wf_from_image] / [SyntacticSortCovering.covering_var_leaf_tr_con]. *)
     Lemma ctx_readback_vals_gen (no_sort : V -> bool) (eF : instance X) (a : interp)
       (Hsound : forall al, ain al eF -> asnd a al)
       : forall c sub, wf_ctx l c ->
@@ -547,14 +547,16 @@ Section WithVar.
     (*    applies -- exactly as in [ctx_readback_wf_subst]).                    *)
     (*  - SKIP head [x]: the value + [wf_term l [] es (t[/sg'/])] are supplied  *)
     (*    by [skip_decl_wf] (discharged at the assembly from the LHS image via   *)
-    (*    [skip_decl_wf_from_image], i.e. [Core.covering_var_leaf_syn] fed by    *)
-    (*    the wf_subst-free [Theorems.faithful_rep_syn], gated on               *)
-    (*    [syntactic_sort_eq l]).                                               *)
+    (*    [skip_decl_wf_from_image], i.e. [covering_var_leaf_rigid_con] fed by  *)
+    (*    the wf_subst-free [Theorems.faithful_rep_rigid_root], gated on the    *)
+    (*    per-variable pattern-rigidity check (Theory/PatternRigidity.v)).      *)
     (* The skip-var declared-sort witness, phrased against the INCREMENTAL
        prefix substitution [sg'] the induction produces (a genuine wf_subst
        over the prefix [c']).  At the assembly this is discharged from the LHS
-       image by [skip_decl_wf_from_image] via [Core.covering_var_leaf_syn]
-       (under [syntactic_sort_eq l]). *)
+       image by [skip_decl_wf_from_image] via [covering_var_leaf_rigid_con]
+       (gated on per-variable pattern rigidity, [rigid_term_skip]/
+       [rigid_sort_skip]; the transport-based [_tr] variants above remain
+       for the general seam). *)
     Fixpoint skip_decl_wf (no_sort : V -> bool) (a : interp)
       (sub : named_list V) (c0 : ctx) {struct c0} : Prop :=
       match c0, sub with
@@ -770,24 +772,26 @@ Section WithVar.
       apply Hagree; exact Hyc'.
     Qed.
     (* ================================================================== *)
-    (* THE SKIP-VARIABLE DISCHARGE (gated on [syntactic_sort_eq l]).        *)
+    (* THE SKIP-VARIABLE DISCHARGE (gated on [sort_transport_at l []]).    *)
     (*                                                                     *)
     (* Both the term-LHS ([skip_var_decl_sort_wf]) and sort-LHS            *)
     (* ([skip_var_decl_sort_wf_scon]) skip-variable obligations are        *)
-    (* discharged by [Core.covering_var_leaf_syn] (resp. its args helper),  *)
-    (* which -- under [syntactic_sort_eq l] -- delivers, for every var [x]  *)
-    (* occurring in a source-typed [e] whose IMAGE [e[/sg/]] is wf, that    *)
-    (* [sg x] is wf at x's substituted DECLARED sort [t[/sg/]].  No         *)
-    (* [wf_subst l [] sg Cfull] is needed (that is the obstruction the      *)
-    (* gating dissolves: the use=declared [eq_sort] collapses to syntactic  *)
-    (* equality).  The single missing ingredient is the wf_subst-free       *)
-    (* whole-LHS image wf, supplied by [Theorems.faithful_rep_syn] (term)   *)
-    (* and [Theorems.faithful_rep_sort_syn] (sort).  The former             *)
-    (* [skip_var_decl_sort_core] checkpoint (an [Admitted]                  *)
-    (* substitution-typing-reflection metatheorem) is hereby ELIMINATED.    *)
+    (* discharged by [covering_var_leaf_tr_con] (resp. its args helper),   *)
+    (* which -- under [sort_transport_at l []] -- delivers, for every      *)
+    (* var [x] occurring in a source-typed [e] whose IMAGE [e[/sg/]] is    *)
+    (* wf, that [sg x] is wf at x's substituted DECLARED sort [t[/sg/]].  *)
+    (* No [wf_subst l [] sg Cfull] is needed.  The single missing         *)
+    (* ingredient is the wf_subst-free whole-LHS image wf, supplied by    *)
+    (* [Theorems.faithful_rep_tr] (term) and                              *)
+    (* [Theorems.faithful_rep_sort_args_tr] (sort).  The former           *)
+    (* [skip_var_decl_sort_core] checkpoint (an [Admitted]                *)
+    (* substitution-typing-reflection metatheorem) is hereby ELIMINATED.  *)
+    (* [syntactic_sort_eq l] implies [sort_transport_at l []] via          *)
+    (* [syntactic_sort_eq_transport_at], and the weakened poly checker     *)
+    (* will discharge it once its soundness proof lands.                   *)
 
     Lemma skip_var_decl_sort_wf (no_sort : V -> bool) (eF : instance X) (a : interp)
-      (Hsyn : syntactic_sort_eq l)
+      (Htr : sort_transport_at l [])
       (Hsound : forall al, ain al eF -> asnd a al)
       (sg : subst) (n0 : V) (s0 : list term) (x1 : V)
       (Hrep : @Theorems.represents V V_Eqb V_default V_map V_trie sort_of X l a eF sg
@@ -805,7 +809,7 @@ Section WithVar.
       (* the full model value-map [sg] covers the whole rule context, hence in
          particular [c'] (= x's dependencies). *)
       (Hdomsg : incl (map fst c') (map fst sg))
-      (* [sg] domain spans the whole rule ctx (= [covering_var_leaf_syn]'s [Hmap]). *)
+      (* [sg] domain spans the whole rule ctx (= [covering_var_leaf_tr_con]'s [Hmap]). *)
       (Hdomsgcf : map fst sg = map fst Cfull)
       (Hagree : forall y, In y (map fst c') ->
                   named_list_lookup default sg' y = named_list_lookup default sg y)
@@ -820,17 +824,36 @@ Section WithVar.
         induction pre as [|[pn pt] pre IH]; cbn [app] in Hwfcf.
         - apply invert_wf_ctx_cons in Hwfcf. apply Hwfcf.
         - apply invert_wf_ctx_cons in Hwfcf. apply IH. apply Hwfcf. }
+      assert (Hwfc' : wf_ctx l c').
+      { subst Cfull.
+        assert (Hgen : forall pre0 cc, wf_ctx l (pre0 ++ cc) -> wf_ctx l cc).
+        { clear. intros pre0; induction pre0 as [|[pn pt] pre0 IHp]; intros cc Hw.
+          - cbn in Hw. exact Hw.
+          - cbn in Hw. apply invert_wf_ctx_cons in Hw.
+            destruct Hw as [_ [Hw' _] ]. exact (IHp cc Hw'). }
+        pose proof (Hgen pre ((x,t)::c') Hwfcf) as Hsuf.
+        apply invert_wf_ctx_cons in Hsuf.
+        destruct Hsuf as [_ [Hwfc'' _] ]. exact Hwfc''. }
       rewrite (decl_sort_subst_prefix_eq sg sg' t c' Hwst Hdomsg' Hdomsg Hagree).
       (* Goal is now [wf_term l [] (sg x) (t[/sg/])]. *)
-      (* whole-LHS image wf at the source sort [t1], wf_subst-free under [Hsyn]. *)
+      (* Derive [wf_sort l [] (t[/sg/])] for the trailing argument of
+         [covering_var_leaf_tr_con].  First get [wf_sort l [] (t[/sg'/])] from
+         [Hwst] and [Hwfsub'], then rewrite along
+         [decl_sort_subst_prefix_eq]. *)
+      assert (Hwfts : wf_sort l [] (t[/sg/])).
+      { assert (Hwfts' : wf_sort l [] (t[/sg'/]))
+          by (exact (wf_sort_subst_monotonicity Hwf Hwst Hwfc' Hwfsub')).
+        rewrite <- (decl_sort_subst_prefix_eq sg sg' t c' Hwst Hdomsg' Hdomsg Hagree).
+        exact Hwfts'. }
+      (* whole-LHS image wf, wf_subst-free under [Htr]. *)
       assert (Hdom : incl (map fst Cfull) (map fst sg))
         by (rewrite Hdomsgcf; apply incl_refl).
-      pose proof (@Theorems.faithful_rep_syn V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
-                    X l Hwf Hsof Hsyn a eF sg Hsound (con n0 s0) Cfull t1 Hwfcf Hwfe1f Hdom x1 Hrep)
+      pose proof (@Theorems.faithful_rep_tr V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
+                    X l Hwf Hsof Htr a eF sg Hsound (con n0 s0) Cfull t1 Hwfcf Hwfe1f Hdom x1 Hrep)
         as Hfr.
-      destruct Hfr as (e' & Hget & Heqt).
-      assert (Himg : wf_term l [] ((con n0 s0)[/sg/]) (t1[/sg/]))
-        by (exact (eq_term_wf_r Hwf ltac:(constructor) Heqt)).
+      destruct Hfr as (e' & T & Hget & HeqT & _).
+      assert (Himg : wf_term l [] ((con n0 s0)[/sg/]) T)
+        by (exact (eq_term_wf_r Hwf ltac:(constructor) HeqT)).
       (* [x] is in [dom sg] (it is the head of the suffix of [Cfull]). *)
       assert (Hxin : In x (map fst sg)).
       { rewrite Hdomsgcf, Hcfull, map_app. apply in_or_app; right.
@@ -838,25 +861,79 @@ Section WithVar.
       assert (Hlk : named_list_lookup default sg x = subst_lookup sg x)
         by (apply (nll_default_indep sg x default (var x) Hxin)).
       rewrite Hlk.
-      (* The covering metatheorem (under [Hsyn]) closes the leaf. *)
-      exact (@covering_var_leaf_syn V V_Eqb V_Eqb_ok l Hwf [] Cfull sg
-               Hsyn Hwfcf Hdomsgcf (con n0 s0) t1 Hwfe1f Himg x t Hxfv
-               ltac:(rewrite Hcfull; apply in_or_app; right; left; reflexivity)).
+      (* The covering metatheorem (under [Htr]) closes the leaf. *)
+      exact (@covering_var_leaf_tr_con V V_Eqb V_Eqb_ok V_default l Hwf [] Cfull sg
+               Htr ltac:(constructor) Hwfcf Hdomsgcf n0 s0 t1 T Hwfe1f Himg x t Hxfv
+               ltac:(rewrite Hcfull; apply in_or_app; right; left; reflexivity)
+               Hwfts).
+    Qed.
+
+    (* Rigid variant of [skip_var_decl_sort_wf]: the [sort_transport_at] gate
+       is replaced by pattern-rigidity checker booleans from
+       [PatternRigidity.check_args].  The rest of the statement is identical. *)
+    Lemma skip_var_decl_sort_wf_rigid (no_sort : V -> bool) (eF : instance X) (a : interp)
+      (Hsound : forall al, ain al eF -> asnd a al)
+      (sg : subst) (n0 : V) (s0 : list term) (x1 : V)
+      (Hrep : @Theorems.represents V V_Eqb V_default V_map V_trie sort_of X l a eF sg
+                (con n0 s0) x1)
+      (cR : ctx) (argsR : list V) (tR : sort)
+      (Hrule : named_list_lookup_err l n0 = Some (term_rule cR argsR tR))
+      (Hchk : fst (check_args l s0 cR) = true)
+      (Cfull pre : ctx) (t1 : sort)
+      (Hwfcf : wf_ctx l Cfull) (Hwfe1f : wf_term l Cfull (con n0 s0) t1)
+      (x : V) (t : sort) (c' : ctx) (sg' : subst)
+      (Hcfull : Cfull = pre ++ (x,t)::c')
+      (Hxfv : In x (fv (con n0 s0)))
+      (Hocc : forall E, In (x, E) (snd (check_args l s0 cR)) -> E = t)
+      (Hwfsub' : wf_subst l [] sg' c')
+      (Hdomsg' : map fst sg' = map fst c')
+      (Hdomsg : incl (map fst c') (map fst sg))
+      (Hdomsgcf : map fst sg = map fst Cfull)
+      (Hagree : forall y, In y (map fst c') ->
+                  named_list_lookup default sg' y = named_list_lookup default sg y)
+      : wf_term l [] (named_list_lookup default sg x) (t[/sg'/]).
+    Proof.
+      assert (Hwst : wf_sort l c' t).
+      { subst Cfull.
+        clear -Hwfcf.
+        induction pre as [|[pn pt] pre IH]; cbn [app] in Hwfcf.
+        - apply invert_wf_ctx_cons in Hwfcf. apply Hwfcf.
+        - apply invert_wf_ctx_cons in Hwfcf. apply IH. apply Hwfcf. }
+      rewrite (decl_sort_subst_prefix_eq sg sg' t c' Hwst Hdomsg' Hdomsg Hagree).
+      assert (Hdom : incl (map fst Cfull) (map fst sg))
+        by (rewrite Hdomsgcf; apply incl_refl).
+      pose proof (@Theorems.faithful_rep_rigid_root V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
+                    X l Hwf Hsof a eF sg Hsound n0 s0 cR argsR tR Cfull t1 Hrule Hchk Hwfcf Hwfe1f Hdom x1 Hrep)
+        as Hfr.
+      destruct Hfr as (e' & T & Hget & HeqT & Himg).
+      assert (Hxin : In x (map fst sg)).
+      { rewrite Hdomsgcf, Hcfull, map_app. apply in_or_app; right.
+        cbn [map fst]. left; reflexivity. }
+      assert (Hlk : named_list_lookup default sg x = subst_lookup sg x)
+        by (apply (nll_default_indep sg x default (var x) Hxin)).
+      rewrite Hlk.
+      assert (HinCfull : In (x, t) Cfull)
+        by (rewrite Hcfull; apply in_or_app; right; left; reflexivity).
+      eapply (@PatternRigidity.covering_var_leaf_rigid_con V V_Eqb V_Eqb_ok l Hwf
+               [] Cfull sg Hwfcf Hdomsgcf n0 s0 cR argsR tR t1 T);
+        [ exact Hrule | exact Hchk | exact Hwfe1f | exact Himg | exact Hxfv | exact HinCfull | exact Hocc ].
     Qed.
 
     (* =============================================================== *)
     (* Discharge of [skip_decl_wf] from the LHS image: assemble the     *)
     (* per-skip-var declared-sort witnesses (each from                  *)
-    (* [skip_var_decl_sort_wf]) into the [skip_decl_wf] predicate by      *)
-    (* induction over the ctx/sub telescope.  Fully Qed modulo the one    *)
-    (* admitted checkpoint [skip_var_decl_sort_wf]. *)
+    (* [skip_var_decl_sort_wf_rigid]) into the [skip_decl_wf] predicate  *)
+    (* by induction over the ctx/sub telescope.  The gate is now the     *)
+    (* per-variable pattern-rigidity boolean [rigid_term_skip]           *)
+    (* (Theory/PatternRigidity.v); the transport-based                   *)
+    (* [skip_var_decl_sort_wf] above remains for the general seam. *)
     Lemma skip_decl_wf_from_image (no_sort : V -> bool) (eF : instance X) (a : interp)
-      (Hsyn_skip : forall x, no_sort x = true -> syntactic_sort_eq l)
       (Hsound : forall al, ain al eF -> asnd a al)
       (sg : subst) (n0 : V) (s0 : list term) (x1 : V)
       (Hrep : @Theorems.represents V V_Eqb V_default V_map V_trie sort_of X l a eF sg
                 (con n0 s0) x1)
       : forall c sub t1, wf_ctx l c -> wf_term l c (con n0 s0) t1 ->
+          (forall x, no_sort x = true -> rigid_term_skip l c (con n0 s0) x = true) ->
           map fst c = map fst sub ->
           (* the full model value-map [sg] covers the whole rule context *)
           map fst sg = map fst c ->
@@ -866,7 +943,7 @@ Section WithVar.
                   = Some (inl (named_list_lookup default sg x))) ->
           skip_decl_wf no_sort a sub c.
     Proof.
-      intros Cfull sub t1 Hwfcf Hwfe1f Hdom Hdomsgc Hskipset Hvals.
+      intros Cfull sub t1 Hwfcf Hwfe1f Hrig Hdom Hdomsgc Hskipset Hvals.
       (* Track the prefix [pre] so that, at each head [(x,t)::c'], the FULL ctx
          is [Cfull = pre ++ (x,t)::c'].  This certifies [t] is x's declared sort
          over its strict prefix [c'] (the telescope link [skip_var_decl_sort_wf]
@@ -947,9 +1024,22 @@ Section WithVar.
         { rewrite Hdomsgc. rewrite Hpre'.
           rewrite map_app. cbn [map app]. intro z. intro Hz.
           apply in_or_app. right. right. exact Hz. }
-        eapply (skip_var_decl_sort_wf no_sort eF a (Hsyn_skip x Hns) Hsound sg n0 s0 x1 Hrep
-                  Cfull pre t1 Hwfcf Hwfe1f x t c' sg' Hpre' Hxfv Hwfsub' Hdomsg' Hincl
-                  Hdomsgc Hagree).
+        (* use rigidity checker to extract rule info *)
+        pose proof (rigid_term_skip_inv l Cfull (con n0 s0) x (Hrig x Hns))
+          as Hinv.
+        destruct Hinv as (n0' & s0' & cR & argsR & tR & tx & Heq1 & Hrule & Hchk & Hxfv' & Hlkc & Hocc').
+        injection Heq1 as Hn0eq Hs0eq. subst n0' s0'.
+        (* pin tx to t via all-fresh Cfull *)
+        assert (HallfrCf : all_fresh Cfull) by (eauto with model).
+        symmetry in Hlkc.
+        apply named_list_lookup_err_in in Hlkc.
+        assert (HinCfull_xt : In (x, t) Cfull)
+          by (rewrite Hpre'; apply in_or_app; right; left; reflexivity).
+        pose proof (in_all_fresh_same _ _ _ _ HallfrCf Hlkc HinCfull_xt) as Heqtx.
+        subst tx.
+        exact (skip_var_decl_sort_wf_rigid no_sort eF a Hsound sg n0 s0 x1 Hrep
+                  cR argsR tR Hrule Hchk Cfull pre t1 Hwfcf Hwfe1f x t c' sg' Hpre' Hxfv
+                  Hocc' Hwfsub' Hdomsg' Hincl Hdomsgc Hagree).
     Qed.
 
     (* ============ SORT_EQ analogues (scon LHS) ============ *)
@@ -958,7 +1048,7 @@ Section WithVar.
        occurring in a SORT LHS [scon n0 s0].  Same residual obligation
        (use->declared sort conversion). *)
     Lemma skip_var_decl_sort_wf_scon (no_sort : V -> bool) (eF : instance X) (a : interp)
-      (Hsyn : syntactic_sort_eq l)
+      (Htr : sort_transport_at l [])
       (Hsound : forall al, ain al eF -> asnd a al)
       (sg : subst) (n0 : V) (s0 : list term) (xs1 : V)
       (Hrep : @Theorems.represents_sort V V_Eqb V_default V_map V_trie sort_of X l a eF sg
@@ -982,13 +1072,30 @@ Section WithVar.
         induction pre as [|[pn pt] pre IH]; cbn [app] in Hwfcf.
         - apply invert_wf_ctx_cons in Hwfcf. apply Hwfcf.
         - apply invert_wf_ctx_cons in Hwfcf. apply IH. apply Hwfcf. }
+      assert (Hwfc' : wf_ctx l c').
+      { subst Cfull.
+        assert (Hgen : forall pre0 cc, wf_ctx l (pre0 ++ cc) -> wf_ctx l cc).
+        { clear. intros pre0; induction pre0 as [|[pn pt] pre0 IHp]; intros cc Hw.
+          - cbn in Hw. exact Hw.
+          - cbn in Hw. apply invert_wf_ctx_cons in Hw.
+            destruct Hw as [_ [Hw' _] ]. exact (IHp cc Hw'). }
+        pose proof (Hgen pre ((x,t)::c') Hwfcf) as Hsuf.
+        apply invert_wf_ctx_cons in Hsuf.
+        destruct Hsuf as [_ [Hwfc'' _] ]. exact Hwfc''. }
       rewrite (decl_sort_subst_prefix_eq sg sg' t c' Hwst Hdomsg' Hdomsg Hagree).
+      (* Derive [wf_sort l [] (t[/sg/])] for the trailing argument of
+         [covering_var_leaf_tr_args_aux]. *)
+      assert (Hwfts : wf_sort l [] (t[/sg/])).
+      { assert (Hwfts' : wf_sort l [] (t[/sg'/]))
+          by (exact (wf_sort_subst_monotonicity Hwf Hwst Hwfc' Hwfsub')).
+        rewrite <- (decl_sort_subst_prefix_eq sg sg' t c' Hwst Hdomsg' Hdomsg Hagree).
+        exact Hwfts'. }
       (* source + (wf_subst-free) image wf_args of the LHS sort, sharing the
-         rule ctx [cR], from the faithful sort representation under [Hsyn]. *)
+         rule ctx [cR], from the faithful sort representation under [Htr]. *)
       assert (Hdom : incl (map fst Cfull) (map fst sg))
         by (rewrite Hdomsgcf; apply incl_refl).
-      pose proof (@Theorems.faithful_rep_sort_args_syn V V_Eqb V_Eqb_ok V_default V_map V_trie
-                    sort_of X l Hwf Hsof Hsyn a eF sg Hsound n0 s0 Cfull Hwfcf Hwft1f Hdom xs1 Hrep)
+      pose proof (@Theorems.faithful_rep_sort_args_tr V V_Eqb V_Eqb_ok V_default V_map V_trie
+                    sort_of X l Hwf Hsof Htr a eF sg Hsound n0 s0 Cfull Hwfcf Hwft1f Hdom xs1 Hrep)
         as Hfrs.
       destruct Hfrs as (cR & HwfcR & HwfaSrc & HwfaImg).
       (* [x] is in [dom sg]. *)
@@ -998,22 +1105,75 @@ Section WithVar.
       assert (Hlk : named_list_lookup default sg x = subst_lookup sg x)
         by (apply (nll_default_indep sg x default (var x) Hxin)).
       rewrite Hlk.
-      (* The covering args walk (under [Hsyn]) closes the leaf. *)
-      exact (@covering_var_leaf_syn_args_aux V V_Eqb V_Eqb_ok l Hwf [] Cfull sg
-               Hsyn Hwfcf Hdomsgcf s0
-               (fun e _ => @covering_var_leaf_syn V V_Eqb V_Eqb_ok l Hwf [] Cfull sg
-                             Hsyn Hwfcf Hdomsgcf e)
+      (* The covering args walk (under [Htr]) closes the leaf. *)
+      exact (@covering_var_leaf_tr_args_aux V V_Eqb V_Eqb_ok l Hwf [] Cfull sg
+               Htr ltac:(constructor) Hwfcf Hdomsgcf s0
+               (fun e _ => @covering_var_leaf_tr V V_Eqb V_Eqb_ok V_default l Hwf [] Cfull sg
+                             Htr ltac:(constructor) Hwfcf Hdomsgcf e)
                cR HwfcR HwfaSrc HwfaImg x t Hxfv
-               ltac:(rewrite Hcfull; apply in_or_app; right; left; reflexivity)).
+               ltac:(rewrite Hcfull; apply in_or_app; right; left; reflexivity)
+               Hwfts).
+    Qed.
+
+    (* Rigid variant of [skip_var_decl_sort_wf_scon]: the [sort_transport_at]
+       gate is replaced by pattern-rigidity checker booleans. *)
+    Lemma skip_var_decl_sort_wf_scon_rigid (no_sort : V -> bool) (eF : instance X) (a : interp)
+      (Hsound : forall al, ain al eF -> asnd a al)
+      (sg : subst) (n0 : V) (s0 : list term) (xs1 : V)
+      (Hrep : @Theorems.represents_sort V V_Eqb V_default V_map V_trie sort_of X l a eF sg
+                (scon n0 s0) xs1)
+      (cR : ctx) (argsR : list V)
+      (Hrule : named_list_lookup_err l n0 = Some (sort_rule cR argsR))
+      (Hchk : fst (check_args l s0 cR) = true)
+      (Cfull pre : ctx)
+      (Hwfcf : wf_ctx l Cfull) (Hwft1f : wf_sort l Cfull (scon n0 s0))
+      (x : V) (t : sort) (c' : ctx) (sg' : subst)
+      (Hcfull : Cfull = pre ++ (x,t)::c')
+      (Hxfv : In x (fv_args s0))
+      (Hocc : forall E, In (x, E) (snd (check_args l s0 cR)) -> E = t)
+      (Hwfsub' : wf_subst l [] sg' c')
+      (Hdomsg' : map fst sg' = map fst c')
+      (Hdomsg : incl (map fst c') (map fst sg))
+      (Hdomsgcf : map fst sg = map fst Cfull)
+      (Hagree : forall y, In y (map fst c') ->
+                  named_list_lookup default sg' y = named_list_lookup default sg y)
+      : wf_term l [] (named_list_lookup default sg x) (t[/sg'/]).
+    Proof.
+      assert (Hwst : wf_sort l c' t).
+      { subst Cfull.
+        clear -Hwfcf.
+        induction pre as [|[pn pt] pre IH]; cbn [app] in Hwfcf.
+        - apply invert_wf_ctx_cons in Hwfcf. apply Hwfcf.
+        - apply invert_wf_ctx_cons in Hwfcf. apply IH. apply Hwfcf. }
+      rewrite (decl_sort_subst_prefix_eq sg sg' t c' Hwst Hdomsg' Hdomsg Hagree).
+      assert (Hdom : incl (map fst Cfull) (map fst sg))
+        by (rewrite Hdomsgcf; apply incl_refl).
+      pose proof (@Theorems.faithful_rep_sort_args_rigid V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of
+                    X l Hwf Hsof a eF sg Hsound n0 s0 cR argsR Cfull Hrule Hchk Hwfcf Hwft1f Hdom xs1 Hrep)
+        as Hfrs.
+      destruct Hfrs as (HwfcR & HwfaSrc & HwfaImg).
+      assert (Hxin : In x (map fst sg)).
+      { rewrite Hdomsgcf, Hcfull, map_app. apply in_or_app; right.
+        cbn [map fst]. left; reflexivity. }
+      assert (Hlk : named_list_lookup default sg x = subst_lookup sg x)
+        by (apply (nll_default_indep sg x default (var x) Hxin)).
+      rewrite Hlk.
+      exact (@PatternRigidity.covering_var_leaf_rigid_args_aux V V_Eqb V_Eqb_ok l Hwf
+               [] Cfull sg Hwfcf Hdomsgcf s0
+               (fun e _ => @PatternRigidity.covering_var_leaf_rigid V V_Eqb V_Eqb_ok l Hwf
+                             [] Cfull sg Hwfcf Hdomsgcf e)
+               cR HwfcR Hchk HwfaSrc HwfaImg x t Hxfv
+               ltac:(rewrite Hcfull; apply in_or_app; right; left; reflexivity)
+               Hocc).
     Qed.
 
     Lemma skip_decl_wf_from_image_sort (no_sort : V -> bool) (eF : instance X) (a : interp)
-      (Hsyn_skip : forall x, no_sort x = true -> syntactic_sort_eq l)
       (Hsound : forall al, ain al eF -> asnd a al)
       (sg : subst) (n0 : V) (s0 : list term) (xs1 : V)
       (Hrep : @Theorems.represents_sort V V_Eqb V_default V_map V_trie sort_of X l a eF sg
                 (scon n0 s0) xs1)
       : forall c sub, wf_ctx l c -> wf_sort l c (scon n0 s0) ->
+          (forall x, no_sort x = true -> rigid_sort_skip l c (scon n0 s0) x = true) ->
           map fst c = map fst sub ->
           map fst sg = map fst c ->
           (forall x, no_sort x = true -> In x (fv_sort (scon n0 s0))) ->
@@ -1022,7 +1182,7 @@ Section WithVar.
                   = Some (inl (named_list_lookup default sg x))) ->
           skip_decl_wf no_sort a sub c.
     Proof.
-      intros Cfull sub Hwfcf Hwft1f Hdom Hdomsgc Hskipset Hvals.
+      intros Cfull sub Hwfcf Hwft1f Hrig Hdom Hdomsgc Hskipset Hvals.
       cut (forall (c : ctx) sub,
              (exists pre, Cfull = pre ++ c) ->
              map fst c = map fst sub ->
@@ -1086,9 +1246,21 @@ Section WithVar.
         { rewrite Hdomsgc. rewrite Hpre'.
           rewrite map_app. cbn [map app]. intro z. intro Hz.
           apply in_or_app. right. right. exact Hz. }
-        eapply (skip_var_decl_sort_wf_scon no_sort eF a (Hsyn_skip x Hns) Hsound sg n0 s0 xs1 Hrep
-                  Cfull pre Hwfcf Hwft1f x t c' sg' Hpre' Hxfv Hwfsub' Hdomsg' Hincl
-                  Hdomsgc Hagree).
+        (* use rigidity checker to extract rule info *)
+        pose proof (rigid_sort_skip_inv l Cfull (scon n0 s0) x (Hrig x Hns))
+          as Hinv.
+        destruct Hinv as (n0' & s0' & cR & argsR & tx & Heq1 & Hrule & Hchk & Hxfv' & Hlkc & Hocc').
+        injection Heq1 as Hn0eq Hs0eq. subst n0' s0'.
+        assert (HallfrCf : all_fresh Cfull) by (eauto with model).
+        symmetry in Hlkc.
+        apply named_list_lookup_err_in in Hlkc.
+        assert (HinCfull_xt : In (x, t) Cfull)
+          by (rewrite Hpre'; apply in_or_app; right; left; reflexivity).
+        pose proof (in_all_fresh_same _ _ _ _ HallfrCf Hlkc HinCfull_xt) as Heqtx.
+        subst tx.
+        exact (skip_var_decl_sort_wf_scon_rigid no_sort eF a Hsound sg n0 s0 xs1 Hrep
+                  cR argsR Hrule Hchk Cfull pre Hwfcf Hwft1f x t c' sg' Hpre' Hxfv
+                  Hocc' Hwfsub' Hdomsg' Hincl Hdomsgc Hagree).
     Qed.
 
   End AddCtxInvert.

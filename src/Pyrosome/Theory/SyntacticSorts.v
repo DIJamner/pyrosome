@@ -121,6 +121,25 @@ Section WithVar.
 
   Definition index_heads_b (l : lang) : list V := seed_index_heads l.
 
+  (* [seed_index_heads] is only a sound over-approximation of [index_head]
+     when it is already closed under one [close_index_step] pass.  The
+     polymorphic languages break that: e.g. [ty_subst g A : ty] carries a
+     [g : ty_sub] argument and concludes at the index head [ty], so [ty_sub]
+     belongs in the cone -- yet nothing is *indexed by* a [ty_sub], so it is
+     not in the seed.  [index_heads_sat] iterates the closure to a fixpoint
+     (bounded by [length l], since each non-fixpoint step adds a head and
+     heads are drawn from the finitely-many rule heads). *)
+  Fixpoint saturate_heads (fuel : nat) (l : lang) (R : list V) : list V :=
+    match fuel with
+    | 0 => R
+    | S fuel' =>
+        let R' := close_index_step l R in
+        if inclb R' R then R else saturate_heads fuel' l R'
+    end.
+
+  Definition index_heads_sat (l : lang) : list V :=
+    saturate_heads (List.length l) l (seed_index_heads l).
+
   (* ---------------------------------------------------------------- *)
   (* The decision procedure                                            *)
   (* ---------------------------------------------------------------- *)
@@ -132,6 +151,39 @@ Section WithVar.
     && forallb (fun p => match snd p with
                          | term_eq_rule _ _ _ t => negb (inb (sort_head t) R)
                          | _ => true end) l.
+
+  (* The WEAKENED procedure (candidate min-sorts gate for the polymorphic /
+     existential languages).  Two relaxations vs. [syntactic_sort_eq_langb]:
+     (a) index heads are computed by full saturation [index_heads_sat]
+         (needed even for the simply-typed check's shape once [ty_subst]-style
+         constructors are present);
+     (b) a [term_eq_rule] concluding at an index head is permitted when it is
+         UNGATED -- every context variable occurs in the equated terms
+         (unlike the SubstWfCounterexample gates, whose witness variable
+         occurs in neither side).
+
+     CAUTION: this boolean ALONE does not certify the sort-transport property
+     the skip soundness needs.  A trans-chain can route through a middle whose
+     variables are pinned by only ONE side of an ungated equation, and if such
+     a variable's sort has no closed inhabitant the chain does not replay in
+     the empty context -- machine-checked counterexample in
+     WIP/TransportCounterexample.v.  The intended soundness statement pairs
+     this boolean with a per-language closed-inhabitation side condition for
+     the index fragment (Prop-level; see WIP/SortTransport.v), whose
+     sufficiency is itself still an open conjecture.  The e-graph gate
+     remains [syntactic_sort_eq_langb] until that is settled. *)
+  Definition ungated_index_term_eqb (R : list V) (r : rule) : bool :=
+    match r with
+    | term_eq_rule c e1 e2 t =>
+        negb (inb (sort_head t) R) || inclb (map fst c) (fv e1 ++ fv e2)
+    | _ => true
+    end.
+
+  Definition syntactic_sort_eq_langb' (l : lang) : bool :=
+    let R := index_heads_sat l in
+    forallb (fun p => negb (is_sort_eq_ruleb (snd p))) l
+    && inclb (close_index_step l R) R
+    && forallb (fun p => ungated_index_term_eqb R (snd p)) l.
 
   (* ---------------------------------------------------------------- *)
   (* Helper soundness lemmas about the decision procedure              *)
@@ -181,6 +233,58 @@ Section WithVar.
           autorewrite with utils.
           rewrite H1; assumption. }
         assumption.
+    Qed.
+
+    (* Generalization of [index_head_in_seed] to any set [R] that contains the
+       seed and is closed under one [close_index_step] pass.  This is what lets
+       the saturated cone [index_heads_sat] soundly over-approximate. *)
+    Lemma index_head_in_closed (R : list V) :
+      incl (seed_index_heads l) R ->
+      incl (close_index_step l R) R ->
+      forall h, index_head l h -> In h R.
+    Proof.
+      intros Hseed Hcl.
+      induction 1.
+      - (* idx_seed *)
+        apply Hseed. apply in_flat_map.
+        exists (n, sort_rule c args). split; [assumption | cbn; assumption].
+      - (* idx_term *)
+        apply Hcl.
+        unfold close_index_step.
+        apply in_or_app; right.
+        apply in_flat_map.
+        exists (n, term_rule c args t).
+        split; [assumption | cbn].
+        assert (inb (sort_head t) R = true) as ->.
+        { apply Is_true_eq_true. autorewrite with utils. rewrite H1; assumption. }
+        assumption.
+    Qed.
+
+    (* [saturate_heads] only grows its input, so the seed sits inside the
+       saturated cone. *)
+    Lemma saturate_grows : forall fuel R, incl R (saturate_heads fuel l R).
+    Proof.
+      induction fuel; intro R; cbn [saturate_heads].
+      - apply incl_refl.
+      - destruct (inclb (close_index_step l R) R).
+        + apply incl_refl.
+        + eapply incl_tran; [ | apply IHfuel ].
+          unfold close_index_step. apply incl_appl. apply incl_refl.
+    Qed.
+
+    Lemma seed_incl_sat : incl (seed_index_heads l) (index_heads_sat l).
+    Proof. apply saturate_grows. Qed.
+
+    (* The saturated cone soundly over-approximates [index_head], provided the
+       decision procedure's closure conjunct holds for it. *)
+    Lemma index_head_in_sat :
+      inclb (close_index_step l (index_heads_sat l)) (index_heads_sat l) = true ->
+      forall h, index_head l h -> In h (index_heads_sat l).
+    Proof.
+      intro Hcl.
+      apply index_head_in_closed.
+      - apply seed_incl_sat.
+      - apply use_inclb. apply Is_true_eq_left. exact Hcl.
     Qed.
 
     (* (b) no term equation concludes at an index head. *)
