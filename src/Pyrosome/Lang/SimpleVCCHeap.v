@@ -58,14 +58,18 @@ Definition forget_eq_wkn'_def : lang :=
          : #"sub" (#"ext" "G" "A") #"emp"
       ]
   ]}.
-Derive forget_eq_wkn'
-       in (elab_lang_ext value_subst
-                               forget_eq_wkn'_def
-                               forget_eq_wkn')
-       as forget_eq_wkn'_wf.
-Proof. auto_elab. Qed.
-#[local] Definition forget_eq_wkn'_entry :=
-  lang_entry (elab_lang_implies_wf forget_eq_wkn'_wf).
+Definition forget_eq_wkn'_injectivity :=
+  [("wkn", ["A"; "G"]); ("id", ["G"]); ("sub", ["G'"; "G"]); ("hd", ["A"; "G"]);
+   ("ext", ["A"; "G"]); ("forget", ["G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]);
+   ("cmp", ["G3"; "G1"]); ("val", ["A"; "G"]); ("val_subst", ["A"; "G"])].
+
+Definition forget_eq_wkn' :=
+  Eval vm_compute in
+    (infer_lang_ext_simple value_subst forget_eq_wkn'_def forget_eq_wkn'_injectivity).
+
+Lemma forget_eq_wkn'_wf : wf_lang_ext value_subst forget_eq_wkn'.
+Proof. compute_wf_lang. Qed.
+#[local] Definition forget_eq_wkn'_entry := lang_entry forget_eq_wkn'_wf.
 #[export] Hint Resolve forget_eq_wkn'_entry : wf_lang_db.
 
 Definition heap_cc_def : compiler :=

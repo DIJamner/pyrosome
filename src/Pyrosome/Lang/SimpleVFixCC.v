@@ -35,13 +35,23 @@ Definition fix_cc_lang_def : lang :=
       : #"blk" "G"
   ]]}.
 
-Derive fix_cc_lang
-       in (elab_lang_ext (cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
-                               fix_cc_lang_def
-                               fix_cc_lang)
-       as fix_cc_wf.
-Proof. auto_elab. Qed.
-#[local] Definition fix_cc_entry := lang_entry (elab_lang_implies_wf fix_cc_wf).
+Definition fix_cc_lang_injectivity :=
+  [("prod", ["B"; "A"]); ("pm_pair", ["e"; "v"; "B"; "A"; "G"]); ("cmp", ["G3"; "G1"]);
+   ("fix", ["vf"; "B"; "G"]); (".1", ["v"; "B"; "A"; "G"]); ("pair", ["e2"; "e1"; "B"; "A"; "G"]);
+   ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("hd", ["A"; "G"]); ("sub", ["G'"; "G"]); ("forget", ["G"]);
+   ("neg", ["A"]); ("blk", ["G"]); ("closure", ["v"; "e"; "B"; "A"; "G"]); ("id", ["G"]);
+   (".2", ["v"; "B"; "A"; "G"]); ("blk_subst", ["G"]); ("val", ["A"; "G"]); ("jmp", ["G"]);
+   ("wkn", ["A"; "G"]); ("val_subst", ["A"; "G"]); ("ext", ["A"; "G"])].
+
+Definition fix_cc_lang :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
+       fix_cc_lang_def fix_cc_lang_injectivity).
+
+Lemma fix_cc_wf
+  : wf_lang_ext (cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst) fix_cc_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition fix_cc_entry := lang_entry fix_cc_wf.
 #[export] Hint Resolve fix_cc_entry : wf_lang_db.
 
 Definition fix_cc_def : compiler :=
