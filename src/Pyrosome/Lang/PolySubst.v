@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Theory.Renaming
-  Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf Tools.EGraph.TypeInference
   Compilers.Parameterizer
   Lang.GenericSubst.
 Import Core.Notations.
@@ -59,12 +59,15 @@ Definition cat_def : lang _ :=
 
 
 
-Derive cat
-       in (elab_lang_ext [] cat_def cat)
-       as cat_wf.
-Proof. auto_elab. Qed.
-#[local] Definition cat_entry :=
-  lang_entry (elab_lang_implies_wf cat_wf).
+Definition cat_injectivity := [("id", ["G"]); ("cmp", ["G3"; "G1"]); ("arr", ["G'"; "G"])].
+
+Definition cat :=
+  Eval vm_compute in
+    (infer_lang_ext_simple [] cat_def cat_injectivity).
+
+Lemma cat_wf : wf_lang_ext [] cat.
+Proof. compute_wf_lang. Qed.
+#[local] Definition cat_entry := lang_entry cat_wf.
 #[export] Hint Resolve cat_entry : wf_lang_db.
 
 (* TODO: beyond this point there are some category-theoretic
@@ -79,12 +82,15 @@ Definition obj_consumer_def : lang _ :=
   ]}.
 
 
-Derive obj_consumer
-       in (elab_lang_ext cat obj_consumer_def obj_consumer)
-       as obj_consumer_wf.
-Proof. auto_elab. Qed.
-#[local] Definition obj_consumer_entry :=
-  lang_entry (elab_lang_implies_wf obj_consumer_wf).
+Definition obj_consumer_injectivity := [("arr", ["G'"; "G"]); ("cmp", ["G3"; "G1"]); ("unit", ["G"]); ("id", ["G"])].
+
+Definition obj_consumer :=
+  Eval vm_compute in
+    (infer_lang_ext_simple cat obj_consumer_def obj_consumer_injectivity).
+
+Lemma obj_consumer_wf : wf_lang_ext cat obj_consumer.
+Proof. compute_wf_lang. Qed.
+#[local] Definition obj_consumer_entry := lang_entry obj_consumer_wf.
 #[export] Hint Resolve obj_consumer_entry : wf_lang_db.
 
 Definition unit_action_def : lang _ :=
@@ -108,12 +114,15 @@ Definition unit_action_def : lang _ :=
   ]
   ]}.
 
-Derive unit_action
-       in (elab_lang_ext (obj_consumer++cat) unit_action_def unit_action)
-       as unit_action_wf.
-Proof. auto_elab. Qed.
-#[local] Definition unit_action_entry :=
-  lang_entry (elab_lang_implies_wf unit_action_wf).
+Definition unit_action_injectivity := [("unit", ["G"]); ("id", ["G"]); ("act", ["G"]); ("arr", ["G'"; "G"]); ("cmp", ["G3"; "G1"])].
+
+Definition unit_action :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (obj_consumer++cat) unit_action_def unit_action_injectivity).
+
+Lemma unit_action_wf : wf_lang_ext (obj_consumer++cat) unit_action.
+Proof. compute_wf_lang. Qed.
+#[local] Definition unit_action_entry := lang_entry unit_action_wf.
 #[export] Hint Resolve unit_action_entry : wf_lang_db.
 
 Definition unit_cartesian_def : lang _ :=
@@ -180,13 +189,17 @@ Definition unit_cartesian_def : lang _ :=
    ]
 ]}.
 
-Derive unit_cartesian
-  in (elab_lang_ext (unit_action++obj_consumer++cat)
-              unit_cartesian_def unit_cartesian)
-       as unit_cartesian_wf.
-Proof. auto_elab. Qed.
-#[local] Definition unit_cartesian_entry :=
-  lang_entry (elab_lang_implies_wf unit_cartesian_wf).
+Definition unit_cartesian_injectivity := [("snoc", ["u"; "g"; "G'"; "G"]); ("act", ["G"]); ("wkn", ["G"]); ("arr", ["G'"; "G"]); ("forget", ["G"]); ("ext", ["G"]); ("cmp", ["G3"; "G1"]); ("hd", ["G"]); ("unit", ["G"]); ("id", ["G"])].
+
+Definition unit_cartesian :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (unit_action++obj_consumer++cat)
+              unit_cartesian_def unit_cartesian_injectivity).
+
+Lemma unit_cartesian_wf : wf_lang_ext (unit_action++obj_consumer++cat)
+              unit_cartesian.
+Proof. compute_wf_lang. Qed.
+#[local] Definition unit_cartesian_entry := lang_entry unit_cartesian_wf.
 #[export] Hint Resolve unit_cartesian_entry : wf_lang_db.
 
 (*TODO: careful; parameterize doesn't check freshness*)
@@ -320,12 +333,17 @@ Definition exp_ret_def : lang _ :=
        #"ret" "v" : #"exp" "G" "A"
     ] ]}.
 
-Derive exp_ret
-  in (elab_lang_ext (exp_subst_base++value_subst)
-              exp_ret_def exp_ret)
-       as exp_ret_wf.
-Proof. auto_elab. Qed.
-#[local] Definition exp_ret_entry := lang_entry (elab_lang_implies_wf exp_ret_wf).
+Definition exp_ret_injectivity := [("id", ["G"]); ("ret", ["v"; "A"; "G"]); ("ext", ["A"; "G"]); ("val_subst", ["A"; "G"]); ("cmp", ["G3"; "G1"]); ("hd", ["A"; "G"]); ("exp", ["A"; "G"]); ("wkn", ["A"; "G"]); ("forget", ["G"]); ("sub", ["G'"; "G"]); ("exp_subst", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("val", ["A"; "G"])].
+
+Definition exp_ret :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (exp_subst_base++value_subst)
+              exp_ret_def exp_ret_injectivity).
+
+Lemma exp_ret_wf : wf_lang_ext (exp_subst_base++value_subst)
+              exp_ret.
+Proof. compute_wf_lang. Qed.
+#[local] Definition exp_ret_entry := lang_entry exp_ret_wf.
 #[export] Hint Resolve exp_ret_entry : wf_lang_db.
                            
 Definition val_parameterized :=
@@ -493,17 +511,24 @@ Definition val_ty_subst_def : lang _ :=
        ]
   ]}.
 
-Derive val_ty_subst
-  in (elab_lang_ext (env_ty_subst
+Definition val_ty_subst_injectivity := [("env", ["D"]); ("val", ["A"; "G"; "D"]); ("ty_cmp", ["D3"; "D1"]); ("emp", ["D"]); ("ty_hd", ["D"]); ("ext", ["A"; "G"; "D"]); ("val_subst", ["A"; "G"; "D"]); ("sub", ["G'"; "G"; "D"]); ("sub_ty_subst", ["v"; "G'"; "G"; "g"; "D'"; "D"]); ("ty_ext", ["D"]); ("id", ["G"; "D"]); ("ty_sub", ["D'"; "D"]); ("ty_id", ["D"]); ("hd", ["A"; "G"; "D"]); ("ty_subst", ["D"]); ("ty_snoc", ["A"; "g"; "D'"; "D"]); ("wkn", ["A"; "G"; "D"]); ("val_ty_subst", ["v"; "A"; "G"; "g"; "D'"; "D"]); ("cmp", ["G3"; "G1"; "D"]); ("env_ty_subst", ["D"]); ("ty_wkn", ["D"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"; "D"]); ("ty_forget", ["D"]); ("forget", ["G"; "D"]); ("ty", ["D"])].
+
+Definition val_ty_subst :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (env_ty_subst
                              ++ty_subst_lang
                              ++val_parameterized
                              ++ty_env_lang)
       val_ty_subst_def
-      val_ty_subst)
-       as val_ty_subst_wf.
-Proof. auto_elab. Qed.
-#[local] Definition val_ty_subst_entry :=
-  lang_entry (elab_lang_implies_wf val_ty_subst_wf).
+      val_ty_subst_injectivity).
+
+Lemma val_ty_subst_wf : wf_lang_ext (env_ty_subst
+                             ++ty_subst_lang
+                             ++val_parameterized
+                             ++ty_env_lang)
+      val_ty_subst.
+Proof. compute_wf_lang. Qed.
+#[local] Definition val_ty_subst_entry := lang_entry val_ty_subst_wf.
 #[export] Hint Resolve val_ty_subst_entry : wf_lang_db.
 
 Definition exp_ty_subst_def : lang _ :=
@@ -520,17 +545,24 @@ Definition exp_ty_subst_def : lang _ :=
        ]
       ]}.
 
-Derive exp_ty_subst
-  in (elab_lang_ext (env_ty_subst
+Definition exp_ty_subst_injectivity := [("ty", ["D"]); ("exp_ty_subst", ["e"; "A"; "G"; "g"; "D'"; "D"]); ("ext", ["A"; "G"; "D"]); ("sub", ["G'"; "G"; "D"]); ("ty_snoc", ["A"; "g"; "D'"; "D"]); ("exp_subst", ["A"; "G"; "D"]); ("id", ["G"; "D"]); ("exp", ["A"; "G"; "D"]); ("ty_subst", ["D"]); ("emp", ["D"]); ("hd", ["A"; "G"; "D"]); ("ty_wkn", ["D"]); ("cmp", ["G3"; "G1"; "D"]); ("ty_forget", ["D"]); ("env_ty_subst", ["D"]); ("forget", ["G"; "D"]); ("ty_id", ["D"]); ("wkn", ["A"; "G"; "D"]); ("ty_sub", ["D'"; "D"]); ("ty_ext", ["D"]); ("ret", ["v"; "A"; "G"; "D"]); ("val_subst", ["A"; "G"; "D"]); ("ty_cmp", ["D3"; "D1"]); ("env", ["D"]); ("ty_hd", ["D"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"; "D"]); ("val", ["A"; "G"; "D"])].
+
+Definition exp_ty_subst :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (env_ty_subst
                              ++ty_subst_lang
                              ++exp_parameterized++val_parameterized
                              ++ty_env_lang)
       exp_ty_subst_def
-      exp_ty_subst)
-       as exp_ty_subst_wf.
-Proof. auto_elab. Qed.
-#[local] Definition exp_ty_subst_entry :=
-  lang_entry (elab_lang_implies_wf exp_ty_subst_wf).
+      exp_ty_subst_injectivity).
+
+Lemma exp_ty_subst_wf : wf_lang_ext (env_ty_subst
+                             ++ty_subst_lang
+                             ++exp_parameterized++val_parameterized
+                             ++ty_env_lang)
+      exp_ty_subst.
+Proof. compute_wf_lang. Qed.
+#[local] Definition exp_ty_subst_entry := lang_entry exp_ty_subst_wf.
 #[export] Hint Resolve exp_ty_subst_entry : wf_lang_db.
 
 Definition val_param_substs_def :=
