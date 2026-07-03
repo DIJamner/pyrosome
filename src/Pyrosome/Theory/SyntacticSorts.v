@@ -152,17 +152,26 @@ Section WithVar.
                          | term_eq_rule _ _ _ t => negb (inb (sort_head t) R)
                          | _ => true end) l.
 
-  (* The WEAKENED procedure (min-sorts safe set for the polymorphic /
+  (* The WEAKENED procedure (candidate min-sorts gate for the polymorphic /
      existential languages).  Two relaxations vs. [syntactic_sort_eq_langb]:
      (a) index heads are computed by full saturation [index_heads_sat]
          (needed even for the simply-typed check's shape once [ty_subst]-style
          constructors are present);
      (b) a [term_eq_rule] concluding at an index head is permitted when it is
-         UNGATED -- every context variable occurs in the equated terms, so the
-         equation re-witnesses itself under substitution (unlike the
-         SubstWfCounterexample gates, whose witness variable occurs in neither
-         side).  This certifies the weaker TRANSPORT property, not full
-         syntactic sort equality. *)
+         UNGATED -- every context variable occurs in the equated terms
+         (unlike the SubstWfCounterexample gates, whose witness variable
+         occurs in neither side).
+
+     CAUTION: this boolean ALONE does not certify the sort-transport property
+     the skip soundness needs.  A trans-chain can route through a middle whose
+     variables are pinned by only ONE side of an ungated equation, and if such
+     a variable's sort has no closed inhabitant the chain does not replay in
+     the empty context -- machine-checked counterexample in
+     WIP/TransportCounterexample.v.  The intended soundness statement pairs
+     this boolean with a per-language closed-inhabitation side condition for
+     the index fragment (Prop-level; see WIP/SortTransport.v), whose
+     sufficiency is itself still an open conjecture.  The e-graph gate
+     remains [syntactic_sort_eq_langb] until that is settled. *)
   Definition ungated_index_term_eqb (R : list V) (r : rule) : bool :=
     match r with
     | term_eq_rule c e1 e2 t =>
