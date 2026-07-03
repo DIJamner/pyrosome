@@ -8,6 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches Tools.Resolution
+  Tools.EGraph.TypeInference Tools.EGraph.ComputeWf
   Lang.LinearSubst.
 Import Core.Notations.
 
@@ -117,10 +118,19 @@ Definition linear_stlc_def : lang :=
   ]}.
 *)
 
-Derive linear_stlc
-       in (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
-       as linear_stlc_wf.
-Proof. auto_elab. Qed.
-#[local] Definition linear_stlc_entry :=
-  lang_entry (elab_lang_implies_wf linear_stlc_wf).
+Definition linear_stlc_injectivity :=
+  [("only", ["A"]); ("linear_lambda", ["e"; "B"; "A"; "G"]); ("cmp", ["G3"; "G1"]);
+   ("id", ["G"]); ("exp_subst", ["A"; "G"]); ("linear_app", ["e'"; "e"; "B"; "A"; "H"; "G"]);
+   ("ret", ["v"; "A"; "G"]); ("val_subst", ["A"; "G"]); ("exp", ["A"; "G"]);
+   ("exch", ["H"; "G"]); ("vsub", ["v"; "A"; "G"]); ("val", ["A"; "G"]);
+   ("sub", ["G'"; "G"]); ("lolli", ["t'"; "t"]); ("hd", ["A"])].
+
+Definition linear_stlc :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (linear_exp_subst++linear_value_subst) linear_stlc_def
+       linear_stlc_injectivity).
+
+Lemma linear_stlc_wf : wf_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc.
+Proof. compute_wf_lang. Qed.
+#[local] Definition linear_stlc_entry := lang_entry linear_stlc_wf.
 #[export] Hint Resolve linear_stlc_entry : wf_lang_db.

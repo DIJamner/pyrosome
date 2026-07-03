@@ -37,11 +37,21 @@ Definition fix_cps_lang_def : lang :=
       : #"blk" "G"
   ] ]}.
 
-Derive fix_cps_lang
-       in (elab_lang_ext (cps_lang ++ block_subst ++ value_subst) fix_cps_lang_def fix_cps_lang)
-       as fix_wf.
-Proof. auto_elab. Qed.
-#[local] Definition fix_cps_entry := lang_entry (elab_lang_implies_wf fix_wf).
+Definition fix_cps_lang_injectivity :=
+  [("ext", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("wkn", ["A"; "G"]);
+   ("sub", ["G'"; "G"]); ("jmp", ["v2"; "v1"; "A"; "G"]); ("val_subst", ["A"; "G"]);
+   ("neg", ["A"]); ("id", ["G"]); ("hd", ["A"; "G"]); ("cont", ["e"; "A"; "G"]);
+   ("val", ["A"; "G"]); ("fix", ["e"; "A"; "G"]); ("forget", ["G"]); ("blk", ["G"]);
+   ("cmp", ["G3"; "G1"]); ("blk_subst", ["G"])].
+
+Definition fix_cps_lang :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (cps_lang ++ block_subst ++ value_subst) fix_cps_lang_def
+       fix_cps_lang_injectivity).
+
+Lemma fix_wf : wf_lang_ext (cps_lang ++ block_subst ++ value_subst) fix_cps_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition fix_cps_entry := lang_entry fix_wf.
 #[export] Hint Resolve fix_cps_entry : wf_lang_db.
 
 Definition fix_cps_def : compiler :=
