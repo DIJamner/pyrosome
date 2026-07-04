@@ -41,7 +41,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils EGraph.Defs Monad Lens UnionFind.
-From Pyrosome Require Import Theory.Core
+From Pyrosome Require Import Theory.Core Elab.PreRule
   Tools.Matches Tools.EGraph.Defs
   Tools.EGraph.Automation
   Tools.EGraph.TypeInference
@@ -127,9 +127,16 @@ Section WithWeight.
   Definition eq_seqs (l : lang) : list sequent :=
     compile_seqs l (filter (fun '(_,r) => is_eq_rule r) l).
 
-  (* [TypeInference.state_operation] with the iteration fuel exposed as [X] and
-     the whole compiled rule set passed in. *)
-  Definition saturate_gen (fuel : nat) (seqs : list sequent)
+  (* [TypeInference.state_operation] with the iteration fuel exposed as [X], the
+     semi-naive look-back [window] exposed, and the whole compiled rule set passed
+     in.  [window] is used only by the FIRST saturation iteration (the cross-phase
+     catch-up): it re-matches every db row whose epoch is within [window] ticks of
+     the current epoch.  For a FRESH graph (everything seeded at one epoch)
+     [window = 0] suffices; for an INCREMENTAL resume on an already-saturated graph
+     (new atoms at the current epoch, old atoms many epochs back) a [window] large
+     enough to reach back over all prior epochs re-matches the equations against
+     the whole graph, exactly as a from-scratch saturation would. *)
+  Definition saturate_gen_win (window fuel : nat) (seqs : list sequent)
     : state instance bool :=
     @saturate_until positive Pos.eqb Pos.succ (default (A:=positive))
       Pos.leb
@@ -137,12 +144,15 @@ Section WithWeight.
       (@FullPosTrie.full_pos_trie_map) (option positive)
       (weighted_size_analysis weight) (@fpt_spaced_intersect)
       1000%nat
-      0%nat (* window *)
+      window
       (@QueryOpt.build_rule_set positive Pos.eqb Pos.succ (default (A:=positive))
          positive trie_map ptree_map_plus trie_map
          (@FullPosTrie.full_pos_trie_map) 1000%nat
          seqs)
       (Mret false) fuel.
+
+  Definition saturate_gen (fuel : nat) (seqs : list sequent)
+    : state instance bool := saturate_gen_win 0 fuel seqs.
 
   (* ---- seeding ---- *)
 
@@ -555,6 +565,85 @@ Definition build_general_injection_rules
   (schemas : list (string * (list string * list string))) (L : lang)
   : list (sequent string string) :=
   map (build_general_injection_rule L) schemas.
+
+(* -------------------------------------------------------------------------
+   Incremental generation FUSED with type inference.
+
+   The separated pipeline ([gen_fundep_schemas] on an elaborated language, then
+   [infer_lang_ext_simple_gen] using the schemas) has a chicken-and-egg gap: the
+   generator needs an ELABORATED language, but the schemas are what let us
+   ELABORATE it -- so a language's own rules cannot contribute to the injectivity
+   facts used to elaborate itself.  Here we close the loop by threading the
+   injectivity e-graph THROUGH inference: as each rule is elaborated, its
+   injectivity/cancellation schemas are read off the current injectivity e-graph
+   (base + everything elaborated so far), then the freshly elaborated rule is
+   seeded into that e-graph and it is re-saturated, so later rules see it.
+
+   This is strictly more expressive than the separated version AND better-scoped:
+   rule [k] is elaborated using exactly the equational theory of the rules in
+   scope for [k] (base + rules 1..k-1), never a later rule's equation.
+
+   The threaded state is [(g, rn, lp)]: the positive injectivity e-graph [g], the
+   string<->positive renaming [rn] (grown as new constructors appear), and the
+   accumulated positive elaborated language [lp] (needed to seed new atoms and to
+   recompile the equation rule-set).  Everything else reuses the existing pieces:
+   [fundep_schemas_of] reads schemas off [g]; [infer_rule_gen] elaborates one
+   rule; [seed_rule]+[saturate_gen_win] add the elaborated rule and re-saturate. *)
+
+Local Notation pos_instance :=
+  (Defs.instance positive positive trie_map trie_map
+     (@FullPosTrie.full_pos_trie_map) (option positive)).
+Local Notation pos_lang := (@Rule.lang positive).
+Local Notation prelang := (@prelang string).
+
+Section Incremental.
+  (* [fuel]: saturation iterations per (re-)saturation.  [window]: semi-naive
+     look-back for the incremental resume -- large enough to re-match the
+     equations over every prior epoch (see [saturate_gen_win]). *)
+  Context (fuel window : nat).
+
+  (* Seed the freshly elaborated (positive) rule [nr] into [g] and re-saturate,
+     using the accumulated language [lp] (which must already contain [nr]) for
+     sort lookups and the equation rule-set. *)
+  Definition incr_add (nr : positive * Rule.rule positive) (lp : pos_lang)
+    (g : pos_instance) : pos_instance :=
+    snd ((@! let _ <- seed_rule triv_weight lp nr in
+             let _ <- saturate_gen_win triv_weight window fuel (eq_seqs lp) in
+             ret tt) g).
+
+  Fixpoint infer_lang_incr (l_base : lang) (l : prelang)
+    (st : pos_instance * renaming string * pos_lang)
+    : lang * (pos_instance * renaming string * pos_lang) :=
+    match l with
+    | [] => ([], st)
+    | (n,r)::l' =>
+        (* elaborate the tail first (dependency order: base-most rules first),
+           threading the injectivity e-graph forward *)
+        let '(el', st1) := infer_lang_incr l_base l' st in
+        let '(g1, rn1, lp1) := st1 in
+        let L_str := el' ++ l_base in
+        (* schemas for constructors currently in scope, read off the e-graph *)
+        let schemas := fundep_schemas_of g1 rn1 L_str in
+        let r' := infer_rule_gen L_str (build_general_injection_rules schemas) r in
+        (* add the elaborated rule to the e-graph and re-saturate *)
+        let '(nr_pos_l, rn2) := rename_lang [(n,r')] rn1 in
+        let lp2 := nr_pos_l ++ lp1 in
+        let g2 := match nr_pos_l with
+                  | nr_pos :: _ => incr_add nr_pos lp2 g1
+                  | [] => g1
+                  end in
+        ((n,r')::el', (g2, rn2, lp2))
+    end.
+
+  (* Elaborate [l] against [l_base], generating injectivity/cancellation rules
+     incrementally.  Mirrors [infer_lang_ext_simple_gen] but with the injectivity
+     e-graph threaded through, so [l]'s own rules inform its elaboration. *)
+  Definition infer_lang_ext_simple_incr (l_base l : lang) : lang :=
+    let '(lp0, rn0) := rename_lang l_base init_renaming in
+    let g0 := run_eq triv_weight fuel lp0 in
+    fst (infer_lang_incr l_base (of_lang l) (g0, rn0, lp0)).
+
+End Incremental.
 
 (* debug: canonical (args, ret) e-class ids of every atom whose head prints as
    [nm], from the equation-saturated graph.  Two rows with the same [ret] but

@@ -128,17 +128,19 @@ Definition linear_stlc_injectivity :=
    ("sub", ["G'"; "G"]); ("lolli", ["t'"; "t"]); ("hd", ["A"])].*)
 
 
-(* TODO: can't include the language's rules while debugging the language.
-   I actually want this to be incrementally expanded/computed with the language.
- *)
-Definition linear_gen_schemas :=
-  Eval vm_compute in
-    gen_fundep_schemas 10 (linear_exp_subst ++ linear_value_subst).
-
+(* Injectivity/cancellation rules are generated INCREMENTALLY, fused with
+   inference: as each rule of [linear_stlc_def] is elaborated, its injectivity
+   schemas are read off an injectivity e-graph holding the base plus everything
+   elaborated so far, then the elaborated rule is seeded into that e-graph and it
+   is re-saturated.  This closes the chicken-and-egg gap of the separated
+   [gen_fundep_schemas]/[infer_*] pipeline -- the language's OWN rules
+   (e.g. [linear_lambda]/[linear_app] injectivity) now inform its elaboration
+   (e.g. of the [LSTLC-beta] equation).  Args: saturation fuel 10, semi-naive
+   window 100 (re-matches equations over all prior epochs on each resume). *)
 Definition linear_stlc :=
   Eval vm_compute in
-    (infer_lang_ext_simple_gen (linear_exp_subst++linear_value_subst) linear_stlc_def
-       (build_general_injection_rules linear_gen_schemas)).
+    infer_lang_ext_simple_incr 10 100
+      (linear_exp_subst ++ linear_value_subst) linear_stlc_def.
 
 Lemma linear_stlc_wf : wf_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc.
 Proof. compute_wf_lang. Qed.
