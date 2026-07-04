@@ -290,40 +290,6 @@ Ltac solve_wf_subst :=
   repeat (eapply wf_subst_cons; [> .. | solve_wf_term ]);
   eapply wf_subst_nil.
 
-Ltac blk_cmp :=
-  eapply eq_term_trans;
-  [> lazymatch goal with
-    | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_}
-      (#"cmp" {?G1} {?G2} {?G3} {?g1} {?g2})
-      {?e} }} _ ] =>
-      instantiate (1:=
-        {{e #"blk_subst" {G1} {G2} {g1}
-            (#"blk_subst" {G2} {G3} {g2} {e})}});
-      apply eq_term_sym;
-      eapply eq_term_conv;
-      [> eredex_steps_with linear_block_subst "blk_subst_cmp";
-        solve_wf_subst
-      | solve_sort]
-    end
-  | .. ].
-
- Ltac s :=
-   match goal with
-  | [|- fresh _ _ ]=> compute_fresh
-  | [|- sublist _ _ ]=> compute_sublist
-   (* TODO: if this works, use this pattern for other typeclass occurances *)
-  | [|- In _ _ ]=> solve_in
-  | [|- len_eq _ _] => econstructor
-  | [|-elab_sort _ _ _ _] => eapply elab_sort_by
-  | [|-elab_ctx _ _ _] => econstructor
-  | [|-elab_args _ _ _ _ _ _] => (repeat eapply elab_args_cons_ex') || econstructor
-  | [|-elab_term _ _ _ _ _] => eapply elab_term_by' || eapply elab_term_var
-  | [|-wf_term _ _ _ _] => solve_wf_term || shelve
-  | [|-elab_rule _ _ _] => econstructor
-  (* | [|- ?eq \/ ?seq ] => tryif (has_evar ?Goal) then shelve else (left; reflexivity) || shelve *)
-  | [|- _ = _] => compute; reflexivity
- end.
-
 Ltac reduce_to e :=
   eapply eq_term_trans;
   [> instantiate (1:=e); try by_reduction | .. ].
@@ -413,14 +379,6 @@ Ltac reassoc_cmp4 :=
         (#"cmp" {G1} {G2} {G3} {c1} {c2}) (#"cmp" {G3} {G4} {G5} {c3} {c4}) }}
   end.
 
-(* cmp (cmp p cs) e -> cmp p (cmp cs e) *)
-Ltac reassoc_cmp3 :=
-  lazymatch goal with
-  | [|- eq_term _ _ _ {{e #"cmp" {?G1} {?G3} {?G4}
-        (#"cmp" {?G1} {?G2} {?G3} {?p} {?cs}) {?e} }} _ ] =>
-      reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs} {e}) }}
-  end.
-
 (* shared prefix of the two "csub_id dances" *)
 Ltac csub_id_dance :=
   trans ltac:(unapply linear_value_subst "csub_id");
@@ -508,6 +466,178 @@ Ltac setup_preserving_compiler :=
       rewrite (as_nth_tail cmp); rewrite (as_nth_tail src)
   end; break_preserving_ext.
 
+(* The compiled Linear-STLC beta redex after one mechanical pass of
+   [by_reduction]: the [jmp] of the compiled argument pair into [hd], under a
+   single composite permutation substitution.  Written out explicitly so the
+   proof below can reach it with one e-graph call; the remaining distance to
+   the compiled RHS is the permutation reasoning done manually after it. *)
+Definition linear_cps_beta_mid := {{e  #"blk_subst" (#"conc" "G" (ext "H" (#"neg" "B"))) (
+                     #"conc" (#"only" (#"neg" (#"prod" "A" (#"neg" "B")))) (
+                             ext (#"only" "A") (#"neg" "B"))) (
+                     #"cmp" (#"conc" "G" (ext "H" (#"neg" "B"))) (
+                            #"conc" (#"only" (#"neg" 
+                                              (#"prod" "A" (#"neg" "B")))) (
+                                    ext (#"only" (#"neg" "B")) "A")) (
+                            #"conc" (#"only" (#"neg" 
+                                              (#"prod" "A" (#"neg" "B")))) (
+                                    ext (#"only" "A") (
+                                    #"neg" "B"))) (
+                            #"cmp" (#"conc" "G" (ext "H" (#"neg" "B"))) (
+                                   #"conc" (#"only" (#"neg" "B")) (
+                                           ext (#"only" 
+                                                (#"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))))
+                                           "A")) (
+                                   #"conc" (#"only" 
+                                            (#"neg" 
+                                             (#"prod" "A" (#"neg" "B")))) (
+                                           ext (#"only" (#"neg" "B")) "A")) (
+                                   #"cmp" (#"conc" "G" (ext "H" (#"neg" "B"))) (
+                                          #"conc" 
+                                          (#"only" (#"neg" "B")) (
+                                          #"conc" 
+                                          (#"only" 
+                                           (#"neg" (#"prod" "A" (#"neg" "B")))) "H")) (
+                                          #"conc" 
+                                          (#"only" (#"neg" "B")) (
+                                          ext (#"only" 
+                                               (#"neg" 
+                                                (#"prod" "A" (#"neg" "B"))))
+                                          "A")) (#"cmp" 
+                                                 (
+                                                 #"conc" 
+                                                 "G" (
+                                                 ext "H" (#"neg" "B"))) (
+                                                 #"conc" 
+                                                 "H" (
+                                                 ext (
+                                                 #"only" (#"neg" "B"))
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))))) (
+                                                 #"conc" 
+                                                 (
+                                                 #"only" (#"neg" "B")) (
+                                                 #"conc" 
+                                                 (
+                                                 #"only" 
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B")))) "H")) (
+                                                 #"cmp" 
+                                                 (
+                                                 #"conc" 
+                                                 "G" (
+                                                 ext "H" (#"neg" "B"))) (
+                                                 #"conc" 
+                                                 "H" (
+                                                 #"conc" 
+                                                 (
+                                                 #"only" (#"neg" "B")) "G")) (
+                                                 #"conc" 
+                                                 "H" (
+                                                 ext (
+                                                 #"only" (#"neg" "B"))
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))))) (
+                                                 #"exch" 
+                                                 "G" (
+                                                 ext "H" (#"neg" "B"))) (
+                                                 #"csub" 
+                                                 (
+                                                 ext "H" (#"neg" "B")) (
+                                                 ext "H" (
+                                                 #"neg" "B")) "G" (
+                                                 #"only" 
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B")))) (
+                                                 #"id" 
+                                                 (ext "H" (#"neg" "B"))) (
+                                                 #"vsub" 
+                                                 "G" (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))) (
+                                                 #"cont" 
+                                                 "G" (
+                                                 #"prod" 
+                                                 "A" (#"neg" "B")) (
+                                                 #"pm_pair" 
+                                                 "G" (
+                                                 #"only" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))) "A" (
+                                                 #"neg" 
+                                                 "B") (
+                                                 #"hd" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))) "e"))))) (
+                                                 #"exch" 
+                                                 "H" (
+                                                 ext (
+                                                 #"only" (#"neg" "B"))
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B")))))) (
+                                          #"csub" 
+                                          (ext (#"only" (#"neg" "B"))
+                                           (#"neg" (#"prod" "A" (#"neg" "B")))) (
+                                          ext (#"only" (#"neg" "B"))
+                                          (#"neg" (#"prod" "A" (#"neg" "B")))) "H" (
+                                          #"only" 
+                                          "A") (#"id" 
+                                                (ext (
+                                                 #"only" (#"neg" "B"))
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))))) (
+                                          #"vsub" 
+                                          "H" "A" "v"))) (
+                                   #"csub" (ext (#"only" (#"neg" "B"))
+                                            (#"neg" 
+                                             (#"prod" "A" (#"neg" "B")))) (
+                                           ext (#"only" 
+                                                (#"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))))
+                                           (#"neg" "B")) (
+                                           #"only" "A") (
+                                           #"only" "A") (
+                                           #"exch" 
+                                           (#"only" (#"neg" "B")) (
+                                           #"only" 
+                                           (#"neg" (#"prod" "A" (#"neg" "B"))))) (
+                                           #"id" (#"only" "A")))) (
+                            #"csub" (#"only" (#"neg" 
+                                              (#"prod" "A" (#"neg" "B")))) (
+                                    #"only" (#"neg" 
+                                             (#"prod" "A" (#"neg" "B")))) (
+                                    ext (#"only" (#"neg" "B")) "A") (
+                                    ext (#"only" "A") (
+                                    #"neg" "B")) (
+                                    #"id" (#"only" 
+                                           (#"neg" (#"prod" "A" (#"neg" "B"))))) (
+                                    #"exch" (#"only" (#"neg" "B")) (
+                                            #"only" 
+                                            "A")))) (
+                     #"jmp" (#"only" (#"neg" (#"prod" "A" (#"neg" "B")))) (
+                            ext (#"only" "A") (#"neg" "B")) (
+                            #"prod" "A" (#"neg" "B")) (
+                            #"hd" (#"neg" (#"prod" "A" (#"neg" "B")))) (
+                            #"pair" (#"only" "A") (
+                                    #"only" (#"neg" "B")) "A" (
+                                    #"neg" "B") (#"hd" "A") (
+                                    #"hd" (#"neg" "B")))) }}.
+
 Lemma linear_cps_preserving : preserving_compiler_ext linear_cps_subst
                                 (tgt_Model:= core_model (linear_cps_prod_lang
                                                            ++ linear_cps_lang
@@ -522,62 +652,23 @@ Proof.
   (* wf obligations: reflective; simple eq obligations: reduction *)
   1,2,4: compute_term_wf.
   1,2: solve [ Automation.by_reduction; now t' ].
-  (* ===== remaining obligation (Linear-STLC-beta): reduce + explicit proof.
-     A single [by_reduction] "succeeds" here only by deferring an e-graph
-     check that blows up at Qed, so the equation is broken into small
-     kernel-checkable steps.  Ported from the old elab-based proof; the
+  (* ===== remaining obligation (Linear-STLC-beta).
+     A single [by_reduction] cannot check the whole equation (the e-graph
+     diverges on the permutation reasoning), so the proof is staged: one
+     [by_reduction] pushes the beta redex through the substitution calculus
+     to the explicit intermediate [linear_cps_beta_mid]; the permutation
+     kernel below rearranges the composite substitution by hand (this part
+     is beyond the e-graph at any fuel); a final [by_reduction] closes the
+     remaining gap, absorbing everything the kernel leaves oriented.  The
      [eq_term_conv] wrappers around [csub_assoc]/[exch_triple] bridge the
      left-nested sort annotations the inference-based elaboration gives
      those rules. ===== *)
   unfold Model.eq_term; cbn [core_model].
-  reduce. compute_eq_compilation.
-  (* ===== dance 1 ===== *)
-  match goal with
-  | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_} (#"cmp" {_} {_} {_} (#"exch" {?G} {?H}) (#"csub" {?H} {?H'} {?G} {?G'} {?h} {?g})) (#"jmp" {?H'} {?G'} {?A} {?b} {?a})}} _ ] =>
-    reduce_to {{e #"blk_subst" (#"conc" {G} {H}) (#"conc" {H} {G}) (#"exch" {G} {H}) (#"blk_subst" (#"conc" {H} {G}) (#"conc" {H'} {G'}) (#"csub" {H} {H'} {G} {G'} {h} {g}) (#"jmp" {H'} {G'} {A} {b} {a}))}}
-  end.
-  match goal with
-  | [|- eq_term _ _ _ {{e #"blk_subst" {?Ga} {?Gb} (#"exch" {?G} {?H}) (#"blk_subst" {_} {_} (#"csub" {?H2} {?H'} {?G2} {?G'} {?h} {?g}) (#"jmp" {?H'} {?G'} {?A} {?b} {?a}))}} _ ] =>
-    eapply eq_term_trans; [ instantiate (1 := {{e #"blk_subst" {Ga} {Gb} (#"exch" {G} {H}) (#"jmp" {H} {G} {A} (#"val_subst" {H2} {H'} {h} (#"neg" {A}) {b}) (#"val_subst" {G2} {G'} {g} {A} {a}))}}) | ]
-  end.
-  {
-    Automation.by_reduction; repeat t'.
-  }
-  reduce.
-  lazymatch goal with
-  | [|- eq_term _ _ _ {{e #"blk_subst" {?G1} {?G5} (#"cmp" {?G1} {?G4} {?G5} (#"cmp" {?G1} {?G3} {?G4} (#"cmp" {?G1} {?G2} {?G3} {?a} {?b}) {?c}) {?d}) {?j} }} _ ] =>
-    reduce_to {{e #"blk_subst" {G1} {G3} (#"cmp" {G1} {G2} {G3} {a} {b}) (#"blk_subst" {G3} {G5} (#"cmp" {G3} {G4} {G5} {c} {d}) {j}) }}
-  end.
-  (* ===== dance 2 ===== *)
-  eapply eq_term_trans.
-  {
-    term_cong.
-    { left; solve_sort. }
-    1-3:term_refl.
-    {
-      compute_eq_compilation.
-      match goal with | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_} (#"cmp" {_} {_} {_} (#"exch" {?G} {?H}) (#"csub" {?H} {?H'} {?G} {?G'} {?h} {?g})) (#"jmp" {?H'} {?G'} {?A} {?b} {?a})}} _ ] => reduce_to {{e #"blk_subst" (#"conc" {G} {H}) (#"conc" {H} {G}) (#"exch" {G} {H}) (#"blk_subst" (#"conc" {H} {G}) (#"conc" {H'} {G'}) (#"csub" {H} {H'} {G} {G'} {h} {g}) (#"jmp" {H'} {G'} {A} {b} {a}))}}
-      end.
-      match goal with | [|- eq_term _ _ _ {{e #"blk_subst" {?Ga} {?Gb} (#"exch" {?G} {?H}) (#"blk_subst" {_} {_} (#"csub" {?H2} {?H'} {?G2} {?G'} {?h} {?g}) (#"jmp" {?H'} {?G'} {?A} {?b} {?a}))}} _ ] => instantiate (1 := {{e #"blk_subst" {Ga} {Gb} (#"exch" {G} {H}) (#"jmp" {H} {G} {A} (#"val_subst" {H2} {H'} {h} (#"neg" {A}) {b}) (#"val_subst" {G2} {G'} {g} {A} {a}))}})
-      end.
-      Automation.by_reduction; repeat t'.
-    }
-  }
-  (* ===== push jmp ===== *)
-  reduce.
-
-  lazymatch goal with
-  | [|- eq_term _ _ _ {{e #"blk_subst" {?H1} {?H2} {?c} (#"jmp" {?G1} {?G2} {?A} (#"hd" {?B}) (#"val_subst" {?G2} {?G3} {?s} {?A} {?p})) }} _ ] =>
-    reduce_to {{e #"blk_subst" {H1} {H2} {c} (#"blk_subst" {H2} (#"conc" {G1} {G3}) (#"csub" {G1} {G1} {G2} {G3} (#"id" (#"only" {B})) {s}) (#"jmp" {G1} {G3} {A} (#"hd" {B}) {p})) }};
-    reduce_to {{e #"blk_subst" {H1} (#"conc" {G1} {G3}) (#"cmp" {H1} {H2} (#"conc" {G1} {G3}) {c} (#"csub" {G1} {G1} {G2} {G3} (#"id" (#"only" {B})) {s})) (#"jmp" {G1} {G3} {A} (#"hd" {B}) {p}) }}
-  end.
-  (* ===== continuation ===== *)
-  { Automation.by_reduction; repeat t'. }
-
-  Unshelve.
-  all:[> | now repeat t'..].
-
-  Optimize Proof.
+  compute_eq_compilation.
+  eapply eq_term_trans;
+    [ instantiate (1 := linear_cps_beta_mid); unfold linear_cps_beta_mid;
+      Automation.by_reduction; repeat t' | ].
+  compute_eq_compilation.
 
   eapply eq_term_trans.
 
@@ -752,141 +843,18 @@ Proof.
           { term_refl. }
           {
             reduce_lhs.
-
-            trans ltac:(unapply linear_value_subst "cmp_assoc").
-            all: try (lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end).
-
-            Unshelve.
-            all: try solve_wf_term.
-            all: try shelve_if_not_eqterm.
-
-            compute_eq_compilation.
-
-            break_cmp.
-            { term_refl. }
-            {
-              eredex_general linear_value_subst "cmp_csub";
-                cycle 3;
-                [> term_refl | term_refl |
-                  solve_wf_subst |
-                  solve_sort |
-                  try env_eq .. ].
-              Unshelve.
-              all: repeat t'; shelve.
-            }
+            term_refl.
           }
         }
       }
     }
     {
-      reassoc_cmp3.
-      eapply eq_term_trans.
-      {
-        break_cmp; [> term_refl |  ].
-        eapply eq_term_trans.
-        {
-          break_cmp; [> .. | term_refl ].
-          lazymatch goal with
-            | [|- eq_term _ _ _ {{e
-              #"csub" {?A} {?A'} {_} {_}
-              {?a}
-              (#"csub" {?B} {?B'} {?C} {?C'} {?b} {?c})
-            }} _ ] =>
-              instantiate (1:= {{e #"csub" (#"conc" {A} {B}) (#"conc" {A'} {B'}) {C} {C'}
-                (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); Automation.by_reduction; repeat t'
-            end.
-        }
-
-        eapply eq_term_conv;
-          [ eapply eq_term_trans;
-            [ term_cong | .. ];
-            [ .. | eredex_steps_with linear_value_subst "cmp_csub" ]
-          | ].
-
-        all: try compute_eq_compilation.
-        5: term_refl.
-        4: term_refl.
-        all: try now env_eq.
-        all: try (lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end).
-        solve_sort.
-
-        Unshelve.
-        all: repeat t'; shelve.
-        Optimize Proof.
-      }
+      reduce_lhs.
       term_refl.
-
-      Unshelve.
-      all: repeat t'; shelve.
     }
-
     {
-
       reduce_lhs.
-      reassoc_cmp3.
-
-      eapply eq_term_trans.
-      {
-        break_cmp; [ term_refl | ].
-        eapply eq_term_trans.
-        {
-          break_cmp; [ | term_refl ].
-          lazymatch goal with
-            | [|- eq_term _ _ _ {{e
-              #"csub" {?A} {?A'} {_} {_}
-              {?a}
-              (#"csub" {?B} {?B'} {?C} {?C'} {?b} {?c})
-            }} _ ] =>
-              instantiate (1:= {{e #"csub" (#"conc" {A} {B}) (#"conc" {A'} {B'}) {C} {C'}
-                (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); Automation.by_reduction; repeat t'
-            end.
-        }
-
-        Unshelve.
-        all: repeat t'; try shelve_if_not_eqterm.
-
-        trans ltac:(eredex_general linear_value_subst "cmp_csub").
-        4-5: term_refl.
-        1-3: try env_eq.
-        all: try (lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end).
-        { solve_sort. }
-
-        Unshelve.
-        all: repeat t'; try shelve_if_not_eqterm.
-
-        compute_eq_compilation.
-        reduce_lhs.
-
-        lazymatch goal with
-          | [|- eq_term _ _ _ {{e
-            #"csub" {?G1} {?G2} {?H1} {?H2}
-            {?g} {?h}
-          }} _ ] => reduce_to {{e
-            #"csub" {G1} {G2} {H1} {H2}
-            {g} (#"cmp" {H1} {H1} {H2} (#"id" {H1}) {h})
-          }}
-        end.
-
-        eapply eq_term_conv;
-          [> unapply linear_value_subst "cmp_csub" |
-             solve_sort ].
-
-        Unshelve.
-        all: repeat t'; try shelve_if_not_eqterm.
-      }
-
-      reduce_lhs.
-      break_cmp; [|term_refl].
-      Unshelve.
-      all: repeat t'; try shelve_if_not_eqterm.
-      instantiate (1:= {{e
-                           #"csub"
-                           "G" "G"
-                           (ext "H" (#"neg" "B")) (#"conc" (#"only" (#"neg" "B")) "H")
-                           (#"id" "G")
-                           (#"exch" "H" (#"only" (#"neg" "B")))
-                  }}).
-      Automation.by_reduction; repeat t'.
+      term_refl.
     }
     term_refl.
   }
