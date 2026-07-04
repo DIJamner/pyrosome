@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
-  Tools.EGraph.TypeInference
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen
   Tools.EGraph.ComputeWf
   Tools.Resolution.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst SimpleVSTLC.
@@ -113,17 +113,20 @@ Definition cps_subst_def : compiler :=
   end.
 
 
+(* Injectivity rules auto-generated from the (fixed) target language by the
+   functional-dependency search, instead of the hand-written
+   [cps_injectivity++block_subst_injectivity++value_subst_injectivity].  No
+   e-graph threading is needed (unlike language inference) because a compiler's
+   target is fixed, so the schemas are generated once from the target. *)
 Definition cps_subst :=
   Eval vm_compute in
-    (infer_compiler_simple
+    (infer_compiler_simple_autoinj 3
        (cps_lang
           ++ block_subst
           ++ value_subst)
        []
        cps_subst_def
-       (exp_subst++value_subst)
-       (cps_injectivity++block_subst_injectivity
-          ++value_subst_injectivity)).
+       (exp_subst++value_subst)).
 
 Lemma cps_subst_preserving
   : preserving_compiler_ext []

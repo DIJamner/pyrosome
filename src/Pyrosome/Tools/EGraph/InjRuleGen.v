@@ -645,6 +645,23 @@ Section Incremental.
 
 End Incremental.
 
+(* -------------------------------------------------------------------------
+   Compiler-case elaboration with AUTO-GENERATED injectivity rules.
+
+   A compiler elaborates each source rule into a FIXED target language, and the
+   injectivity/cancellation facts inference needs are those of the TARGET.  Since
+   the target does not change as cases are elaborated, there is NOTHING to thread
+   (unlike [infer_lang_ext_simple_incr]): the target's schemas are generated ONCE
+   up front by running the functional-dependency search over [tgt], and the same
+   [build_general_injection_rules] closure is reused for every case.  Drop-in for
+   [infer_compiler_simple], replacing its hand-written schema list with the
+   generated one.  (Compiler analogue of [infer_lang_ext_simple_incr], but with
+   no e-graph threading -- hence [autoinj], not [incr].) *)
+Definition infer_compiler_simple_autoinj (fuel : nat) (tgt : lang)
+  cmp_pre cmp (src : lang) :=
+  infer_compiler_simple_gen tgt cmp_pre cmp src
+    (build_general_injection_rules (gen_fundep_schemas fuel tgt)).
+
 (* debug: canonical (args, ret) e-class ids of every atom whose head prints as
    [nm], from the equation-saturated graph.  Two rows with the same [ret] but
    different [args] are a merge; where they differ is a refuted position. *)
