@@ -388,6 +388,26 @@ Section WithWeight.
                 end)
       (filter (fun '(n,r) => inclb (get_ctx r) []) l).
 
+  (* The EQUATIONS of [l] (any context), compiled to sequents.  Unlike the
+     injectivity/cancellation sequents -- which only conclude equalities between
+     existing e-classes (merge-only) -- these are the full equational theory
+     ([rule_to_log_rule] turns each [_eq_rule] into a rule that matches its LHS
+     and introduces its RHS, merging the two).  They let inference reason UP TO
+     the theory (e.g. re-associating/normalizing [conc] so a buried factor gets
+     exposed for cancellation), at the cost of possible saturation blow-up
+     (bounded by the 1000-iteration fuel below). *)
+  Definition eq_rules (l : lang) : list sequent :=
+    flat_map (fun '(n,r) =>
+                match rule_to_log_rule trie_map _ Pos.succ sort_of l
+                        (analysis_result:=unit) 1000%nat n r with
+                | Result.Success s => [s]
+                | Result.Failure _ => []
+                end)
+      (filter (fun '(n,r) => match r with
+                             | sort_eq_rule _ _ _ | term_eq_rule _ _ _ _ => true
+                             | _ => false
+                             end) l).
+
   (* Run the saturation, given the language [l] and the precompiled injection
      sequents [inj_seqs]. *)
   Definition state_operation (l : lang) (inj_seqs : list sequent)
@@ -405,7 +425,7 @@ Section WithWeight.
       (@QueryOpt.build_rule_set positive Pos.eqb Pos.succ (default (A:=positive))
          positive trie_map ptree_map_plus trie_map
          (@FullPosTrie.full_pos_trie_map) 1000%nat
-         (inj_seqs ++ const_rules l))
+         (inj_seqs ++ eq_rules l ++ const_rules l))
       (Mret false) 1000%nat.
 
   (* ---- decoding ---- *)
