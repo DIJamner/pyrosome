@@ -281,6 +281,126 @@ Fixpoint assoc_getp (l : list (positive * list nat)) (k : positive)
   end.
 
 (* -------------------------------------------------------------------------
+   Functional-dependency discovery (generalizes the injectivity scan above).
+
+   [scan_pass] answers one question per position: "do all same-class [f]-atoms
+   agree at position [j]?" -- i.e. is [j] *unconditionally* determined by the
+   e-class (injectivity).  That is the [S = []] case of the general question:
+
+     for which sets [S] of argument positions is [j] determined *given* that the
+     two atoms already agree on [S]?
+
+   Formally, [j] functionally depends on [S] for [f] when no two [f]-atoms land
+   in the same e-class (same [ret]) and agree on every position in [S] yet
+   disagree at [j].  [S = []] is injectivity.  For a NON-injective operator this
+   still finds the cancellation laws: [conc] is not injective (associativity
+   [conc (conc A B) C = conc A (conc B C)] merges two [conc] atoms disagreeing in
+   both args), but position [1] IS determined given agreement on position [0]
+   ([conc Z A = conc Z B -> A = B], left cancellation) and symmetrically position
+   [0] given [1] (right cancellation).  No operator is named or special-cased:
+   cancellation drops out of the same search that yields injectivity.
+
+   [fd_scan] is [scan_pass] with the shared positions [S] folded into the group
+   key: atoms are keyed by [(ret, project args S)], so only atoms already
+   agreeing on [S] are compared, and [j] is checked for constancy within each
+   group.  Atoms MUST be pre-filtered to one head [f] (the key omits [f], and
+   distinct heads may share e-class ids via cross-constructor equations). *)
+
+(* project [args] onto the positions in [S] (0-indexed). *)
+Definition proj_args (args : list positive) (S : list nat) : list positive :=
+  map (fun i => nth i args 1%positive) S.
+
+Fixpoint poslist_eqb (l1 l2 : list positive) : bool :=
+  match l1, l2 with
+  | [], [] => true
+  | x::l1', y::l2' => andb (Pos.eqb x y) (poslist_eqb l1' l2')
+  | _, _ => false
+  end.
+
+Definition fdkey_eqb (k1 k2 : positive * list positive) : bool :=
+  andb (Pos.eqb (fst k1) (fst k2)) (poslist_eqb (snd k1) (snd k2)).
+
+(* [true] iff position [j] is determined by shared positions [S] (no
+   counterexample), scanning atoms of a single head. *)
+Fixpoint fd_scan (As : list (list positive * positive)) (sh : list nat) (j : nat)
+  (seen : list ((positive * list positive) * positive)) : bool :=
+  match As with
+  | [] => true
+  | (args,r)::rest =>
+      let k := (r, proj_args args sh) in
+      let v := nth j args 1%positive in
+      match assoc_get fdkey_eqb seen k with
+      | None => fd_scan rest sh j ((k,v)::seen)
+      | Some v' => if Pos.eqb v v' then fd_scan rest sh j seen else false
+      end
+  end.
+
+Definition fd_holds (As : list (list positive * positive)) (sh : list nat) (j : nat)
+  : bool := fd_scan As sh j [].
+
+(* All subsets of [l], smallest-first is NOT guaranteed; we filter by size. *)
+Fixpoint powerset (l : list nat) : list (list nat) :=
+  match l with
+  | [] => [ [] ]
+  | x::l' => let ps := powerset l' in map (cons x) ps ++ ps
+  end.
+
+Fixpoint natlist_eqb (l1 l2 : list nat) : bool :=
+  match l1, l2 with
+  | [], [] => true
+  | x::l1', y::l2' => andb (Nat.eqb x y) (natlist_eqb l1' l2')
+  | _, _ => false
+  end.
+
+(* Working shared-sets of MINIMAL size determining [j].  Smallest [S] first: an
+   injective [j] yields [[[]]] (S=[], injectivity); a cancellative-only [j]
+   yields the singleton(s) it is cancelled by.  Minimality keeps the emitted
+   premise as weak as possible and drops the always-true "agree on everything
+   else" tautologies. *)
+Fixpoint first_working (sizes : list nat) (ps : list (list nat))
+  (As : list (list positive * positive)) (j : nat) : list (list nat) :=
+  match sizes with
+  | [] => []
+  | k::rest =>
+      match filter (fun s => andb (Nat.eqb (length s) k) (fd_holds As s j)) ps with
+      | [] => first_working rest ps As j
+      | w => w
+      end
+  end.
+
+Definition min_fd (As : list (list positive * positive)) (universe : list nat)
+  (j : nat) : list (list nat) :=
+  first_working (seq 0 (S (length universe))) (powerset universe) As j.
+
+(* Group conclusion positions by their determining shared-set, so all positions
+   sharing one premise become one multi-conclusion rule (matching the classic
+   injectivity rule's shape when [S=[]]). *)
+Fixpoint add_concl (sh : list nat) (j : nat) (acc : list (list nat * list nat))
+  : list (list nat * list nat) :=
+  match acc with
+  | [] => [(sh, [j])]
+  | (sh',js)::rest =>
+      if natlist_eqb sh sh' then (sh', j::js)::rest
+      else (sh',js)::add_concl sh j rest
+  end.
+
+(* All (shared-set, conclusion-positions) functional dependencies of one head of
+   arity [n]. *)
+Definition fdeps_of_fn (As : list (list positive * positive)) (n : nat)
+  : list (list nat * list nat) :=
+  fold_right
+    (fun j acc =>
+       let universe := filter (fun i => negb (Nat.eqb i j)) (seq 0 n) in
+       fold_right (fun sh acc' => add_concl sh j acc') acc (min_fd As universe j))
+    [] (seq 0 n).
+
+(* Atoms of a single head, as (args, ret) pairs. *)
+Definition fn_atoms (atoms : list (positive * list positive * positive))
+  (fn : positive) : list (list positive * positive) :=
+  fold_right (fun '(f,args,r) acc => if Pos.eqb f fn then (args,r)::acc else acc)
+    [] atoms.
+
+(* -------------------------------------------------------------------------
    String-facing driver.
    ------------------------------------------------------------------------- *)
 
@@ -350,6 +470,91 @@ Definition schemas_of (fs : list inj_finding) : list (string * list string) :=
 
 Definition gen_schemas (X : nat) (L : lang) : list (string * list string) :=
   schemas_of (findings X L).
+
+(* ---- general functional-dependency schema generator ----
+
+   The full generalization of [gen_schemas].  Instead of a single injective-arg
+   list per constructor, each schema is [(name, (shared, concl))]: two [name]
+   atoms in the same e-class that agree on the [shared] args are forced to agree
+   on the [concl] args.  [shared = []] is injectivity (exactly what [gen_schemas]
+   produced); [shared <> []] is cancellation.  Both come out of the one
+   [fdeps_of_fn] search -- no operator is special-cased, and no cancellation
+   template is hand-written.  For the linear calculus this yields the injectivity
+   rules AND [conc]'s cancellation laws automatically.
+
+   These feed [build_general_injection_rules] (below).  Sound to try, for the
+   same reason as the injectivity schemas: a spuriously-discovered dependency can
+   only over-merge during inference and make it fail (which [compute_wf_lang]
+   then catches), never produce a false theorem. *)
+Definition fundep_schemas_of
+  (g : Defs.instance positive positive trie_map trie_map
+         (@FullPosTrie.full_pos_trie_map) (option positive))
+  (rn : renaming string) (L : lang)
+  : list (string * (list string * list string)) :=
+  let atoms := catoms g in
+  let ars := arities atoms [] in
+  flat_map
+    (fun '(fn, ar) =>
+       if Pos.eqb fn 1%positive (* sort_of *) then []
+       else
+         let name := of_p rn fn in
+         match ctx_arg_names L name with
+         | None => []
+         | Some names =>
+             let As := fn_atoms atoms fn in
+             map (fun '(sh, js) => (name, (nth_names names sh, nth_names names js)))
+               (fdeps_of_fn As ar)
+         end)
+    ars.
+
+Definition gen_fundep_schemas (X : nat) (L : lang)
+  : list (string * (list string * list string)) :=
+  let '(l_pos, rn) := rename_lang L init_renaming in
+  fundep_schemas_of (run_eq triv_weight X l_pos) rn L.
+
+(* ---- general injection/cancellation rule builder ----
+
+   The functional-dependency generalization of
+   [TypeInference.injection_rule_from_name_and_rule].  A schema names a set of
+   [shared] argument positions (identified across the two atoms) and a set of
+   [concl] positions (equalized in the conclusion):
+
+     f a[shared],x1.. = r,  f a[shared],y1.. = r  |-  x_j = y_j  (j in concl)
+
+   [shared = []] gives the ordinary injectivity/congruence rule (its output then
+   coincides with [injection_rule_from_name_and_rule]).  [shared] nonempty gives
+   a cancellation rule: [shared=["G"]], [concl=["H"]] on [conc] yields
+   [conc G H1 = conc G H2 -> H1 = H2] (left cancellation).  A shared argument
+   keeps its bare name in both atoms (forcing them equal in the pattern); a
+   non-shared argument is suffixed [1]/[2].  [shared] and [concl] are disjoint by
+   construction. *)
+Definition injection_side (context : ctx) (shared : list string) (suffix : string)
+  : list string :=
+  map (fun x => if inb (fst x) shared then fst x else (fst x ++ suffix)%string) context.
+
+Definition general_injection_rule (name : string) (shared concl : list string)
+  (r : rule) : sequent string string :=
+  let ret_name := (name ++ " cong_ret")%string in
+  let context := get_ctx r in
+  {|
+    seq_assumptions :=
+      [atom_clause (Build_atom name (injection_side context shared "1") ret_name);
+       atom_clause (Build_atom name (injection_side context shared "2") ret_name)];
+    seq_conclusions := map (fun nm => eq_clause (nm ++ "1")%string (nm ++ "2")%string) concl
+  |}.
+
+Definition build_general_injection_rule (L : lang)
+  (schema : string * (list string * list string)) : sequent string string :=
+  let '(name, (shared, concl)) := schema in
+  match Find_x name L with
+  | Some r => general_injection_rule name shared concl r
+  | None => Build_sequent _ _ default default
+  end.
+
+Definition build_general_injection_rules
+  (schemas : list (string * (list string * list string))) (L : lang)
+  : list (sequent string string) :=
+  map (build_general_injection_rule L) schemas.
 
 (* debug: canonical (args, ret) e-class ids of every atom whose head prints as
    [nm], from the equation-saturated graph.  Two rows with the same [ret] but
