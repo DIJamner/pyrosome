@@ -436,6 +436,71 @@ Definition linear_cps :=
        linear_stlc).
 
 
+(* Interactive breaker for [preserving_compiler_ext], the direct analogue of
+   [setup_elab_compiler] (no elaboration detour).
+   [preserving_compiler_cons_nth_tail] peels one source rule using
+   [nth_error]/[nth_tail] (avoiding higher-order unification on [map fst c]);
+   [setup_preserving_compiler] then leaves one wf/eq obligation per source rule.
+   TODO: move next to [elab_compiler_cons_nth_tail] in Elab.ElabCompilers. *)
+Section PreservingBreak.
+  Context (target : lang).
+  Local Notation cmplr := (@CompilerDefs.compiler string (@Term.term string) (@Term.sort string)).
+  Context (cmp_pre : cmplr).
+  Let model := core_model target.
+  Existing Instance model.
+  Existing Instance term_default.
+  Existing Instance sort_default.
+  Local Notation compileC cmp := (compile (cmp++cmp_pre)).
+  Local Notation compileS cmp := (compile_sort (cmp++cmp_pre)).
+  Local Notation compileX cmp := (compile_ctx (cmp++cmp_pre)).
+  Lemma preserving_compiler_cons_nth_tail (cmp : cmplr) (src : lang) n m name r
+    : nth_error src m = Some (name,r) ->
+      match r with
+      | sort_rule c _ =>
+          exists t cmp',
+          nth_error cmp n = Some (name, sort_case (map fst c) t) /\
+          nth_tail n cmp = (name, sort_case (map fst c) t)::cmp' /\
+          preserving_compiler_ext cmp_pre (nth_tail (S n) cmp) (nth_tail (S m) src) /\
+          Model.wf_sort (compileX (nth_tail (S n) cmp) c) t
+      | term_rule c _ t =>
+          exists e cmp',
+          nth_error cmp n = Some (name, term_case (map fst c) e) /\
+          nth_tail n cmp = (name, term_case (map fst c) e)::cmp' /\
+          preserving_compiler_ext cmp_pre (nth_tail (S n) cmp) (nth_tail (S m) src) /\
+          Model.wf_term (compileX (nth_tail (S n) cmp) c) e (compileS (nth_tail (S n) cmp) t)
+      | sort_eq_rule c t1 t2 =>
+          preserving_compiler_ext cmp_pre (nth_tail n cmp) (nth_tail (S m) src) /\
+          Model.eq_sort (compileX (nth_tail n cmp) c)
+                  (compileS (nth_tail n cmp) t1) (compileS (nth_tail n cmp) t2)
+      | term_eq_rule c e1 e2 t =>
+          preserving_compiler_ext cmp_pre (nth_tail n cmp) (nth_tail (S m) src) /\
+          Model.eq_term (compileX (nth_tail n cmp) c) (compileS (nth_tail n cmp) t)
+                  (compileC (nth_tail n cmp) e1) (compileC (nth_tail n cmp) e2)
+      end ->
+      preserving_compiler_ext cmp_pre (nth_tail n cmp) (nth_tail m src).
+  Proof.
+    destruct r; intros; firstorder;
+      repeat match goal with
+             |[ H : nth_tail _ _ = _|-_] =>
+              rewrite H; rewrite (nth_tail_equals_cons_res _ _ H); clear H
+             |[ H : nth_error _ _ = _|-_] =>
+              rewrite (nth_tail_to_cons _ _ H); clear H
+             end; constructor; simpl; basic_utils_crush.
+  Qed.
+End PreservingBreak.
+
+Ltac preserving_compiler_cons :=
+  eapply preserving_compiler_cons_nth_tail;
+  [ compute; reflexivity | cbn beta match; repeat (apply conj || safe_eexists) ].
+Ltac break_preserving_ext :=
+  (preserving_compiler_cons; try reflexivity; [ break_preserving_ext |..])
+  || (compute; apply CompilerDefs.preserving_compiler_nil).
+Ltac setup_preserving_compiler :=
+  lazymatch goal with
+  | |- preserving_compiler_ext ?cmp_pre ?cmp ?src =>
+      rewrite (as_nth_tail cmp); rewrite (as_nth_tail src)
+  end; break_preserving_ext.
+
 Lemma linear_cps_preserving : preserving_compiler_ext linear_cps_subst
                                 (tgt_Model:= core_model (linear_cps_prod_lang
                                                            ++ linear_cps_lang
@@ -444,7 +509,17 @@ Lemma linear_cps_preserving : preserving_compiler_ext linear_cps_subst
                                 linear_cps
                                 linear_stlc.
 Proof.
-Abort.
+  assert (wf_lang (linear_cps_prod_lang ++ linear_cps_lang
+                   ++ linear_block_subst ++ linear_value_subst)) by prove_by_lang_db.
+  setup_preserving_compiler.
+  (* wf obligations: reflective; eq obligations: reduction, else admit (beta) *)
+  all: lazymatch goal with
+       | |- context[Model.wf_term] => compute_term_wf
+       | |- context[Model.wf_sort] => compute_sort_wf
+       | |- context[Model.eq_term] => first [ solve [ Automation.by_reduction; now t' ] | admit ]
+       | |- context[Model.eq_sort] => admit
+       end.
+Admitted.
 
 (*TODO: port the proof below to work for the theorem above.
 
