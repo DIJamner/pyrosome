@@ -435,7 +435,18 @@ Definition linear_cps :=
        linear_cps_def
        linear_stlc).
 
-(*TODO: This lemma does not go through because linear_cps has type inference unification variables left.
+
+Lemma linear_cps_preserving : preserving_compiler_ext linear_cps_subst
+                                (tgt_Model:= core_model (linear_cps_prod_lang
+                                                           ++ linear_cps_lang
+                                                           ++ linear_block_subst
+                                                           ++ linear_value_subst))
+                                linear_cps
+                                linear_stlc.
+Proof.
+Abort.
+
+(*TODO: port the proof below to work for the theorem above.
 
 Lemma linear_cps_preserving
   : (elab_preserving_compiler linear_cps_subst
