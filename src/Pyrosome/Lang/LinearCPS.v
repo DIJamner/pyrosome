@@ -265,9 +265,16 @@ Ltac normalize_env :=
   [> repeat normalize_env_step; term_refl | .. ].
 
 
+(* The infer-produced langs annotate some rule-ctx sorts with a different
+   [conc]-nesting than the sort declared in the goal ctx (e.g. [pm_pair]'s
+   block argument is expected at [blk (conc G (ext (only A) B))] while the
+   ctx declares [blk (ext (ext G A) B)]), so a variable can occur at a sort
+   that is only convertible-by-[conc_assoc] to its declared sort; the
+   [wf_term_conv] fallback bridges the two by env normalization. *)
 Ltac solve_wf_term := first [eapply wf_term_by';
   [> solve_in | solve_wf_args | first [left; reflexivity | right; solve_sort] ]
-  | eapply wf_term_var; solve_in]
+  | eapply wf_term_var; solve_in
+  | eapply wf_term_conv; [> eapply wf_term_var; solve_in | solve_sort ] ]
 with solve_wf_args :=
   first [apply wf_args_nil | constructor; [> solve_wf_term | solve_wf_args ]]
 with env_eq :=
@@ -512,42 +519,18 @@ Proof.
   assert (wf_lang (linear_cps_prod_lang ++ linear_cps_lang
                    ++ linear_block_subst ++ linear_value_subst)) by prove_by_lang_db.
   setup_preserving_compiler.
-  (* wf obligations: reflective; eq obligations: reduction, else admit (beta) *)
-  all: lazymatch goal with
-       | |- context[Model.wf_term] => compute_term_wf
-       | |- context[Model.wf_sort] => compute_sort_wf
-       | |- context[Model.eq_term] => first [ solve [ Automation.by_reduction; now t' ] | admit ]
-       | |- context[Model.eq_sort] => admit
-       end.
-Admitted.
-
-(*TODO: port the proof below to work for the theorem above.
-
-Lemma linear_cps_preserving
-  : (elab_preserving_compiler linear_cps_subst
-                                          (linear_cps_prod_lang
-                                             ++ linear_cps_lang
-                                             ++ linear_block_subst
-                                             ++ linear_value_subst)
-                                          linear_cps_def
-                                          linear_cps
-                                          linear_stlc).
-Proof.
-  setup_elab_compiler.
-  { repeat t. }
-  { repeat t. }
-  { Automation.by_reduction; now t'. }
-  { repeat t.
-    all: first [left; vm_compute; reflexivity
-               | right; sort_cong; Automation.by_reduction; now t'].
-  }
-  { Automation.by_reduction; now t'. }
-  (* ===== obligation 6 (Linear-STLC-beta): reduce + verified explicit proof ===== *)
+  (* wf obligations: reflective; simple eq obligations: reduction *)
+  1,2,4: compute_term_wf.
+  1,2: solve [ Automation.by_reduction; now t' ].
+  (* ===== remaining obligation (Linear-STLC-beta): reduce + explicit proof.
+     A single [by_reduction] "succeeds" here only by deferring an e-graph
+     check that blows up at Qed, so the equation is broken into small
+     kernel-checkable steps.  Ported from the old elab-based proof; the
+     [eq_term_conv] wrappers around [csub_assoc]/[exch_triple] bridge the
+     left-nested sort annotations the inference-based elaboration gives
+     those rules. ===== *)
+  unfold Model.eq_term; cbn [core_model].
   reduce. compute_eq_compilation.
-  
-  (*TODO: still seems like too much here.
-    Could be related to sorts in queries.
-    Automation.by_reduction; repeat t'.*)
   (* ===== dance 1 ===== *)
   match goal with
   | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_} (#"cmp" {_} {_} {_} (#"exch" {?G} {?H}) (#"csub" {?H} {?H'} {?G} {?G'} {?h} {?g})) (#"jmp" {?H'} {?G'} {?A} {?b} {?a})}} _ ] =>
@@ -582,7 +565,7 @@ Proof.
   }
   (* ===== push jmp ===== *)
   reduce.
-  
+
   lazymatch goal with
   | [|- eq_term _ _ _ {{e #"blk_subst" {?H1} {?H2} {?c} (#"jmp" {?G1} {?G2} {?A} (#"hd" {?B}) (#"val_subst" {?G2} {?G3} {?s} {?A} {?p})) }} _ ] =>
     reduce_to {{e #"blk_subst" {H1} {H2} {c} (#"blk_subst" {H2} (#"conc" {G1} {G3}) (#"csub" {G1} {G1} {G2} {G3} (#"id" (#"only" {B})) {s}) (#"jmp" {G1} {G3} {A} (#"hd" {B}) {p})) }};
@@ -595,7 +578,7 @@ Proof.
   all:[> | now repeat t'..].
 
   Optimize Proof.
-  
+
   eapply eq_term_trans.
 
   {
@@ -618,15 +601,19 @@ Proof.
           {?e}
         }} _ ] =>
           let cs' := csub_normalize cs in
-          reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs'} {e}) }}         
+          reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs'} {e}) }}
       end.
-      
+
       eapply eq_term_trans.
       {
         break_cmp.
         { term_refl. }
         eapply eq_term_trans.
-        { break_cmp; [ now eredex_steps_with linear_value_subst "csub_assoc" |  term_refl ]. }
+        { break_cmp;
+          [ now (eapply eq_term_conv;
+                 [ eredex_steps_with linear_value_subst "csub_assoc"
+                 | solve_sort ])
+          | term_refl ]. }
         { now exch_invert. }
       }
       reduce_lhs; break_cmp; [ | term_refl ].
@@ -642,14 +629,14 @@ Proof.
           {g2}
         }}
       end.
-      
+
       trans break_cmp.
       {
         trans break_cmp.
         1: term_refl.
         {
           csub_id_dance.
-          unapply linear_value_subst "cmp_csub".          
+          unapply linear_value_subst "cmp_csub".
         }
 
         eredex_steps_with linear_value_subst "cmp_assoc".
@@ -666,7 +653,8 @@ Proof.
         {
           trans break_cmp.
           { term_refl. }
-          { unapply linear_value_subst "exch_triple". }
+          { eapply eq_term_conv;
+            [ unapply linear_value_subst "exch_triple" | solve_sort ]. }
           compute_eq_compilation.
           reduce_lhs.
           trans break_cmp.
@@ -690,7 +678,7 @@ Proof.
           | [|- eq_term _ _ {{s #"sub" {?X} {?Y} }} ?e _ ] =>
               reduce_to {{e #"cmp" {X} {X} {Y} (#"id" {X}) {e} }}
           end.
-          
+
           trans break_cmp.
           {
             csub_id_dance.
@@ -699,7 +687,8 @@ Proof.
             compute_eq_compilation.
             break_cmp.
             1: term_refl.
-            unapply linear_value_subst "exch_triple".
+            eapply eq_term_conv;
+            [ unapply linear_value_subst "exch_triple" | solve_sort ].
 
             Unshelve.
             all: repeat t'; shelve.
@@ -757,7 +746,8 @@ Proof.
               all: repeat t'; shelve.
             }
             reduce_lhs.
-            unapply linear_value_subst "exch_triple".
+            eapply eq_term_conv;
+            [ unapply linear_value_subst "exch_triple" | solve_sort ].
           }
           { term_refl. }
           {
@@ -829,9 +819,9 @@ Proof.
       Unshelve.
       all: repeat t'; shelve.
     }
-    
+
     {
-      
+
       reduce_lhs.
       reassoc_cmp3.
 
@@ -851,7 +841,7 @@ Proof.
                 (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); Automation.by_reduction; repeat t'
             end.
         }
-        
+
         Unshelve.
         all: repeat t'; try shelve_if_not_eqterm.
 
@@ -904,8 +894,5 @@ Proof.
   Unshelve.
   all: repeat t'.
 Qed.
-#[local] Definition linear_cps_stlc_entry :=
-  cmp_entry (elab_compiler_implies_preserving linear_cps_preserving).
+#[local] Definition linear_cps_stlc_entry := cmp_entry linear_cps_preserving.
 #[export] Hint Resolve linear_cps_stlc_entry : preserving_db.
-
-*)
