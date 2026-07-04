@@ -9,6 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
   Lang.LinearSubst Lang.LinearSTLC
   Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.EGraph.InjRuleGen
   Tools.EGraph.TypeInference
   Tools.EGraph.Automation.
 
@@ -85,16 +86,15 @@ Definition linear_block_subst_injectivity :=
 Definition linear_cps_injectivity :=
   [("cont", ["e";"A"; "G"]); ("neg", ["A"])].
 
+Definition linear_cps_gen_schemas :=
+  Eval vm_compute in
+    gen_fundep_schemas 10 (linear_block_subst ++ linear_value_subst).
+
 Definition linear_cps_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple_gen
+    infer_lang_ext_simple_incr 10 100
        (linear_block_subst ++ linear_value_subst)
-       linear_cps_lang_def
-       (fun L => build_injection_rules
-                   (linear_cps_injectivity
-                      ++linear_block_subst_injectivity
-                      ++linear_value_subst_injectivity) L
-                 ++ linear_ext_injectivity)).
+       linear_cps_lang_def.
 
 Lemma cps_lang_wf
   : wf_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_lang.
@@ -112,20 +112,26 @@ Definition linear_cps_subst_def : compiler :=
     {{e #"blk_subst" (#"exch" "G" (#"only" (#"neg" "A"))) (#"jmp" (#"hd" (#"neg" "A")) "v")}}
   end.
 
-Derive linear_cps_subst
-       in (elab_preserving_compiler []
-                                          (linear_cps_lang
-                                             ++ linear_block_subst
-                                             ++ linear_value_subst)
-                                          linear_cps_subst_def
-                                          linear_cps_subst
-                                          (linear_exp_subst ++ linear_value_subst))
-       as linear_cps_subst_preserving.
-Proof.
-  auto_elab_compiler.
-Qed.
+Definition linear_cps_subst :=
+  Eval vm_compute in
+    (infer_compiler_simple_autoinj 10
+       (linear_cps_lang
+          ++ linear_block_subst
+          ++ linear_value_subst)
+       []
+       linear_cps_subst_def
+       (linear_exp_subst ++ linear_value_subst)).
+
+Lemma linear_cps_subst_preserving
+  : preserving_compiler_ext []
+      (tgt_Model := core_model (linear_cps_lang
+         ++ linear_block_subst
+         ++ linear_value_subst))
+      linear_cps_subst
+      (linear_exp_subst ++ linear_value_subst).
+Proof. compute_preserving_compiler (@nil (string*rule)). Qed.
 #[local] Definition linear_cps_cmp_entry :=
-  cmp_entry (elab_compiler_implies_preserving linear_cps_subst_preserving).
+  cmp_entry linear_cps_subst_preserving.
 #[export] Hint Resolve linear_cps_cmp_entry : preserving_db.
 
 (*TODO: separate file?*)
@@ -185,15 +191,9 @@ Definition linear_cps_prod_injectivity :=
 
 Definition linear_cps_prod_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple_gen
-       (linear_block_subst ++ linear_value_subst)
-       linear_cps_prod_lang_def
-       (fun L => build_injection_rules
-                   (linear_cps_prod_injectivity
-                      ++linear_cps_injectivity
-                      ++linear_block_subst_injectivity
-                      ++linear_value_subst_injectivity) L
-                 ++ linear_ext_injectivity)).
+    infer_lang_ext_simple_incr 10 100
+        (linear_block_subst ++ linear_value_subst)
+       linear_cps_prod_lang_def.
 
 Lemma linear_cps_prod_wf
   : wf_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang.
@@ -422,32 +422,36 @@ Ltac csub_id_dance :=
     [> term_refl .. |
        unapply linear_value_subst "id_left" |
        unapply linear_value_subst "exch_inv" |
-       right; reflexivity ]).
+      right; reflexivity ]).
 
-Derive linear_cps
-       in (elab_preserving_compiler linear_cps_subst
+Definition linear_cps :=
+  Eval vm_compute in
+    (infer_compiler_simple_autoinj 4
+       (linear_cps_prod_lang
+          ++ linear_cps_lang
+          ++ linear_block_subst
+          ++ linear_value_subst)
+       linear_cps_subst
+       linear_cps_def
+       linear_stlc).
+
+(*TODO: This lemma does not go through because linear_cps has type inference unification variables left.
+
+Lemma linear_cps_preserving
+  : (elab_preserving_compiler linear_cps_subst
                                           (linear_cps_prod_lang
                                              ++ linear_cps_lang
                                              ++ linear_block_subst
                                              ++ linear_value_subst)
                                           linear_cps_def
                                           linear_cps
-                                          linear_stlc)
-       as linear_cps_preserving.
+                                          linear_stlc).
 Proof.
   setup_elab_compiler.
   { repeat t. }
   { repeat t. }
   { Automation.by_reduction; now t'. }
-  {
-    (*TODO: figure out what t does wrong here,
-      or use e-graph inference machinery.
-     *)
-    repeat s.
-    24:instantiate (1 := {{e ext (ext (#"only" (#"neg" "B"))
-                                   (#"neg" (#"prod" "A" (#"neg" "B"))))
-                             "A" }}).
-    30:instantiate (1 := {{e ext "H" (#"neg" "B")}}).
+  { repeat t.
     all: first [left; vm_compute; reflexivity
                | right; sort_cong; Automation.by_reduction; now t'].
   }
@@ -817,3 +821,5 @@ Qed.
 #[local] Definition linear_cps_stlc_entry :=
   cmp_entry (elab_compiler_implies_preserving linear_cps_preserving).
 #[export] Hint Resolve linear_cps_stlc_entry : preserving_db.
+
+*)
