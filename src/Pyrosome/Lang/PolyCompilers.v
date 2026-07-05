@@ -308,8 +308,23 @@ Definition exists_def : lang _ :=
 #[local] Definition Exists_inst_for_db := inst_for_db "Exists".
 #[export] Hint Resolve Exists_inst_for_db : injective_con.
 
-Derive exists_lang
-  in (elab_lang_ext (exp_param_substs
+(*TODO: move to top of file*)
+From Pyrosome.Tools Require Import InjRuleGen.
+
+Definition exists_lang :=
+  Eval vm_compute in
+    (infer_lang_ext_simple_incr 10 100
+       (exp_param_substs
+          ++ exp_ty_subst
+          ++ val_param_substs
+          ++ val_ty_subst
+          ++env_ty_subst
+          ++ty_subst_lang
+          ++exp_parameterized++val_parameterized
+          ++ty_env_lang) exists_def).
+
+
+Lemma exists_lang_wf : wf_lang_ext (exp_param_substs
                              ++ exp_ty_subst
                              ++ val_param_substs
                              ++ val_ty_subst
@@ -317,11 +332,10 @@ Derive exists_lang
                              ++ty_subst_lang
                              ++exp_parameterized++val_parameterized
                              ++ty_env_lang)
-              exists_def exists_lang)
-       as exists_lang_wf.
-Proof. auto_elab. Qed.
+                               exists_lang.
+Proof. compute_wf_lang. Qed.
 #[local] Definition exists_lang_entry :=
-  lang_entry (elab_lang_implies_wf exists_lang_wf).
+  lang_entry exists_lang_wf.
 #[export] Hint Resolve exists_lang_entry : wf_lang_db.
 
 Definition exists_block_def : lang _ :=
@@ -404,6 +418,32 @@ Definition exists_block_def : lang _ :=
   ]
   ]}.
 
+
+Definition exists_block_lang' :=
+  Eval vm_compute in
+    (infer_lang_ext_simple_incr 10 100
+       (block_param_substs
+          ++val_param_substs
+          ++ block_ty_subst
+          ++env_ty_subst
+          ++ty_subst_lang
+          ++block_parameterized++val_parameterized
+          ++ty_env_lang)
+       exists_block_def).
+
+(*TODO: too slow. Why? should replace the derive below.
+Lemma exists_block_lang_wf
+  : wf_lang_ext (block_param_substs
+                   ++val_param_substs
+                   ++ block_ty_subst
+                   ++env_ty_subst
+                   ++ty_subst_lang
+                   ++block_parameterized++val_parameterized
+                   ++ty_env_lang)
+      exists_block_lang.
+Proof. compute_wf_lang. Qed.
+*)
+
 Derive exists_block_lang
   in (elab_lang_ext (block_param_substs
                              ++val_param_substs
@@ -440,6 +480,21 @@ Definition ir_param_substs_def :=
     eqn_rules type_subst_mode deps
     (hide_lang_implicits (ir_parameterized++deps) ir_parameterized).
 
+(*TODO: this takes too long. Why?
+Definition ir_param_substs :=
+  Eval vm_compute in
+    (infer_lang_ext_simple_incr 10 100
+       (block_param_substs
+          ++ val_param_substs
+          ++ block_ty_subst
+          ++ env_ty_subst
+          ++ ty_subst_lang
+          ++ block_parameterized
+          ++ val_parameterized
+          ++ ty_env_lang)
+       ir_param_substs_def).
+*)
+
 Derive ir_param_substs
   in (elab_lang_ext (ir_parameterized
                              ++block_param_substs
@@ -458,7 +513,57 @@ Proof. auto_elab. Qed.
   lang_entry (elab_lang_implies_wf ir_param_substs_wf).
 #[export] Hint Resolve ir_param_substs_entry : wf_lang_db.
 
-#[local] Definition cmp' := Eval compute in cps_parameterized.
+Definition exp_ty_subst_cps' :=
+  Eval vm_compute in
+    (infer_compiler_simple_autoinj 7
+       (ir_param_substs
+                 ++ ir_parameterized (*TODO: only include conts*)
+                 ++ block_param_substs
+                 ++ val_param_substs
+                 ++ block_ty_subst
+                 ++env_ty_subst
+                 ++ty_subst_lang
+                 ++block_parameterized++val_parameterized
+                 ++ty_env_lang)
+       (id_compiler (val_param_substs
+                             ++ val_ty_subst
+                              ++env_ty_subst
+                              ++ty_subst_lang)
+                 ++ cps_parameterized++ty_env_cmp)
+       exp_ty_subst_cps_def
+       (exp_param_substs ++ exp_ty_subst)).
+
+(* TODO: Qed/e-graph fails. Why?
+Lemma cps_preserving
+  : preserving_compiler_ext
+      (id_compiler (val_param_substs
+                      ++ val_ty_subst
+                      ++env_ty_subst
+                      ++ty_subst_lang)
+         ++ cps_parameterized++ty_env_cmp)
+      (tgt_Model:= core_model
+                     (ir_param_substs
+                        ++ ir_parameterized (*TODO: only include conts*)
+                        ++ block_param_substs
+                        ++ val_param_substs
+                        ++ block_ty_subst
+                        ++env_ty_subst
+                        ++ty_subst_lang
+                        ++block_parameterized++val_parameterized
+                        ++ty_env_lang))
+      exp_ty_subst_cps
+      (exp_param_substs ++ exp_ty_subst).
+Proof.
+  compute_preserving_compiler
+    ((val_param_substs
+        ++ val_ty_subst
+        ++env_ty_subst
+        ++ty_subst_lang)
+       ++(src_parameterized ++ exp_parameterized ++ val_parameterized)
+       ++ty_env_lang).
+Qed.
+*)
+
 Derive exp_ty_subst_cps
   in (elab_preserving_compiler
               (id_compiler (val_param_substs

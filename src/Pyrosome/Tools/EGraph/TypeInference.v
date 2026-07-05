@@ -263,49 +263,6 @@ Definition build_injection_rule (L: lang) (schema: string * list string): sequen
   end.
 Definition build_injection_rules (schemas: list (string * list string)) (L: lang): list (sequent string string) :=
   map (build_injection_rule L) schemas.
-
-(* The per-constructor schema above can only express injectivity of a single
-   language constructor [c] -- the congruence rule [c args1 = r -> c args2 = r ->
-   args1 = args2].  Some sound facts an inference needs are not of this shape.
-
-   In particular, recovering an implicit environment through the linear [ext G A
-   := conc G (only A)] means inverting a [conc], and [conc] is *not* injective
-   ([conc emp G = G]), so an injectivity schema for it would be unsound.  But
-   [conc] *is* cancellative: environments form the free monoid on the [only A]
-   generators, so [conc Z A = conc Z B -> A = B] (left) and [conc A Z = conc B Z
-   -> A = B] (right) are both true theorems.  These are what actually let the
-   engine recover the implicit env -- via the equation between two [conc]s that
-   share one factor (which factor is shared depends on the rule; empirically the
-   env is recovered from [blk (conc G H)]-style result sorts, where [H] is the
-   shared left factor, so LEFT cancellation is the one that fires).
-
-   The engine's injection input is therefore just a function [lang -> list
-   sequent] -- "the injection sequents to run against this language".  The common
-   case is [build_injection_rules schemas] (name-based congruence rules); to add
-   explicit sound sequents a caller writes [fun L => build_injection_rules
-   schemas L ++ extra_seqs], concatenating them onto [build_injection_rules]'s
-   result.  ([of_lang]-style schema building stays per-rule, since it looks up
-   constructor contexts in the language as it grows.) *)
-
-(* Cancellation sequents for a binary operation [f] (sound whenever [f] is
-   cancellative, e.g. concatenation on a free monoid).  Left: from [f Z A = f Z
-   B] conclude [A = B]; right: from [f A Z = f B Z] conclude [A = B].  Synthetic
-   e-class names use a space (as [injection_rule_from_name_and_rule] does for its
-   [cong_ret]) so they cannot collide with source variables. *)
-Definition left_cancellation_seq (f : string) : sequent string string :=
-  {|
-    seq_assumptions :=
-      [atom_clause (Build_atom f ["Z"; "A"] (f ++ " lcancel_ret"));
-       atom_clause (Build_atom f ["Z"; "B"] (f ++ " lcancel_ret"))];
-    seq_conclusions := [eq_clause "A" "B"]
-  |}.
-Definition right_cancellation_seq (f : string) : sequent string string :=
-  {|
-    seq_assumptions :=
-      [atom_clause (Build_atom f ["A"; "Z"] (f ++ " rcancel_ret"));
-       atom_clause (Build_atom f ["B"; "Z"] (f ++ " rcancel_ret"))];
-    seq_conclusions := [eq_clause "A" "B"]
-  |}.
 (* ----------------------------- *)
 
 
@@ -403,10 +360,7 @@ Section WithWeight.
                 | Result.Success s => [s]
                 | Result.Failure _ => []
                 end)
-      (filter (fun '(n,r) => match r with
-                             | sort_eq_rule _ _ _ | term_eq_rule _ _ _ _ => true
-                             | _ => false
-                             end) l).
+      (filter filter_rules l).
 
   (* Run the saturation, given the language [l] and the precompiled injection
      sequents [inj_seqs]. *)

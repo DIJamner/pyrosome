@@ -58,38 +58,6 @@ Definition linear_cps_lang_def : lang :=
   ]
   ]}.
 
-(*TODO: move to LinearSubst *)
-Definition linear_value_subst_injectivity :=
-  [("exch", ["H";"G"]);("vsub",["v";"A"; "G"]);("hd", ["A"]);
-   ("only", ["A"]); ("emp", []); ("val_subst", ["A"; "G"]); ("val", ["A"; "G"]);
-   ("cmp", ["G3"; "G1"]); ("id", ["G"]); ("sub", ["G'"; "G"]); ("env", []); ("ty", [])].
-
-(* The implicit env of [cont]/[jmp] must be recovered by inverting a [conc]:
-   e.g. [jmp]'s result sort is [blk (conc ?G H)] and the rule declares it
-   [blk (conc G H)], so the e-graph must conclude [?G = G] from [conc ?G H =
-   conc G H].  We cannot do this by declaring [conc] injective, because [conc]
-   genuinely is not injective ([conc emp G = G], [conc] is associative), so such
-   a schema would be unsound.  But [conc] *is* cancellative -- environments form
-   the free monoid on the [only A] generators -- and it is left-cancellation
-   that fires here: the shared factor ends up as the *first* [conc] argument in
-   the e-graph, so [conc Z A = conc Z B -> A = B] recovers the env.  (This is
-   sound; the earlier attempt used right-cancellation, whose shared factor never
-   appears, so it silently matched nothing and left [#"?"] holes -- which in turn
-   made [compute_wf_lang] thrash on the junk constructors.) *)
-Definition linear_ext_injectivity :=
-  [left_cancellation_seq "conc"].
-
-(*TODO: move to LinearSubst *)
-Definition linear_block_subst_injectivity :=
-  [("blk_subst", ["G"]); ("blk", ["G"])].
-
-Definition linear_cps_injectivity :=
-  [("cont", ["e";"A"; "G"]); ("neg", ["A"])].
-
-Definition linear_cps_gen_schemas :=
-  Eval vm_compute in
-    gen_fundep_schemas 10 (linear_block_subst ++ linear_value_subst).
-
 Definition linear_cps_lang :=
   Eval vm_compute in
     infer_lang_ext_simple_incr 10 100
@@ -181,13 +149,6 @@ Definition linear_cps_prod_lang_def : lang :=
       = #"blk_subst" (#"csub" (#"id" "G") (#"vsub" "v")) "e"
       : #"blk" (#"conc" "G" "H")
   ] ]}.
-
-(* As in the cartesian [cps_prod_injectivity] (SimpleVCPS), [prod] (and [pair])
-   are genuine free constructors and so are soundly injective; the implicit type
-   args [A]/[B] of [pm_pair] in [prod_eta] are recovered from the sort
-   [val H (prod A B)] of its scrutinee by inverting [prod]. *)
-Definition linear_cps_prod_injectivity :=
-  [("pair", ["e2"; "e1"; "B"; "A"; "H"; "G"]); ("prod", ["B"; "A"])].
 
 Definition linear_cps_prod_lang :=
   Eval vm_compute in
