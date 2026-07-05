@@ -28,24 +28,22 @@ Derive pi
 Proof.
   setup_lang_interactive.
 
-  elab_rule {[r "G" : #"env",
+  elab_rule_auto {[r "G" : #"env",
       "A" : #"ty" "G",
       "B": #"ty" (#"ext" "G" "A")
       -----------------------------------------------
       #"Pi" "A" "B" : #"ty" "G"
-    ]}%prerule
-    (pi_injectivity++subst_injectivity).
+    ]}%prerule 5.
   gen_subst.
-  elab_rule {[r "G" : #"env",
+  elab_rule_auto {[r "G" : #"env",
       "A" : #"ty" "G",
       "B": #"ty" (#"ext" "G" "A"),
       "e" : #"exp" (#"ext" "G" "A") "B"
       -----------------------------------------------
       #"lambda" "A" "e" : #"exp" "G" (#"Pi" "A" "B")
-  ]}%prerule
-   (pi_injectivity++subst_injectivity).
+  ]}%prerule 5.
   gen_subst.
-  elab_rule {[r "G" : #"env",
+  elab_rule_auto {[r "G" : #"env",
           "A" : #"ty" "G",
           "B": #"ty" (#"ext" "G" "A"),
           (*TODO: why is this annotation needed? *)
@@ -53,10 +51,9 @@ Proof.
           "e'" : #"exp" "G" "A"
           -----------------------------------------------
           #"app" "e" "e'" : #"exp" "G" (#"ty_subst" (#"snoc" #"id" "e'") "B")
-   ]}%prerule
-    (pi_injectivity++subst_injectivity).
+   ]}%prerule 5.
    gen_subst.
-  elab_rule{[r "G" : #"env",
+  elab_rule_auto{[r "G" : #"env",
       "A" : #"ty" "G",
       "B": #"ty" (#"ext" "G" "A"),
       "e" : #"exp" (#"ext" "G" "A") "B",
@@ -65,8 +62,14 @@ Proof.
       #"app" (#"lambda" "A" "e") "e'"
       = #"exp_subst" (#"snoc" #"id" "e'") "e"
       : #"exp" "G" (#"ty_subst" (#"snoc" #"id" "e'") "B")
-  ]}%prerule
-    (pi_injectivity++subst_injectivity).
+  ]}%prerule 5.
+(* NOTE: kept on the explicit schema list: the auto-generated ruleset includes
+   composition-cancellation schemas (cmp f1 g = cmp f2 g |- f1 = f2) that the
+   bounded counterexample search cannot refute but that are semantically
+   unjustified; they merge (under' wkn) with wkn (both compose with wkn to the
+   double weakening), mis-elaborating the "B" annotation below into
+   (ty_subst wkn B), and the deferred wf-check of that ill-formed rule then
+   diverges at Qed. *)
 elab_rule {[r "G" : #"env",
       "A" : #"ty" "G",
       "B": #"ty" (#"ext" "G" "A"),

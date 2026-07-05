@@ -6,7 +6,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
-  Tools.EGraph.TypeInference
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen
   Tools.EGraph.ComputeWf
   Tools.Resolution.
 From Pyrosome.Lang Require Import
@@ -62,7 +62,7 @@ Definition prod_cc_injectivity :=
 
 Definition prod_cc :=
   Eval vm_compute in
-    (infer_lang_ext_simple (cps_prod_lang ++ block_subst ++value_subst) prod_cc_def prod_cc_injectivity).
+    infer_lang_ext_simple_incr 10 100 (cps_prod_lang ++ block_subst ++value_subst) prod_cc_def.
 
 Lemma prod_cc_wf : wf_lang_ext (cps_prod_lang ++ block_subst ++value_subst) prod_cc.
 Proof. compute_wf_lang. Qed.
@@ -121,10 +121,9 @@ Definition cc_lang_injectivity :=
 
 Definition cc_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple (prod_cc ++ cps_prod_lang
+    infer_lang_ext_simple_incr 10 100 (prod_cc ++ cps_prod_lang
                              ++ block_subst ++value_subst)
-                               cc_lang_def
-                               cc_lang_injectivity).
+                               cc_lang_def.
 
 Lemma cc_lang_wf : wf_lang_ext (prod_cc ++ cps_prod_lang
                              ++ block_subst ++value_subst) cc_lang.
@@ -199,7 +198,7 @@ Definition forget_eq_wkn_injectivity :=
 
 Definition forget_eq_wkn :=
   Eval vm_compute in
-    (infer_lang_ext_simple value_subst forget_eq_wkn_def forget_eq_wkn_injectivity).
+    infer_lang_ext_simple_incr 10 100 value_subst forget_eq_wkn_def.
 
 Lemma forget_eq_wkn_wf : wf_lang_ext value_subst forget_eq_wkn.
 Proof. compute_wf_lang. Qed.

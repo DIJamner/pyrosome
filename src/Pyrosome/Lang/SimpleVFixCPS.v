@@ -7,6 +7,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
   Tools.EGraph.TypeInference
+  Tools.EGraph.InjRuleGen
   Tools.EGraph.ComputeWf
   Tools.Resolution.
 From Pyrosome.Lang Require Import
@@ -44,10 +45,13 @@ Definition fix_cps_lang_injectivity :=
    ("val", ["A"; "G"]); ("fix", ["e"; "A"; "G"]); ("forget", ["G"]); ("blk", ["G"]);
    ("cmp", ["G3"; "G1"]); ("blk_subst", ["G"])].
 
+(* Saturation fuel 2: on this base (cps_lang ++ block_subst ++ value_subst) the
+   injectivity e-graph explodes at fuel >= 3 (OOM ~6GB); fuel 2 already yields
+   every schema of the explicit [fix_cps_lang_injectivity] list. *)
 Definition fix_cps_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple (cps_lang ++ block_subst ++ value_subst) fix_cps_lang_def
-       fix_cps_lang_injectivity).
+    infer_lang_ext_simple_incr 2 100 (cps_lang ++ block_subst ++ value_subst)
+      fix_cps_lang_def.
 
 Lemma fix_wf : wf_lang_ext (cps_lang ++ block_subst ++ value_subst) fix_cps_lang.
 Proof. compute_wf_lang. Qed.

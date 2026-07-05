@@ -8,6 +8,7 @@ From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.Elab
   Lang.LinearSubst Lang.LinearSTLC
   Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
   Tools.EGraph.TypeInference
+  Tools.EGraph.InjRuleGen
   Tools.EGraph.Automation.
 From Pyrosome.Lang Require Import
   PolySubst SimpleVSubst SimpleVCC SimpleVFixCC
@@ -74,7 +75,7 @@ Definition ch8_injectivity :=
 
 Definition ch8 :=
   Eval vm_compute in
-    (infer_lang_ext_simple (heap++nat_lang) ch8_def ch8_injectivity).
+    infer_lang_ext_simple_incr 10 100 (heap++nat_lang) ch8_def.
 
 Lemma ch8_wf : wf_lang_ext (heap++nat_lang) ch8.
 Proof. compute_wf_lang. Qed.
@@ -151,7 +152,7 @@ Definition ch8_config_injectivity :=
 
 Definition ch8_config :=
   Eval vm_compute in
-    (infer_lang_ext_simple (ch8 ++ heap++nat_lang) ch8_config_def ch8_config_injectivity).
+    infer_lang_ext_simple_incr 10 100 (ch8 ++ heap++nat_lang) ch8_config_def.
 
 Lemma ch8_config_wf : wf_lang_ext (ch8 ++ heap++nat_lang) ch8_config.
 Proof.  compute_wf_lang. Qed.
@@ -251,7 +252,7 @@ Definition ch8_ectx_injectivity :=
 
 Definition ch8_ectx :=
   Eval vm_compute in
-    (infer_lang_ext_simple (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx_injectivity).
+    infer_lang_ext_simple_incr 10 100 (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def.
 
 Lemma ch8_ectx_wf : wf_lang_ext (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx.
 Proof.  compute_wf_lang. Qed.

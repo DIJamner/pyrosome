@@ -7,7 +7,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
-  Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen Tools.Resolution Tools.EGraph.ComputeWf.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst SimpleVSTLC.
 Import Core.Notations.
 
@@ -39,9 +39,7 @@ Definition fix_injectivity :=
 
 Definition fix_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple (stlc++exp_subst++value_subst) fix_def
-       (fix_injectivity++stlc_injectivity
-          ++exp_subst_injectivity++value_subst_injectivity)).
+    infer_lang_ext_simple_incr 10 100 (stlc++exp_subst++value_subst) fix_def.
 
 Lemma fix_wf : wf_lang_ext (stlc++exp_subst++value_subst) fix_lang.
 Proof. compute_wf_lang. Qed.

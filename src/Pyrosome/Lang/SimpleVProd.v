@@ -10,7 +10,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
   Tools.Resolution Tools.EGraph.ComputeWf
-  Tools.EGraph.TypeInference
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen
   Tools.EGraph.Automation.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 Import Core.Notations.
@@ -105,7 +105,7 @@ Definition prod_injectivity :=
 
 Definition prod :=
   Eval vm_compute in
-    (infer_lang_ext_simple (exp_subst++value_subst) prod_def prod_injectivity).
+    infer_lang_ext_simple_incr 10 100 (exp_subst++value_subst) prod_def.
 
 Lemma prod_wf : wf_lang_ext (exp_subst++value_subst) prod.
 Proof. compute_wf_lang. Qed.

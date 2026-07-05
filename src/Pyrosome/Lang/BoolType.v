@@ -11,7 +11,7 @@ Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage wit
 
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
-  Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen Tools.Resolution Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -69,7 +69,7 @@ Definition typed_bool_injectivity :=
 
 Definition typed_bool :=
   Eval vm_compute in
-    (infer_lang_ext_simple (exp_subst++value_subst) typed_bool_def typed_bool_injectivity).
+    infer_lang_ext_simple_incr 10 100 (exp_subst++value_subst) typed_bool_def.
 
 Lemma typed_bool_wf : wf_lang_ext (exp_subst++value_subst) typed_bool.
 Proof. compute_wf_lang. Qed.
@@ -96,7 +96,7 @@ Definition untyped_bool_injectivity :=
 
 Definition untyped_bool :=
   Eval vm_compute in
-    (infer_lang_ext_simple (star_type ++ exp_subst++value_subst) untyped_bool_def untyped_bool_injectivity).
+    infer_lang_ext_simple_incr 10 100 (star_type ++ exp_subst++value_subst) untyped_bool_def.
 
 Lemma untyped_bool_wf : wf_lang_ext (star_type ++ exp_subst++value_subst) untyped_bool.
 Proof. compute_wf_lang. Qed.
@@ -139,7 +139,7 @@ Definition boolhuh_injectivity :=
 
 Definition boolhuh :=
   Eval vm_compute in
-    (infer_lang_ext_simple (utlc ++ untyped_bool ++ star_type ++ exp_subst++value_subst) boolhuh_def boolhuh_injectivity).
+    infer_lang_ext_simple_incr 10 100 (utlc ++ untyped_bool ++ star_type ++ exp_subst++value_subst) boolhuh_def.
 
 Lemma boolhuh_wf : wf_lang_ext (utlc ++ untyped_bool ++ star_type ++ exp_subst++value_subst) boolhuh.
 Proof. compute_wf_lang. Qed.
@@ -182,7 +182,7 @@ Definition utlc_bool_injectivity :=
 
 Definition utlc_bool :=
   Eval vm_compute in
-    (infer_lang_ext_simple (utlc ++ untyped_bool ++ error_t ++ star_type ++ exp_subst++value_subst) utlc_bool_def utlc_bool_injectivity).
+    infer_lang_ext_simple_incr 10 100 (utlc ++ untyped_bool ++ error_t ++ star_type ++ exp_subst++value_subst) utlc_bool_def.
 
 Lemma utlc_bool_wf : wf_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++ exp_subst++value_subst) utlc_bool.
 Proof. compute_wf_lang. Qed.
@@ -239,7 +239,7 @@ Definition uif_injectivity :=
 
 Definition uif :=
   Eval vm_compute in
-    (infer_lang_ext_simple (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) uif_def uif_injectivity).
+    infer_lang_ext_simple_incr 10 100 (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) uif_def.
 
 Lemma uif_wf : wf_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) uif.
 Proof. compute_wf_lang. Qed.
@@ -299,7 +299,7 @@ Definition mif_injectivity :=
 
 Definition mif :=
   Eval vm_compute in
-    (infer_lang_ext_simple (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) mif_def mif_injectivity).
+    infer_lang_ext_simple_incr 10 100 (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) mif_def.
 
 Lemma mif_wf : wf_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) mif.
 Proof. compute_wf_lang. Qed.

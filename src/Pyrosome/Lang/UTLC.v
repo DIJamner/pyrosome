@@ -7,7 +7,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
-  Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen Tools.Resolution Tools.EGraph.ComputeWf.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 Import Core.Notations.
 
@@ -29,8 +29,7 @@ Definition star_type_injectivity :=
 
 Definition star_type :=
   Eval vm_compute in
-    (infer_lang_ext_simple (exp_subst++value_subst) star_type_def
-       star_type_injectivity).
+    infer_lang_ext_simple_incr 10 100 (exp_subst++value_subst) star_type_def.
 
 Lemma star_type_wf : wf_lang_ext (exp_subst++value_subst) star_type.
 Proof. compute_wf_lang. Qed.
@@ -54,8 +53,7 @@ Definition error_t_injectivity :=
 
 Definition error_t :=
   Eval vm_compute in
-    (infer_lang_ext_simple (exp_subst++value_subst) error_t_def
-       error_t_injectivity).
+    infer_lang_ext_simple_incr 10 100 (exp_subst++value_subst) error_t_def.
 
 Lemma error_t_wf : wf_lang_ext (exp_subst++value_subst) error_t.
 Proof. compute_wf_lang. Qed.
@@ -94,8 +92,7 @@ Definition utlc_injectivity :=
 
 Definition utlc :=
   Eval vm_compute in
-    (infer_lang_ext_simple (star_type ++ exp_subst ++ value_subst) utlc_def
-       utlc_injectivity).
+    infer_lang_ext_simple_incr 10 100 (star_type ++ exp_subst ++ value_subst) utlc_def.
 
 Lemma utlc_wf : wf_lang_ext (star_type ++ exp_subst ++ value_subst) utlc.
 Proof. compute_wf_lang. Qed.

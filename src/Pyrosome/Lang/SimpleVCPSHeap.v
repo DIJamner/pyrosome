@@ -7,6 +7,7 @@ From Utils Require Import Utils GallinaHintDb.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
   Tools.EGraph.TypeInference
+  Tools.EGraph.InjRuleGen
   Tools.EGraph.ComputeWf
   Tools.Resolution.
 From Pyrosome.Lang Require Import
@@ -96,8 +97,9 @@ Definition heap_cps_ops_injectivity :=
 
 Definition heap_cps_ops :=
   Eval vm_compute in
-    (infer_lang_ext_simple (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst)
-       heap_cps_ops_def heap_cps_ops_injectivity).
+    infer_lang_ext_simple_incr 10 100
+      (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst)
+      heap_cps_ops_def.
 
 Lemma heap_cps_ops_wf
   : wf_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst) heap_cps_ops.

@@ -9,6 +9,7 @@ From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Resolution
   Tools.EGraph.ComputeWf
   Tools.EGraph.TypeInference
+  Tools.EGraph.InjRuleGen
   Elab.PreTerm Elab.PreRule.
 
 Lemma wf_lang_snoc
@@ -65,6 +66,25 @@ Ltac elab_rule' named_rule injective do_compute :=
 
 Ltac elab_rule named_rule injective :=
   elab_rule' named_rule injective idtac.
+
+
+(* Like [elab_rule'], but with the injectivity/cancellation rules generated
+   automatically from the current base via functional-dependency search
+   (see InjRuleGen.gen_fundep_schemas; fuel 3 is the usual setting). *)
+Ltac elab_rule_auto' named_rule fuel do_compute :=
+  let base := lazymatch goal with
+                |- wf_lang_ext ?base _ => base
+              end in
+  let named_rule' := eval vm_compute in
+    (fst named_rule,
+     infer_rule_gen base
+       (build_general_injection_rules (gen_fundep_schemas fuel base))
+       (snd named_rule))
+  in
+  push_rule' named_rule' do_compute.
+
+Ltac elab_rule_auto named_rule fuel :=
+  elab_rule_auto' named_rule fuel idtac.
 
 
 Ltac setup_lang_interactive :=

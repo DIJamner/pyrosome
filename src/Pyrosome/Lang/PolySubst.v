@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Theory.Renaming
-  Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf Tools.EGraph.TypeInference
+  Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen
   Compilers.Parameterizer
   Lang.GenericSubst.
 Import Core.Notations.
@@ -63,7 +63,7 @@ Definition cat_injectivity := [("id", ["G"]); ("cmp", ["G3"; "G1"]); ("arr", ["G
 
 Definition cat :=
   Eval vm_compute in
-    (infer_lang_ext_simple [] cat_def cat_injectivity).
+    infer_lang_ext_simple_incr 10 100 [] cat_def.
 
 Lemma cat_wf : wf_lang_ext [] cat.
 Proof. compute_wf_lang. Qed.
@@ -86,7 +86,7 @@ Definition obj_consumer_injectivity := [("arr", ["G'"; "G"]); ("cmp", ["G3"; "G1
 
 Definition obj_consumer :=
   Eval vm_compute in
-    (infer_lang_ext_simple cat obj_consumer_def obj_consumer_injectivity).
+    infer_lang_ext_simple_incr 10 100 cat obj_consumer_def.
 
 Lemma obj_consumer_wf : wf_lang_ext cat obj_consumer.
 Proof. compute_wf_lang. Qed.
@@ -118,7 +118,7 @@ Definition unit_action_injectivity := [("unit", ["G"]); ("id", ["G"]); ("act", [
 
 Definition unit_action :=
   Eval vm_compute in
-    (infer_lang_ext_simple (obj_consumer++cat) unit_action_def unit_action_injectivity).
+    infer_lang_ext_simple_incr 10 100 (obj_consumer++cat) unit_action_def.
 
 Lemma unit_action_wf : wf_lang_ext (obj_consumer++cat) unit_action.
 Proof. compute_wf_lang. Qed.
@@ -193,8 +193,8 @@ Definition unit_cartesian_injectivity := [("snoc", ["u"; "g"; "G'"; "G"]); ("act
 
 Definition unit_cartesian :=
   Eval vm_compute in
-    (infer_lang_ext_simple (unit_action++obj_consumer++cat)
-              unit_cartesian_def unit_cartesian_injectivity).
+    infer_lang_ext_simple_incr 10 100 (unit_action++obj_consumer++cat)
+              unit_cartesian_def.
 
 Lemma unit_cartesian_wf : wf_lang_ext (unit_action++obj_consumer++cat)
               unit_cartesian.
@@ -337,8 +337,8 @@ Definition exp_ret_injectivity := [("id", ["G"]); ("ret", ["v"; "A"; "G"]); ("ex
 
 Definition exp_ret :=
   Eval vm_compute in
-    (infer_lang_ext_simple (exp_subst_base++value_subst)
-              exp_ret_def exp_ret_injectivity).
+    infer_lang_ext_simple_incr 10 100 (exp_subst_base++value_subst)
+              exp_ret_def.
 
 Lemma exp_ret_wf : wf_lang_ext (exp_subst_base++value_subst)
               exp_ret.
@@ -515,12 +515,11 @@ Definition val_ty_subst_injectivity := [("env", ["D"]); ("val", ["A"; "G"; "D"])
 
 Definition val_ty_subst :=
   Eval vm_compute in
-    (infer_lang_ext_simple (env_ty_subst
+    infer_lang_ext_simple_incr 10 100 (env_ty_subst
                              ++ty_subst_lang
                              ++val_parameterized
                              ++ty_env_lang)
-      val_ty_subst_def
-      val_ty_subst_injectivity).
+      val_ty_subst_def.
 
 Lemma val_ty_subst_wf : wf_lang_ext (env_ty_subst
                              ++ty_subst_lang
@@ -549,12 +548,11 @@ Definition exp_ty_subst_injectivity := [("ty", ["D"]); ("exp_ty_subst", ["e"; "A
 
 Definition exp_ty_subst :=
   Eval vm_compute in
-    (infer_lang_ext_simple (env_ty_subst
+    infer_lang_ext_simple_incr 10 100 (env_ty_subst
                              ++ty_subst_lang
                              ++exp_parameterized++val_parameterized
                              ++ty_env_lang)
-      exp_ty_subst_def
-      exp_ty_subst_injectivity).
+      exp_ty_subst_def.
 
 Lemma exp_ty_subst_wf : wf_lang_ext (env_ty_subst
                              ++ty_subst_lang

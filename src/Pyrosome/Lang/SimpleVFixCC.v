@@ -7,6 +7,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
   Tools.EGraph.TypeInference
+  Tools.EGraph.InjRuleGen
   Tools.EGraph.ComputeWf
   Tools.Resolution.
 From Pyrosome.Lang Require Import
@@ -45,8 +46,9 @@ Definition fix_cc_lang_injectivity :=
 
 Definition fix_cc_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple (cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
-       fix_cc_lang_def fix_cc_lang_injectivity).
+    infer_lang_ext_simple_incr 10 100
+      (cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
+      fix_cc_lang_def.
 
 Lemma fix_cc_wf
   : wf_lang_ext (cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst) fix_cc_lang.

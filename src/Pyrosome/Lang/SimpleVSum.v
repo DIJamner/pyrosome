@@ -7,7 +7,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
   Tools.Resolution Tools.EGraph.ComputeWf
-  Tools.EGraph.TypeInference.
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 Import Core.Notations.
 
@@ -107,8 +107,7 @@ Definition sum_injectivity :=
 
 Definition sum :=
   Eval vm_compute in
-    (infer_lang_ext_simple (exp_subst++value_subst) sum_def
-       (sum_injectivity++exp_subst_injectivity++value_subst_injectivity)).
+    infer_lang_ext_simple_incr 10 100 (exp_subst++value_subst) sum_def.
 
 Lemma sum_wf : wf_lang_ext (exp_subst++value_subst) sum.
 Proof. compute_wf_lang. Qed.

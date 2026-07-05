@@ -65,10 +65,13 @@ Definition block_subst_injectivity :=
 Definition cps_injectivity :=
   [("jmp", ["G"]); ("cont", ["e";"A"; "G"]); ("neg", ["A"])].
 
+(* Saturation fuel 2, not the usual 10: at fuel >= 3 the incremental
+   injectivity e-graph explodes (OOM) once the cps rules (cont/neg and their
+   equations) are seeded; fuel 2 already yields schemas covering the explicit
+   list and the same elaboration (cf. SimpleVFixCPS.v). *)
 Definition cps_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple (block_subst++value_subst) cps_lang_def
-       (cps_injectivity++block_subst_injectivity++value_subst_injectivity)).
+    (infer_lang_ext_simple_incr 2 100 (block_subst++value_subst) cps_lang_def).
 
 
 Lemma cps_lang_wf : wf_lang_ext (block_subst ++ value_subst)
@@ -191,8 +194,8 @@ Definition cps_prod_injectivity :=
 
 Definition cps_prod_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple (block_subst++value_subst) cps_prod_lang_def
-       (cps_prod_injectivity++block_subst_injectivity++value_subst_injectivity)).
+    (* fuel 2 for the same OOM reason as [cps_lang] above *)
+    (infer_lang_ext_simple_incr 2 100 (block_subst++value_subst) cps_prod_lang_def).
 
 Lemma cps_prod_wf
   : wf_lang_ext (block_subst ++value_subst) cps_prod_lang.
@@ -226,16 +229,14 @@ Definition cps_def : compiler :=
 
 Definition cps :=
   Eval vm_compute in
-    (infer_compiler_simple
+    (infer_compiler_simple_autoinj 3
        (cps_prod_lang
           ++ cps_lang
           ++ block_subst
           ++ value_subst)
        cps_subst
        cps_def
-       stlc
-       (cps_prod_injectivity++cps_injectivity++block_subst_injectivity
-          ++value_subst_injectivity)).
+       stlc).
 
 Lemma cps_preserving : preserving_compiler_ext cps_subst
                                           (tgt_Model:= core_model (cps_prod_lang

@@ -12,6 +12,7 @@ From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.EGraph.ComputeWf
   Tools.EGraph.Automation
   Tools.EGraph.TypeInference
+  Tools.EGraph.InjRuleGen
   Compilers.CompilerDefs.
 From Pyrosome.Lang Require Import
   PolySubst SimpleVSubst SimpleVSTLC SimpleVSum SimpleVProd.
@@ -52,7 +53,7 @@ Definition eval_ctx_injectivity :=
 
 Definition eval_ctx :=
   Eval vm_compute in
-    (infer_lang_ext_simple (exp_subst ++ value_subst) subst_eval_ctx_def eval_ctx_injectivity).
+    infer_lang_ext_simple_incr 10 100 (exp_subst ++ value_subst) subst_eval_ctx_def.
 
 Lemma eval_ctx_wf : wf_lang_ext (exp_subst ++ value_subst) eval_ctx.
 Proof. compute_wf_lang. Qed.
@@ -242,7 +243,7 @@ Definition Estlc_injectivity :=
 
 Definition Estlc :=
   Eval vm_compute in
-    (infer_lang_ext_simple (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc_def Estlc_injectivity).
+    infer_lang_ext_simple_incr 10 100 (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc_def.
 
 Lemma Estlc_wf : wf_lang_ext (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc.
 Proof. compute_wf_lang. Qed.
@@ -264,7 +265,7 @@ Definition Esum_injectivity :=
 
 Definition Esum :=
   Eval vm_compute in
-    (infer_lang_ext_simple (eval_ctx ++ sum ++ exp_subst ++ value_subst) Esum_def Esum_injectivity).
+    infer_lang_ext_simple_incr 10 100 (eval_ctx ++ sum ++ exp_subst ++ value_subst) Esum_def.
 
 Lemma Esum_wf : wf_lang_ext (eval_ctx ++ sum ++ exp_subst ++ value_subst) Esum.
 Proof. compute_wf_lang. Qed.
@@ -289,7 +290,7 @@ Definition Eprod_injectivity :=
 
 Definition Eprod :=
   Eval vm_compute in
-    (infer_lang_ext_simple (eval_ctx ++ prod ++ exp_subst ++ value_subst) Eprod_def Eprod_injectivity).
+    infer_lang_ext_simple_incr 10 100 (eval_ctx ++ prod ++ exp_subst ++ value_subst) Eprod_def.
 
 Lemma Eprod_wf : wf_lang_ext (eval_ctx ++ prod ++ exp_subst ++ value_subst) Eprod.
 Proof. compute_wf_lang. Qed.

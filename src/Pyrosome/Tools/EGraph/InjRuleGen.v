@@ -643,6 +643,12 @@ Section Incremental.
     let g0 := run_eq triv_weight fuel lp0 in
     fst (infer_lang_incr l_base (of_lang l) (g0, rn0, lp0)).
 
+  (* Prelang variant, drop-in for [TypeInference.infer_lang_ext]. *)
+  Definition infer_lang_ext_incr (l_base : lang) (l : prelang) : lang :=
+    let '(lp0, rn0) := rename_lang l_base init_renaming in
+    let g0 := run_eq triv_weight fuel lp0 in
+    fst (infer_lang_incr l_base l (g0, rn0, lp0)).
+
 End Incremental.
 
 (* -------------------------------------------------------------------------

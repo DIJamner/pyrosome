@@ -8,7 +8,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Tools.Resolution
-  Tools.EGraph.TypeInference Tools.EGraph.ComputeWf.
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
 From Stdlib Require derive.Derive.
@@ -262,7 +262,7 @@ Definition linear_value_subst_injectivity :=
 
 Definition linear_value_subst :=
   Eval vm_compute in
-    (infer_lang_ext_simple [] linear_value_subst_def linear_value_subst_injectivity).
+    infer_lang_ext_simple_incr 10 100 [] linear_value_subst_def.
 
 Lemma linear_value_subst_wf : wf_lang_ext [] linear_value_subst.
 Proof. compute_wf_lang. Qed.
@@ -316,8 +316,7 @@ Definition linear_exp_subst_injectivity :=
 
 Definition linear_exp_subst :=
   Eval vm_compute in
-    (infer_lang_ext_simple linear_value_subst linear_exp_subst_def
-       linear_exp_subst_injectivity).
+    infer_lang_ext_simple_incr 10 100 linear_value_subst linear_exp_subst_def.
 
 Lemma linear_exp_subst_wf : wf_lang_ext linear_value_subst linear_exp_subst.
 Proof. compute_wf_lang. Qed.
@@ -358,8 +357,7 @@ Definition linear_block_subst_injectivity :=
 
 Definition linear_block_subst :=
   Eval vm_compute in
-    (infer_lang_ext_simple linear_value_subst linear_block_subst_def
-       linear_block_subst_injectivity).
+    infer_lang_ext_simple_incr 10 100 linear_value_subst linear_block_subst_def.
 
 Lemma linear_block_subst_wf : wf_lang_ext linear_value_subst linear_block_subst.
 Proof. compute_wf_lang. Qed.

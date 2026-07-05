@@ -7,6 +7,7 @@ From Utils Require Import Utils GallinaHintDb.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
   Tools.EGraph.TypeInference
+  Tools.EGraph.InjRuleGen
   Tools.EGraph.ComputeWf
   Tools.Resolution.
 From Pyrosome.Lang Require Import
@@ -49,8 +50,7 @@ Definition let_lang_injectivity :=
 
 Definition let_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple (exp_subst++value_subst) let_lang_def
-       let_lang_injectivity).
+    infer_lang_ext_simple_incr 10 100 (exp_subst++value_subst) let_lang_def.
 
 Lemma let_lang_wf : wf_lang_ext (exp_subst++value_subst) let_lang.
 Proof. compute_wf_lang. Qed.

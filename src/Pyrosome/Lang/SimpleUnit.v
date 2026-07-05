@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Resolution Tools.EGraph.ComputeWf
-  Tools.EGraph.TypeInference.
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 Import Core.Notations.
 
@@ -28,8 +28,7 @@ Definition unit_injectivity := [("tt", ["G"])].
 
 Definition unit_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple (exp_subst++value_subst) unit_lang_def
-       (unit_injectivity++exp_subst_injectivity++value_subst_injectivity)).
+    infer_lang_ext_simple_incr 10 100 (exp_subst++value_subst) unit_lang_def.
 
 Lemma unit_wf : wf_lang_ext value_subst unit_lang.
 Proof. compute_wf_lang. Qed.
@@ -47,8 +46,7 @@ Definition unit_eta_def :lang :=
 
 Definition unit_eta :=
   Eval vm_compute in
-    (infer_lang_ext_simple (unit_lang++exp_subst++value_subst) unit_eta_def
-       (unit_injectivity++exp_subst_injectivity++value_subst_injectivity)).
+    infer_lang_ext_simple_incr 10 100 (unit_lang++exp_subst++value_subst) unit_eta_def.
 
 
 Lemma unit_eta_wf : wf_lang_ext (unit_lang ++ value_subst) unit_eta.

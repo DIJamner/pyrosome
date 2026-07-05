@@ -6,7 +6,7 @@ Open Scope list.
 From Utils Require Import Utils GallinaHintDb.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
-  Tools.EGraph.TypeInference
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen
   Tools.EGraph.ComputeWf
   Tools.Resolution.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst SimpleUnit SimpleEvalCtx.
@@ -52,7 +52,7 @@ Definition nat_lang_injectivity :=
 
 Definition nat_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple [] nat_lang_def nat_lang_injectivity).
+    infer_lang_ext_simple_incr 10 100 [] nat_lang_def.
 
 Lemma nat_lang_wf : wf_lang_ext [] nat_lang.
 Proof. compute_wf_lang. Qed.
@@ -77,7 +77,7 @@ Definition nat_exp_injectivity :=
 
 Definition nat_exp :=
   Eval vm_compute in
-    (infer_lang_ext_simple (nat_lang ++ value_subst) nat_exp_def nat_exp_injectivity).
+    infer_lang_ext_simple_incr 10 100 (nat_lang ++ value_subst) nat_exp_def.
 
 Lemma nat_exp_wf : wf_lang_ext (nat_lang ++ value_subst) nat_exp.
 Proof. compute_wf_lang. Qed.
@@ -155,7 +155,7 @@ Definition heap_injectivity :=
 
 Definition heap :=
   Eval vm_compute in
-    (infer_lang_ext_simple nat_lang heap_def heap_injectivity).
+    infer_lang_ext_simple_incr 10 100 nat_lang heap_def.
 
 Lemma heap_wf : wf_lang_ext nat_lang heap.
 Proof. compute_wf_lang. Qed.
@@ -214,7 +214,7 @@ Definition heap_ops_injectivity :=
 
 Definition heap_ops :=
   Eval vm_compute in
-    (infer_lang_ext_simple (unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst) heap_ops_def heap_ops_injectivity).
+    infer_lang_ext_simple_incr 10 100 (unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst) heap_ops_def.
 
 Lemma heap_ops_wf : wf_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst) heap_ops.
 Proof. compute_wf_lang. Qed.
@@ -306,11 +306,11 @@ Definition heap_ctx_injectivity :=
 
 Definition heap_ctx :=
   Eval vm_compute in
-    (infer_lang_ext_simple (eval_ctx ++ heap_ops
+    infer_lang_ext_simple_incr 10 100 (eval_ctx ++ heap_ops
                                   ++ unit_lang
                                   ++ heap ++ nat_exp
                                   ++ nat_lang ++ exp_subst
-                                  ++ value_subst) heap_ctx_def heap_ctx_injectivity).
+                                  ++ value_subst) heap_ctx_def.
 
 Lemma heap_ctx_wf : wf_lang_ext (eval_ctx ++ heap_ops
                                   ++ unit_lang
