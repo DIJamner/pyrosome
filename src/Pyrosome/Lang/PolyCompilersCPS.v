@@ -303,8 +303,6 @@ Ltac intermediate_term e :=
          clear H']
   end.
 
-(* Temporary until I restore the proof*)
-Axiom (TODO : forall {A}, A).
 Derive poly_cps
   in (elab_preserving_compiler
               (exp_ty_subst_cps
@@ -329,10 +327,31 @@ Derive poly_cps
   as poly_cps_preserving.
 Proof.
   ElabCompilers.auto_elab_compiler.
-  {  apply TODO (*Automation.by_reduction; t'.*). }
-  (*Automation.auto_elab_compiler.
-12:57-1:46+; too long
-   *)
+  {
+    compute_eq_compilation.
+    reduce.
+    hide_implicits.
+    eapply eq_term_trans; cycle 1.
+    { eredex_steps_with ir_parameterized "cont_eta". }
+    all: compute_eq_compilation.
+    term_cong.
+    all: compute_eq_compilation.
+    all: try term_refl.
+    reduce.
+    intermediate_term constr:({{e #"blk_subst" (#"snoc" #"id" #"hd") (#"jmp" (#"val_subst" (#"cmp" #"wkn" #"wkn") "v") #"hd") }}).
+    1:try_break_elab_term.
+   { Automation.by_reduction; now Matches.t'. }
+   {
+     eapply eq_term_trans; cycle 1.
+     {
+       eredex_steps_with exists_block_lang "unpack-eta".
+     }
+     Matches.by_reduction.
+   }   
+   { Automation.by_reduction; now Matches.t'. }
+  }   
+  Unshelve.
+  all: repeat Matches.t'.
 Qed.
 #[local] Definition poly_cps_entry :=
   cmp_entry (elab_compiler_implies_preserving poly_cps_preserving).
