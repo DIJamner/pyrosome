@@ -768,13 +768,8 @@ Proof.
     [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
          ltac:(unstep_conv linear_value_subst "exch_triple"))))))))
      | .. ].
-  compute_eq_compilation.
-  (* the mirror decoration is oriented-collapsible; normalize it away *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last
-         ltac:(Matches.by_reduction))))))))
-     | .. ].
-  compute_eq_compilation.
+  (* TODO: why is this reduce quick, but just Automation.by_reduction takes too long to wait for? *)
+  reduce.
   Automation.by_reduction; repeat t'.
   Unshelve.
   all: repeat t'.
