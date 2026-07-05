@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
-  Tools.EGraph.TypeInference
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen
   Elab.PreTerm Elab.PreRule.
 
 
@@ -214,8 +214,7 @@ Definition subst_injectivity :=
 
 Definition subst_lang :=
   Eval vm_compute in
-    (infer_lang_ext [] subst_def
-       subst_injectivity).
+    infer_lang_ext_incr 10 100 [] subst_def.
 
 Lemma subst_lang_wf : wf_lang_ext [] subst_lang.
 Proof. compute_wf_lang. Qed.

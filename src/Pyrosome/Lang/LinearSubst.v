@@ -7,7 +7,8 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Tools.Resolution.
+From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Tools.Resolution
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
 From Stdlib Require derive.Derive.
@@ -254,14 +255,19 @@ Definition linear_value_subst_def : lang :=
 #[local] Definition vsub_inst_for_db := inst_for_db "vsub".
 #[export] Hint Resolve vsub_inst_for_db : injective_con.
 
-(*TODO: use modern inference procedure *)
-Derive linear_value_subst
-       in (elab_lang_ext [] linear_value_subst_def linear_value_subst)
-       as linear_value_subst_wf.
-Proof. auto_elab. Qed.
+Definition linear_value_subst_injectivity :=
+  [("vsub", ["v"; "A"; "G"]); ("hd", ["A"]); ("cmp", ["G3"; "G1"]);
+   ("val_subst", ["A"; "G"]); ("exch", ["H"; "G"]); ("sub", ["G'"; "G"]);
+   ("val", ["A"; "G"]); ("only", ["A"]); ("id", ["G"])].
 
-#[local] Definition linear_value_entry :=
-  lang_entry (elab_lang_implies_wf linear_value_subst_wf).
+Definition linear_value_subst :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 [] linear_value_subst_def.
+
+Lemma linear_value_subst_wf : wf_lang_ext [] linear_value_subst.
+Proof. compute_wf_lang. Qed.
+
+#[local] Definition linear_value_entry := lang_entry linear_value_subst_wf.
 #[export] Hint Resolve linear_value_entry : wf_lang_db.
 
 Definition linear_exp_subst_def : lang :=
@@ -301,12 +307,20 @@ Definition linear_exp_subst_def : lang :=
     ]
   ]}.
 
-Derive linear_exp_subst
-       in (elab_lang_ext linear_value_subst linear_exp_subst_def linear_exp_subst)
-       as linear_exp_subst_wf.
-Proof. auto_elab. Qed.
-#[local] Definition linear_exp_entry :=
-  lang_entry (elab_lang_implies_wf linear_exp_subst_wf).
+Definition linear_exp_subst_injectivity :=
+  [("ret", ["v"; "A"; "G"]); ("vsub", ["v"; "A"; "G"]);
+   ("val_subst", ["A"; "G"]); ("exp", ["A"; "G"]); ("id", ["G"]);
+   ("hd", ["A"]); ("val", ["A"; "G"]); ("exp_subst", ["A"; "G"]);
+   ("exch", ["H"; "G"]); ("cmp", ["G3"; "G1"]); ("only", ["A"]);
+   ("sub", ["G'"; "G"])].
+
+Definition linear_exp_subst :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 linear_value_subst linear_exp_subst_def.
+
+Lemma linear_exp_subst_wf : wf_lang_ext linear_value_subst linear_exp_subst.
+Proof. compute_wf_lang. Qed.
+#[local] Definition linear_exp_entry := lang_entry linear_exp_subst_wf.
 #[export] Hint Resolve linear_exp_entry : wf_lang_db.
 
 Definition linear_block_subst_def : lang :=
@@ -335,12 +349,19 @@ Definition linear_block_subst_def : lang :=
     ]
   ]}.
 
-Derive linear_block_subst
-       in (elab_lang_ext linear_value_subst linear_block_subst_def linear_block_subst)
-       as linear_block_subst_wf.
-Proof. auto_elab. Qed.
-#[local] Definition linear_block_entry :=
-  lang_entry (elab_lang_implies_wf linear_block_subst_wf).
+Definition linear_block_subst_injectivity :=
+  [("blk", ["G"]); ("id", ["G"]); ("blk_subst", ["G"]);
+   ("val", ["A"; "G"]); ("exch", ["H"; "G"]); ("only", ["A"]);
+   ("sub", ["G'"; "G"]); ("val_subst", ["A"; "G"]); ("cmp", ["G3"; "G1"]);
+   ("hd", ["A"]); ("vsub", ["v"; "A"; "G"])].
+
+Definition linear_block_subst :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 linear_value_subst linear_block_subst_def.
+
+Lemma linear_block_subst_wf : wf_lang_ext linear_value_subst linear_block_subst.
+Proof. compute_wf_lang. Qed.
+#[local] Definition linear_block_entry := lang_entry linear_block_subst_wf.
 #[export] Hint Resolve linear_block_entry : wf_lang_db.
 
 Definition definitely_fresh (s : string) (l : list string) :=

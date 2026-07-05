@@ -11,6 +11,8 @@ From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Resolution
   Tools.EGraph.ComputeWf
   Tools.EGraph.Automation
+  Tools.EGraph.TypeInference
+  Tools.EGraph.InjRuleGen
   Compilers.CompilerDefs.
 From Pyrosome.Lang Require Import
   PolySubst SimpleVSubst SimpleVSTLC SimpleVSum SimpleVProd.
@@ -43,11 +45,19 @@ Definition subst_eval_ctx_def : lang :=
       #"plug" #"[ ]" "e" = "e" : #"exp" "G" "A"
   ]]}.
        
-Derive eval_ctx
-       in (elab_lang_ext (exp_subst ++ value_subst) subst_eval_ctx_def eval_ctx)
-       as eval_ctx_wf.
-Proof. auto_elab. Qed.
-#[local] Definition eval_ctx_entry := lang_entry (elab_lang_implies_wf eval_ctx_wf).
+Definition eval_ctx_injectivity :=
+  [("sub", ["G'"; "G"]); ("hd", ["A"; "G"]); ("cmp", ["G3"; "G1"]); ("ret", ["v"; "A"; "G"]);
+   ("id", ["G"]); ("val_subst", ["A"; "G"]); ("plug", ["e"; "E"; "B"; "A"; "G"]); ("val", ["A"; "G"]);
+   ("ext", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("exp", ["A"; "G"]); ("Ectx", ["B"; "A"; "G"]);
+   ("exp_subst", ["A"; "G"]); ("[ ]", ["A"; "G"]); ("forget", ["G"]); ("wkn", ["A"; "G"])].
+
+Definition eval_ctx :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (exp_subst ++ value_subst) subst_eval_ctx_def.
+
+Lemma eval_ctx_wf : wf_lang_ext (exp_subst ++ value_subst) eval_ctx.
+Proof. compute_wf_lang. Qed.
+#[local] Definition eval_ctx_entry := lang_entry eval_ctx_wf.
 #[export] Hint Resolve eval_ctx_entry : wf_lang_db.
 
 Record string_subst := make_subst {
@@ -223,21 +233,43 @@ Definition Estlc_hints := [("app", "Eapp_l", Eapp_l_hint);
 Definition Estlc_def :=
   eval_ctx_lang Estlc_hints stlc_def.
 
-Derive Estlc
-       in (elab_lang_ext (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc_def Estlc)
-       as Estlc_wf.
-Proof. auto_elab. Qed.
-#[local] Definition Estlc_entry := lang_entry (elab_lang_implies_wf Estlc_wf).
+Definition Estlc_injectivity :=
+  [("plug", ["e"; "E"; "B"; "A"; "G"]); ("[ ]", ["A"; "G"]); ("id", ["G"]); ("val_subst", ["A"; "G"]);
+   ("exp_subst", ["A"; "G"]); ("ret", ["v"; "A"; "G"]); ("wkn", ["A"; "G"]); ("->", ["t'"; "t"]);
+   ("ext", ["A"; "G"]); ("Eapp_l", ["e'"; "E"; "C"; "B"; "A"; "G"]); ("forget", ["G"]); ("cmp", ["G3"; "G1"]);
+   ("Ectx", ["B"; "A"; "G"]); ("lambda", ["e"; "B"; "A"; "G"]); ("val", ["A"; "G"]); ("exp", ["A"; "G"]);
+   ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("Eapp_r", ["E"; "C"; "v"; "B"; "A"; "G"]); ("hd", ["A"; "G"]);
+   ("app", ["e'"; "e"; "B"; "A"; "G"]); ("sub", ["G'"; "G"])].
+
+Definition Estlc :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc_def.
+
+Lemma Estlc_wf : wf_lang_ext (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc.
+Proof. compute_wf_lang. Qed.
+#[local] Definition Estlc_entry := lang_entry Estlc_wf.
 #[export] Hint Resolve Estlc_entry : wf_lang_db.
 
 (* Sum Language *)
 Definition Esum_def := eval_ctx_lang [("case", "Ecase", ["case_r"; "case_l"; "E"])] sum_def.
 
-Derive Esum
-       in (elab_lang_ext (eval_ctx ++ sum ++ exp_subst ++ value_subst) Esum_def Esum)
-       as Esum_wf.
-Proof. auto_elab. Qed.
-#[local] Definition Esum_entry := lang_entry (elab_lang_implies_wf Esum_wf).
+Definition Esum_injectivity :=
+  [("inl_val", ["v"; "B"; "A"; "G"]); ("val", ["A"; "G"]); ("id", ["G"]);
+   ("case", ["case_r"; "case_l"; "e"; "C"; "B"; "A"; "G"]); ("inl", ["e"; "B"; "A"; "G"]); ("ext", ["A"; "G"]);
+   ("Ectx", ["B"; "A"; "G"]); ("exp_subst", ["A"; "G"]); ("forget", ["G"]); ("[ ]", ["A"; "G"]);
+   ("inr_val", ["v"; "B"; "A"; "G"]); ("wkn", ["A"; "G"]);
+   ("Ecase", ["case_r"; "case_l"; "E"; "C''''''"; "C"; "B"; "A"; "G"]); ("inr", ["e"; "B"; "A"; "G"]);
+   ("exp", ["A"; "G"]); ("sub", ["G'"; "G"]); ("ret", ["v"; "A"; "G"]); ("cmp", ["G3"; "G1"]);
+   ("plug", ["e"; "E"; "B"; "A"; "G"]); ("sum", ["B"; "A"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]);
+   ("val_subst", ["A"; "G"]); ("hd", ["A"; "G"])].
+
+Definition Esum :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (eval_ctx ++ sum ++ exp_subst ++ value_subst) Esum_def.
+
+Lemma Esum_wf : wf_lang_ext (eval_ctx ++ sum ++ exp_subst ++ value_subst) Esum.
+Proof. compute_wf_lang. Qed.
+#[local] Definition Esum_entry := lang_entry Esum_wf.
 #[export] Hint Resolve Esum_entry : wf_lang_db.
 
 (* Prod Language *)
@@ -246,11 +278,23 @@ Definition Eprod_def := eval_ctx_lang [("pair", "Epair_l", ["e2"; "E1"])
                        ; (".1", "E.1", ["E"])
                        ; (".2", "E.2", ["E"])] prod_def.
 
-Derive Eprod
-       in (elab_lang_ext (eval_ctx ++ prod ++ exp_subst ++ value_subst) Eprod_def Eprod)
-       as Eprod_wf.
-Proof. auto_elab. Qed.
-#[local] Definition Eprod_entry := lang_entry (elab_lang_implies_wf Eprod_wf).
+Definition Eprod_injectivity :=
+  [("plug", ["e"; "E"; "B"; "A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); (".1", ["e"; "B"; "A"; "G"]);
+   ("sub", ["G'"; "G"]); ("val", ["A"; "G"]); ("Epair_l", ["e2"; "E1"; "C"; "B"; "A"; "G"]);
+   ("E.2", ["E"; "C"; "B"; "A"; "G"]); ("wkn", ["A"; "G"]); ("exp_subst", ["A"; "G"]);
+   ("Epair_r", ["E2"; "C"; "v1"; "B"; "A"; "G"]); ("pair_val", ["v2"; "v1"; "B"; "A"; "G"]); ("forget", ["G"]);
+   ("Ectx", ["B"; "A"; "G"]); ("prod", ["B"; "A"]); (".2", ["e"; "B"; "A"; "G"]); ("ext", ["A"; "G"]);
+   ("ret", ["v"; "A"; "G"]); ("E.1", ["E"; "C"; "B"; "A"; "G"]); ("id", ["G"]); ("exp", ["A"; "G"]);
+   ("hd", ["A"; "G"]); ("cmp", ["G3"; "G1"]); ("pair", ["e2"; "e1"; "B"; "A"; "G"]); ("val_subst", ["A"; "G"]);
+   ("[ ]", ["A"; "G"])].
+
+Definition Eprod :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (eval_ctx ++ prod ++ exp_subst ++ value_subst) Eprod_def.
+
+Lemma Eprod_wf : wf_lang_ext (eval_ctx ++ prod ++ exp_subst ++ value_subst) Eprod.
+Proof. compute_wf_lang. Qed.
+#[local] Definition Eprod_entry := lang_entry Eprod_wf.
 #[export] Hint Resolve Eprod_entry : wf_lang_db.
 
 Fixpoint wkn_n n :=

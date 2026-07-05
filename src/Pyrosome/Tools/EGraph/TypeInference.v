@@ -345,6 +345,23 @@ Section WithWeight.
                 end)
       (filter (fun '(n,r) => inclb (get_ctx r) []) l).
 
+  (* The EQUATIONS of [l] (any context), compiled to sequents.  Unlike the
+     injectivity/cancellation sequents -- which only conclude equalities between
+     existing e-classes (merge-only) -- these are the full equational theory
+     ([rule_to_log_rule] turns each [_eq_rule] into a rule that matches its LHS
+     and introduces its RHS, merging the two).  They let inference reason UP TO
+     the theory (e.g. re-associating/normalizing [conc] so a buried factor gets
+     exposed for cancellation), at the cost of possible saturation blow-up
+     (bounded by the 1000-iteration fuel below). *)
+  Definition eq_rules (l : lang) : list sequent :=
+    flat_map (fun '(n,r) =>
+                match rule_to_log_rule trie_map _ Pos.succ sort_of l
+                        (analysis_result:=unit) 1000%nat n r with
+                | Result.Success s => [s]
+                | Result.Failure _ => []
+                end)
+      (filter filter_rules l).
+
   (* Run the saturation, given the language [l] and the precompiled injection
      sequents [inj_seqs]. *)
   Definition state_operation (l : lang) (inj_seqs : list sequent)
@@ -362,7 +379,7 @@ Section WithWeight.
       (@QueryOpt.build_rule_set positive Pos.eqb Pos.succ (default (A:=positive))
          positive trie_map ptree_map_plus trie_map
          (@FullPosTrie.full_pos_trie_map) 1000%nat
-         (inj_seqs ++ const_rules l))
+         (inj_seqs ++ eq_rules l ++ const_rules l))
       (Mret false) 1000%nat.
 
   (* ---- decoding ---- *)
@@ -554,9 +571,10 @@ Definition rename_lang_ctx (l_full : lang) (ctx_holes : named_list sort)
     let ctx_pos <- rename_ctx_holes ctx_holes in
     ret (l_pos, ctx_pos).
 
-Definition rename_inj (l_full : lang) inj_rules
+Definition rename_inj (l_full : lang)
+  (inj_rules : lang -> list (sequent string string))
   : state (renaming string) (list (sequent positive positive)) :=
-  list_Mmap rename_sequent (build_injection_rules inj_rules l_full).
+  list_Mmap rename_sequent (inj_rules l_full).
 
 (* A renamed positive is a hole iff its original string starts with "?"
    (gensym'd names and their dummy sorts). *)
@@ -573,7 +591,8 @@ Definition is_hole (rn : renaming string) (p : positive) : bool :=
    (sharing one [infer_state] run so gensym keeps allocating fresh names),
    rename language/ctx/conclusion/injections into positives (in that fixed
    order), run the matching engine entry point, and unrename. *)
-Definition infer_rule (l : lang) inj_rules (r : prerule) : rule :=
+Definition infer_rule_gen (l : lang)
+  (inj_rules : lang -> list (sequent string string)) (r : prerule) : rule :=
   match r with
   | presort_rule c args =>
       let '(ctx_holes, s) :=
@@ -640,18 +659,35 @@ Definition infer_rule (l : lang) inj_rules (r : prerule) : rule :=
         (unrename_term rn e2') (unrename_sort rn t')
   end.
 
-Fixpoint infer_lang_ext l_base (l : prelang) inj_rules :=
+(* Single-rule inference under name-based schemas only (the common case);
+   preserves the original [infer_rule] interface, e.g. for [Interactive.v]. *)
+Definition infer_rule (l : lang) (schemas : list (string * list string))
+  (r : prerule) : rule :=
+  infer_rule_gen l (build_injection_rules schemas) r.
+
+Fixpoint infer_lang_ext_gen l_base (l : prelang)
+  (inj_rules : lang -> list (sequent string string)) :=
   match l with
   | [] => []
   | (n,r)::l =>
       (* inj_rules may include a superset of the rules of l, but that's ok *)
-      let l' := infer_lang_ext l_base l inj_rules in
-      let r' := infer_rule (l'++l_base) inj_rules r in
+      let l' := infer_lang_ext_gen l_base l inj_rules in
+      let r' := infer_rule_gen (l'++l_base) inj_rules r in
       (n,r')::l'
   end.
 
-Definition infer_lang_ext_simple l_base (l : lang) inj_rules :=
-  infer_lang_ext l_base (of_lang l) inj_rules.
+Definition infer_lang_ext_simple_gen l_base (l : lang)
+  (inj_rules : lang -> list (sequent string string)) :=
+  infer_lang_ext_gen l_base (of_lang l) inj_rules.
+
+(* Schema-only wrappers preserving the original interface. *)
+Definition infer_lang_ext l_base (l : prelang)
+  (schemas : list (string * list string)) :=
+  infer_lang_ext_gen l_base l (build_injection_rules schemas).
+
+Definition infer_lang_ext_simple l_base (l : lang)
+  (schemas : list (string * list string)) :=
+  infer_lang_ext_simple_gen l_base l (build_injection_rules schemas).
 
 Section __.
   Context (tgt:lang).
@@ -665,7 +701,8 @@ Section __.
     (@compiler_case string term sort).
   (* takes in a prelab cc and an elaborated rule r *)
   Definition infer_compiler_case_simple
-    cmp (cc : compiler_case) r inj_rules :=
+    cmp (cc : compiler_case) r
+    (inj_rules : lang -> list (sequent string string)) :=
     match cc,r with
     | sort_case cnames t, sort_rule c _ =>
         let c' := (compile_ctx cmp c) in
@@ -725,20 +762,26 @@ Section __.
     | _,_ => sort_case [] default (* failure case *)
     end.
 
-  Fixpoint infer_compiler_simple cmp_pre cmp src inj_rules :=
+  Fixpoint infer_compiler_simple_gen cmp_pre cmp src
+    (inj_rules : lang -> list (sequent string string)) :=
     match cmp,src with
     | [], [] => []
     | (n,cc)::cmp', (n',r)::src' =>
         if eqb n n'
         then let ecmp' :=
-               infer_compiler_simple cmp_pre cmp' src' inj_rules
+               infer_compiler_simple_gen cmp_pre cmp' src' inj_rules
              in
              let ecc := infer_compiler_case_simple
                           (ecmp'++cmp_pre) cc r inj_rules in
              (n,ecc)::ecmp'
         (* must be an equation *)
-        else infer_compiler_simple cmp_pre cmp src' inj_rules
+        else infer_compiler_simple_gen cmp_pre cmp src' inj_rules
     | _, _ => [] (*Failure case. TODO: better errors *)
     end.
+
+  (* Schema-only wrapper preserving the original interface. *)
+  Definition infer_compiler_simple cmp_pre cmp src
+    (schemas : list (string * list string)) :=
+    infer_compiler_simple_gen cmp_pre cmp src (build_injection_rules schemas).
 
 End __.

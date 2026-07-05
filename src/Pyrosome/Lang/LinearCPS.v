@@ -9,6 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
   Lang.LinearSubst Lang.LinearSTLC
   Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.EGraph.InjRuleGen
   Tools.EGraph.TypeInference
   Tools.EGraph.Automation.
 
@@ -57,40 +58,16 @@ Definition linear_cps_lang_def : lang :=
   ]
   ]}.
 
-(*TODO: move to LinearSubst *)
-Definition linear_value_subst_injectivity :=
-  [("exch", ["H";"G"]);("vsub",["v";"A"; "G"]);("hd", ["A"]);
-   ("only", ["A"]); ("emp", []); ("val_subst", ["A"; "G"]); ("val", ["A"; "G"]);
-   ("cmp", ["G3"; "G1"]); ("id", ["G"]); ("sub", ["G'"; "G"]); ("env", []); ("ty", [])].
-
-(*TODO: move to LinearSubst *)
-Definition linear_block_subst_injectivity :=
-  [("blk_subst", ["G"]); ("blk", ["G"])].
-
-Definition linear_cps_injectivity :=
-  [("cont", ["e";"A"; "G"]); ("neg", ["A"])].
-
-(* TODO: doesn't know that ext is injective, so jump beta doesn't infer
 Definition linear_cps_lang :=
   Eval vm_compute in
-    (infer_lang_ext_simple
+    infer_lang_ext_simple_incr 10 100
        (linear_block_subst ++ linear_value_subst)
-       linear_cps_lang_def
-       (linear_cps_injectivity
-          ++linear_block_subst_injectivity
-          ++linear_value_subst_injectivity)).
-*)
+       linear_cps_lang_def.
 
-Derive linear_cps_lang
-       in (elab_lang_ext (linear_block_subst ++ linear_value_subst)
-                               linear_cps_lang_def
-                               linear_cps_lang)
-       as cps_lang_wf.
-Proof.
-  auto_elab.
-Qed.
-#[local] Definition linear_cps_entry :=
-  lang_entry (elab_lang_implies_wf cps_lang_wf).
+Lemma cps_lang_wf
+  : wf_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition linear_cps_entry := lang_entry cps_lang_wf.
 #[export] Hint Resolve linear_cps_entry : wf_lang_db.
 
 Definition linear_cps_subst_def : compiler :=
@@ -103,20 +80,26 @@ Definition linear_cps_subst_def : compiler :=
     {{e #"blk_subst" (#"exch" "G" (#"only" (#"neg" "A"))) (#"jmp" (#"hd" (#"neg" "A")) "v")}}
   end.
 
-Derive linear_cps_subst
-       in (elab_preserving_compiler []
-                                          (linear_cps_lang
-                                             ++ linear_block_subst
-                                             ++ linear_value_subst)
-                                          linear_cps_subst_def
-                                          linear_cps_subst
-                                          (linear_exp_subst ++ linear_value_subst))
-       as linear_cps_subst_preserving.
-Proof.
-  auto_elab_compiler.
-Qed.
+Definition linear_cps_subst :=
+  Eval vm_compute in
+    (infer_compiler_simple_autoinj 10
+       (linear_cps_lang
+          ++ linear_block_subst
+          ++ linear_value_subst)
+       []
+       linear_cps_subst_def
+       (linear_exp_subst ++ linear_value_subst)).
+
+Lemma linear_cps_subst_preserving
+  : preserving_compiler_ext []
+      (tgt_Model := core_model (linear_cps_lang
+         ++ linear_block_subst
+         ++ linear_value_subst))
+      linear_cps_subst
+      (linear_exp_subst ++ linear_value_subst).
+Proof. compute_preserving_compiler (@nil (string*rule)). Qed.
 #[local] Definition linear_cps_cmp_entry :=
-  cmp_entry (elab_compiler_implies_preserving linear_cps_subst_preserving).
+  cmp_entry linear_cps_subst_preserving.
 #[export] Hint Resolve linear_cps_cmp_entry : preserving_db.
 
 (*TODO: separate file?*)
@@ -167,12 +150,16 @@ Definition linear_cps_prod_lang_def : lang :=
       : #"blk" (#"conc" "G" "H")
   ] ]}.
 
-Derive linear_cps_prod_lang
-       in (elab_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang_def linear_cps_prod_lang)
-       as linear_cps_prod_wf.
-Proof. auto_elab. Qed.
-#[local] Definition linear_cps_prod_entry :=
-  lang_entry (elab_lang_implies_wf linear_cps_prod_wf).
+Definition linear_cps_prod_lang :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100
+        (linear_block_subst ++ linear_value_subst)
+       linear_cps_prod_lang_def.
+
+Lemma linear_cps_prod_wf
+  : wf_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition linear_cps_prod_entry := lang_entry linear_cps_prod_wf.
 #[export] Hint Resolve linear_cps_prod_entry : wf_lang_db.
 
 (* e: blk G; {~A}
@@ -216,7 +203,6 @@ Definition linear_cps_def : compiler :=
     {{e #"blk_subst" (#"exch" "G" (#"only" (#"neg" "A"))) (#"jmp" (#"hd" (#"neg" "A")) "v")}}
   end.
 
-Ltac by_reduction := Matches.by_reduction.
 Ltac reduce_by l r :=
   eapply eq_term_trans;
   [> eredex_steps_with l r | ..].
@@ -239,9 +225,16 @@ Ltac normalize_env :=
   [> repeat normalize_env_step; term_refl | .. ].
 
 
+(* The infer-produced langs annotate some rule-ctx sorts with a different
+   [conc]-nesting than the sort declared in the goal ctx (e.g. [pm_pair]'s
+   block argument is expected at [blk (conc G (ext (only A) B))] while the
+   ctx declares [blk (ext (ext G A) B)]), so a variable can occur at a sort
+   that is only convertible-by-[conc_assoc] to its declared sort; the
+   [wf_term_conv] fallback bridges the two by env normalization. *)
 Ltac solve_wf_term := first [eapply wf_term_by';
   [> solve_in | solve_wf_args | first [left; reflexivity | right; solve_sort] ]
-  | eapply wf_term_var; solve_in]
+  | eapply wf_term_var; solve_in
+  | eapply wf_term_conv; [> eapply wf_term_var; solve_in | solve_sort ] ]
 with solve_wf_args :=
   first [apply wf_args_nil | constructor; [> solve_wf_term | solve_wf_args ]]
 with env_eq :=
@@ -257,537 +250,338 @@ Ltac solve_wf_subst :=
   repeat (eapply wf_subst_cons; [> .. | solve_wf_term ]);
   eapply wf_subst_nil.
 
-Ltac blk_cmp :=
-  eapply eq_term_trans;
-  [> lazymatch goal with
-    | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_}
-      (#"cmp" {?G1} {?G2} {?G3} {?g1} {?g2})
-      {?e} }} _ ] =>
-      instantiate (1:=
-        {{e #"blk_subst" {G1} {G2} {g1}
-            (#"blk_subst" {G2} {G3} {g2} {e})}});
-      apply eq_term_sym;
-      eapply eq_term_conv;
-      [> eredex_steps_with linear_block_subst "blk_subst_cmp";
-        solve_wf_subst
-      | solve_sort]
-    end
-  | .. ].
+(* ===== generic one-step rewriting infrastructure =====
+   The beta proof below is a flat chain of transitivity links; each link's
+   first leg applies ONE rule at one position, reached by composing the
+   navigation combinators, so the equation's two sides stay concrete at
+   every top-level step. *)
 
- Ltac s :=
-   match goal with
-  | [|- fresh _ _ ]=> compute_fresh
-  | [|- sublist _ _ ]=> compute_sublist
-   (* TODO: if this works, use this pattern for other typeclass occurances *)
-  | [|- In _ _ ]=> solve_in
-  | [|- len_eq _ _] => econstructor
-  | [|-elab_sort _ _ _ _] => eapply elab_sort_by
-  | [|-elab_ctx _ _ _] => econstructor
-  | [|-elab_args _ _ _ _ _ _] => (repeat eapply elab_args_cons_ex') || econstructor
-  | [|-elab_term _ _ _ _ _] => eapply elab_term_by' || eapply elab_term_var
-  | [|-wf_term _ _ _ _] => solve_wf_term || shelve
-  | [|-elab_rule _ _ _] => econstructor
-  (* | [|- ?eq \/ ?seq ] => tryif (has_evar ?Goal) then shelve else (left; reflexivity) || shelve *)
-  | [|- _ = _] => compute; reflexivity
- end.
-
-Ltac reduce_to e :=
-  eapply eq_term_trans;
-  [> instantiate (1:=e); try by_reduction | .. ].
-
-Ltac break_cmp :=
+(* navigation: apply [t] to the second-to-last / last argument of the head
+   constructor, [term_refl] the remaining arguments.  [cycle 1] defers the
+   sort side condition until the argument evars are pinned. *)
+Ltac nav_snd t :=
   term_cong; cycle 1;
-  [> term_refl | term_refl | term_refl |
-      compute_eq_compilation | compute_eq_compilation |
-      left; solve_sort ].
+  [> term_refl .. | t | term_refl
+   | first [ right; reflexivity | left; solve_sort ] ].
+Ltac nav_last t :=
+  term_cong; cycle 1;
+  [> term_refl .. | t
+   | first [ right; reflexivity | left; solve_sort ] ].
 
-Ltac normalize_perm :=
-  lazymatch goal with
-  | [|- eq_term _ _ {{s #"sub" {?s1} {?s2} }} ?e _ ] =>
-    lazymatch e with
-    | {{e #"cmp" {_} {_} {_} {_} {_} }} =>
-      eapply eq_term_trans;
-      [> break_cmp;
-        [> normalize_perm | term_refl ] |
-        compute_eq_compilation ]
-    | _ => term_refl
-    end
-  end.
+(* apply rule [r] of [l] once, forward (estep) or backward (unstep),
+   converting the sort by env normalization when the elaborated rule sort
+   is nested differently.  [eredex_steps_with] signals unification failures
+   with [fail 2]; the double [first] wrappers decay that to level 0 so the
+   alternatives fire. *)
+Ltac estep_conv l r :=
+  first [ first [ first [ eredex_steps_with l r ] ]
+        | first [ first [ eapply eq_term_conv; [> eredex_steps_with l r | solve_sort ] ] ] ].
+Ltac unstep_conv l r :=
+  first [ first [ first [ eapply eq_term_sym; eredex_steps_with l r ] ]
+        | first [ first [ eapply eq_term_conv; [> eapply eq_term_sym; eredex_steps_with l r | solve_sort ] ] ] ].
 
-Ltac csub_join G G' H H' g h :=
-  match h with
-  | {{e #"csub" {?H1} {?H1'} {?H2} {?H2'} {?h1} {?h2} }} =>
-    csub_join
-      {{e #"conc" {G} {H1} }} {{e #"conc" {G'} {H1'} }} H2 H2'
-      {{e #"csub" {g} {h1} }} h2
-  | _ => constr:({{e #"csub" {G} {G'} {H} {H'} {g} {h} }})
-  end.
-
-Ltac csub_normalize cs :=
-  match cs with
-  | {{e #"csub" {?G} {?G'} {?H} {?H'} {?g} {?h} }} =>
-    let g' := csub_normalize g in
-    let h' := csub_normalize h in
-    csub_join G G' H H' g' h'
-  | {{e #"id" (#"conc" {?G} {?H}) }} =>
-    csub_normalize {{e #"csub" {G} {G} {H} {H} (#"id" {G}) (#"id" {H}) }}
-  | _ => cs
-  end.
-
-Ltac exch_invert :=
+(* apply rule [r] of [l] once, modulo env-annotation adjustment: congruence
+   with env_eq brings the env arguments to the rule's conc-nesting first *)
+Ltac estep_env l r :=
   compute_eq_compilation;
   eapply eq_term_conv;
   [> eapply eq_term_trans;
     [> term_cong; [> .. | term_refl ] |
       compute_eq_compilation;
-      eredex_steps_with linear_value_subst "exch_cmp" ] |
+      eredex_steps_with l r ] |
     solve_sort ];
-  [> env_eq .. | solve_wf_subst ].
+  (lazymatch goal with
+   | |- wf_subst _ _ _ => solve_wf_subst
+   | |- _ => env_eq
+   end).
 
-Ltac unapply l r :=
-  eapply eq_term_sym;
-  eredex_steps_with l r.
+(* normalize the env annotations of a node (congruence + env normalization),
+   leaving the term arguments untouched *)
+Ltac env_adjust :=
+  term_cong; cycle 1;
+  [> env_eq .. | term_refl | term_refl
+   | first [ right; reflexivity | left; solve_sort ] ].
 
-Ltac trans t :=
-  eapply eq_term_trans;
-  [> t | .. ].
+Definition linear_cps :=
+  Eval vm_compute in
+    (infer_compiler_simple_autoinj 4
+       (linear_cps_prod_lang
+          ++ linear_cps_lang
+          ++ linear_block_subst
+          ++ linear_value_subst)
+       linear_cps_subst
+       linear_cps_def
+       linear_stlc).
 
-Ltac eredex_general l r :=
-  eapply eq_term_conv;
-      [>
-        eapply eq_term_trans;
-        [> term_cong | .. ];
-        [> .. | eredex_steps_with l r ] |
-        .. ].
 
-(* Defer every side-condition goal (the term metavariables left after
-   [solve_wf_term]); keep only the equational [eq_term] goals in focus.
-   Applied as [all: try shelve_if_not_eqterm], this is a position-independent
-   replacement for the old [N: shelve] selectors. *)
-Ltac shelve_if_not_eqterm :=
+(* Interactive breaker for [preserving_compiler_ext], the direct analogue of
+   [setup_elab_compiler] (no elaboration detour).
+   [preserving_compiler_cons_nth_tail] peels one source rule using
+   [nth_error]/[nth_tail] (avoiding higher-order unification on [map fst c]);
+   [setup_preserving_compiler] then leaves one wf/eq obligation per source rule.
+   TODO: move next to [elab_compiler_cons_nth_tail] in Elab.ElabCompilers. *)
+Section PreservingBreak.
+  Context (target : lang).
+  Local Notation cmplr := (@CompilerDefs.compiler string (@Term.term string) (@Term.sort string)).
+  Context (cmp_pre : cmplr).
+  Let model := core_model target.
+  Existing Instance model.
+  Existing Instance term_default.
+  Existing Instance sort_default.
+  Local Notation compileC cmp := (compile (cmp++cmp_pre)).
+  Local Notation compileS cmp := (compile_sort (cmp++cmp_pre)).
+  Local Notation compileX cmp := (compile_ctx (cmp++cmp_pre)).
+  Lemma preserving_compiler_cons_nth_tail (cmp : cmplr) (src : lang) n m name r
+    : nth_error src m = Some (name,r) ->
+      match r with
+      | sort_rule c _ =>
+          exists t cmp',
+          nth_error cmp n = Some (name, sort_case (map fst c) t) /\
+          nth_tail n cmp = (name, sort_case (map fst c) t)::cmp' /\
+          preserving_compiler_ext cmp_pre (nth_tail (S n) cmp) (nth_tail (S m) src) /\
+          Model.wf_sort (compileX (nth_tail (S n) cmp) c) t
+      | term_rule c _ t =>
+          exists e cmp',
+          nth_error cmp n = Some (name, term_case (map fst c) e) /\
+          nth_tail n cmp = (name, term_case (map fst c) e)::cmp' /\
+          preserving_compiler_ext cmp_pre (nth_tail (S n) cmp) (nth_tail (S m) src) /\
+          Model.wf_term (compileX (nth_tail (S n) cmp) c) e (compileS (nth_tail (S n) cmp) t)
+      | sort_eq_rule c t1 t2 =>
+          preserving_compiler_ext cmp_pre (nth_tail n cmp) (nth_tail (S m) src) /\
+          Model.eq_sort (compileX (nth_tail n cmp) c)
+                  (compileS (nth_tail n cmp) t1) (compileS (nth_tail n cmp) t2)
+      | term_eq_rule c e1 e2 t =>
+          preserving_compiler_ext cmp_pre (nth_tail n cmp) (nth_tail (S m) src) /\
+          Model.eq_term (compileX (nth_tail n cmp) c) (compileS (nth_tail n cmp) t)
+                  (compileC (nth_tail n cmp) e1) (compileC (nth_tail n cmp) e2)
+      end ->
+      preserving_compiler_ext cmp_pre (nth_tail n cmp) (nth_tail m src).
+  Proof.
+    destruct r; intros; firstorder;
+      repeat match goal with
+             |[ H : nth_tail _ _ = _|-_] =>
+              rewrite H; rewrite (nth_tail_equals_cons_res _ _ H); clear H
+             |[ H : nth_error _ _ = _|-_] =>
+              rewrite (nth_tail_to_cons _ _ H); clear H
+             end; constructor; simpl; basic_utils_crush.
+  Qed.
+End PreservingBreak.
+
+Ltac preserving_compiler_cons :=
+  eapply preserving_compiler_cons_nth_tail;
+  [ compute; reflexivity | cbn beta match; repeat (apply conj || safe_eexists) ].
+Ltac break_preserving_ext :=
+  (preserving_compiler_cons; try reflexivity; [ break_preserving_ext |..])
+  || (compute; apply CompilerDefs.preserving_compiler_nil).
+Ltac setup_preserving_compiler :=
   lazymatch goal with
-  | |- eq_term _ _ _ _ _ => fail
-  | |- _ => shelve
-  end.
+  | |- preserving_compiler_ext ?cmp_pre ?cmp ?src =>
+      rewrite (as_nth_tail cmp); rewrite (as_nth_tail src)
+  end; break_preserving_ext.
 
-(* left-assoc cmp of three subs -> split into two cmps *)
-Ltac reassoc_cmp4 :=
-  lazymatch goal with
-  | [|- eq_term _ _ _ {{e #"cmp" {?G1} {?G4} {?G5}
-        (#"cmp" {?G1} {?G3} {?G4} (#"cmp" {?G1} {?G2} {?G3} {?c1} {?c2}) {?c3})
-        {?c4} }} _ ] =>
-      reduce_to {{e #"cmp" {G1} {G3} {G5}
-        (#"cmp" {G1} {G2} {G3} {c1} {c2}) (#"cmp" {G3} {G4} {G5} {c3} {c4}) }}
-  end.
+(* The compiled Linear-STLC beta redex after one mechanical pass of
+   [by_reduction]: the [jmp] of the compiled argument pair into [hd], under a
+   single composite permutation substitution.  Written out explicitly so the
+   proof below can reach it with one e-graph call; the remaining distance to
+   the compiled RHS is the permutation reasoning done manually after it. *)
+Definition linear_cps_beta_mid := {{e  #"blk_subst" (#"conc" "G" (ext "H" (#"neg" "B"))) (
+                     #"conc" (#"only" (#"neg" (#"prod" "A" (#"neg" "B")))) (
+                             ext (#"only" "A") (#"neg" "B"))) (
+                     #"cmp" (#"conc" "G" (ext "H" (#"neg" "B"))) (
+                            #"conc" (#"only" (#"neg" 
+                                              (#"prod" "A" (#"neg" "B")))) (
+                                    ext (#"only" (#"neg" "B")) "A")) (
+                            #"conc" (#"only" (#"neg" 
+                                              (#"prod" "A" (#"neg" "B")))) (
+                                    ext (#"only" "A") (
+                                    #"neg" "B"))) (
+                            #"cmp" (#"conc" "G" (ext "H" (#"neg" "B"))) (
+                                   #"conc" (#"only" (#"neg" "B")) (
+                                           ext (#"only" 
+                                                (#"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))))
+                                           "A")) (
+                                   #"conc" (#"only" 
+                                            (#"neg" 
+                                             (#"prod" "A" (#"neg" "B")))) (
+                                           ext (#"only" (#"neg" "B")) "A")) (
+                                   #"cmp" (#"conc" "G" (ext "H" (#"neg" "B"))) (
+                                          #"conc" 
+                                          (#"only" (#"neg" "B")) (
+                                          #"conc" 
+                                          (#"only" 
+                                           (#"neg" (#"prod" "A" (#"neg" "B")))) "H")) (
+                                          #"conc" 
+                                          (#"only" (#"neg" "B")) (
+                                          ext (#"only" 
+                                               (#"neg" 
+                                                (#"prod" "A" (#"neg" "B"))))
+                                          "A")) (#"cmp" 
+                                                 (
+                                                 #"conc" 
+                                                 "G" (
+                                                 ext "H" (#"neg" "B"))) (
+                                                 #"conc" 
+                                                 "H" (
+                                                 ext (
+                                                 #"only" (#"neg" "B"))
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))))) (
+                                                 #"conc" 
+                                                 (
+                                                 #"only" (#"neg" "B")) (
+                                                 #"conc" 
+                                                 (
+                                                 #"only" 
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B")))) "H")) (
+                                                 #"cmp" 
+                                                 (
+                                                 #"conc" 
+                                                 "G" (
+                                                 ext "H" (#"neg" "B"))) (
+                                                 #"conc" 
+                                                 "H" (
+                                                 #"conc" 
+                                                 (
+                                                 #"only" (#"neg" "B")) "G")) (
+                                                 #"conc" 
+                                                 "H" (
+                                                 ext (
+                                                 #"only" (#"neg" "B"))
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))))) (
+                                                 #"exch" 
+                                                 "G" (
+                                                 ext "H" (#"neg" "B"))) (
+                                                 #"csub" 
+                                                 (
+                                                 ext "H" (#"neg" "B")) (
+                                                 ext "H" (
+                                                 #"neg" "B")) "G" (
+                                                 #"only" 
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B")))) (
+                                                 #"id" 
+                                                 (ext "H" (#"neg" "B"))) (
+                                                 #"vsub" 
+                                                 "G" (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))) (
+                                                 #"cont" 
+                                                 "G" (
+                                                 #"prod" 
+                                                 "A" (#"neg" "B")) (
+                                                 #"pm_pair" 
+                                                 "G" (
+                                                 #"only" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))) "A" (
+                                                 #"neg" 
+                                                 "B") (
+                                                 #"hd" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))) "e"))))) (
+                                                 #"exch" 
+                                                 "H" (
+                                                 ext (
+                                                 #"only" (#"neg" "B"))
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B")))))) (
+                                          #"csub" 
+                                          (ext (#"only" (#"neg" "B"))
+                                           (#"neg" (#"prod" "A" (#"neg" "B")))) (
+                                          ext (#"only" (#"neg" "B"))
+                                          (#"neg" (#"prod" "A" (#"neg" "B")))) "H" (
+                                          #"only" 
+                                          "A") (#"id" 
+                                                (ext (
+                                                 #"only" (#"neg" "B"))
+                                                 (
+                                                 #"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))))) (
+                                          #"vsub" 
+                                          "H" "A" "v"))) (
+                                   #"csub" (ext (#"only" (#"neg" "B"))
+                                            (#"neg" 
+                                             (#"prod" "A" (#"neg" "B")))) (
+                                           ext (#"only" 
+                                                (#"neg" 
+                                                 (
+                                                 #"prod" "A" (#"neg" "B"))))
+                                           (#"neg" "B")) (
+                                           #"only" "A") (
+                                           #"only" "A") (
+                                           #"exch" 
+                                           (#"only" (#"neg" "B")) (
+                                           #"only" 
+                                           (#"neg" (#"prod" "A" (#"neg" "B"))))) (
+                                           #"id" (#"only" "A")))) (
+                            #"csub" (#"only" (#"neg" 
+                                              (#"prod" "A" (#"neg" "B")))) (
+                                    #"only" (#"neg" 
+                                             (#"prod" "A" (#"neg" "B")))) (
+                                    ext (#"only" (#"neg" "B")) "A") (
+                                    ext (#"only" "A") (
+                                    #"neg" "B")) (
+                                    #"id" (#"only" 
+                                           (#"neg" (#"prod" "A" (#"neg" "B"))))) (
+                                    #"exch" (#"only" (#"neg" "B")) (
+                                            #"only" 
+                                            "A")))) (
+                     #"jmp" (#"only" (#"neg" (#"prod" "A" (#"neg" "B")))) (
+                            ext (#"only" "A") (#"neg" "B")) (
+                            #"prod" "A" (#"neg" "B")) (
+                            #"hd" (#"neg" (#"prod" "A" (#"neg" "B")))) (
+                            #"pair" (#"only" "A") (
+                                    #"only" (#"neg" "B")) "A" (
+                                    #"neg" "B") (#"hd" "A") (
+                                    #"hd" (#"neg" "B")))) }}.
 
-(* cmp (cmp p cs) e -> cmp p (cmp cs e) *)
-Ltac reassoc_cmp3 :=
-  lazymatch goal with
-  | [|- eq_term _ _ _ {{e #"cmp" {?G1} {?G3} {?G4}
-        (#"cmp" {?G1} {?G2} {?G3} {?p} {?cs}) {?e} }} _ ] =>
-      reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs} {e}) }}
-  end.
-
-(* shared prefix of the two "csub_id dances" *)
-Ltac csub_id_dance :=
-  trans ltac:(unapply linear_value_subst "csub_id");
-  compute_eq_compilation;
-  trans ltac:(term_cong; cycle 1;
-    [> term_refl .. |
-       unapply linear_value_subst "id_left" |
-       unapply linear_value_subst "exch_inv" |
-       right; reflexivity ]).
-
-Derive linear_cps
-       in (elab_preserving_compiler linear_cps_subst
-                                          (linear_cps_prod_lang
-                                             ++ linear_cps_lang
-                                             ++ linear_block_subst
-                                             ++ linear_value_subst)
-                                          linear_cps_def
-                                          linear_cps
-                                          linear_stlc)
-       as linear_cps_preserving.
+Lemma linear_cps_preserving : preserving_compiler_ext linear_cps_subst
+                                (tgt_Model:= core_model (linear_cps_prod_lang
+                                                           ++ linear_cps_lang
+                                                           ++ linear_block_subst
+                                                           ++ linear_value_subst))
+                                linear_cps
+                                linear_stlc.
 Proof.
-  setup_elab_compiler.
-  { repeat t. }
-  { repeat t. }
-  { Automation.by_reduction; now t'. }
-  {
-    (*TODO: figure out what t does wrong here,
-      or use e-graph inference machinery.
-     *)
-    repeat s.
-    24:instantiate (1 := {{e ext (ext (#"only" (#"neg" "B"))
-                                   (#"neg" (#"prod" "A" (#"neg" "B"))))
-                             "A" }}).
-    30:instantiate (1 := {{e ext "H" (#"neg" "B")}}).
-    all: first [left; vm_compute; reflexivity
-               | right; sort_cong; Automation.by_reduction; now t'].
-  }
-  { Automation.by_reduction; now t'. }
-  (* ===== obligation 6 (Linear-STLC-beta): reduce + verified explicit proof ===== *)
-  reduce. compute_eq_compilation.
-  
-  (*TODO: still seems like too much here.
-    Could be related to sorts in queries.
-    Automation.by_reduction; repeat t'.*)
-  (* ===== dance 1 ===== *)
-  match goal with
-  | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_} (#"cmp" {_} {_} {_} (#"exch" {?G} {?H}) (#"csub" {?H} {?H'} {?G} {?G'} {?h} {?g})) (#"jmp" {?H'} {?G'} {?A} {?b} {?a})}} _ ] =>
-    reduce_to {{e #"blk_subst" (#"conc" {G} {H}) (#"conc" {H} {G}) (#"exch" {G} {H}) (#"blk_subst" (#"conc" {H} {G}) (#"conc" {H'} {G'}) (#"csub" {H} {H'} {G} {G'} {h} {g}) (#"jmp" {H'} {G'} {A} {b} {a}))}}
-  end.
-  match goal with
-  | [|- eq_term _ _ _ {{e #"blk_subst" {?Ga} {?Gb} (#"exch" {?G} {?H}) (#"blk_subst" {_} {_} (#"csub" {?H2} {?H'} {?G2} {?G'} {?h} {?g}) (#"jmp" {?H'} {?G'} {?A} {?b} {?a}))}} _ ] =>
-    eapply eq_term_trans; [ instantiate (1 := {{e #"blk_subst" {Ga} {Gb} (#"exch" {G} {H}) (#"jmp" {H} {G} {A} (#"val_subst" {H2} {H'} {h} (#"neg" {A}) {b}) (#"val_subst" {G2} {G'} {g} {A} {a}))}}) | ]
-  end.
-  {
-    Automation.by_reduction; repeat t'.
-  }
-  reduce.
-  lazymatch goal with
-  | [|- eq_term _ _ _ {{e #"blk_subst" {?G1} {?G5} (#"cmp" {?G1} {?G4} {?G5} (#"cmp" {?G1} {?G3} {?G4} (#"cmp" {?G1} {?G2} {?G3} {?a} {?b}) {?c}) {?d}) {?j} }} _ ] =>
-    reduce_to {{e #"blk_subst" {G1} {G3} (#"cmp" {G1} {G2} {G3} {a} {b}) (#"blk_subst" {G3} {G5} (#"cmp" {G3} {G4} {G5} {c} {d}) {j}) }}
-  end.
-  (* ===== dance 2 ===== *)
-  eapply eq_term_trans.
-  {
-    term_cong.
-    { left; solve_sort. }
-    1-3:term_refl.
-    {
-      compute_eq_compilation.
-      match goal with | [|- eq_term _ _ _ {{e #"blk_subst" {_} {_} (#"cmp" {_} {_} {_} (#"exch" {?G} {?H}) (#"csub" {?H} {?H'} {?G} {?G'} {?h} {?g})) (#"jmp" {?H'} {?G'} {?A} {?b} {?a})}} _ ] => reduce_to {{e #"blk_subst" (#"conc" {G} {H}) (#"conc" {H} {G}) (#"exch" {G} {H}) (#"blk_subst" (#"conc" {H} {G}) (#"conc" {H'} {G'}) (#"csub" {H} {H'} {G} {G'} {h} {g}) (#"jmp" {H'} {G'} {A} {b} {a}))}}
-      end.
-      match goal with | [|- eq_term _ _ _ {{e #"blk_subst" {?Ga} {?Gb} (#"exch" {?G} {?H}) (#"blk_subst" {_} {_} (#"csub" {?H2} {?H'} {?G2} {?G'} {?h} {?g}) (#"jmp" {?H'} {?G'} {?A} {?b} {?a}))}} _ ] => instantiate (1 := {{e #"blk_subst" {Ga} {Gb} (#"exch" {G} {H}) (#"jmp" {H} {G} {A} (#"val_subst" {H2} {H'} {h} (#"neg" {A}) {b}) (#"val_subst" {G2} {G'} {g} {A} {a}))}})
-      end.
-      Automation.by_reduction; repeat t'.
-    }
-  }
-  (* ===== push jmp ===== *)
-  reduce.
-  
-  lazymatch goal with
-  | [|- eq_term _ _ _ {{e #"blk_subst" {?H1} {?H2} {?c} (#"jmp" {?G1} {?G2} {?A} (#"hd" {?B}) (#"val_subst" {?G2} {?G3} {?s} {?A} {?p})) }} _ ] =>
-    reduce_to {{e #"blk_subst" {H1} {H2} {c} (#"blk_subst" {H2} (#"conc" {G1} {G3}) (#"csub" {G1} {G1} {G2} {G3} (#"id" (#"only" {B})) {s}) (#"jmp" {G1} {G3} {A} (#"hd" {B}) {p})) }};
-    reduce_to {{e #"blk_subst" {H1} (#"conc" {G1} {G3}) (#"cmp" {H1} {H2} (#"conc" {G1} {G3}) {c} (#"csub" {G1} {G1} {G2} {G3} (#"id" (#"only" {B})) {s})) (#"jmp" {G1} {G3} {A} (#"hd" {B}) {p}) }}
-  end.
-  (* ===== continuation ===== *)
-  { Automation.by_reduction; repeat t'. }
+  assert (wf_lang (linear_cps_prod_lang ++ linear_cps_lang
+                   ++ linear_block_subst ++ linear_value_subst)) by prove_by_lang_db.
+  setup_preserving_compiler.
+  (* wf obligations: reflective; simple eq obligations: reduction *)
+  1,2,4: compute_term_wf.
+  1,2: solve [ Automation.by_reduction; now t' ].    
 
-  Unshelve.
-  all:[> | now repeat t'..].
-
-  Optimize Proof.
-  
-  eapply eq_term_trans.
-
-  {
-    term_cong; cycle 1.
-    1, 2, 4: term_refl.
-    2: unshelve (left; solve_sort); now repeat t'.
-
-    compute_eq_compilation.
-    normalize_perm.
-
-    Optimize Proof.
-    Optimize Heap.
-
-    { term_refl. }
-    {
-      lazymatch goal with
-      | [|- eq_term _ _ _ {{e #"cmp"
-          {?G1} {?G3} {?G4}
-          (#"cmp" {?G1} {?G2} {?G3} {?p} {?cs} )
-          {?e}
-        }} _ ] =>
-          let cs' := csub_normalize cs in
-          reduce_to {{e #"cmp" {G1} {G2} {G4} {p} (#"cmp" {G2} {G3} {G4} {cs'} {e}) }}         
-      end.
-      
-      eapply eq_term_trans.
-      {
-        break_cmp.
-        { term_refl. }
-        eapply eq_term_trans.
-        { break_cmp; [ now eredex_steps_with linear_value_subst "csub_assoc" |  term_refl ]. }
-        { now exch_invert. }
-      }
-      reduce_lhs; break_cmp; [ | term_refl ].
-
-      lazymatch goal with
-      | [|- eq_term _ _ _ {{e #"cmp"
-          {?G1} {?G2} {?G3}
-          {?g1} {?g2}
-        }} _ ] => reduce_to {{e
-          #"cmp" {G1} {G2} {G3}
-          (#"cmp" {G1} {G2} {G2}
-            {g1} (#"id" {G2}))
-          {g2}
-        }}
-      end.
-      
-      trans break_cmp.
-      {
-        trans break_cmp.
-        1: term_refl.
-        {
-          csub_id_dance.
-          unapply linear_value_subst "cmp_csub".          
-        }
-
-        eredex_steps_with linear_value_subst "cmp_assoc".
-
-        Unshelve.
-        all: repeat t'; shelve.
-      }
-      { term_refl. }
-      {
-        compute_eq_compilation.
-        reassoc_cmp4.
-
-        trans break_cmp.
-        {
-          trans break_cmp.
-          { term_refl. }
-          { unapply linear_value_subst "exch_triple". }
-          compute_eq_compilation.
-          reduce_lhs.
-          trans break_cmp.
-          {
-            reduce_to {{e #"cmp" (#"conc" "G" (ext "H" (#"neg" "B"))) (
-                            #"conc" (ext "H" (#"neg" "B")) "G") (
-                            #"conc" "G" (ext "H" (#"neg" "B"))) (
-                            #"exch" "G" (ext "H" (#"neg" "B"))) (
-                            #"exch" (ext "H" (#"neg" "B")) "G")}};
-              eredex_steps_with linear_value_subst "exch_inv".
-          }
-          { term_refl. }
-
-          Unshelve.
-          all: repeat t';try shelve_if_not_eqterm.
-          Optimize Heap.
-
-          reduce_lhs.
-
-          lazymatch goal with
-          | [|- eq_term _ _ {{s #"sub" {?X} {?Y} }} ?e _ ] =>
-              reduce_to {{e #"cmp" {X} {X} {Y} (#"id" {X}) {e} }}
-          end.
-          
-          trans break_cmp.
-          {
-            csub_id_dance.
-            compute_eq_compilation.
-            trans ltac:(unapply linear_value_subst "cmp_csub").
-            compute_eq_compilation.
-            break_cmp.
-            1: term_refl.
-            unapply linear_value_subst "exch_triple".
-
-            Unshelve.
-            all: repeat t'; shelve.
-          }
-          { term_refl. }
-          {
-            reduce_lhs.
-            reassoc_cmp4.
-
-            break_cmp.
-            { term_refl. }
-            {
-              eredex_general linear_value_subst "cmp_csub".
-              4-5: term_refl.
-              1-3: try env_eq.
-              {
-                lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end.
-              }
-              { solve_sort. }
-              Unshelve.
-              all: repeat t'; shelve.
-            }
-          }
-        }
-        {
-          unshelve (eredex_general linear_value_subst "exch_cmp";
-                    cycle 3;
-                    [> term_refl | term_refl |
-                      solve_wf_subst |
-                      solve_sort |
-                      try env_eq .. ]);
-            repeat t'; shelve.
-        }
-        {
-          reduce_lhs.
-
-          trans break_cmp.
-          {
-            trans ltac:(unapply linear_value_subst "cmp_assoc").
-            compute_eq_compilation.
-            trans break_cmp.
-            { term_refl. }
-            {
-              reduce_to {{e #"cmp"
-                            (#"conc" (ext "G" (#"neg" "B")) "H")
-                            (#"conc" "H" (ext "G" (#"neg" "B")))
-                            (#"conc" (ext "G" (#"neg" "B")) "H")
-                            (#"exch" (ext "G" (#"neg" "B")) "H")
-                            (#"exch" "H" (ext "G" (#"neg" "B")))}}.
-              eapply eq_term_conv.
-              1: eredex_steps_with linear_value_subst "exch_inv".
-              solve_sort.
-
-              Unshelve.
-              all: repeat t'; shelve.
-            }
-            reduce_lhs.
-            unapply linear_value_subst "exch_triple".
-          }
-          { term_refl. }
-          {
-            reduce_lhs.
-
-            trans ltac:(unapply linear_value_subst "cmp_assoc").
-            all: try (lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end).
-
-            Unshelve.
-            all: try solve_wf_term.
-            all: try shelve_if_not_eqterm.
-
-            compute_eq_compilation.
-
-            break_cmp.
-            { term_refl. }
-            {
-              eredex_general linear_value_subst "cmp_csub";
-                cycle 3;
-                [> term_refl | term_refl |
-                  solve_wf_subst |
-                  solve_sort |
-                  try env_eq .. ].
-              Unshelve.
-              all: repeat t'; shelve.
-            }
-          }
-        }
-      }
-    }
-    {
-      reassoc_cmp3.
-      eapply eq_term_trans.
-      {
-        break_cmp; [> term_refl |  ].
-        eapply eq_term_trans.
-        {
-          break_cmp; [> .. | term_refl ].
-          lazymatch goal with
-            | [|- eq_term _ _ _ {{e
-              #"csub" {?A} {?A'} {_} {_}
-              {?a}
-              (#"csub" {?B} {?B'} {?C} {?C'} {?b} {?c})
-            }} _ ] =>
-              instantiate (1:= {{e #"csub" (#"conc" {A} {B}) (#"conc" {A'} {B'}) {C} {C'}
-                (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); Automation.by_reduction; repeat t'
-            end.
-        }
-
-        eapply eq_term_conv;
-          [ eapply eq_term_trans;
-            [ term_cong | .. ];
-            [ .. | eredex_steps_with linear_value_subst "cmp_csub" ]
-          | ].
-
-        all: try compute_eq_compilation.
-        5: term_refl.
-        4: term_refl.
-        all: try now env_eq.
-        all: try (lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end).
-        solve_sort.
-
-        Unshelve.
-        all: repeat t'; shelve.
-        Optimize Proof.
-      }
-      term_refl.
-
-      Unshelve.
-      all: repeat t'; shelve.
-    }
-    
-    {
-      
-      reduce_lhs.
-      reassoc_cmp3.
-
-      eapply eq_term_trans.
-      {
-        break_cmp; [ term_refl | ].
-        eapply eq_term_trans.
-        {
-          break_cmp; [ | term_refl ].
-          lazymatch goal with
-            | [|- eq_term _ _ _ {{e
-              #"csub" {?A} {?A'} {_} {_}
-              {?a}
-              (#"csub" {?B} {?B'} {?C} {?C'} {?b} {?c})
-            }} _ ] =>
-              instantiate (1:= {{e #"csub" (#"conc" {A} {B}) (#"conc" {A'} {B'}) {C} {C'}
-                (#"csub" {A} {A'} {B} {B'} {a} {b}) {c} }}); Automation.by_reduction; repeat t'
-            end.
-        }
-        
-        Unshelve.
-        all: repeat t'; try shelve_if_not_eqterm.
-
-        trans ltac:(eredex_general linear_value_subst "cmp_csub").
-        4-5: term_refl.
-        1-3: try env_eq.
-        all: try (lazymatch goal with |- wf_subst _ _ _ => solve_wf_subst end).
-        { solve_sort. }
-
-        Unshelve.
-        all: repeat t'; try shelve_if_not_eqterm.
-
-        compute_eq_compilation.
-        reduce_lhs.
-
-        lazymatch goal with
-          | [|- eq_term _ _ _ {{e
-            #"csub" {?G1} {?G2} {?H1} {?H2}
-            {?g} {?h}
-          }} _ ] => reduce_to {{e
-            #"csub" {G1} {G2} {H1} {H2}
-            {g} (#"cmp" {H1} {H1} {H2} (#"id" {H1}) {h})
-          }}
-        end.
-
-        eapply eq_term_conv;
-          [> unapply linear_value_subst "cmp_csub" |
-             solve_sort ].
-
-        Unshelve.
-        all: repeat t'; try shelve_if_not_eqterm.
-      }
-
-      reduce_lhs.
-      break_cmp; [|term_refl].
-      Unshelve.
-      all: repeat t'; try shelve_if_not_eqterm.
-      instantiate (1:= {{e
-                           #"csub"
-                           "G" "G"
-                           (ext "H" (#"neg" "B")) (#"conc" (#"only" (#"neg" "B")) "H")
-                           (#"id" "G")
-                           (#"exch" "H" (#"only" (#"neg" "B")))
-                  }}).
-      Automation.by_reduction; repeat t'.
-    }
-    term_refl.
-  }
-  Automation.by_reduction; repeat t'.
-  Unshelve.
-  all: repeat t'.
+  (* ===== remaining obligation (Linear-STLC-beta).
+     A single [by_reduction] cannot check the whole equation (the e-graph
+     diverges on the permutation reasoning), so the proof is staged: one
+     [by_reduction] pushes the beta redex through the substitution calculus
+     to the explicit intermediate [linear_cps_beta_mid].
+     A final [by_reduction] closes the remaining gap, absorbing
+     everything the chain leaves oriented. ===== *)
+  unfold Model.eq_term; cbn [core_model].
+  compute_eq_compilation.
+  eapply eq_term_trans with (e12 := linear_cps_beta_mid);
+    [ unfold linear_cps_beta_mid; Automation.by_reduction; repeat t' | ].
+  Automation.by_reduction'
+    (Automation.rule_named_in
+       ["csub_id"; "cmp_assoc"; "id_right"; "id_left";
+        "exch_inv"; "cmp_csub"; "exch_triple"; "csub_assoc"; "exch_cmp"])
+    Automation.empty_inj_rules; repeat t'.
 Qed.
-#[local] Definition linear_cps_stlc_entry :=
-  cmp_entry (elab_compiler_implies_preserving linear_cps_preserving).
+#[local] Definition linear_cps_stlc_entry := cmp_entry linear_cps_preserving.
 #[export] Hint Resolve linear_cps_stlc_entry : preserving_db.

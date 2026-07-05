@@ -11,7 +11,7 @@ Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage wit
 
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
-  Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen Tools.Resolution Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -61,12 +61,19 @@ Definition typed_bool_def : lang :=
   ]
   ]}.
 
-Derive typed_bool
-       SuchThat (elab_lang_ext (exp_subst++value_subst) typed_bool_def typed_bool)
-       As typed_bool_wf.
-Proof. auto_elab. Qed.
-#[local] Definition typed_bool_entry :=
-  lang_entry (elab_lang_implies_wf typed_bool_wf).
+Definition typed_bool_injectivity :=
+  [("val", ["A"; "G"]); ("ext", ["A"; "G"]); ("ret", ["v"; "A"; "G"]); ("id", ["G"]); ("hd", ["A"; "G"]);
+   ("F", ["G"]); ("sub", ["G'"; "G"]); ("cmp", ["G3"; "G1"]); ("T", ["G"]); ("forget", ["G"]);
+   ("val_subst", ["A"; "G"]); ("wkn", ["A"; "G"]); ("exp", ["A"; "G"]); ("if", ["e3"; "e2"; "cond"; "A"; "G"]);
+   ("exp_subst", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"])].
+
+Definition typed_bool :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (exp_subst++value_subst) typed_bool_def.
+
+Lemma typed_bool_wf : wf_lang_ext (exp_subst++value_subst) typed_bool.
+Proof. compute_wf_lang. Qed.
+#[local] Definition typed_bool_entry := lang_entry typed_bool_wf.
 #[export] Hint Resolve typed_bool_entry : wf_lang_db.
 
 Definition untyped_bool_def : lang :=
@@ -81,12 +88,19 @@ Definition untyped_bool_def : lang :=
   ]
   ]}.
 
-Derive untyped_bool
-       SuchThat (elab_lang_ext (star_type ++ exp_subst++value_subst) untyped_bool_def untyped_bool)
-       As untyped_bool_wf.
-Proof. auto_elab. Qed. 
-#[local] Definition untyped_bool_entry :=
-  lang_entry (elab_lang_implies_wf untyped_bool_wf).
+Definition untyped_bool_injectivity :=
+  [("uF", ["G"]); ("wkn", ["A"; "G"]); ("forget", ["G"]); ("exp", ["A"; "G"]); ("val_subst", ["A"; "G"]);
+   ("ret", ["v"; "A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("hd", ["A"; "G"]); ("val", ["A"; "G"]);
+   ("cmp", ["G3"; "G1"]); ("exp_subst", ["A"; "G"]); ("sub", ["G'"; "G"]); ("uT", ["G"]); ("id", ["G"]);
+   ("ext", ["A"; "G"])].
+
+Definition untyped_bool :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (star_type ++ exp_subst++value_subst) untyped_bool_def.
+
+Lemma untyped_bool_wf : wf_lang_ext (star_type ++ exp_subst++value_subst) untyped_bool.
+Proof. compute_wf_lang. Qed.
+#[local] Definition untyped_bool_entry := lang_entry untyped_bool_wf.
 #[export] Hint Resolve untyped_bool_entry : wf_lang_db.
 
 
@@ -117,12 +131,19 @@ Definition boolhuh_def : lang :=
   ]
   ]}.
 
-Derive boolhuh
-       SuchThat (elab_lang_ext (utlc ++ untyped_bool ++ star_type ++ exp_subst++value_subst) boolhuh_def boolhuh)
-       As boolhuh_wf.
-Proof. auto_elab. Qed.
-#[local] Definition boolhuh_entry :=
-  lang_entry (elab_lang_implies_wf boolhuh_wf).
+Definition boolhuh_injectivity :=
+  [("wkn", ["A"; "G"]); ("uapp", ["e'"; "e"; "G"]); ("uF", ["G"]); ("exp_subst", ["A"; "G"]);
+   ("exp", ["A"; "G"]); ("uT", ["G"]); ("val_subst", ["A"; "G"]); ("val", ["A"; "G"]); ("ret", ["v"; "A"; "G"]);
+   ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("sub", ["G'"; "G"]); ("hd", ["A"; "G"]); ("bool?", ["e"; "G"]);
+   ("forget", ["G"]); ("ext", ["A"; "G"]); ("ulambda", ["e"; "G"]); ("id", ["G"]); ("cmp", ["G3"; "G1"])].
+
+Definition boolhuh :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (utlc ++ untyped_bool ++ star_type ++ exp_subst++value_subst) boolhuh_def.
+
+Lemma boolhuh_wf : wf_lang_ext (utlc ++ untyped_bool ++ star_type ++ exp_subst++value_subst) boolhuh.
+Proof. compute_wf_lang. Qed.
+#[local] Definition boolhuh_entry := lang_entry boolhuh_wf.
 #[export] Hint Resolve boolhuh_entry : wf_lang_db.
 
 
@@ -153,12 +174,19 @@ Definition utlc_bool_def : lang :=
   ]
   ]}.
 
-Derive utlc_bool
-       SuchThat (elab_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++ exp_subst++value_subst) utlc_bool_def utlc_bool)
-       As utlc_bool_wf.
-Proof. auto_elab. Qed.
-#[local] Definition utlc_bool_entry :=
-  lang_entry (elab_lang_implies_wf utlc_bool_wf).
+Definition utlc_bool_injectivity :=
+  [("ret", ["v"; "A"; "G"]); ("uapp", ["e'"; "e"; "G"]); ("wkn", ["A"; "G"]); ("ext", ["A"; "G"]);
+   ("val_subst", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("Error", ["t"; "G"]); ("sub", ["G'"; "G"]);
+   ("uF", ["G"]); ("hd", ["A"; "G"]); ("exp_subst", ["A"; "G"]); ("exp", ["A"; "G"]); ("val", ["A"; "G"]);
+   ("uT", ["G"]); ("id", ["G"]); ("forget", ["G"]); ("ulambda", ["e"; "G"]); ("cmp", ["G3"; "G1"])].
+
+Definition utlc_bool :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (utlc ++ untyped_bool ++ error_t ++ star_type ++ exp_subst++value_subst) utlc_bool_def.
+
+Lemma utlc_bool_wf : wf_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++ exp_subst++value_subst) utlc_bool.
+Proof. compute_wf_lang. Qed.
+#[local] Definition utlc_bool_entry := lang_entry utlc_bool_wf.
 #[export] Hint Resolve utlc_bool_entry : wf_lang_db.
 
 
@@ -202,12 +230,20 @@ Definition uif_def : lang :=
   ]
   ]}.
 
-Derive uif
-       SuchThat (elab_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) uif_def uif)
-       As uif_wf. (* leftmost is newest *)
-Proof. auto_elab. Qed.
-#[local] Definition uif_entry :=
-  lang_entry (elab_lang_implies_wf uif_wf).
+Definition uif_injectivity :=
+  [("ext", ["A"; "G"]); ("hd", ["A"; "G"]); ("ulambda", ["e"; "G"]); ("id", ["G"]); ("sub", ["G'"; "G"]);
+   ("cmp", ["G3"; "G1"]); ("uif", ["e3"; "e2"; "e1"; "G"]); ("forget", ["G"]); ("ret", ["v"; "A"; "G"]);
+   ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("val", ["A"; "G"]); ("uT", ["G"]); ("val_subst", ["A"; "G"]);
+   ("exp", ["A"; "G"]); ("uapp", ["e'"; "e"; "G"]); ("wkn", ["A"; "G"]); ("Error", ["t"; "G"]);
+   ("exp_subst", ["A"; "G"]); ("uF", ["G"])].
+
+Definition uif :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) uif_def.
+
+Lemma uif_wf : wf_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) uif.
+Proof. compute_wf_lang. Qed.
+#[local] Definition uif_entry := lang_entry uif_wf.
 #[export] Hint Resolve uif_entry : wf_lang_db.
 
 Definition mif_def : lang :=
@@ -254,12 +290,20 @@ Definition mif_def : lang :=
       = #"Error" "A" : #"exp" "G" "A" 
   ]
   ]}.
-Derive mif
-       SuchThat (elab_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) mif_def mif)
-       As mif_wf.
-Proof. auto_elab. Qed.
-#[local] Definition mif_entry :=
-  lang_entry (elab_lang_implies_wf mif_wf).
+Definition mif_injectivity :=
+  [("ulambda", ["e"; "G"]); ("id", ["G"]); ("sub", ["G'"; "G"]); ("cmp", ["G3"; "G1"]);
+   ("mif", ["e3"; "e2"; "e1"; "A"; "G"]); ("ext", ["A"; "G"]); ("hd", ["A"; "G"]); ("forget", ["G"]);
+   ("uapp", ["e'"; "e"; "G"]); ("wkn", ["A"; "G"]); ("Error", ["t"; "G"]); ("exp_subst", ["A"; "G"]);
+   ("uF", ["G"]); ("exp", ["A"; "G"]); ("val", ["A"; "G"]); ("uT", ["G"]); ("val_subst", ["A"; "G"]);
+   ("ret", ["v"; "A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"])].
+
+Definition mif :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) mif_def.
+
+Lemma mif_wf : wf_lang_ext (utlc ++ untyped_bool ++ error_t ++ star_type ++exp_subst++value_subst) mif.
+Proof. compute_wf_lang. Qed.
+#[local] Definition mif_entry := lang_entry mif_wf.
 #[export] Hint Resolve mif_entry : wf_lang_db.
 
 Definition dyn_lang_no_conditional := boolhuh ++ utlc_bool ++ untyped_bool ++ utlc ++ error_t ++ star_type ++ exp_subst ++ value_subst.

@@ -7,6 +7,8 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
   Lang.LinearSubst Lang.LinearSTLC
   Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.EGraph.TypeInference
+  Tools.EGraph.InjRuleGen
   Tools.EGraph.Automation.
 From Pyrosome.Lang Require Import
   PolySubst SimpleVSubst SimpleVCC SimpleVFixCC
@@ -65,12 +67,20 @@ Definition ch8_def : lang :=
     ]
     ]}.
 
-Derive ch8
-       in (elab_lang_ext (heap++nat_lang) ch8_def ch8)
-       as ch8_wf.
-Proof. auto_elab. Qed.
+Definition ch8_injectivity :=
+  [("assign", ["e"; "x"]); ("neq_0_r", ["n"]); ("value", ["n"]); ("1+", ["n"]);
+   ("if0", ["nz"; "z"; "e"]); ("while", ["c"; "e"]); ("neq_1+", ["p"; "m"; "n"]);
+   ("hvar", ["n"]); ("seq", ["cmd2"; "cmd1"]); ("neq", ["m"; "n"]); ("lookup", ["l"]);
+   ("neq_0_l", ["n"])].
+
+Definition ch8 :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (heap++nat_lang) ch8_def.
+
+Lemma ch8_wf : wf_lang_ext (heap++nat_lang) ch8.
+Proof. compute_wf_lang. Qed.
 #[local] Definition ch8_entry :=
-  lang_entry (elab_lang_implies_wf ch8_wf).
+  lang_entry ch8_wf.
 #[export] Hint Resolve ch8_entry : wf_lang_db.
 
 Definition ch8_config_def : lang := 
@@ -135,12 +145,19 @@ Definition ch8_config_def : lang :=
     ]
   ]}.
 
-Derive ch8_config
-       in (elab_lang_ext (ch8 ++ heap++nat_lang) ch8_config_def ch8_config)
-       as ch8_config_wf.
-Proof.  auto_elab. Qed.
+Definition ch8_config_injectivity :=
+  [("neq", ["m"; "n"]); ("neq_1+", ["p"; "m"; "n"]); ("neq_0_l", ["n"]); ("hvar", ["n"]);
+   ("if0", ["nz"; "z"; "e"]); ("1+", ["n"]); ("while", ["c"; "e"]); ("assign", ["e"; "x"]);
+   ("value", ["n"]); ("neq_0_r", ["n"]); ("lookup", ["l"])].
+
+Definition ch8_config :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (ch8 ++ heap++nat_lang) ch8_config_def.
+
+Lemma ch8_config_wf : wf_lang_ext (ch8 ++ heap++nat_lang) ch8_config.
+Proof.  compute_wf_lang. Qed.
 #[local] Definition ch8_config_entry :=
-  lang_entry (elab_lang_implies_wf ch8_config_wf).
+  lang_entry ch8_config_wf.
 #[export] Hint Resolve ch8_config_entry : wf_lang_db.
 
 Definition ch8_ectx_def : lang := 
@@ -227,12 +244,20 @@ Definition ch8_ectx_def : lang :=
     ]
   ]}.
 
-Derive ch8_ectx
-       in (elab_lang_ext (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx)
-       as ch8_ectx_wf.
-Proof.  auto_elab. Qed.
+Definition ch8_ectx_injectivity :=
+  [("Eassign", ["E"; "x"]); ("lookup", ["l"]); ("Eplug", ["e"; "E"]); ("Eseq", ["c"; "C"]);
+   ("neq_0_r", ["n"]); ("1+", ["n"]); ("Cplug", ["e"; "C"]); ("Eif0", ["nz"; "z"; "E"]);
+   ("neq", ["m"; "n"]); ("neq_1+", ["p"; "m"; "n"]); ("value", ["n"]); ("if0", ["nz"; "z"; "e"]);
+   ("neq_0_l", ["n"]); ("hvar", ["n"]); ("while", ["c"; "e"]); ("assign", ["e"; "x"])].
+
+Definition ch8_ectx :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def.
+
+Lemma ch8_ectx_wf : wf_lang_ext (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx.
+Proof.  compute_wf_lang. Qed.
 #[local] Definition ch8_ectx_entry :=
-  lang_entry (elab_lang_implies_wf ch8_ectx_wf).
+  lang_entry ch8_ectx_wf.
 #[export] Hint Resolve ch8_ectx_entry : wf_lang_db.
 
 (* blk [... ; ~unit] *)

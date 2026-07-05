@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
+From Pyrosome Require Import Theory.Core Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen Tools.Resolution Tools.EGraph.ComputeWf.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 Import Core.Notations.
 
@@ -48,8 +48,7 @@ Definition stlc_injectivity :=
 
 Definition stlc :=
   Eval vm_compute in
-    (infer_lang_ext_simple (exp_subst++value_subst) stlc_def
-       (stlc_injectivity++exp_subst_injectivity++value_subst_injectivity)).
+    infer_lang_ext_simple_incr 10 100 (exp_subst++value_subst) stlc_def.
 
 Lemma stlc_wf : wf_lang_ext (exp_subst++value_subst) stlc.
 Proof. compute_wf_lang. Qed.

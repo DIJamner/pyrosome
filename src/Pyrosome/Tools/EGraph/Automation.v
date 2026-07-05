@@ -44,8 +44,8 @@ Definition subst_weight (r : renaming string) (a : atom positive positive) :=
        [Some "val_subst"; Some "blk_subst"] then Some 20%nat
   else Some (length a.(atom_args)).
 
-Definition filter_rules :=
-(fun pat : string * Rule.rule string =>
+Definition filter_rules {V} :=
+(fun pat : V * Rule.rule V =>
    match pat with
    (* Filtering out sort rules has a risk because some rules need sorts to match.
       However, it is a huge performance improvement.

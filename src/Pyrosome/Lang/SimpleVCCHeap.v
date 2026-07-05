@@ -9,6 +9,10 @@ From Pyrosome Require Import Theory.Core Compilers.Compilers
   Tools.EGraph.TypeInference
   Tools.EGraph.ComputeWf
   Tools.Resolution.
+(* Require (not Import): importing the module perturbs the tactic proofs below.
+   Currently unused: [forget_eq_wkn'] must be stated explicitly (see below), as
+   e-graph inference collapses it to a trivial rule. *)
+From Pyrosome Require Tools.EGraph.InjRuleGen.
 From Pyrosome.Lang Require Import
   PolySubst SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS
      SimpleUnit NatHeap SimpleVCPSHeap SimpleVCC.
@@ -58,14 +62,32 @@ Definition forget_eq_wkn'_def : lang :=
          : #"sub" (#"ext" "G" "A") #"emp"
       ]
   ]}.
-Derive forget_eq_wkn'
-       in (elab_lang_ext value_subst
-                               forget_eq_wkn'_def
-                               forget_eq_wkn')
-       as forget_eq_wkn'_wf.
-Proof. auto_elab. Qed.
-#[local] Definition forget_eq_wkn'_entry :=
-  lang_entry (elab_lang_implies_wf forget_eq_wkn'_wf).
+Definition forget_eq_wkn'_injectivity :=
+  [("wkn", ["A"; "G"]); ("id", ["G"]); ("sub", ["G'"; "G"]); ("hd", ["A"; "G"]);
+   ("ext", ["A"; "G"]); ("forget", ["G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]);
+   ("cmp", ["G3"; "G1"]); ("val", ["A"; "G"]); ("val_subst", ["A"; "G"])].
+
+(* NOTE: this rule cannot be elaborated by e-graph inference anymore: since
+   TypeInference's saturation includes the base language's equations
+   (commit 4694173c), [value_subst]'s "cmp_forget" ([cmp g forget = forget])
+   merges the explicitly-written LHS [cmp wkn forget] with [forget], and
+   extraction collapses the rule to the trivial [forget = forget].  The whole
+   point of this rule is to be a BOUNDED instance of "cmp_forget" (g := wkn)
+   usable as a reversible rewrite (see [cc_bidirectional_rules]), so we state
+   the elaborated form explicitly instead. *)
+Definition forget_eq_wkn' : lang :=
+  {[l
+      [:= "G" : #"env", "A" : #"ty"
+         ----------------------------------------------- ("forget_eq_wkn")
+         #"cmp" (#"ext" "G" "A") "G" #"emp" (#"wkn" "G" "A") (#"forget" "G")
+         = #"forget" (#"ext" "G" "A")
+         : #"sub" (#"ext" "G" "A") #"emp"
+      ]
+  ]}.
+
+Lemma forget_eq_wkn'_wf : wf_lang_ext value_subst forget_eq_wkn'.
+Proof. compute_wf_lang. Qed.
+#[local] Definition forget_eq_wkn'_entry := lang_entry forget_eq_wkn'_wf.
 #[export] Hint Resolve forget_eq_wkn'_entry : wf_lang_db.
 
 Definition heap_cc_def : compiler :=

@@ -10,6 +10,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
   Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen
   Tools.EGraph.Automation.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 Import Core.Notations.
@@ -91,11 +92,24 @@ Definition prod_def : lang :=
      ]
     ]}.
 
-Derive prod
-       in (elab_lang_ext (exp_subst++value_subst) prod_def prod)
-       as prod_wf.
-Proof. auto_elab. Qed.
-#[local] Definition prod_entry := lang_entry (elab_lang_implies_wf prod_wf).
+Definition prod_injectivity :=
+  [("snoc", ["v"; "A"; "g"; "G'"; "G"]); (".2", ["e"; "B"; "A"; "G"]);
+   ("exp_subst", ["A"; "G"]); ("pair", ["e2"; "e1"; "B"; "A"; "G"]);
+   ("wkn", ["A"; "G"]); ("forget", ["G"]); ("val", ["A"; "G"]);
+   ("exp", ["A"; "G"]); ("val_subst", ["A"; "G"]);
+   ("ext", ["A"; "G"]); ("ret", ["v"; "A"; "G"]);
+   ("id", ["G"]); ("pair_val", ["v2"; "v1"; "B"; "A"; "G"]);
+   ("prod", ["B"; "A"]); (".1", ["e"; "B"; "A"; "G"]);
+   ("hd", ["A"; "G"]); ("sub", ["G'"; "G"]);
+   ("cmp", ["G3"; "G1"])].
+
+Definition prod :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (exp_subst++value_subst) prod_def.
+
+Lemma prod_wf : wf_lang_ext (exp_subst++value_subst) prod.
+Proof. compute_wf_lang. Qed.
+#[local] Definition prod_entry := lang_entry prod_wf.
 #[export] Hint Resolve prod_entry : wf_lang_db.
 
 (*Note that because the projections aren't values,

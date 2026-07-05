@@ -31,58 +31,49 @@ Derive levels
        as levels_wf.
 Proof.
   setup_lang_interactive.
-  elab_rule {[r
+  elab_rule_auto {[r
       -----------------------------------------------
       #"lvl" srt
-    ]}%prerule
-    (@nil (string* list string)).  
-  elab_rule {[r
+    ]}%prerule 3.
+  elab_rule_auto {[r
       -----------------------------------------------
       #"l0" : #"lvl"
-    ]}%prerule
-    (@nil (string* list string)).
-  elab_rule {[r "l" : #"lvl"
+    ]}%prerule 3.
+  elab_rule_auto {[r "l" : #"lvl"
       -----------------------------------------------
       #"lS" "l" : #"lvl"
-    ]}%prerule
-    (@nil (string* list string)).
-  elab_rule {[r  "l1" : #"lvl",  "l2" : #"lvl"
+    ]}%prerule 3.
+  elab_rule_auto {[r  "l1" : #"lvl",  "l2" : #"lvl"
       -----------------------------------------------
       #"<" "l1" "l2" srt
-    ]}%prerule
-    (@nil (string* list string)).  
-  elab_rule {[r "l" : #"lvl"
+    ]}%prerule 3.
+  elab_rule_auto {[r "l" : #"lvl"
       -----------------------------------------------
       #"<0" : #"<" #"l0" (#"lS" "l")
-    ]}%prerule
-    (@nil (string* list string)).
-  elab_rule {[r "l" : #"lvl"
+    ]}%prerule 3.
+  elab_rule_auto {[r "l" : #"lvl"
       -----------------------------------------------
       #"<S" : #"<" "l" (#"lS" "l")
-    ]}%prerule
-    (@nil (string* list string)).
-  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2"
+    ]}%prerule 3.
+  elab_rule_auto {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2"
       -----------------------------------------------
       #"<S_cong" "p" : #"<" (#"lS" "l1") (#"lS" "l2")
-    ]}%prerule
-    (@nil (string* list string)).
-  elab_rule {[r "l1" : #"lvl",
+    ]}%prerule 3.
+  elab_rule_auto {[r "l1" : #"lvl",
           "l2" : #"lvl",
             "p1" : #"<" "l1" "l2",
           "l3" : #"lvl",
             "p2" : #"<" "l2" "l3"
       -----------------------------------------------
       #"<trans" "p1" "p2" : #"<" "l1" "l3"
-    ]}%prerule
-    (@nil (string* list string)).
-  elab_rule {[r "l1" : #"lvl",
+    ]}%prerule 3.
+  elab_rule_auto {[r "l1" : #"lvl",
           "l2" : #"lvl",
             "p1" : #"<" "l1" "l2",
             "p2" : #"<" "l1" "l2"
       ----------------------------------------------- ("<irr")
       #"p1" = "p2" : #"<" "l1" "l3"
-    ]}%prerule
-    (@nil (string* list string)).
+    ]}%prerule 3.
   apply wf_lang_nil.
 Unshelve.
 1:shelve.

@@ -33,45 +33,41 @@ Derive sigma
 Proof.
   setup_lang_interactive.
 
-  elab_rule {[r "G" : #"env",
+  elab_rule_auto {[r "G" : #"env",
       "A" : #"ty" "G",
       "B": #"ty" (#"ext" "G" "A")
       -----------------------------------------------
       #"Sig" "A" "B" : #"ty" "G"
-    ]}%prerule
-    (sigma_injectivity++subst_injectivity).
+    ]}%prerule 5.
   gen_subst.
-  elab_rule {[r "G" : #"env",
+  elab_rule_auto {[r "G" : #"env",
       "A" : #"ty" "G",
       "e1" : #"exp" "G" "A",
       "B": #"ty" (#"ext" "G" "A"),
       "e2" : #"exp" "G" (#"ty_subst" (#"snoc" #"id" "e1") "B")
       -----------------------------------------------
       #"ex" "e1" "e2" : #"exp" "G" (#"Sig" "A" "B")
-  ]}%prerule
-   (sigma_injectivity++subst_injectivity).
+  ]}%prerule 5.
   gen_subst.
-  elab_rule {[r "G" : #"env",
+  elab_rule_auto {[r "G" : #"env",
           "A" : #"ty" "G",
           "B": #"ty" (#"ext" "G" "A"),
           (*TODO: why is this annotation needed? *)
           "e" : #"exp" "G" (#"Sig" ["G":="G"] "A" "B")
           -----------------------------------------------
           #"proj1" "e" : #"exp" "G" "A"
-   ]}%prerule
-    (sigma_injectivity++subst_injectivity).
+   ]}%prerule 5.
   gen_subst.
-  elab_rule {[r "G" : #"env",
+  elab_rule_auto {[r "G" : #"env",
           "A" : #"ty" "G",
           "B": #"ty" (#"ext" "G" "A"),
           "e" : #"exp" "G" (#"Sig" "A" "B")
           -----------------------------------------------
           #"proj2" "e"
           : #"exp" "G" (#"ty_subst" (#"snoc" #"id" (#"proj1" "e")) "B")
-   ]}%prerule
-    (sigma_injectivity++subst_injectivity).
+   ]}%prerule 5.
   gen_subst.
-  elab_rule{[r "G" : #"env",
+  elab_rule_auto{[r "G" : #"env",
       "A" : #"ty" "G",
       "e1" : #"exp" "G" "A",
       "B": #"ty" (#"ext" "G" "A"),
@@ -79,9 +75,8 @@ Proof.
       ----------------------------------------------- ("proj1 beta")
       #"proj1" ["B":="B"] (#"ex" "e1" "e2") = "e1"
       : #"exp" "G" "A"
-  ]}%prerule
-    (sigma_injectivity++subst_injectivity).
-  elab_rule{[r "G" : #"env",
+  ]}%prerule 5.
+  elab_rule_auto{[r "G" : #"env",
       "A" : #"ty" "G",
       "e1" : #"exp" "G" "A",
       "B": #"ty" (#"ext" "G" "A"),
@@ -89,9 +84,8 @@ Proof.
       ----------------------------------------------- ("proj2 beta")
       #"proj2" ["B":="B"] (#"ex" "e1" "e2") = "e2"
       : #"exp" "G" (#"ty_subst" (#"snoc" #"id" "e1") "B")
-  ]}%prerule
-    (sigma_injectivity++subst_injectivity).
-elab_rule {[r "G" : #"env",
+  ]}%prerule 5.
+elab_rule_auto {[r "G" : #"env",
           "A" : #"ty" "G",
           "B": #"ty" (#"ext" "G" "A"),
           "e" : #"exp" "G" (#"Sig" "A" "B")
@@ -99,8 +93,7 @@ elab_rule {[r "G" : #"env",
       #"ex" (#"proj1" "e") (#"proj2" "e") = "e"
           (*TODO: why is this annotation needed? *)
       : #"exp" "G" (#"Sig" ["G":="G"]  "A" "B")
-  ]}%prerule
-  (sigma_injectivity++subst_injectivity).
+  ]}%prerule 5.
 apply wf_lang_nil.
 Unshelve.
 1:shelve.

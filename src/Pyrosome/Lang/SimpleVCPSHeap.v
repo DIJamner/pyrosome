@@ -7,6 +7,7 @@ From Utils Require Import Utils GallinaHintDb.
 From Pyrosome Require Import Theory.Core Compilers.Compilers
   Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
   Tools.EGraph.TypeInference
+  Tools.EGraph.InjRuleGen
   Tools.EGraph.ComputeWf
   Tools.Resolution.
 From Pyrosome.Lang Require Import
@@ -86,13 +87,24 @@ Definition heap_cps_ops_def : lang :=
   ]
   ]}.
 
-Derive heap_cps_ops
-       in (elab_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst)
-                               heap_cps_ops_def
-                               heap_cps_ops)
-       as heap_cps_ops_wf.
-Proof. auto_elab. Qed.
-#[local] Definition heap_cps_ops_entry := lang_entry (elab_lang_implies_wf heap_cps_ops_wf).
+Definition heap_cps_ops_injectivity :=
+  [("blk", ["G"]); ("configuration", ["G"]); ("neq_0_r", ["n"]); ("tt", ["G"]); ("val", ["A"; "G"]);
+   ("get", ["e"; "v"; "G"]); ("1+", ["n"]); ("config", ["G"]); ("forget", ["G"]); ("blk_subst", ["G"]);
+   ("id", ["G"]); ("if0", ["nz"; "z"; "v"; "G"]); ("wkn", ["A"; "G"]); ("ext", ["A"; "G"]);
+   ("neq_1+", ["p"; "m"; "n"]); ("val_subst", ["A"; "G"]); ("neq", ["m"; "n"]);
+   ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("cmp", ["G3"; "G1"]); ("set", ["e"; "vn"; "vl"; "G"]);
+   ("lookup", ["l"]); ("nv", ["n"; "G"]); ("hd", ["A"; "G"]); ("sub", ["G'"; "G"]); ("neq_0_l", ["n"])].
+
+Definition heap_cps_ops :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100
+      (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst)
+      heap_cps_ops_def.
+
+Lemma heap_cps_ops_wf
+  : wf_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst) heap_cps_ops.
+Proof. compute_wf_lang. Qed.
+#[local] Definition heap_cps_ops_entry := lang_entry heap_cps_ops_wf.
 #[export] Hint Resolve heap_cps_ops_entry : wf_lang_db.
 
 Definition heap_id_def : compiler :=
