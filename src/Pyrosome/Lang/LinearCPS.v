@@ -768,9 +768,22 @@ Proof.
     [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
          ltac:(unstep_conv linear_value_subst "exch_triple"))))))))
      | .. ].
-  (* TODO: why is this reduce quick, but just Automation.by_reduction takes too long to wait for? *)
-  reduce.
-  Automation.by_reduction; repeat t'.
+  (* Plain [by_reduction] (every rule reversible) diverges here: the goal
+     still has about a dozen directed subst/permutation redexes, and the
+     extra saturation distance they add gives the reversed
+     substitution-pushing and beta/eta rules (which grow the e-graph on
+     every reversed-schedule pass) time to blow it past several GB before
+     the roots unify.  Two cures, measured with [do_check_computations]:
+     shorten the distance ([reduce] first: 3.4s + 14.5s), or slow the
+     growth by only reversing the structural permutation rules -- the only
+     ones this gap needs backwards -- which lets one e-graph call do the
+     directed reduction and the undirected gap together (16s). *)
+  compute_eq_compilation.
+  Automation.by_reduction'
+    (Automation.rule_named_in
+       ["csub_id"; "cmp_assoc"; "id_right"; "id_left";
+        "exch_inv"; "cmp_csub"; "exch_triple"; "csub_assoc"; "exch_cmp"])
+    Automation.empty_inj_rules; repeat t'.
   Unshelve.
   all: repeat t'.
 Qed.
