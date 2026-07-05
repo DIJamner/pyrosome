@@ -603,189 +603,24 @@ Proof.
   setup_preserving_compiler.
   (* wf obligations: reflective; simple eq obligations: reduction *)
   1,2,4: compute_term_wf.
-  1,2: solve [ Automation.by_reduction; now t' ].
+  1,2: solve [ Automation.by_reduction; now t' ].    
+
   (* ===== remaining obligation (Linear-STLC-beta).
      A single [by_reduction] cannot check the whole equation (the e-graph
      diverges on the permutation reasoning), so the proof is staged: one
      [by_reduction] pushes the beta redex through the substitution calculus
-     to the explicit intermediate [linear_cps_beta_mid]; a flat chain of
-     one-rule-per-link transitivity steps then rearranges the composite
-     permutation substitution (this part is beyond the e-graph at any
-     fuel); a final [by_reduction] closes the remaining gap, absorbing
+     to the explicit intermediate [linear_cps_beta_mid].
+     A final [by_reduction] closes the remaining gap, absorbing
      everything the chain leaves oriented. ===== *)
   unfold Model.eq_term; cbn [core_model].
   compute_eq_compilation.
   eapply eq_term_trans with (e12 := linear_cps_beta_mid);
     [ unfold linear_cps_beta_mid; Automation.by_reduction; repeat t' | ].
-  compute_eq_compilation.
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last ltac:(nav_snd
-         ltac:(unstep_conv linear_value_subst "csub_id")))))))
-     | .. ].
-  compute_eq_compilation.
-  (* reassociate: cmp (cmp exch cs) exch' = cmp exch (cmp cs exch') *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(unstep_conv linear_value_subst "cmp_assoc"))))
-     | .. ].
-  compute_eq_compilation.
-  (* csub (csub g1 g2) g3 = csub g1 (csub g2 g3) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last ltac:(nav_snd
-         ltac:(estep_conv linear_value_subst "csub_assoc"))))))
-     | .. ].
-  compute_eq_compilation.
-  (* cmp (csub g h) (exch G' H') = cmp (exch G H) (csub h g) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last
-         ltac:(estep_env linear_value_subst "exch_cmp")))))
-     | .. ].
-  compute_eq_compilation.
-  (* refold: cmp exch (cmp exch' cs) = cmp (cmp exch exch') cs *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(estep_env linear_value_subst "cmp_assoc"))))
-     | .. ].
-  compute_eq_compilation.
-  (* insert the identity: exch = cmp exch (id _) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(unstep_conv linear_value_subst "id_right"))))))
-     | .. ].
-  compute_eq_compilation.
-  (* id (conc G H) = csub (id G) (id H) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last
-         ltac:(unstep_conv linear_value_subst "csub_id")))))))
-     | .. ].
-  compute_eq_compilation.
-  (* id G = cmp (id G) (id G)  and  id (conc G H) = cmp (exch G H) (exch H G),
-     in the two components of the freshly split csub *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last
-         ltac:(term_cong; cycle 1;
-               [> term_refl ..
-                | unstep_conv linear_value_subst "id_left"
-                | unstep_conv linear_value_subst "exch_inv"
-                | first [ right; reflexivity | left; solve_sort ] ])))))))
-     | .. ].
-  compute_eq_compilation.
-  (* csub (cmp g1 g2) (cmp h1 h2) = cmp (csub g1 h1) (csub g2 h2) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last
-         ltac:(unstep_conv linear_value_subst "cmp_csub")))))))
-     | .. ].
-  compute_eq_compilation.
-  (* cmp exch (cmp csub csub) = cmp (cmp exch csub) csub *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(estep_env linear_value_subst "cmp_assoc"))))))
-     | .. ].
-  compute_eq_compilation.
-  (* csub (id G) (exch H K) = cmp (exch (conc G H) K) (csub (exch K G) (id H)) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last
-         ltac:(unstep_conv linear_value_subst "exch_triple"))))))))
-     | .. ].
-  compute_eq_compilation.
-  (* refold to pair the two exchanges *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(estep_env linear_value_subst "cmp_assoc")))))))
-     | .. ].
-  compute_eq_compilation.
-  (* cmp (exch G H) (exch H G) = id (conc G H) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(estep_env linear_value_subst "exch_inv"))))))))
-     | .. ].
-  compute_eq_compilation.
-  (* normalize the node's env annotations, then cmp (id G) f = f *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(env_adjust)))))))
-     | .. ].
-  compute_eq_compilation.
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(estep_conv linear_value_subst "id_left")))))))
-     | .. ].
-  compute_eq_compilation.
-  (* reassociate to expose cmp csub exch *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(unstep_conv linear_value_subst "cmp_assoc")))))
-     | .. ].
-  compute_eq_compilation.
-  (* cmp (csub g h) (exch G' H') = cmp (exch G H) (csub h g) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last
-         ltac:(estep_env linear_value_subst "exch_cmp"))))))
-     | .. ].
-  compute_eq_compilation.
-  (* csub (csub g1 g2) g3 = csub g1 (csub g2 g3) on the cont-carrying csub *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last
-         ltac:(estep_conv linear_value_subst "csub_assoc")))))
-     | .. ].
-  compute_eq_compilation.
-  (* f = cmp (id _) f at the exchange-pair csub *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(unstep_conv linear_value_subst "id_left"))))))
-     | .. ].
-  compute_eq_compilation.
-  (* id (conc G H) = csub (id G) (id H) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(unstep_conv linear_value_subst "csub_id")))))))
-     | .. ].
-  compute_eq_compilation.
-  (* id G = cmp (id G) (id G)  and  id (conc H K) = cmp (exch H K) (exch K H) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(term_cong; cycle 1;
-               [> term_refl ..
-                | unstep_conv linear_value_subst "id_left"
-                | unstep_conv linear_value_subst "exch_inv"
-                | first [ right; reflexivity | left; solve_sort ] ])))))))
-     | .. ].
-  compute_eq_compilation.
-  (* csub (cmp g1 g2) (cmp h1 h2) = cmp (csub g1 h1) (csub g2 h2) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(unstep_conv linear_value_subst "cmp_csub")))))))
-     | .. ].
-  compute_eq_compilation.
-  (* csub (id G) (exch H K) = cmp (exch (conc G H) K) (csub (exch K G) (id H)) *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_last
-         ltac:(unstep_conv linear_value_subst "exch_triple"))))))))
-     | .. ].
-  compute_eq_compilation.
-  (* decompose the first exchange as well *)
-  eapply eq_term_trans;
-    [> nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd ltac:(nav_snd
-         ltac:(unstep_conv linear_value_subst "exch_triple"))))))))
-     | .. ].
-  (* Plain [by_reduction] (every rule reversible) diverges here: the goal
-     still has about a dozen directed subst/permutation redexes, and the
-     extra saturation distance they add gives the reversed
-     substitution-pushing and beta/eta rules (which grow the e-graph on
-     every reversed-schedule pass) time to blow it past several GB before
-     the roots unify.  Two cures, measured with [do_check_computations]:
-     shorten the distance ([reduce] first: 3.4s + 14.5s), or slow the
-     growth by only reversing the structural permutation rules -- the only
-     ones this gap needs backwards -- which lets one e-graph call do the
-     directed reduction and the undirected gap together (16s). *)
-  compute_eq_compilation.
   Automation.by_reduction'
     (Automation.rule_named_in
        ["csub_id"; "cmp_assoc"; "id_right"; "id_left";
         "exch_inv"; "cmp_csub"; "exch_triple"; "csub_assoc"; "exch_cmp"])
     Automation.empty_inj_rules; repeat t'.
-  Unshelve.
-  all: repeat t'.
 Qed.
 #[local] Definition linear_cps_stlc_entry := cmp_entry linear_cps_preserving.
 #[export] Hint Resolve linear_cps_stlc_entry : preserving_db.
