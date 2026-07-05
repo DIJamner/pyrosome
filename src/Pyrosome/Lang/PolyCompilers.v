@@ -246,9 +246,21 @@ Derive exists_cc
   as exists_cc_preserving.
 Proof.
   ElabCompilers.auto_elab_compiler.
-  { apply TODO (*Automation.by_reduction; Matches.t'.*). }
+   {
+     compute_eq_compilation.
+     reduce.
+     hide_implicits.
+     intermediate_term constr:({{e #"blk_subst" (#"snoc" #"id" "v")
+                                   (#"blk_subst" (#"snoc" #"forget" (#"pair" {ovar 1} #"hd")) "e") }}).
+     { repeat Matches.t. }
+     2: Automation.by_reduction; Matches.t'.
+     hide_implicits.
+     eapply eq_term_trans; cycle 1.
+     { eredex_steps_with exists_block_lang "unpack-eta". }
+     compute_eq_compilation.
+     Matches.by_reduction.
+   }
   {
-    
     compute_eq_compilation.
     reduce.
     hide_implicits.
