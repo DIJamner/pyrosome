@@ -406,9 +406,27 @@ Ltac clo_eta_cong :=
  1;
   [ now eredex_steps_with cc_lang "clo_eta"|];
   reduce_rhs;
-  repeat (term_cong; 
+  repeat (term_cong;
           unfold Model.eq_term;
           try term_refl;[]).
+
+(* EXPERIMENT (cause 3, pre-pass): generated substitution-cancellation inj_rules
+   for the reduction engine.  Instead of feeding these to by_reduction (which
+   builds the full e-graph and only decomposes AFTER saturating it), apply the
+   injectivity decomposition FIRST, at the tactic level, so the e-graph is only
+   ever built over the small leaves. *)
+Definition ch8_inj_rules : list (string * list string) :=
+  [("blk_subst", ["g"]); ("val_subst", ["g"])].
+
+(* pre-pass driver: peel congruence layers at the TACTIC level (the [] keeps
+   each peel linear = safe), so the e-graph is only built over the small leaf;
+   the inj_rules are threaded into the leaf solve for completeness. *)
+Ltac by_reduction_prepass rules :=
+  compute_eq_compilation;
+  Matches.reduce;
+  repeat (term_cong; try term_refl; []);
+  Automation.by_reduction' (fun _ : string * Rule.rule string => true) rules;
+  Matches.t'.
 
 Derive ch8_cc
        in (elab_preserving_compiler
@@ -452,13 +470,8 @@ Definition cc_injectivity :=
      *)
     clo_eta_cong.
     Automation.by_reduction;Matches.t'.
-  - (* TODO: figure out whether the e-graph gets there eventually without the help.
-       Alternatively, figure out how to specify that e[/-/] is injective if e is a metavariable.
-     *)
-    Matches.reduce.
-    term_cong; try term_refl; [].
-    term_cong; try term_refl; [].
-    Automation.by_reduction; Matches.t'.
+  - (* EXPERIMENT: inj_rules-guided pre-pass (decompose before saturation). *)
+    by_reduction_prepass ch8_inj_rules.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
