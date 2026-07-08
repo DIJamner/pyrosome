@@ -25,14 +25,17 @@ Set Implicit Arguments.
         REFUTED.  A position never refuted (within [X] iterations) is a
         candidate injective position.
 
-   The output is a [list (string * list string)] -- exactly the schema format
-   consumed by [TypeInference.build_injection_rules].  A caller who likes the
-   results can feed them straight into inference.
+   The plain injectivity scan generalizes to the functional-dependency search
+   [fdeps_of_fn]/[gen_fundep_schemas] below (each schema is [(name,(shared,
+   concl))]: [shared = []] is injectivity, [shared <> []] cancellation).  Those
+   schemas feed either the elaboration engine via [build_general_injection_rules]
+   or the reduction engine via [gen_reduce_inj_rules].  The results are further
+   pruned by [filter_recoverable] (structural well-formedness; see below).
 
-   NOTE ON SOUNDNESS: this is a heuristic.  A position reported injective might
-   have a counterexample only beyond [X] iterations.  Per the design, using a
-   too-strong injectivity rule never yields falsehood -- it can only make
-   inference fail -- so the bounded approximation is safe to try.
+   NOTE ON SOUNDNESS: the search is a heuristic.  A position reported injective
+   might have a counterexample only beyond [X] iterations.  Per the design,
+   using a too-strong injectivity rule never yields falsehood -- it can only
+   make inference fail -- so the bounded approximation is safe to try.
    ========================================================================== *)
 
 From coqutil Require Import Datatypes.String Map.Interface Datatypes.Result.
@@ -342,54 +345,11 @@ Definition filter_recoverable (L : lang) (name : string)
    Pure counterexample analysis over canonicalized atoms.
    ------------------------------------------------------------------------- *)
 
-(* Positions where two equal-length arg lists disagree (0-indexed). *)
-Fixpoint diff_positions (refargs cargs : list positive) (pos : nat) : list nat :=
-  match refargs, cargs with
-  | r::refargs', c::cargs' =>
-      if Pos.eqb r c then diff_positions refargs' cargs' (S pos)
-      else pos :: diff_positions refargs' cargs' (S pos)
-  | _, _ => []
-  end.
-
-Definition nat_inb (x : nat) (l : list nat) : bool := existsb (Nat.eqb x) l.
-
-Definition nat_union (a b : list nat) : list nat :=
-  fold_right (fun x acc => if nat_inb x acc then acc else x::acc) b a.
-
-Definition key_eqb (k1 k2 : positive * positive) : bool :=
-  let '(a,b) := k1 in let '(c,d) := k2 in andb (Pos.eqb a c) (Pos.eqb b d).
-
 Fixpoint assoc_get {K V} (keyb : K -> K -> bool) (l : list (K*V)) (k : K)
   : option V :=
   match l with
   | [] => None
   | (k',v)::l' => if keyb k k' then Some v else assoc_get keyb l' k
-  end.
-
-(* Add refuted positions [dp] to fn's entry (union). *)
-Fixpoint add_refuted (fn : positive) (dp : list nat)
-  (refuted : list (positive * list nat)) : list (positive * list nat) :=
-  match refuted with
-  | [] => [(fn,dp)]
-  | (fn',ps)::rest =>
-      if Pos.eqb fn fn' then (fn', nat_union dp ps)::rest
-      else (fn',ps)::add_refuted fn dp rest
-  end.
-
-(* Single pass: for each atom, compare against the first atom seen in its
-   (fn,ret) group and record disagreements as refuted positions. *)
-Fixpoint scan_pass (atoms : list (positive * list positive * positive))
-  (seen : list ((positive*positive) * list positive))
-  (refuted : list (positive * list nat)) : list (positive * list nat) :=
-  match atoms with
-  | [] => refuted
-  | (fn,args,r)::rest =>
-      let k := (fn,r) in
-      match assoc_get key_eqb seen k with
-      | None => scan_pass rest ((k,args)::seen) refuted
-      | Some refargs =>
-          scan_pass rest seen (add_refuted fn (diff_positions refargs args 0) refuted)
-      end
   end.
 
 (* Arity of each fn (from its first atom). *)
@@ -403,19 +363,13 @@ Fixpoint arities (atoms : list (positive * list positive * positive))
       else arities rest ((fn, length args)::acc)
   end.
 
-Fixpoint assoc_getp (l : list (positive * list nat)) (k : positive)
-  : list nat :=
-  match l with
-  | [] => []
-  | (k',v)::l' => if Pos.eqb k k' then v else assoc_getp l' k
-  end.
-
 (* -------------------------------------------------------------------------
-   Functional-dependency discovery (generalizes the injectivity scan above).
+   Functional-dependency discovery.
 
-   [scan_pass] answers one question per position: "do all same-class [f]-atoms
-   agree at position [j]?" -- i.e. is [j] *unconditionally* determined by the
-   e-class (injectivity).  That is the [S = []] case of the general question:
+   The basic injectivity question is one per position: "do all same-class
+   [f]-atoms agree at position [j]?" -- i.e. is [j] *unconditionally* determined
+   by the e-class (injectivity).  That is the [S = []] case of the general
+   question:
 
      for which sets [S] of argument positions is [j] determined *given* that the
      two atoms already agree on [S]?
@@ -430,10 +384,9 @@ Fixpoint assoc_getp (l : list (positive * list nat)) (k : positive)
    [0] given [1] (right cancellation).  No operator is named or special-cased:
    cancellation drops out of the same search that yields injectivity.
 
-   [fd_scan] is [scan_pass] with the shared positions [S] folded into the group
-   key: atoms are keyed by [(ret, project args S)], so only atoms already
-   agreeing on [S] are compared, and [j] is checked for constancy within each
-   group.  Atoms MUST be pre-filtered to one head [f] (the key omits [f], and
+   [fd_scan] answers this by keying atoms on [(ret, project args S)], so only
+   atoms already agreeing on [S] are compared, and [j] is checked for constancy
+   within each group.  Atoms MUST be pre-filtered to one head [f] (the key omits [f], and
    distinct heads may share e-class ids via cross-constructor equations). *)
 
 (* project [args] onto the positions in [S] (0-indexed). *)
@@ -539,13 +492,6 @@ Definition fn_atoms (atoms : list (positive * list positive * positive))
 Definition triv_weight : atom positive positive -> option positive :=
   mk_weight (fun _ => false).
 
-(* One constructor's finding: name, injective arg names, refuted arg names. *)
-Record inj_finding := {
-    if_name : string;
-    if_injective : list string;
-    if_refuted : list string
-  }.
-
 (* Look up a constructor by name and return its full context arg names, in order. *)
 Definition ctx_arg_names (L : lang) (name : string) : option (list string) :=
   match Find_x name L with
@@ -556,65 +502,12 @@ Definition ctx_arg_names (L : lang) (name : string) : option (list string) :=
 Definition nth_names (names : list string) (positions : list nat) : list string :=
   map (fun p => nth p names "?") positions.
 
-(* Core analysis given a saturated/closed graph and the renaming. *)
-Definition findings_of (g : Defs.instance positive positive trie_map trie_map
-                              (@FullPosTrie.full_pos_trie_map) (option positive))
-  (rn : renaming string) (L : lang) : list inj_finding :=
-  let atoms := catoms g in
-  let refuted := scan_pass atoms [] [] in
-  let ars := arities atoms [] in
-  flat_map
-    (fun '(fn, ar) =>
-       if Pos.eqb fn 1%positive (* sort_of *) then []
-       else
-         let name := of_p rn fn in
-         match ctx_arg_names L name with
-         | None => []
-         | Some names =>
-             let ref_ps := assoc_getp refuted fn in
-             let all_ps := seq 0 ar in
-             let inj_ps := filter (fun p => negb (nat_inb p ref_ps)) all_ps in
-             (* search-injective positions, further restricted to those whose
-                injectivity conclusion is well-sorted (structural recoverability;
-                see [filter_recoverable]) -- this drops e.g. a closure's captured
-                environment, whose type is hidden from the result sort *)
-             let inj_names :=
-               filter_recoverable L name [] (nth_names names inj_ps) in
-             [ {| if_name := name;
-                  if_injective := inj_names;
-                  if_refuted :=
-                    filter (fun nm => negb (inb nm inj_names)) names |} ]
-         end)
-    ars.
-
-(* ---- entry point ----
-
-   [findings X] / [gen_schemas X]: saturate the EQUATIONS for [X] iterations (no
-   generative intro rules), then scan.  Bounded (terms don't grow without limit)
-   yet propagates declared equalities to every occurrence, so argument terms get
-   identified with their normal forms.  [X = 2] suffices for the linear calculus
-   (stable at higher [X]). *)
-
-Definition findings (X : nat) (L : lang) : list inj_finding :=
-  let '(l_pos, rn) := rename_lang L init_renaming in
-  findings_of (run_eq triv_weight X l_pos) rn L.
-
-(* Keep only constructors with at least one injective argument, as a schema
-   list ready for [TypeInference.build_injection_rules]. *)
-Definition schemas_of (fs : list inj_finding) : list (string * list string) :=
-  map (fun f => (f.(if_name), f.(if_injective)))
-    (filter (fun f => match f.(if_injective) with [] => false | _ => true end) fs).
-
-Definition gen_schemas (X : nat) (L : lang) : list (string * list string) :=
-  schemas_of (findings X L).
-
 (* ---- general functional-dependency schema generator ----
 
-   The full generalization of [gen_schemas].  Instead of a single injective-arg
-   list per constructor, each schema is [(name, (shared, concl))]: two [name]
-   atoms in the same e-class that agree on the [shared] args are forced to agree
-   on the [concl] args.  [shared = []] is injectivity (exactly what [gen_schemas]
-   produced); [shared <> []] is cancellation.  Both come out of the one
+   For each constructor, rather than a single injective-arg list, each schema is
+   [(name, (shared, concl))]: two [name] atoms in the same e-class that agree on
+   the [shared] args are forced to agree on the [concl] args.  [shared = []] is
+   plain injectivity; [shared <> []] is cancellation.  Both come out of the one
    [fdeps_of_fn] search -- no operator is special-cased, and no cancellation
    template is hand-written.  For the linear calculus this yields the injectivity
    rules AND [conc]'s cancellation laws automatically.
