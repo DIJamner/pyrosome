@@ -67,12 +67,6 @@ Definition ch8_def : lang :=
     ]
     ]}.
 
-Definition ch8_injectivity :=
-  [("assign", ["e"; "x"]); ("neq_0_r", ["n"]); ("value", ["n"]); ("1+", ["n"]);
-   ("if0", ["nz"; "z"; "e"]); ("while", ["c"; "e"]); ("neq_1+", ["p"; "m"; "n"]);
-   ("hvar", ["n"]); ("seq", ["cmd2"; "cmd1"]); ("neq", ["m"; "n"]); ("lookup", ["l"]);
-   ("neq_0_l", ["n"])].
-
 Definition ch8 :=
   Eval vm_compute in
     infer_lang_ext_simple_incr 10 100 (heap++nat_lang) ch8_def.
@@ -144,11 +138,6 @@ Definition ch8_config_def : lang :=
       = #"seq" "c1" (#"seq" "c2" "c3") : #"cmd"
     ]
   ]}.
-
-Definition ch8_config_injectivity :=
-  [("neq", ["m"; "n"]); ("neq_1+", ["p"; "m"; "n"]); ("neq_0_l", ["n"]); ("hvar", ["n"]);
-   ("if0", ["nz"; "z"; "e"]); ("1+", ["n"]); ("while", ["c"; "e"]); ("assign", ["e"; "x"]);
-   ("value", ["n"]); ("neq_0_r", ["n"]); ("lookup", ["l"])].
 
 Definition ch8_config :=
   Eval vm_compute in
@@ -243,12 +232,6 @@ Definition ch8_ectx_def : lang :=
            #"config" "H" (#"Cplug" "C" (#"value" (#"lookup" "H" "n"))) : #"configuration"
     ]
   ]}.
-
-Definition ch8_ectx_injectivity :=
-  [("Eassign", ["E"; "x"]); ("lookup", ["l"]); ("Eplug", ["e"; "E"]); ("Eseq", ["c"; "C"]);
-   ("neq_0_r", ["n"]); ("1+", ["n"]); ("Cplug", ["e"; "C"]); ("Eif0", ["nz"; "z"; "E"]);
-   ("neq", ["m"; "n"]); ("neq_1+", ["p"; "m"; "n"]); ("value", ["n"]); ("if0", ["nz"; "z"; "e"]);
-   ("neq_0_l", ["n"]); ("hvar", ["n"]); ("while", ["c"; "e"]); ("assign", ["e"; "x"])].
 
 Definition ch8_ectx :=
   Eval vm_compute in
@@ -394,17 +377,6 @@ Notation target_lang :=
                                 forget_eq_wkn'++
                                 cps_prod_lang ++ block_subst ++ value_subst).
 
-(* Auto-generated reduction-engine injectivity/cancellation table over the
-   substitution+closure fragment (sound to reuse: [cong_subgoals] decomposition
-   is congruence-based).  Generation is cheap (~1.3s / <0.5GB).  With the
-   recoverability filter, [closure] recurses only on [B;A;G] -- never on the
-   environment [v] or body [e] -- so [select_inj_args] defers a closure whose
-   env/body differ to the e-graph instead of manufacturing false subgoals. *)
-Definition ch8_cc_inj_rules : list (string * list (list string)) :=
-  Eval vm_compute in
-    gen_reduce_inj_rules 3
-      (cc_lang ++ prod_cc ++ cps_prod_lang ++ block_subst ++ value_subst).
-
 Ltac clo_eta_cong :=
   eapply eq_term_trans;
   [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"|];
@@ -435,7 +407,7 @@ Proof.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
-  - Automation.by_reduction; Matches.t'.    
+  - Automation.by_reduction; Matches.t'.
   - (*TODO: this case takes at least a while w/ by_reduction.
       probably wants inj congruence.
       TODO: more specifically, probably wants something intelligent.
@@ -454,23 +426,12 @@ Proof.
     Need the following injectivity pattern:
       <\xy.e, c> = <\xy.e', c> <-> e = e'.
     if c is the same, then e, e' injective. requires more complicated pattern than I have
-                           
-    
-Definition cc_injectivity :=
-  [("jmp", ["G"]); ("cont", ["e";"A"; "G"]); ("neg", ["A"])].
 
-  TODO: clo_eta is expensive
+    TODO: clo_eta is expensive
      *)
     clo_eta_cong.
-    Automation.by_reduction;Matches.t'.
-  - (* metavariable-substitution congruence.  TEST: replace the manual
-       [term_cong] pre-pass with the auto-generated (closure-accurate) inj_rules
-       threaded into [by_reduction'].  [saturate_cong_subgoals] peels congruence
-       at the term level using these rules -- memory-safely, before the e-graph
-       -- and the recoverability filter keeps closures from over-decomposing. *)
-    Matches.reduce.
-    Automation.by_reduction' (fun _ : string * Rule.rule string => true)
-      ch8_cc_inj_rules; Matches.t'.
+    by_reduction_gen 5; Matches.t'.
+  - by_reduction_gen 5; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
