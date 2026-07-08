@@ -567,6 +567,45 @@ Definition gen_fundep_schemas (X : nat) (L : lang)
   let '(l_pos, rn) := rename_lang L init_renaming in
   fundep_schemas_of (run_eq triv_weight X l_pos) rn L.
 
+(* ---- reduction-engine schema table ----
+
+   The REDUCTION engine ([Automation.by_reduction'] -> [Defs.egraph_reducing_cong]
+   -> [Defs.cong_subgoals]) consumes a flat [list (string * list (list string))]:
+   per operator, a LIST of alternative recursed-arg sets.  [gen_fundep_schemas]
+   already yields (name,(shared,concl)) dependencies; for the reduction engine
+   only the [concl] positions matter -- [cong_subgoals] forces every non-recursed
+   arg syntactically equal, which subsumes the [shared] premise (all >= shared).
+   So we drop [shared], drop empty conclusions (they decompose nothing), and
+   group the conclusion-sets by operator name.  This is the reduction-engine
+   analogue of [build_general_injection_rules] for the elaboration engine. *)
+Fixpoint group_concls (fds : list (string * (list string * list string)))
+  : list (string * list (list string)) :=
+  match fds with
+  | [] => []
+  | (n,(_shared,concl)) :: rest =>
+      let g := group_concls rest in
+      match concl with
+      | [] => g  (* empty conclusion carries no decomposition *)
+      | _ =>
+          let fix ins g :=
+            match g with
+            | [] => [(n,[concl])]
+            | (n',alts)::g' =>
+                if eqb n n'
+                then (n', if existsb (eqb concl) alts then alts else alts ++ [concl]) :: g'
+                else (n',alts) :: ins g'
+            end in
+          ins g
+      end
+  end.
+
+(* Generate the reduction-engine injectivity/cancellation table from a language:
+   saturate the equations for [X] iterations, read off the functional
+   dependencies, keep the conclusion-sets grouped by operator. *)
+Definition gen_reduce_inj_rules (X : nat) (L : lang)
+  : list (string * list (list string)) :=
+  group_concls (gen_fundep_schemas X L).
+
 (* ---- general injection/cancellation rule builder ----
 
    The functional-dependency generalization of
@@ -721,3 +760,25 @@ Definition dump_head (X : nat) (nm : string) (L : lang) : list (list nat * nat) 
   let g := run_eq triv_weight X l_pos in
   map (fun '(_,args,r) => (map Pos.to_nat args, Pos.to_nat r))
     (filter (fun '(fn,_,_) => String.eqb (of_p rn fn) nm) (catoms g)).
+
+(* ---- reduction with GENERATED inj_rules ----
+
+   Wires [gen_reduce_inj_rules] into [Automation.by_reduction'] (addressing the
+   Automation.v TODO "plug inj_rules into tactics"): read the goal's language,
+   generate the per-op injectivity/cancellation alternatives at fuel [X], and
+   thread them into the reduction engine's congruence decomposition
+   ([Defs.cong_subgoals]).  Reduction-engine analogue of
+   [infer_compiler_simple_autoinj].
+
+   OPT-IN, not the default [Automation.by_reduction]: generation [vm_compute]s
+   [gen_fundep_schemas X l] over the WHOLE goal language, which is expensive (and
+   can OOM) on large targets.  For a fixed target, prefer precomputing the table
+   once --
+     Definition my_inj_rules := Eval vm_compute in gen_reduce_inj_rules X my_lang.
+   -- and passing it directly to [Automation.by_reduction' reversible my_inj_rules]. *)
+Ltac by_reduction_gen X :=
+  lazymatch goal with
+  | |- eq_term ?l _ _ _ _ =>
+      let rules := eval vm_compute in (gen_reduce_inj_rules X l) in
+      Automation.by_reduction' (fun _ : string * Rule.rule string => true) rules
+  end.
