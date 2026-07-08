@@ -264,6 +264,80 @@ Section WithWeight.
 End WithWeight.
 
 (* -------------------------------------------------------------------------
+   Structural recoverability filter.
+
+   The counterexample search below declares an argument injective when no
+   equation MERGES two differently-shaped applications of a head within the fuel
+   bound.  That is a completeness heuristic, and it MISSES purely extensional
+   non-injectivity.  The motivating case is a closure
+
+     #"closure" "B" "e" "v" : #"val" "G" (#"neg" "B")      "v" : #"val" "G" "A"
+
+   which captures an environment [v] whose type [A] is EXISTENTIALLY HIDDEN from
+   the result sort [#"val" "G" (#"neg" "B")].  Two closures with different
+   environments but a CONSTANT body (a body that ignores its environment) are
+   equal, so [closure] is not injective in [v] -- nor in the body [e], whose
+   sort [#"blk" (#"ext" #"emp" (#"prod" "A" "B"))] also mentions [A].  But no
+   single declared equation merges two differently-environmented closures (the
+   collapse is extensional / eta-driven), so the saturation search never refutes
+   these positions and wrongly reports [closure] fully injective.
+
+   The fix is structural and language-agnostic: the injectivity/congruence rule
+
+     f x1..xn = f y1..yn  ->  xi = yi
+
+   is only WELL-FORMED when its conclusion is well-sorted, i.e. when the sort of
+   argument [i] is pinned down by what the two (equal) applications already
+   share.  Equal applications share their result sort, so its free variables are
+   determined; a cancellation premise additionally holds the [shared] arguments
+   equal, determining their sorts' free variables too.  If [xi]'s sort mentions
+   a variable determined by NONE of these, then [xi] and [yi] need not inhabit a
+   common sort and the equation [xi = yi] cannot even be stated -- so position
+   [i] is dropped.  This refutes [closure]'s environment/body injectivity from
+   the rule structure alone (matching, and for [jmp] reproducing, the
+   hand-written injectivity lists), and it can never drop a genuinely-formable
+   law: a dropped position provably has no well-sorted injectivity conclusion.
+   Sound to apply for the same reason as the search: it only ever REMOVES
+   candidate injective positions, so a downstream congruence decomposition stays
+   sound (fewer decompositions) and elaboration stays conservative. *)
+
+Fixpoint sterm_fvs (e : term) : list string :=
+  match e with
+  | var x => [x]
+  | con _ s => flat_map sterm_fvs s
+  end.
+Definition ssort_fvs (t : sort) : list string :=
+  match t with scon _ s => flat_map sterm_fvs s end.
+
+Definition name_inb (x : string) (l : list string) : bool :=
+  existsb (String.eqb x) l.
+
+(* Free variables whose value is DETERMINED when two equal applications of
+   [name] additionally hold the [shared] arguments equal: the free vars of the
+   (shared) result sort, plus the free vars of each shared argument's sort. *)
+Definition determined_vars (c : ctx) (res : sort) (shared : list string)
+  : list string :=
+  ssort_fvs res
+    ++ flat_map (fun '(x,t) => if name_inb x shared then ssort_fvs t else []) c.
+
+(* Keep only those [concl] argument names whose injectivity conclusion
+   [x1 = x2] is well-sorted: every free variable of the argument's sort is
+   determined.  Sort constructors (no term-level result sort) and unknown heads
+   are left untouched. *)
+Definition filter_recoverable (L : lang) (name : string)
+  (shared concl : list string) : list string :=
+  match Find_x name L with
+  | Some (term_rule c _ res) =>
+      let det := determined_vars c res shared in
+      filter (fun nm =>
+                match Find_x nm c with
+                | Some t => forallb (fun v => name_inb v det) (ssort_fvs t)
+                | None => true
+                end) concl
+  | _ => concl
+  end.
+
+(* -------------------------------------------------------------------------
    Pure counterexample analysis over canonicalized atoms.
    ------------------------------------------------------------------------- *)
 
@@ -499,9 +573,16 @@ Definition findings_of (g : Defs.instance positive positive trie_map trie_map
              let ref_ps := assoc_getp refuted fn in
              let all_ps := seq 0 ar in
              let inj_ps := filter (fun p => negb (nat_inb p ref_ps)) all_ps in
+             (* search-injective positions, further restricted to those whose
+                injectivity conclusion is well-sorted (structural recoverability;
+                see [filter_recoverable]) -- this drops e.g. a closure's captured
+                environment, whose type is hidden from the result sort *)
+             let inj_names :=
+               filter_recoverable L name [] (nth_names names inj_ps) in
              [ {| if_name := name;
-                  if_injective := nth_names names inj_ps;
-                  if_refuted := nth_names names (filter (fun p => nat_inb p ref_ps) all_ps) |} ]
+                  if_injective := inj_names;
+                  if_refuted :=
+                    filter (fun nm => negb (name_inb nm inj_names)) names |} ]
          end)
     ars.
 
@@ -604,7 +685,10 @@ Fixpoint group_concls (fds : list (string * (list string * list string)))
    dependencies, keep the conclusion-sets grouped by operator. *)
 Definition gen_reduce_inj_rules (X : nat) (L : lang)
   : list (string * list (list string)) :=
-  group_concls (gen_fundep_schemas X L).
+  group_concls
+    (map (fun '(name, (shared, concl)) =>
+            (name, (shared, filter_recoverable L name shared concl)))
+       (gen_fundep_schemas X L)).
 
 (* ---- general injection/cancellation rule builder ----
 
