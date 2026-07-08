@@ -156,8 +156,59 @@ Section WithWeight.
 
   (* ---- seeding ---- *)
 
-  (* One generic instance of each constructor, plus both sides of each equation,
-     with the rule's context variables opened as fresh generators. *)
+  (* Variables occurring in the sorts of a context.  A position is FREE if its
+     variable occurs in NO context sort -- i.e. nothing else's type depends on
+     it.  Only free positions are safe to vary independently (below): varying a
+     DEPENDENT index (e.g. [cmp]'s object [G1], which [f : arr G1 G2] fixes)
+     would build an ill-typed variant, whose e-graph collapse the scan misreads
+     as a counterexample and SPURIOUSLY refutes the index's injectivity. *)
+  Fixpoint term_fvs (e : term) : list positive :=
+    match e with var x => [x] | con _ s => flat_map term_fvs s end.
+  Definition sort_fvs (t : sort) : list positive :=
+    match t with scon _ s => flat_map term_fvs s end.
+  Definition free_positions (c : ctx) : ctx :=
+    let fvs := flat_map (fun '(_,t) => sort_fvs t) c in
+    filter (fun '(p,_) => negb (existsb (Pos.eqb p) fvs)) c.
+
+  (* Fresh-name offset for the same-sort duplicate of each context variable.
+     Duplicates go FIRST: [add_ctx] is a right fold ([list_Mfoldr]), so it runs
+     tail-first; putting the originals LAST means they are processed BEFORE the
+     duplicates, so each duplicate's sort (which references the ORIGINAL vars)
+     resolves against an already-populated substitution.  With the originals
+     first, the duplicates would be processed before their referenced originals
+     exist and get the [default] sort -- seeding an ill-sorted term that merges
+     unsoundly and drops valid injectivity laws. *)
+  Definition seed_BIG : positive := 1000000.
+  Definition dup_ctx (c : ctx) : ctx :=
+    map (fun '(p,t) => ((p + seed_BIG)%positive, t)) c ++ c.
+
+  (* Seed both sides of an equation under the base instance PLUS, for each FREE
+     position, a variant sharing every generator with the base except that one,
+     which it swaps to the position's (same-sort) duplicate.  Two applications
+     of a head differing only in an argument the head DROPS then collapse to one
+     e-class, so the scan refutes that position -- the counterexample generic
+     single-instance seeding never builds (e.g. [.1 (pair g v1) = .1 (pair g
+     v2) = g], projection).  Restricting to free positions keeps every variant
+     well-typed, so sort-index injectivity (which inference relies on) is
+     preserved. *)
+  Definition seed_eq {T} (l : lang) (c : ctx)
+    (add : bool -> list (positive * positive) -> T -> state instance positive)
+    (e1 e2 : T) : state instance unit :=
+    @! let subA <- add_ctx l (dup_ctx c) in
+       let _ <- add false subA e1 in
+       let _ <- add false subA e2 in
+       let _ <- list_Miter (fun '(pi,_) =>
+                  let gdup := named_list_lookup default subA (pi + seed_BIG)%positive in
+                  let subi := map (fun '(k,v) =>
+                                if Pos.eqb k pi then (k, gdup) else (k,v)) subA in
+                  @! let _ <- add false subi e1 in
+                     let _ <- add false subi e2 in
+                     ret tt)
+                  (free_positions c) in
+       ret tt.
+
+  (* One generic instance of each constructor; for each equation, a base
+     instance plus same-sort free-position variants (see [seed_eq]). *)
   Definition seed_rule (l : lang) (nr : positive * Rule.rule positive)
     : state instance unit :=
     let '(n,r) := nr in
@@ -171,15 +222,9 @@ Section WithWeight.
           let _ <- add_open_term l false sub (con n (id_args c)) in
           ret tt
     | sort_eq_rule c t1 t2 =>
-        @! let sub <- add_ctx l c in
-          let _ <- add_open_sort l false sub t1 in
-          let _ <- add_open_sort l false sub t2 in
-          ret tt
+        seed_eq l c (add_open_sort l) t1 t2
     | term_eq_rule c e1 e2 _ =>
-        @! let sub <- add_ctx l c in
-          let _ <- add_open_term l false sub e1 in
-          let _ <- add_open_term l false sub e2 in
-          ret tt
+        seed_eq l c (add_open_term l) e1 e2
     end.
 
   Definition seed (l : lang) : state instance unit :=
@@ -217,6 +262,80 @@ Section WithWeight.
       (atom_triples i).
 
 End WithWeight.
+
+(* -------------------------------------------------------------------------
+   Structural recoverability filter.
+
+   The counterexample search below declares an argument injective when no
+   equation MERGES two differently-shaped applications of a head within the fuel
+   bound.  That is a completeness heuristic, and it MISSES purely extensional
+   non-injectivity.  The motivating case is a closure
+
+     #"closure" "B" "e" "v" : #"val" "G" (#"neg" "B")      "v" : #"val" "G" "A"
+
+   which captures an environment [v] whose type [A] is EXISTENTIALLY HIDDEN from
+   the result sort [#"val" "G" (#"neg" "B")].  Two closures with different
+   environments but a CONSTANT body (a body that ignores its environment) are
+   equal, so [closure] is not injective in [v] -- nor in the body [e], whose
+   sort [#"blk" (#"ext" #"emp" (#"prod" "A" "B"))] also mentions [A].  But no
+   single declared equation merges two differently-environmented closures (the
+   collapse is extensional / eta-driven), so the saturation search never refutes
+   these positions and wrongly reports [closure] fully injective.
+
+   The fix is structural and language-agnostic: the injectivity/congruence rule
+
+     f x1..xn = f y1..yn  ->  xi = yi
+
+   is only WELL-FORMED when its conclusion is well-sorted, i.e. when the sort of
+   argument [i] is pinned down by what the two (equal) applications already
+   share.  Equal applications share their result sort, so its free variables are
+   determined; a cancellation premise additionally holds the [shared] arguments
+   equal, determining their sorts' free variables too.  If [xi]'s sort mentions
+   a variable determined by NONE of these, then [xi] and [yi] need not inhabit a
+   common sort and the equation [xi = yi] cannot even be stated -- so position
+   [i] is dropped.  This refutes [closure]'s environment/body injectivity from
+   the rule structure alone (matching, and for [jmp] reproducing, the
+   hand-written injectivity lists), and it can never drop a genuinely-formable
+   law: a dropped position provably has no well-sorted injectivity conclusion.
+   Sound to apply for the same reason as the search: it only ever REMOVES
+   candidate injective positions, so a downstream congruence decomposition stays
+   sound (fewer decompositions) and elaboration stays conservative. *)
+
+Fixpoint sterm_fvs (e : term) : list string :=
+  match e with
+  | var x => [x]
+  | con _ s => flat_map sterm_fvs s
+  end.
+Definition ssort_fvs (t : sort) : list string :=
+  match t with scon _ s => flat_map sterm_fvs s end.
+
+Definition name_inb (x : string) (l : list string) : bool :=
+  existsb (String.eqb x) l.
+
+(* Free variables whose value is DETERMINED when two equal applications of
+   [name] additionally hold the [shared] arguments equal: the free vars of the
+   (shared) result sort, plus the free vars of each shared argument's sort. *)
+Definition determined_vars (c : ctx) (res : sort) (shared : list string)
+  : list string :=
+  ssort_fvs res
+    ++ flat_map (fun '(x,t) => if name_inb x shared then ssort_fvs t else []) c.
+
+(* Keep only those [concl] argument names whose injectivity conclusion
+   [x1 = x2] is well-sorted: every free variable of the argument's sort is
+   determined.  Sort constructors (no term-level result sort) and unknown heads
+   are left untouched. *)
+Definition filter_recoverable (L : lang) (name : string)
+  (shared concl : list string) : list string :=
+  match Find_x name L with
+  | Some (term_rule c _ res) =>
+      let det := determined_vars c res shared in
+      filter (fun nm =>
+                match Find_x nm c with
+                | Some t => forallb (fun v => name_inb v det) (ssort_fvs t)
+                | None => true
+                end) concl
+  | _ => concl
+  end.
 
 (* -------------------------------------------------------------------------
    Pure counterexample analysis over canonicalized atoms.
@@ -454,9 +573,16 @@ Definition findings_of (g : Defs.instance positive positive trie_map trie_map
              let ref_ps := assoc_getp refuted fn in
              let all_ps := seq 0 ar in
              let inj_ps := filter (fun p => negb (nat_inb p ref_ps)) all_ps in
+             (* search-injective positions, further restricted to those whose
+                injectivity conclusion is well-sorted (structural recoverability;
+                see [filter_recoverable]) -- this drops e.g. a closure's captured
+                environment, whose type is hidden from the result sort *)
+             let inj_names :=
+               filter_recoverable L name [] (nth_names names inj_ps) in
              [ {| if_name := name;
-                  if_injective := nth_names names inj_ps;
-                  if_refuted := nth_names names (filter (fun p => nat_inb p ref_ps) all_ps) |} ]
+                  if_injective := inj_names;
+                  if_refuted :=
+                    filter (fun nm => negb (name_inb nm inj_names)) names |} ]
          end)
     ars.
 
@@ -521,6 +647,48 @@ Definition gen_fundep_schemas (X : nat) (L : lang)
   : list (string * (list string * list string)) :=
   let '(l_pos, rn) := rename_lang L init_renaming in
   fundep_schemas_of (run_eq triv_weight X l_pos) rn L.
+
+(* ---- reduction-engine schema table ----
+
+   The REDUCTION engine ([Automation.by_reduction'] -> [Defs.egraph_reducing_cong]
+   -> [Defs.cong_subgoals]) consumes a flat [list (string * list (list string))]:
+   per operator, a LIST of alternative recursed-arg sets.  [gen_fundep_schemas]
+   already yields (name,(shared,concl)) dependencies; for the reduction engine
+   only the [concl] positions matter -- [cong_subgoals] forces every non-recursed
+   arg syntactically equal, which subsumes the [shared] premise (all >= shared).
+   So we drop [shared], drop empty conclusions (they decompose nothing), and
+   group the conclusion-sets by operator name.  This is the reduction-engine
+   analogue of [build_general_injection_rules] for the elaboration engine. *)
+Fixpoint group_concls (fds : list (string * (list string * list string)))
+  : list (string * list (list string)) :=
+  match fds with
+  | [] => []
+  | (n,(_shared,concl)) :: rest =>
+      let g := group_concls rest in
+      match concl with
+      | [] => g  (* empty conclusion carries no decomposition *)
+      | _ =>
+          let fix ins g :=
+            match g with
+            | [] => [(n,[concl])]
+            | (n',alts)::g' =>
+                if eqb n n'
+                then (n', if existsb (eqb concl) alts then alts else alts ++ [concl]) :: g'
+                else (n',alts) :: ins g'
+            end in
+          ins g
+      end
+  end.
+
+(* Generate the reduction-engine injectivity/cancellation table from a language:
+   saturate the equations for [X] iterations, read off the functional
+   dependencies, keep the conclusion-sets grouped by operator. *)
+Definition gen_reduce_inj_rules (X : nat) (L : lang)
+  : list (string * list (list string)) :=
+  group_concls
+    (map (fun '(name, (shared, concl)) =>
+            (name, (shared, filter_recoverable L name shared concl)))
+       (gen_fundep_schemas X L)).
 
 (* ---- general injection/cancellation rule builder ----
 
@@ -676,3 +844,25 @@ Definition dump_head (X : nat) (nm : string) (L : lang) : list (list nat * nat) 
   let g := run_eq triv_weight X l_pos in
   map (fun '(_,args,r) => (map Pos.to_nat args, Pos.to_nat r))
     (filter (fun '(fn,_,_) => String.eqb (of_p rn fn) nm) (catoms g)).
+
+(* ---- reduction with GENERATED inj_rules ----
+
+   Wires [gen_reduce_inj_rules] into [Automation.by_reduction'] (addressing the
+   Automation.v TODO "plug inj_rules into tactics"): read the goal's language,
+   generate the per-op injectivity/cancellation alternatives at fuel [X], and
+   thread them into the reduction engine's congruence decomposition
+   ([Defs.cong_subgoals]).  Reduction-engine analogue of
+   [infer_compiler_simple_autoinj].
+
+   OPT-IN, not the default [Automation.by_reduction]: generation [vm_compute]s
+   [gen_fundep_schemas X l] over the WHOLE goal language, which is expensive (and
+   can OOM) on large targets.  For a fixed target, prefer precomputing the table
+   once --
+     Definition my_inj_rules := Eval vm_compute in gen_reduce_inj_rules X my_lang.
+   -- and passing it directly to [Automation.by_reduction' reversible my_inj_rules]. *)
+Ltac by_reduction_gen X :=
+  lazymatch goal with
+  | |- eq_term ?l _ _ _ _ =>
+      let rules := eval vm_compute in (gen_reduce_inj_rules X l) in
+      Automation.by_reduction' (fun _ : string * Rule.rule string => true) rules
+  end.

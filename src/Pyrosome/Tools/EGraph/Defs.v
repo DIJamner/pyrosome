@@ -844,20 +844,70 @@ Section WithVar.
       TODO: do the same for sorts.
       Right now I think the calling code assumes all sorts are injective.
      *)
+    (* GENERALIZED decomposition.  [inj_list] now carries, per operator, a LIST
+       of alternative recursed-arg sets (each is one functional dependency's
+       conclusion positions), rather than a single injective-arg list.  For the
+       head constructor we try each alternative in turn and take the FIRST that
+       applies -- i.e. the first whose non-recursed positions are all
+       syntactically equal ([select_inj_args] returns [Some]); otherwise we fall
+       back to the undecomposed goal.  A single-alternative entry reproduces the
+       old single-list behaviour, so this strictly generalizes it (e.g. [conc]
+       can now carry BOTH its left- and its right-cancellation schema, which one
+       list cannot express).
+
+       SOUND regardless of which alternative fires: [select_inj_args] only ever
+       emits subgoals when every omitted position is syntactically equal, so
+       congruence reconstructs the original equality; injectivity is needed only
+       for COMPLETENESS (whether the decomposition succeeds), never soundness. *)
     Definition cong_subgoals l inj_list '(e1,e2) :=
       match e1, e2 with
       | con n1 s1, con n2 s2 =>
           match eqb n1 n2, named_list_lookup_err inj_list n1, named_list_lookup_err l n1 with
-          | true, Some inj_args, Some (term_rule c _ t) =>
-              match select_inj_args c inj_args s1 s2 with
-              | Some l => l
-              | None => [(e1,e2)]
-              end
+          | true, Some alts, Some (term_rule c _ t) =>
+              (fix try_alts (alts : list (list V)) : list (term * term) :=
+                 match alts with
+                 | [] => [(e1,e2)]
+                 | recurse :: alts' =>
+                     match select_inj_args c recurse s1 s2 with
+                     | Some sub => sub
+                     | None => try_alts alts'
+                     end
+                 end) alts
           | _, _, _ => [(e1,e2)]
           end
       | _,_ => (*shouldn't happen, but this makes the proof easiest*) [(e1,e2)]
       end.
-    
+
+    (* Constructor-node count of a term; used only to bound the congruence
+       iteration below (an over-approximation of the goal's depth). *)
+    Fixpoint term_con_count (e : term) : nat :=
+      match e with
+      | var _ => 0
+      | con _ s => S (list_sum (map term_con_count s))
+      end.
+
+    (* Iterate [cong_subgoals] to a fixpoint: peel EVERY decomposable
+       constructor layer at the term level up front, so that intermediate goals
+       (e.g. a substitution-level [s = s'] exposed by peeling [blk_subst]) are
+       decomposed further -- down to the leaves the rules cannot split -- BEFORE
+       any of them reaches [egraph_reducing_equal_step].  Without this the engine
+       peeled a single layer and then fully saturated each subgoal, so an
+       intermediate goal in an explosive fragment (the substitution calculus)
+       detonated saturation before its own injectivity rule was ever consulted
+       on the next round.  [cong_subgoals] maps a non-decomposable goal to
+       itself, so once every goal is a leaf further passes are the identity;
+       [fuel] need only exceed the deepest goal.  SOUND for ANY [fuel] -- each
+       pass is a sound congruence decomposition -- so [fuel] affects only how far
+       peeling gets (completeness), never soundness. *)
+    Fixpoint saturate_cong_subgoals (fuel : nat) l inj_list
+      (goals : list (term * term)) : list (term * term) :=
+      match fuel with
+      | 0 => goals
+      | S fuel =>
+          saturate_cong_subgoals fuel l inj_list
+            (flat_map (cong_subgoals l inj_list) goals)
+      end.
+
     (* Computes egraph equality, but attempts to mitigate e-graph
        explosion by restarting computation when things get simpler.
        When it does, it furthermore tries to use knowledge of injective
@@ -882,8 +932,12 @@ Section WithVar.
         (*TODO: import the notation*)
       | 0 => Failure (dlist.dcons "out of fuel for reduction" dlist.dnil)
       | S red_fuel =>
-          (*TODO: iterate congruence*)
-          let goals' := flat_map (cong_subgoals l inj_list) goals in
+          (* iterate congruence to a fixpoint (bounded by total goal size) so
+             every decomposable layer is peeled at the term level before any
+             subgoal reaches the e-graph *)
+          let cong_fuel :=
+            list_sum (map (fun p => term_con_count (fst p) + term_con_count (snd p)) goals) in
+          let goals' := saturate_cong_subgoals cong_fuel l inj_list goals in
           let process '(e1,e2) :=
             let '(res,x,y,g) := egraph_reducing_equal_step l schedule
                                   rfuel sat_fuel e1 e2 in
@@ -1089,10 +1143,12 @@ Module PositiveInstantiation.
                               "Extracted term 1:" e1'
                               "Extracted term 2:" e2'), g)) *)
 
-  Definition rename_inj {V} `{Eqb V} '(n,args) : state (renaming V) (positive * list positive) :=
+  (* [inj_rules] entries are now [(op, list-of-alternatives)] where each
+     alternative is a list of arg names; rename each name in each alternative. *)
+  Definition rename_inj {V} `{Eqb V} '(n,alts) : state (renaming V) (positive * list (list positive)) :=
     @! let n' <- to_p n in
-      let args' <- list_Mmap (to_p (V:=V)) args in
-      ret (n',args').
+      let alts' <- list_Mmap (list_Mmap (to_p (V:=V))) alts in
+      ret (n',alts').
   
   Definition egraph_reducing_equal' {V} `{Eqb V} {X} `{analysis V V X}
     (l : lang V)

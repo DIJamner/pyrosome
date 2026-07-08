@@ -67,12 +67,6 @@ Definition ch8_def : lang :=
     ]
     ]}.
 
-Definition ch8_injectivity :=
-  [("assign", ["e"; "x"]); ("neq_0_r", ["n"]); ("value", ["n"]); ("1+", ["n"]);
-   ("if0", ["nz"; "z"; "e"]); ("while", ["c"; "e"]); ("neq_1+", ["p"; "m"; "n"]);
-   ("hvar", ["n"]); ("seq", ["cmd2"; "cmd1"]); ("neq", ["m"; "n"]); ("lookup", ["l"]);
-   ("neq_0_l", ["n"])].
-
 Definition ch8 :=
   Eval vm_compute in
     infer_lang_ext_simple_incr 10 100 (heap++nat_lang) ch8_def.
@@ -144,11 +138,6 @@ Definition ch8_config_def : lang :=
       = #"seq" "c1" (#"seq" "c2" "c3") : #"cmd"
     ]
   ]}.
-
-Definition ch8_config_injectivity :=
-  [("neq", ["m"; "n"]); ("neq_1+", ["p"; "m"; "n"]); ("neq_0_l", ["n"]); ("hvar", ["n"]);
-   ("if0", ["nz"; "z"; "e"]); ("1+", ["n"]); ("while", ["c"; "e"]); ("assign", ["e"; "x"]);
-   ("value", ["n"]); ("neq_0_r", ["n"]); ("lookup", ["l"])].
 
 Definition ch8_config :=
   Eval vm_compute in
@@ -243,12 +232,6 @@ Definition ch8_ectx_def : lang :=
            #"config" "H" (#"Cplug" "C" (#"value" (#"lookup" "H" "n"))) : #"configuration"
     ]
   ]}.
-
-Definition ch8_ectx_injectivity :=
-  [("Eassign", ["E"; "x"]); ("lookup", ["l"]); ("Eplug", ["e"; "E"]); ("Eseq", ["c"; "C"]);
-   ("neq_0_r", ["n"]); ("1+", ["n"]); ("Cplug", ["e"; "C"]); ("Eif0", ["nz"; "z"; "E"]);
-   ("neq", ["m"; "n"]); ("neq_1+", ["p"; "m"; "n"]); ("value", ["n"]); ("if0", ["nz"; "z"; "e"]);
-   ("neq_0_l", ["n"]); ("hvar", ["n"]); ("while", ["c"; "e"]); ("assign", ["e"; "x"])].
 
 Definition ch8_ectx :=
   Eval vm_compute in
@@ -406,7 +389,7 @@ Ltac clo_eta_cong :=
  1;
   [ now eredex_steps_with cc_lang "clo_eta"|];
   reduce_rhs;
-  repeat (term_cong; 
+  repeat (term_cong;
           unfold Model.eq_term;
           try term_refl;[]).
 
@@ -424,7 +407,7 @@ Proof.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
-  - Automation.by_reduction; Matches.t'.    
+  - Automation.by_reduction; Matches.t'.
   - (*TODO: this case takes at least a while w/ by_reduction.
       probably wants inj congruence.
       TODO: more specifically, probably wants something intelligent.
@@ -443,22 +426,12 @@ Proof.
     Need the following injectivity pattern:
       <\xy.e, c> = <\xy.e', c> <-> e = e'.
     if c is the same, then e, e' injective. requires more complicated pattern than I have
-                           
-    
-Definition cc_injectivity :=
-  [("jmp", ["G"]); ("cont", ["e";"A"; "G"]); ("neg", ["A"])].
 
-  TODO: clo_eta is expensive
+    TODO: clo_eta is expensive
      *)
     clo_eta_cong.
-    Automation.by_reduction;Matches.t'.
-  - (* TODO: figure out whether the e-graph gets there eventually without the help.
-       Alternatively, figure out how to specify that e[/-/] is injective if e is a metavariable.
-     *)
-    Matches.reduce.
-    term_cong; try term_refl; [].
-    term_cong; try term_refl; [].
-    Automation.by_reduction; Matches.t'.
+    by_reduction_gen 5; Matches.t'.
+  - by_reduction_gen 5; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.

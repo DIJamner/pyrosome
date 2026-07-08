@@ -262,7 +262,7 @@ Definition linear_value_subst_injectivity :=
 
 Definition linear_value_subst :=
   Eval vm_compute in
-    infer_lang_ext_simple_incr 10 100 [] linear_value_subst_def.
+    infer_lang_ext_simple_incr 5 100 [] linear_value_subst_def.
 
 Lemma linear_value_subst_wf : wf_lang_ext [] linear_value_subst.
 Proof. compute_wf_lang. Qed.
@@ -316,7 +316,7 @@ Definition linear_exp_subst_injectivity :=
 
 Definition linear_exp_subst :=
   Eval vm_compute in
-    infer_lang_ext_simple_incr 10 100 linear_value_subst linear_exp_subst_def.
+    infer_lang_ext_simple_incr 5 100 linear_value_subst linear_exp_subst_def.
 
 Lemma linear_exp_subst_wf : wf_lang_ext linear_value_subst linear_exp_subst.
 Proof. compute_wf_lang. Qed.
@@ -357,7 +357,7 @@ Definition linear_block_subst_injectivity :=
 
 Definition linear_block_subst :=
   Eval vm_compute in
-    infer_lang_ext_simple_incr 10 100 linear_value_subst linear_block_subst_def.
+    infer_lang_ext_simple_incr 5 100 linear_value_subst linear_block_subst_def.
 
 Lemma linear_block_subst_wf : wf_lang_ext linear_value_subst linear_block_subst.
 Proof. compute_wf_lang. Qed.
