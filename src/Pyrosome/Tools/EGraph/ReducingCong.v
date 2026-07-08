@@ -556,15 +556,14 @@ Section CongSubgoals.
     [ | (simpl in Hall; destruct Hall as [ [se Heq] _]; exists se; exact Heq) ].
     pose proof (@eqb_spec _ _ V_Eqb_ok n1 n2) as Hn12eq.
     rewrite Hn12 in Hn12eq. subst n2.
-    destruct (named_list_lookup_err inj_list n1) as [inj_args|] eqn:Hinj;
+    destruct (named_list_lookup_err inj_list n1) as [alts|] eqn:Hinj;
     [ | (simpl in Hall; destruct Hall as [ [se Heq] _]; exists se; exact Heq) ].
     destruct (named_list_lookup_err l n1) as [r|] eqn:Hl1;
     [ | (simpl in Hall; destruct Hall as [ [se Heq] _]; exists se; exact Heq) ].
     destruct r as [ | c args t_rule | |];
     try (simpl in Hall; destruct Hall as [ [se Heq] _]; exists se; exact Heq).
-    (* term_rule case *)
-    destruct (select_inj_args c inj_args s1 s2) as [subs|] eqn:Hselect;
-    [ | (simpl in Hall; destruct Hall as [ [se Heq] _]; exists se; exact Heq) ].
+    (* term_rule case: derive the arg-wf facts (independent of which alternative
+       fires), then induct on the alternatives [try_alts] scans. *)
     assert (Hin1 : In (n1, term_rule c args t_rule) l) by
       (apply named_list_lookup_err_in; auto).
     apply WfCutElim.invert_wf_term_con in Hwf1.
@@ -576,8 +575,17 @@ Section CongSubgoals.
     pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf2 Hin1) as Heq2.
     inversion Heq2; subst c2 args2 t2; clear Heq2.
     assert (Hwfc : wf_ctx l c) by (eauto with lang_core).
-    eapply select_inj_args_sound in Hselect; eauto.
-    eexists. eapply term_con_congruence; [ exact Hin1 | right; reflexivity | exact wfl | exact Hselect ].
+    clear Hinj Hl1 Hinwf1 Hinwf2 Ht1or1 Ht2or2.
+    revert Hall. induction alts as [|recurse alts' IHalts]; intro Hall.
+    - (* no alternative applied: the fallback undecomposed goal *)
+      cbn in Hall. destruct Hall as [ [se Heq] _]; exists se; exact Heq.
+    - (* try the head alternative; on failure recurse via IH *)
+      cbn in Hall.
+      destruct (select_inj_args c recurse s1 s2) as [subs|] eqn:Hselect.
+      + eapply select_inj_args_sound in Hselect; eauto.
+        eexists. eapply term_con_congruence;
+          [ exact Hin1 | right; reflexivity | exact wfl | exact Hselect ].
+      + exact (IHalts Hall).
   Qed.
 
   (* Each pair produced by [select_inj_args] has both components well-formed
@@ -622,24 +630,32 @@ Section CongSubgoals.
     destruct (eqb n1 n2) eqn:Hn12;
       [ | (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]) ].
     pose proof (@eqb_spec _ _ V_Eqb_ok n1 n2) as Hn12eq. rewrite Hn12 in Hn12eq. subst n2.
-    destruct (named_list_lookup_err inj_list n1) as [inj_args|] eqn:Hinj;
+    destruct (named_list_lookup_err inj_list n1) as [alts|] eqn:Hinj;
       [ | (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]) ].
     destruct (named_list_lookup_err l n1) as [r|] eqn:Hl1;
       [ | (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]) ].
     destruct r as [ | c args t_rule | | ];
       try (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]).
-    destruct (select_inj_args c inj_args s1 s2) as [subs|] eqn:Hselect;
-      [ | (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]) ].
     assert (Hin1 : In (n1, term_rule c args t_rule) l) by (apply named_list_lookup_err_in; auto).
-    apply WfCutElim.invert_wf_term_con in Hwf1.
-    destruct Hwf1 as (c1 & args1 & t1 & Hinwf1 & Hwfargs1 & _).
-    apply WfCutElim.invert_wf_term_con in Hwf2.
-    destruct Hwf2 as (c2 & args2 & t2 & Hinwf2 & Hwfargs2 & _).
+    (* derive the arg-wf facts from COPIES, keeping [Hwf1]/[Hwf2] intact for the
+       undecomposed-goal fallback in the base case *)
+    pose proof Hwf1 as Hwf1c. pose proof Hwf2 as Hwf2c.
+    apply WfCutElim.invert_wf_term_con in Hwf1c.
+    destruct Hwf1c as (c1 & args1 & t1 & Hinwf1 & Hwfargs1 & _).
+    apply WfCutElim.invert_wf_term_con in Hwf2c.
+    destruct Hwf2c as (c2 & args2 & t2 & Hinwf2 & Hwfargs2 & _).
     pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf1 Hin1) as Heq1.
     inversion Heq1; subst c1 args1 t1; clear Heq1.
     pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf2 Hin1) as Heq2.
     inversion Heq2; subst c2 args2 t2; clear Heq2.
-    exact (select_inj_args_wf c inj_args s1 s2 subs Hselect Hwfargs1 Hwfargs2).
+    clear Hinj Hl1 Hinwf1 Hinwf2.
+    (* every pair [try_alts] can produce is either the undecomposed goal or the
+       output of [select_inj_args] on some alternative; both are arg-wf. *)
+    induction alts as [|recurse alts' IHalts].
+    - cbn. split; [ split; eexists; eassumption | exact I ].
+    - cbn. destruct (select_inj_args c recurse s1 s2) as [subs|] eqn:Hselect.
+      + exact (select_inj_args_wf c recurse s1 s2 subs Hselect Hwfargs1 Hwfargs2).
+      + exact IHalts.
   Qed.
 
 End CongSubgoals.

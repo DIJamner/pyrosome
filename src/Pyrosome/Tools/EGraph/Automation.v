@@ -242,7 +242,7 @@ Section ReducingSkeleton.
   Lemma egraph_reducing_equal'_to_pos
     (l : lang string)
     (lf reversible : string * rule string -> bool)
-    (inj_rules : list (ne_list string))
+    (inj_rules : list (string * list (list string)))
     (rebuild_fuel sat_fuel efuel red_fuel : nat)
     (c : ctx string) (t : sort string) (e1 e2 : term string) :
     wf_lang l ->
@@ -257,7 +257,7 @@ Section ReducingSkeleton.
     Is_Success (fst (egraph_reducing_equal' l lf reversible inj_rules
                        rebuild_fuel sat_fuel efuel red_fuel c e1 e2)) ->
     exists (l' : lang positive) (e1' e2' : term positive) (t' : sort positive)
-           (sched : pos_schedule) (inj' : named_list positive (list positive)),
+           (sched : pos_schedule) (inj' : named_list positive (list (list positive))),
       wf_lang l' /\ wf_term l' [] e1' t' /\ wf_term l' [] e2' t' /\
       schedule_sound l' sched /\
       PositiveInstantiation.egraph_reducing_equal l' sched inj'
@@ -559,7 +559,9 @@ Ltac by_reduction' reversible inj_rules :=
 
 
 (* TODO: plug inj_rules into tactics *)
-Definition empty_inj_rules : list (string * list string) := [].
+(* Each entry is [(op, alternatives)] with each alternative a list of arg names
+   to recurse on; [[]] alternatives means "never decompose this op". *)
+Definition empty_inj_rules : list (string * list (list string)) := [].
 
 Ltac by_reduction :=
   by_reduction' (fun _ : string * Rule.rule string => true) empty_inj_rules.

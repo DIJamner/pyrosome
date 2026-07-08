@@ -844,15 +844,35 @@ Section WithVar.
       TODO: do the same for sorts.
       Right now I think the calling code assumes all sorts are injective.
      *)
+    (* GENERALIZED decomposition.  [inj_list] now carries, per operator, a LIST
+       of alternative recursed-arg sets (each is one functional dependency's
+       conclusion positions), rather than a single injective-arg list.  For the
+       head constructor we try each alternative in turn and take the FIRST that
+       applies -- i.e. the first whose non-recursed positions are all
+       syntactically equal ([select_inj_args] returns [Some]); otherwise we fall
+       back to the undecomposed goal.  A single-alternative entry reproduces the
+       old single-list behaviour, so this strictly generalizes it (e.g. [conc]
+       can now carry BOTH its left- and its right-cancellation schema, which one
+       list cannot express).
+
+       SOUND regardless of which alternative fires: [select_inj_args] only ever
+       emits subgoals when every omitted position is syntactically equal, so
+       congruence reconstructs the original equality; injectivity is needed only
+       for COMPLETENESS (whether the decomposition succeeds), never soundness. *)
     Definition cong_subgoals l inj_list '(e1,e2) :=
       match e1, e2 with
       | con n1 s1, con n2 s2 =>
           match eqb n1 n2, named_list_lookup_err inj_list n1, named_list_lookup_err l n1 with
-          | true, Some inj_args, Some (term_rule c _ t) =>
-              match select_inj_args c inj_args s1 s2 with
-              | Some l => l
-              | None => [(e1,e2)]
-              end
+          | true, Some alts, Some (term_rule c _ t) =>
+              (fix try_alts (alts : list (list V)) : list (term * term) :=
+                 match alts with
+                 | [] => [(e1,e2)]
+                 | recurse :: alts' =>
+                     match select_inj_args c recurse s1 s2 with
+                     | Some sub => sub
+                     | None => try_alts alts'
+                     end
+                 end) alts
           | _, _, _ => [(e1,e2)]
           end
       | _,_ => (*shouldn't happen, but this makes the proof easiest*) [(e1,e2)]
@@ -1089,10 +1109,12 @@ Module PositiveInstantiation.
                               "Extracted term 1:" e1'
                               "Extracted term 2:" e2'), g)) *)
 
-  Definition rename_inj {V} `{Eqb V} '(n,args) : state (renaming V) (positive * list positive) :=
+  (* [inj_rules] entries are now [(op, list-of-alternatives)] where each
+     alternative is a list of arg names; rename each name in each alternative. *)
+  Definition rename_inj {V} `{Eqb V} '(n,alts) : state (renaming V) (positive * list (list positive)) :=
     @! let n' <- to_p n in
-      let args' <- list_Mmap (to_p (V:=V)) args in
-      ret (n',args').
+      let alts' <- list_Mmap (list_Mmap (to_p (V:=V))) alts in
+      ret (n',alts').
   
   Definition egraph_reducing_equal' {V} `{Eqb V} {X} `{analysis V V X}
     (l : lang V)

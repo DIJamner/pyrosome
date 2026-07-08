@@ -39,7 +39,8 @@ Section __.
   Section EGraph.
     Context (rebuild_fuel saturation_fuel efuel red_fuel : nat)
       (filter reversible : string * Rule.rule string -> bool)
-      (inj_rules : list (string * list string)).
+      (* generalized: per op, a list of alternative recursed-arg sets *)
+      (inj_rules : list (string * list (list string))).
     
   Section Terms.
     Context (l : lang).
