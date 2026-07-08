@@ -394,6 +394,17 @@ Notation target_lang :=
                                 forget_eq_wkn'++
                                 cps_prod_lang ++ block_subst ++ value_subst).
 
+(* Auto-generated reduction-engine injectivity/cancellation table over the
+   substitution+closure fragment (sound to reuse: [cong_subgoals] decomposition
+   is congruence-based).  Generation is cheap (~1.3s / <0.5GB).  With the
+   recoverability filter, [closure] recurses only on [B;A;G] -- never on the
+   environment [v] or body [e] -- so [select_inj_args] defers a closure whose
+   env/body differ to the e-graph instead of manufacturing false subgoals. *)
+Definition ch8_cc_inj_rules : list (string * list (list string)) :=
+  Eval vm_compute in
+    gen_reduce_inj_rules 3
+      (cc_lang ++ prod_cc ++ cps_prod_lang ++ block_subst ++ value_subst).
+
 Ltac clo_eta_cong :=
   eapply eq_term_trans;
   [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"|];
@@ -452,12 +463,14 @@ Definition cc_injectivity :=
      *)
     clo_eta_cong.
     Automation.by_reduction;Matches.t'.
-  - (* metavariable-substitution congruence: peel it at the tactic level (the
-       standard [term_cong] pre-pass) before by_reduction, so the e-graph is
-       only built over the small residual. *)
+  - (* metavariable-substitution congruence.  TEST: replace the manual
+       [term_cong] pre-pass with the auto-generated (closure-accurate) inj_rules
+       threaded into [by_reduction'].  [saturate_cong_subgoals] peels congruence
+       at the term level using these rules -- memory-safely, before the e-graph
+       -- and the recoverability filter keeps closures from over-decomposing. *)
     Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    Automation.by_reduction; Matches.t'.
+    Automation.by_reduction' (fun _ : string * Rule.rule string => true)
+      ch8_cc_inj_rules; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
