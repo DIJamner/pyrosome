@@ -309,16 +309,17 @@ Fixpoint sterm_fvs (e : term) : list string :=
 Definition ssort_fvs (t : sort) : list string :=
   match t with scon _ s => flat_map sterm_fvs s end.
 
-Definition name_inb (x : string) (l : list string) : bool :=
-  existsb (String.eqb x) l.
-
 (* Free variables whose value is DETERMINED when two equal applications of
    [name] additionally hold the [shared] arguments equal: the free vars of the
-   (shared) result sort, plus the free vars of each shared argument's sort. *)
+   (shared) result sort, plus the free vars of each shared argument's sort.
+   NB the reduction engine forces EVERY non-recursed arg equal (a superset of
+   [shared]), so passing [shared] here is a sound under-approximation of what is
+   really determined there -- it can only drop more, never keep an ill-sorted
+   conclusion. *)
 Definition determined_vars (c : ctx) (res : sort) (shared : list string)
   : list string :=
   ssort_fvs res
-    ++ flat_map (fun '(x,t) => if name_inb x shared then ssort_fvs t else []) c.
+    ++ flat_map (fun '(x,t) => if inb x shared then ssort_fvs t else []) c.
 
 (* Keep only those [concl] argument names whose injectivity conclusion
    [x1 = x2] is well-sorted: every free variable of the argument's sort is
@@ -331,7 +332,7 @@ Definition filter_recoverable (L : lang) (name : string)
       let det := determined_vars c res shared in
       filter (fun nm =>
                 match Find_x nm c with
-                | Some t => forallb (fun v => name_inb v det) (ssort_fvs t)
+                | Some t => forallb (fun v => inb v det) (ssort_fvs t)
                 | None => true
                 end) concl
   | _ => concl
@@ -582,7 +583,7 @@ Definition findings_of (g : Defs.instance positive positive trie_map trie_map
              [ {| if_name := name;
                   if_injective := inj_names;
                   if_refuted :=
-                    filter (fun nm => negb (name_inb nm inj_names)) names |} ]
+                    filter (fun nm => negb (inb nm inj_names)) names |} ]
          end)
     ars.
 
