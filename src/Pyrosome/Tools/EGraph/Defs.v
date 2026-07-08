@@ -877,7 +877,37 @@ Section WithVar.
           end
       | _,_ => (*shouldn't happen, but this makes the proof easiest*) [(e1,e2)]
       end.
-    
+
+    (* Constructor-node count of a term; used only to bound the congruence
+       iteration below (an over-approximation of the goal's depth). *)
+    Fixpoint term_con_count (e : term) : nat :=
+      match e with
+      | var _ => 0
+      | con _ s => S (list_sum (map term_con_count s))
+      end.
+
+    (* Iterate [cong_subgoals] to a fixpoint: peel EVERY decomposable
+       constructor layer at the term level up front, so that intermediate goals
+       (e.g. a substitution-level [s = s'] exposed by peeling [blk_subst]) are
+       decomposed further -- down to the leaves the rules cannot split -- BEFORE
+       any of them reaches [egraph_reducing_equal_step].  Without this the engine
+       peeled a single layer and then fully saturated each subgoal, so an
+       intermediate goal in an explosive fragment (the substitution calculus)
+       detonated saturation before its own injectivity rule was ever consulted
+       on the next round.  [cong_subgoals] maps a non-decomposable goal to
+       itself, so once every goal is a leaf further passes are the identity;
+       [fuel] need only exceed the deepest goal.  SOUND for ANY [fuel] -- each
+       pass is a sound congruence decomposition -- so [fuel] affects only how far
+       peeling gets (completeness), never soundness. *)
+    Fixpoint saturate_cong_subgoals (fuel : nat) l inj_list
+      (goals : list (term * term)) : list (term * term) :=
+      match fuel with
+      | 0 => goals
+      | S fuel =>
+          saturate_cong_subgoals fuel l inj_list
+            (flat_map (cong_subgoals l inj_list) goals)
+      end.
+
     (* Computes egraph equality, but attempts to mitigate e-graph
        explosion by restarting computation when things get simpler.
        When it does, it furthermore tries to use knowledge of injective
@@ -902,8 +932,12 @@ Section WithVar.
         (*TODO: import the notation*)
       | 0 => Failure (dlist.dcons "out of fuel for reduction" dlist.dnil)
       | S red_fuel =>
-          (*TODO: iterate congruence*)
-          let goals' := flat_map (cong_subgoals l inj_list) goals in
+          (* iterate congruence to a fixpoint (bounded by total goal size) so
+             every decomposable layer is peeled at the term level before any
+             subgoal reaches the e-graph *)
+          let cong_fuel :=
+            list_sum (map (fun p => term_con_count (fst p) + term_con_count (snd p)) goals) in
+          let goals' := saturate_cong_subgoals cong_fuel l inj_list goals in
           let process '(e1,e2) :=
             let '(res,x,y,g) := egraph_reducing_equal_step l schedule
                                   rfuel sat_fuel e1 e2 in

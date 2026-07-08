@@ -658,6 +658,58 @@ Section CongSubgoals.
       + exact IHalts.
   Qed.
 
+  (* Iterating [cong_subgoals] to a fixpoint preserves argument well-formedness:
+     each pass replaces a goal by (well-formed) arguments of a well-formed term. *)
+  Lemma saturate_cong_subgoals_preserves_wf : forall fuel inj_list goals,
+    all (fun p => (exists sa, wf_term l [] (fst p) sa)
+                  /\ (exists sb, wf_term l [] (snd p) sb)) goals ->
+    all (fun p => (exists sa, wf_term l [] (fst p) sa)
+                  /\ (exists sb, wf_term l [] (snd p) sb))
+        (saturate_cong_subgoals fuel l inj_list goals).
+  Proof.
+    induction fuel as [|fuel IH]; intros inj_list goals Hwf.
+    - exact Hwf.
+    - cbn [saturate_cong_subgoals]. apply IH.
+      apply all_via_in_local. intros [e1 e2] Hin.
+      apply in_flat_map in Hin. destruct Hin as [ [a0 b0] [Hin0 Hinsub] ].
+      pose proof (in_all _ _ _ Hwf Hin0) as Hwfp0. cbn [fst snd] in Hwfp0.
+      destruct Hwfp0 as [ [ta0 Ha0] [tb0 Hb0] ].
+      exact (in_all _ _ _ (cong_subgoals_preserves_wf inj_list a0 b0 ta0 tb0 Ha0 Hb0) Hinsub).
+  Qed.
+
+  (* Iterating [cong_subgoals] is sound: if every leaf the fixpoint produces is
+     [eq_term], then so is every original goal.  Each pass is sound by
+     [cong_subgoals_sound_ex] (congruence); the wf side condition is carried by
+     [saturate_cong_subgoals_preserves_wf] so the induction hypothesis applies. *)
+  Lemma saturate_cong_subgoals_sound : forall fuel inj_list goals,
+    all (fun p => (exists sa, wf_term l [] (fst p) sa)
+                  /\ (exists sb, wf_term l [] (snd p) sb)) goals ->
+    all (fun p => let '(a,b) := p in exists s, eq_term l [] s a b)
+        (saturate_cong_subgoals fuel l inj_list goals) ->
+    all (fun p => let '(a,b) := p in exists s, eq_term l [] s a b) goals.
+  Proof.
+    induction fuel as [|fuel IH]; intros inj_list goals Hwf Heq.
+    - exact Heq.
+    - cbn [saturate_cong_subgoals] in Heq.
+      assert (Hwff : all (fun p => (exists sa, wf_term l [] (fst p) sa)
+                                   /\ (exists sb, wf_term l [] (snd p) sb))
+                         (flat_map (cong_subgoals l inj_list) goals)).
+      { apply all_via_in_local. intros [e1 e2] Hin.
+        apply in_flat_map in Hin. destruct Hin as [ [a0 b0] [Hin0 Hinsub] ].
+        pose proof (in_all _ _ _ Hwf Hin0) as Hwfp0. cbn [fst snd] in Hwfp0.
+        destruct Hwfp0 as [ [ta0 Ha0] [tb0 Hb0] ].
+        exact (in_all _ _ _ (cong_subgoals_preserves_wf inj_list a0 b0 ta0 tb0 Ha0 Hb0) Hinsub). }
+      pose proof (IH inj_list (flat_map (cong_subgoals l inj_list) goals) Hwff Heq) as Hflat.
+      apply all_via_in_local. intros [a b] Hin.
+      pose proof (in_all _ _ _ Hwf Hin) as Hwfp. cbn [fst snd] in Hwfp.
+      destruct Hwfp as [ [ta Ha] [tb Hb] ].
+      apply (cong_subgoals_sound_ex inj_list a b ta tb Ha Hb).
+      apply all_via_in_local. intros [e1 e2] Hp.
+      assert (Hinfm : In (e1,e2) (flat_map (cong_subgoals l inj_list) goals))
+        by (apply in_flat_map; exists (a,b); split; [ exact Hin | exact Hp ]).
+      exact (in_all _ _ _ Hflat Hinfm).
+  Qed.
+
 End CongSubgoals.
 
 Section CongMain.
@@ -775,13 +827,22 @@ Section CongMain.
     induction red_fuel as [|rf IHrf]; intros inj goals Hwfgoals Hsucc a b Hin.
     - cbn [egraph_reducing_cong] in Hsucc. discriminate.
     - cbn [egraph_reducing_cong] in Hsucc.
-      assert (Hgoals' : forall e1 e2, In (e1,e2) (flat_map (cong_subgoals l inj) goals) -> exists s, eq_term l [] s e1 e2).
+      (* name the congruence-iteration fuel the definition computed from [goals] *)
+      lazymatch type of Hsucc with
+      | context [saturate_cong_subgoals ?cf l inj goals] => set (CF := cf) in *
+      end.
+      (* package the per-goal wf premise into [all]-form, then push it through
+         the iteration *)
+      assert (Hwfg : all (fun p => (exists sa, wf_term l [] (fst p) sa)
+                                   /\ (exists sb, wf_term l [] (snd p) sb)) goals).
+      { apply all_via_in_local. intros [a0 b0] Hin0. cbn [fst snd].
+        destruct (Hwfgoals a0 b0 Hin0) as [ [ta0 Ha0] [tb0 Hb0] ].
+        split; eexists; eassumption. }
+      pose proof (saturate_cong_subgoals_preserves_wf V l wfl CF inj goals Hwfg) as Hwfsat.
+      assert (Hgoals' : forall e1 e2, In (e1,e2) (saturate_cong_subgoals CF l inj goals) -> exists s, eq_term l [] s e1 e2).
       + intros e1 e2 Hin'.
         pose proof (list_Miter_all_success _ _ Hsucc (e1,e2) Hin') as Hproc.
-        apply in_flat_map in Hin'. destruct Hin' as [ [a0 b0] [Hin0 Hinsub] ].
-        destruct (Hwfgoals a0 b0 Hin0) as [ [ta0 Hwfa0] [tb0 Hwfb0] ].
-        pose proof (cong_subgoals_preserves_wf V l wfl inj a0 b0 ta0 tb0 Hwfa0 Hwfb0) as Hwfsub.
-        pose proof (in_all _ _ _ Hwfsub Hinsub) as Hwfp.
+        pose proof (in_all _ _ _ Hwfsat Hin') as Hwfp.
         cbn [fst snd] in Hwfp. destruct Hwfp as [ [se1 Hwfe1] [se2 Hwfe2] ].
         cbn beta iota in Hproc.
         pose proof (egraph_reducing_equal_step_sound_strong V V_map V_map_plus V_map_ok V_map_plus_ok V_trie V_trie_ok succ V_leb sort_of lt lt_asymmetric lt_succ lt_trans spaced_list_intersect l wfl sort_of_fresh schedule rfuel sat_fuel e1 e2 se1 se2 Hwfe1 Hwfe2 Hsched) as Hstrong.
@@ -810,12 +871,13 @@ Section CongMain.
           apply (eq_term_ex_trans e1 e1' e2); [ exact He1 | ].
           apply (eq_term_ex_trans e1' e2' e2); [ exact He12 | ].
           apply eq_term_ex_sym. exact He2.
-      + destruct (Hwfgoals a b Hin) as [ [ta Hwfa] [tb Hwfb] ].
-        apply (cong_subgoals_sound_ex V l wfl inj a b ta tb Hwfa Hwfb).
-        apply all_via_in_local.
-        intros p Hp. destruct p as [e1 e2].
-        apply (Hgoals' e1 e2).
-        apply in_flat_map. exists (a,b). split; [ exact Hin | exact Hp ].
+      + (* every saturated leaf is eq_term; the iteration-soundness lemma lifts
+           that back to the original goals, and [(a,b)] is one of them *)
+        assert (Hallsat : all (fun p => let '(a,b) := p in exists s, eq_term l [] s a b)
+                              (saturate_cong_subgoals CF l inj goals)).
+        { apply all_via_in_local. intros [e1 e2] Hp. exact (Hgoals' e1 e2 Hp). }
+        pose proof (saturate_cong_subgoals_sound V l wfl CF inj goals Hwfg Hallsat) as Hallgoals.
+        exact (in_all _ _ _ Hallgoals Hin).
   Qed.
 
   (* CONGMAIN-END-MARKER *)
