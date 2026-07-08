@@ -410,6 +410,111 @@ Ltac clo_eta_cong :=
           unfold Model.eq_term;
           try term_refl;[]).
 
+(* ============================================================================
+   inj_rules-driven pre-pass for by_reduction.
+
+   The generated injectivity/cancellation schemas ([gen_fundep_schemas]) DRIVE
+   the decomposition: at each node [cong_subgoals_gen] consults the rules to
+   decide whether (and on which args) the goal [f s1 = f s2] may be split; we
+   realize the sanctioned split with [term_cong] (closing the required-equal
+   args by [term_refl]) and recurse, so the e-graph is only ever built over the
+   small leaves the rules cannot decompose.  (Not blind congruence: a node is
+   peeled ONLY where the rules say [f] is injective/cancellable there.)
+   ============================================================================ *)
+Fixpoint select_recurse (c : list (string * Term.sort string)) (recurse : list string)
+  (s1 s2 : list (Term.term string)) : option (list (Term.term string * Term.term string)) :=
+  match recurse, c, s1, s2 with
+  | [], [], _, _ => Some []
+  | [], (_::_), _, _ => if eqb s1 s2 then Some [] else None
+  | x::recurse', (x',_)::c', e1::s1', e2::s2' =>
+      if eqb x x' then
+        match select_recurse c' recurse' s1' s2' with
+        | Some rest => Some ((e1,e2)::rest) | None => None end
+      else if eqb e1 e2 then select_recurse c' recurse s1' s2' else None
+  | _, _, _, _ => None
+  end.
+
+Definition gen_inj_rules := list (string * list (list string)).
+
+Definition cong_subgoals_gen (l : list (string * Rule.rule string)) (rules : gen_inj_rules)
+  (goal : Term.term string * Term.term string) : list (Term.term string * Term.term string) :=
+  let '(e1,e2) := goal in
+  match e1, e2 with
+  | con n1 s1, con n2 s2 =>
+      if eqb n1 n2 then
+        match named_list_lookup_err rules n1, named_list_lookup_err l n1 with
+        | Some alts, Some (term_rule c _ _) =>
+            let fix try_alts alts :=
+              match alts with
+              | [] => [(e1,e2)]
+              | recurse :: alts' =>
+                  match select_recurse c recurse s1 s2 with
+                  | Some sub => sub | None => try_alts alts' end
+              end in try_alts alts
+        | _, _ => [(e1,e2)] end
+      else [(e1,e2)]
+  | _, _ => [(e1,e2)]
+  end.
+
+Fixpoint group_concls (fds : list (string * (list string * list string))) : gen_inj_rules :=
+  match fds with
+  | [] => []
+  | (n,(_sh,concl)) :: rest =>
+      let g := group_concls rest in
+      match concl with
+      | [] => g
+      | _ => let fix ins g :=
+               match g with
+               | [] => [(n,[concl])]
+               | (n',alts)::g' =>
+                   if eqb n n' then (n', if existsb (eqb concl) alts then alts else alts ++ [concl]) :: g'
+                   else (n',alts) :: ins g'
+               end in ins g
+      end
+  end.
+
+(* small pre-reduced fragment carrying the goal-spine ops' contexts; used for
+   the [cong_subgoals_gen] lookup so we never vm_compute over the huge
+   [target_lang] at each node.  (The ops have the same contexts here as in
+   [target_lang], so the decomposition is identical.) *)
+Definition ch8_cover : list (string * Rule.rule string) :=
+  Eval vm_compute in
+    (cc_lang ++ prod_cc ++ cps_prod_lang ++ unit_lang ++ block_subst ++ value_subst).
+
+(* generated from that fragment *)
+Definition ch8_inj_rules : gen_inj_rules :=
+  Eval vm_compute in group_concls (gen_fundep_schemas 3 ch8_cover).
+
+(* rule-driven: peel a node ONLY when the rules sanction the decomposition AND
+   it stays linear (exactly one nontrivial child), so branching nodes are left
+   compact for by_reduction instead of being fragmented into separately-hard
+   sub-equations.  The rules' value is refusing to peel a non-injective
+   single-child node (e.g. .1 x = .1 y, where .1 is not injective in the value)
+   that blind congruence peeling would wrongly split. *)
+Ltac inj_prepass rules :=
+  try (unfold Model.eq_term);
+  lazymatch goal with
+  | |- eq_term _ _ _ ?E1 ?E2 =>
+      let d := eval vm_compute in (cong_subgoals_gen ch8_cover rules (E1,E2)) in
+      lazymatch d with
+      | cons (pair E1 E2) nil => idtac              (* rules do not decompose: leave *)
+      | _ =>
+          let nt := eval vm_compute in
+            (List.length (filter (fun p => negb (eqb (fst p) (snd p))) d)) in
+          lazymatch nt with
+          | 1%nat => term_cong; try term_refl; [> inj_prepass rules ..]  (* linear: peel *)
+          | _ => idtac                               (* branching: keep compact *)
+          end
+      end
+  | |- _ => idtac
+  end.
+
+Ltac by_reduction_prepass rules :=
+  compute_eq_compilation;
+  Matches.reduce;
+  inj_prepass rules;
+  Automation.by_reduction; Matches.t'.
+
 Derive ch8_cc
        in (elab_preserving_compiler
                    []
@@ -452,12 +557,9 @@ Definition cc_injectivity :=
      *)
     clo_eta_cong.
     Automation.by_reduction;Matches.t'.
-  - (* metavariable-substitution congruence: peel it at the tactic level (the
-       standard [term_cong] pre-pass) before by_reduction, so the e-graph is
-       only built over the small residual. *)
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    Automation.by_reduction; Matches.t'.
+  - (* metavariable-substitution congruence: the generated inj_rules drive the
+       decomposition (cong_subgoals_gen) BEFORE saturation. *)
+    by_reduction_prepass ch8_inj_rules.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
