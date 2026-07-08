@@ -156,8 +156,59 @@ Section WithWeight.
 
   (* ---- seeding ---- *)
 
-  (* One generic instance of each constructor, plus both sides of each equation,
-     with the rule's context variables opened as fresh generators. *)
+  (* Variables occurring in the sorts of a context.  A position is FREE if its
+     variable occurs in NO context sort -- i.e. nothing else's type depends on
+     it.  Only free positions are safe to vary independently (below): varying a
+     DEPENDENT index (e.g. [cmp]'s object [G1], which [f : arr G1 G2] fixes)
+     would build an ill-typed variant, whose e-graph collapse the scan misreads
+     as a counterexample and SPURIOUSLY refutes the index's injectivity. *)
+  Fixpoint term_fvs (e : term) : list positive :=
+    match e with var x => [x] | con _ s => flat_map term_fvs s end.
+  Definition sort_fvs (t : sort) : list positive :=
+    match t with scon _ s => flat_map term_fvs s end.
+  Definition free_positions (c : ctx) : ctx :=
+    let fvs := flat_map (fun '(_,t) => sort_fvs t) c in
+    filter (fun '(p,_) => negb (existsb (Pos.eqb p) fvs)) c.
+
+  (* Fresh-name offset for the same-sort duplicate of each context variable.
+     Duplicates go FIRST: [add_ctx] is a right fold ([list_Mfoldr]), so it runs
+     tail-first; putting the originals LAST means they are processed BEFORE the
+     duplicates, so each duplicate's sort (which references the ORIGINAL vars)
+     resolves against an already-populated substitution.  With the originals
+     first, the duplicates would be processed before their referenced originals
+     exist and get the [default] sort -- seeding an ill-sorted term that merges
+     unsoundly and drops valid injectivity laws. *)
+  Definition seed_BIG : positive := 1000000.
+  Definition dup_ctx (c : ctx) : ctx :=
+    map (fun '(p,t) => ((p + seed_BIG)%positive, t)) c ++ c.
+
+  (* Seed both sides of an equation under the base instance PLUS, for each FREE
+     position, a variant sharing every generator with the base except that one,
+     which it swaps to the position's (same-sort) duplicate.  Two applications
+     of a head differing only in an argument the head DROPS then collapse to one
+     e-class, so the scan refutes that position -- the counterexample generic
+     single-instance seeding never builds (e.g. [.1 (pair g v1) = .1 (pair g
+     v2) = g], projection).  Restricting to free positions keeps every variant
+     well-typed, so sort-index injectivity (which inference relies on) is
+     preserved. *)
+  Definition seed_eq {T} (l : lang) (c : ctx)
+    (add : bool -> list (positive * positive) -> T -> state instance positive)
+    (e1 e2 : T) : state instance unit :=
+    @! let subA <- add_ctx l (dup_ctx c) in
+       let _ <- add false subA e1 in
+       let _ <- add false subA e2 in
+       let _ <- list_Miter (fun '(pi,_) =>
+                  let gdup := named_list_lookup default subA (pi + seed_BIG)%positive in
+                  let subi := map (fun '(k,v) =>
+                                if Pos.eqb k pi then (k, gdup) else (k,v)) subA in
+                  @! let _ <- add false subi e1 in
+                     let _ <- add false subi e2 in
+                     ret tt)
+                  (free_positions c) in
+       ret tt.
+
+  (* One generic instance of each constructor; for each equation, a base
+     instance plus same-sort free-position variants (see [seed_eq]). *)
   Definition seed_rule (l : lang) (nr : positive * Rule.rule positive)
     : state instance unit :=
     let '(n,r) := nr in
@@ -171,15 +222,9 @@ Section WithWeight.
           let _ <- add_open_term l false sub (con n (id_args c)) in
           ret tt
     | sort_eq_rule c t1 t2 =>
-        @! let sub <- add_ctx l c in
-          let _ <- add_open_sort l false sub t1 in
-          let _ <- add_open_sort l false sub t2 in
-          ret tt
+        seed_eq l c (add_open_sort l) t1 t2
     | term_eq_rule c e1 e2 _ =>
-        @! let sub <- add_ctx l c in
-          let _ <- add_open_term l false sub e1 in
-          let _ <- add_open_term l false sub e2 in
-          ret tt
+        seed_eq l c (add_open_term l) e1 e2
     end.
 
   Definition seed (l : lang) : state instance unit :=
