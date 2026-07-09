@@ -1,15 +1,17 @@
 Set Implicit Arguments.
 
 (* ==========================================================================
-   Injectivity-rule GENERATOR.
+   Injectivity / cancellation rule GENERATOR.
 
-   Goal: automatically discover every *sound* rule of the shape
+   Goal: automatically discover sound rules of the shape
 
-       f x1..xn = f y1..yn  ->  xi = yi  (for i in some subset S of positions)
+       f x1..xn = f y1..yn  ->  xi = yi   (given the two applications already
+                                           agree on some subset S of positions)
 
-   ("f is injective in the positions S").  Finding all such sound rules is
-   undecidable, so we approximate with a bounded, e-graph-based counterexample
-   search:
+   -- the functional dependencies of each operator.  [S = []] is ordinary
+   injectivity; [S <> []] is a cancellation law (e.g. [conc Z A = conc Z B -> A
+   = B]).  Finding all such sound rules is undecidable, so we approximate with a
+   bounded, e-graph-based counterexample search:
 
      1. Seed an e-graph with a generic instance of every constructor and with
         both sides of every equation of the language (context variables become
@@ -18,24 +20,28 @@ Set Implicit Arguments.
         This merges terms the theory proves equal -- in particular the two
         sides of associativity/unit laws, which is exactly where injectivity
         fails.
-     3. Scan the resulting database.  Two atoms [f a1..an] and [f b1..bn] that
-        landed in the *same* e-class (same canonical [atom_ret]) are equal
-        terms.  If they disagree at position [i] (ai, bi in different classes)
-        then [f]'s injectivity at [i] has a counterexample: position [i] is
-        REFUTED.  A position never refuted (within [X] iterations) is a
-        candidate injective position.
+     3. Scan the resulting database ([fdeps_of_fn]).  Two atoms [f a1..an] and
+        [f b1..bn] in the *same* e-class (same canonical [atom_ret]) are equal
+        terms; position [j] functionally depends on a set [S] when no such pair
+        agrees on all of [S] yet disagrees at [j].  A surviving [S = []] is
+        injectivity; the minimal surviving [S] is the weakest cancellation
+        premise.
 
-   The plain injectivity scan generalizes to the functional-dependency search
-   [fdeps_of_fn]/[gen_fundep_schemas] below (each schema is [(name,(shared,
-   concl))]: [shared = []] is injectivity, [shared <> []] cancellation).  Those
-   schemas feed either the elaboration engine via [build_general_injection_rules]
-   or the reduction engine via [gen_reduce_inj_rules].  The results are further
-   pruned by [filter_recoverable] (structural well-formedness; see below).
+   The discovered [(name,(shared,concl))] schemas are then PRUNED by
+   [filter_recoverable]: a structural, language-agnostic well-formedness check
+   that drops a conclusion [xi = yi] unless [xi]'s sort is determined by what the
+   two applications share.  This is what keeps a closure's existentially-hidden
+   environment from being reported injective (see its own header).  The pruned
+   schemas feed either the elaboration engine ([build_general_injection_rules])
+   or the reduction engine ([gen_reduce_inj_rules]).
 
-   NOTE ON SOUNDNESS: the search is a heuristic.  A position reported injective
-   might have a counterexample only beyond [X] iterations.  Per the design,
-   using a too-strong injectivity rule never yields falsehood -- it can only
-   make inference fail -- so the bounded approximation is safe to try.
+   NOTE ON SOUNDNESS: the search is a heuristic -- a dependency it reports might
+   only fail beyond [X] iterations, and one genuinely present might be missed.
+   Neither direction is unsound downstream: a too-strong injectivity rule can
+   only make elaboration FAIL (caught by [compute_wf_lang]), while the reduction
+   engine's congruence decomposition is sound for ANY schema (injectivity only
+   affects completeness).  [filter_recoverable] only ever REMOVES candidate
+   positions, so it preserves both guarantees.
    ========================================================================== *)
 
 From coqutil Require Import Datatypes.String Map.Interface Datatypes.Result.
