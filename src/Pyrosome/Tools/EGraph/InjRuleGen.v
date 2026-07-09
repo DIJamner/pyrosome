@@ -291,24 +291,23 @@ End WithWeight.
    collapse is extensional / eta-driven), so the saturation search never refutes
    these positions and wrongly reports [closure] fully injective.
 
-   The fix is structural and language-agnostic: the injectivity/congruence rule
+   The fix is structural and language-agnostic.  A reduction alternative
+   recurses on a set [K] of argument positions and forces every OTHER argument
+   syntactically equal; recursing on position [j] corresponds to the congruence
+   step [xj = yj], which only makes sense when [xj] and [yj] provably share a
+   sort -- i.e. when [j]'s sort is pinned down by what the two applications hold
+   equal: their common result sort plus the sorts of the HELD (non-[K]) args.
+   If [j]'s sort mentions a variable determined by none of those, [j] is dropped
+   from [K] (the position is held equal instead, deferred to the e-graph).
 
-     f x1..xn = f y1..yn  ->  xi = yi
-
-   is only WELL-FORMED when its conclusion is well-sorted, i.e. when the sort of
-   argument [i] is pinned down by what the two (equal) applications already
-   share.  Equal applications share their result sort, so its free variables are
-   determined; a cancellation premise additionally holds the [shared] arguments
-   equal, determining their sorts' free variables too.  If [xi]'s sort mentions
-   a variable determined by NONE of these, then [xi] and [yi] need not inhabit a
-   common sort and the equation [xi = yi] cannot even be stated -- so position
-   [i] is dropped.  This refutes [closure]'s environment/body injectivity from
+   This is a fixpoint: dropping [j] moves it into the held set, which can only
+   pin MORE variables and thus rescue another position that referenced [j]'s
+   sort -- so [recover_fix] iterates the drop, recomputing the held set each
+   pass, until stable.  It refutes [closure]'s environment/body injectivity from
    the rule structure alone (matching, and for [jmp] reproducing, the
-   hand-written injectivity lists), and it can never drop a genuinely-formable
-   law: a dropped position provably has no well-sorted injectivity conclusion.
-   Sound to apply for the same reason as the search: it only ever REMOVES
-   candidate injective positions, so a downstream congruence decomposition stays
-   sound (fewer decompositions) and elaboration stays conservative. *)
+   hand-written injectivity lists).  Sound regardless: it only ever REMOVES
+   positions from [K], and a congruence decomposition on any [K] is sound
+   (recursing on fewer positions only costs completeness). *)
 
 Fixpoint sterm_fvs (e : term) : list string :=
   match e with
@@ -318,32 +317,41 @@ Fixpoint sterm_fvs (e : term) : list string :=
 Definition ssort_fvs (t : sort) : list string :=
   match t with scon _ s => flat_map sterm_fvs s end.
 
-(* Free variables whose value is DETERMINED when two equal applications of
-   [name] additionally hold the [shared] arguments equal: the free vars of the
-   (shared) result sort, plus the free vars of each shared argument's sort.
-   NB the reduction engine forces EVERY non-recursed arg equal (a superset of
-   [shared]), so passing [shared] here is a sound under-approximation of what is
-   really determined there -- it can only drop more, never keep an ill-sorted
-   conclusion. *)
-Definition determined_vars (c : ctx) (res : sort) (shared : list string)
-  : list string :=
-  ssort_fvs res
-    ++ flat_map (fun '(x,t) => if inb x shared then ssort_fvs t else []) c.
+(* Free variables pinned by the result sort [res] plus the sorts of the [held]
+   arguments (the ones forced syntactically equal across the two applications). *)
+Definition determined_vars (res : sort) (held : ctx) : list string :=
+  ssort_fvs res ++ flat_map (fun '(_,t) => ssort_fvs t) held.
 
-(* Keep only those [concl] argument names whose injectivity conclusion
-   [x1 = x2] is well-sorted: every free variable of the argument's sort is
-   determined.  Sort constructors (no term-level result sort) and unknown heads
+(* One downward pass of the recurse-set fixpoint (see the section header):
+   given the current recurse set [K], the held args are [c \ K]; drop from [K]
+   every position whose sort is not pinned by [determined_vars res held].
+   [fuel] bounds the iteration -- each non-stable pass drops >= 1 position, so
+   [length concl] passes suffice. *)
+Fixpoint recover_fix (fuel : nat) (c : ctx) (res : sort) (K : list string)
+  : list string :=
+  match fuel with
+  | O => K
+  | S fuel' =>
+      let held := filter (fun '(x,_) => negb (inb x K)) c in
+      let det := determined_vars res held in
+      let K' := filter (fun nm =>
+                          match Find_x nm c with
+                          | Some t => forallb (fun v => inb v det) (ssort_fvs t)
+                          | None => true
+                          end) K in
+      (* [K'] is a sublist of [K], so equal lengths means no drop => stable *)
+      if Nat.eqb (length K') (length K) then K'
+      else recover_fix fuel' c res K'
+  end.
+
+(* Prune a reduction-engine recurse set [concl] to the positions genuinely
+   determined by the result plus the held (non-recursed) args, iterated to a
+   fixpoint.  Sort constructors (no term-level result sort) and unknown heads
    are left untouched. *)
-Definition filter_recoverable (L : lang) (name : string)
-  (shared concl : list string) : list string :=
+Definition filter_recoverable (L : lang) (name : string) (concl : list string)
+  : list string :=
   match Find_x name L with
-  | Some (term_rule c _ res) =>
-      let det := determined_vars c res shared in
-      filter (fun nm =>
-                match Find_x nm c with
-                | Some t => forallb (fun v => inb v det) (ssort_fvs t)
-                | None => true
-                end) concl
+  | Some (term_rule c _ res) => recover_fix (length concl) c res concl
   | _ => concl
   end.
 
@@ -587,7 +595,7 @@ Definition gen_reduce_inj_rules (X : nat) (L : lang)
   : list (string * list (list string)) :=
   group_concls
     (map (fun '(name, (shared, concl)) =>
-            (name, (shared, filter_recoverable L name shared concl)))
+            (name, (shared, filter_recoverable L name concl)))
        (gen_fundep_schemas X L)).
 
 (* ---- general injection/cancellation rule builder ----
