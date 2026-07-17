@@ -415,11 +415,11 @@ Section ReducingStep.
         - rewrite (Hext _ _ Hgv); exact Hor.
         - discriminate Hor. }
       pose proof (@lang_model_ok V V_Eqb V_Eqb_ok sort_of l sort_of_fresh wfl) as Hmok.
-      pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x1 eb i2 Hok_eb Hsnd_eb) as Hg1.
+      pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x1 i2 eb Hok_eb Hsnd_eb) as Hg1.
       rewrite Hga1 in Hg1; cbn [snd] in Hg1; destruct Hg1 as [Hok_e1 Hsnd_e1].
-      pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x2 e1 i2 Hok_e1 Hsnd_e1) as Hg2.
+      pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x2 i2 e1 Hok_e1 Hsnd_e1) as Hg2.
       rewrite Hga2 in Hg2; cbn [snd] in Hg2; destruct Hg2 as [Hok_e2 Hsnd_e2].
-      pose proof (@rebuild_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok (option positive) (size V) lang_model Hmok (fun _ => True) rfuel e2 Hok_e2) as Hrbs.
+      pose proof (@rebuild_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok (option positive) (size V) lang_model Hmok rfuel e2 Hok_e2) as Hrbs.
       rewrite Hrb in Hrbs; cbn [snd] in Hrbs; destruct Hrbs as [Hok_e3 Hiff3].
       assert (Hsnd_e3 : sound i2 e3) by (apply (Hiff3 i2); exact Hsnd_e2).
       match type of Hsat with
@@ -428,18 +428,18 @@ Section ReducingStep.
       assert (HP : forall ee ii, egraph_ok ee -> sound ii ee -> egraph_ok (snd (pred ee)) /\ sound ii (snd (pred ee)))
         by (intros ee ii Hoke Hsnde; subst pred; unfold weight_less_than;
             cbn [Mbind Mret StateMonad.state_monad];
-            pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x1 ee ii Hoke Hsnde) as Hp1;
+            pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x1 ii ee Hoke Hsnde) as Hp1;
             destruct (get_analysis V V V_map V_map V_trie (option positive) x1 ee) as [a1 e1'] eqn:He1';
             cbn [snd] in Hp1; destruct Hp1 as [ Hok1 Hsnd1 ]; cbn [fst snd];
             destruct (oP_lt a1 w1);
             [ cbn [snd]; split; assumption | ];
             cbn [fst snd];
-            pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x2 e1' ii Hok1 Hsnd1) as Hp2;
+            pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (size V) lang_model x2 ii e1' Hok1 Hsnd1) as Hp2;
             destruct (get_analysis V V V_map V_map V_trie (option positive) x2 e1') as [a2 e2'] eqn:He2';
             cbn [snd] in Hp2; destruct Hp2 as [ Hok2 Hsnd2 ];
             destruct (oP_lt a2 w2);
             [ cbn [snd]; split; assumption | ];
-            pose proof (@are_unified_preserves_ok_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie (option positive) lang_model x1 x2 e2' ii Hok2 Hsnd2) as Hau;
+            pose proof (@are_unified_preserves_ok_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie (option positive) lang_model x1 x2 ii e2' Hok2 Hsnd2) as Hau;
             destruct Hau as [ Hoku Hsndu ]; split; assumption).
       pose proof (@scheduled_saturate_until_sound V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok succ V_leb lt lt_asymmetric lt_succ lt_trans V_map_plus_ok (option positive) (size V) spaced_list_intersect lang_model Hmok rfuel pred HP schedule Hsched sat_fuel i2 e3 Hok_e3 Hsnd_e3) as Hss.
       rewrite Hsat in Hss.
@@ -856,7 +856,7 @@ Section CongMain.
         assert (Hky : Sep.has_key y (parent (equiv g))) by (exact (interpretation_exact _ _ _ _ _ _ _ _ _ Hsndg y Hisy)).
         destruct (are_unified x y g) as [unified pf] eqn:Hau.
         destruct unified.
-        * pose proof (are_unified_eq_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie (option positive) lang_model x y g i Hokg Hsndg Hkx Hky ltac:(rewrite Hau; reflexivity)) as Hes.
+        * pose proof (are_unified_eq_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie (option positive) lang_model x y i g Hokg Hsndg Hkx Hky ltac:(rewrite Hau; reflexivity)) as Hes.
           eapply (eq_sound_to_eq_term V V_map sort_of l sort_of_fresh wfl i x y e1 e2 Hes); [ exact Hr1 | exact Hr2 ].
         * destruct (extract_weighted g efuel x) as [e1'|err1] eqn:Hex; cbn [Mbind Mret result_monad] in Hproc; [ | discriminate ].
           destruct (extract_weighted g efuel y) as [e2'|err2] eqn:Hey; cbn [Mbind Mret result_monad] in Hproc; [ | discriminate ].

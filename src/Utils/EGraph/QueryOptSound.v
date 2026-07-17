@@ -925,14 +925,15 @@ Section WithMap.
   Lemma clauses_to_instance_sub_mono
     (cs : list (Semantics.clause idx symbol))
     (sub0 : named_list idx idx)
-    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
     (z w : idx) :
-    named_list_lookup_err sub0 z = Some w ->
-    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
-    | (_, sub1, _) => named_list_lookup_err sub1 z = Some w
-    end.
+    vc (clauses_to_instance idx_succ (analysis_result:=unit) cs sub0)
+       (fun e0 res =>
+          named_list_lookup_err sub0 z = Some w ->
+          match res with
+          | (_, sub1, _) => named_list_lookup_err sub1 z = Some w
+          end).
   Proof.
-    revert sub0 e0.
+    unfold vc. revert sub0.
     induction cs as [|c cs IH]; intros sub0 e0 Hhit.
     - cbn. exact Hhit.
     - cbn [Semantics.clauses_to_instance list_Miter].
@@ -966,36 +967,37 @@ Section WithMap.
     (Hltt : Transitive lt) (m : model symbol) (Hm : model_ok symbol m)
     (cs : list (Semantics.clause idx symbol))
     (sub0 : named_list idx idx)
-    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
     (i : idx_map (m.(domain symbol)))
     (a_src : idx_map (m.(domain symbol))) :
-    Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e0 ->
-    Semantics.egraph_sound_for_interpretation
-      idx symbol symbol_map idx_map idx_trie unit m i e0 ->
-    (* Renaming consistency at the start. *)
-    (forall x y, In (x, y) sub0 ->
-                 forall d, map.get a_src x = Some d -> map.get i y = Some d) ->
-    (* The renaming's codomain lives in the egraph's union-find. *)
-    (forall x y, In (x, y) sub0 ->
-                 Sep.has_key y (parent (equiv e0))) ->
-    (* The source clauses are sound under a_src. *)
-    all (Semantics.clause_sound_for_model idx symbol idx_map m a_src) cs ->
-    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
-    | ((_, sub_final), e1) =>
-        Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e1 /\
-        exists i',
-          map.extends i' i /\
+    vc (clauses_to_instance idx_succ (analysis_result:=unit) cs sub0)
+       (fun e0 res =>
+          Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e0 ->
           Semantics.egraph_sound_for_interpretation
-            idx symbol symbol_map idx_map idx_trie unit m i' e1 /\
-          (forall x y, In (x, y) sub_final ->
-                 forall d, map.get a_src x = Some d -> map.get i' y = Some d) /\
-          (forall y d, map.get i' y = Some d ->
-                       map.get i y = Some d \/
-                       (exists x', named_list_lookup_err sub_final x' = Some y))
-    end.
+            idx symbol symbol_map idx_map idx_trie unit m i e0 ->
+          (* Renaming consistency at the start. *)
+          (forall x y, In (x, y) sub0 ->
+                       forall d, map.get a_src x = Some d -> map.get i y = Some d) ->
+          (* The renaming's codomain lives in the egraph's union-find. *)
+          (forall x y, In (x, y) sub0 ->
+                       Sep.has_key y (parent (equiv e0))) ->
+          (* The source clauses are sound under a_src. *)
+          all (Semantics.clause_sound_for_model idx symbol idx_map m a_src) cs ->
+          match res with
+          | ((_, sub_final), e1) =>
+              Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e1 /\
+              exists i',
+                map.extends i' i /\
+                Semantics.egraph_sound_for_interpretation
+                  idx symbol symbol_map idx_map idx_trie unit m i' e1 /\
+                (forall x y, In (x, y) sub_final ->
+                       forall d, map.get a_src x = Some d -> map.get i' y = Some d) /\
+                (forall y d, map.get i' y = Some d ->
+                             map.get i y = Some d \/
+                             (exists x', named_list_lookup_err sub_final x' = Some y))
+          end).
   Proof.
-    revert sub0 e0 i.
-    induction cs as [|c cs IH]; intros sub0 e0 i Hok Hsnd Hren Hsubdom Hcs.
+    revert sub0 i.
+    induction cs as [|c cs IH]; unfold vc in *; intros sub0 i e0 Hok Hsnd Hren Hsubdom Hcs.
     - cbn. split; [exact Hok|]. exists i.
       split; [intros ? ? Hk; exact Hk|].
       split; [exact Hsnd|].
@@ -1151,7 +1153,8 @@ Section WithMap.
               destruct (eqb y0 y_new) eqn:Hy0yn.
               { right. assert (Heqy0 : y0 = y_new) by exact Hy0yn_dec. subst y0.
                 exists y.
-                pose proof (clauses_to_instance_sub_mono cs ((y, y_new) :: sub0) e_unioned y y_new) as Hsm.
+                pose proof (clauses_to_instance_sub_mono cs ((y, y_new) :: sub0) y y_new) as Hsm.
+                unfold vc in Hsm. specialize (Hsm e_unioned).
                 cbn [named_list_lookup_err] in Hsm.
                 assert (Hyy : eqb y y = true) by
                   (pose proof (Eqb_idx_ok y y) as Hd;
@@ -1291,7 +1294,8 @@ Section WithMap.
               destruct (eqb y0 x_new) eqn:Hy0xn.
               { right. assert (Heqy0 : y0 = x_new) by exact Hy0xn_dec. subst y0.
                 exists x.
-                pose proof (clauses_to_instance_sub_mono cs ((x, x_new) :: sub0) e_unioned x x_new) as Hsm.
+                pose proof (clauses_to_instance_sub_mono cs ((x, x_new) :: sub0) x x_new) as Hsm.
+                unfold vc in Hsm. specialize (Hsm e_unioned).
                 cbn [named_list_lookup_err] in Hsm.
                 assert (Hxx : eqb x x = true) by
                   (pose proof (Eqb_idx_ok x x) as Hd;
@@ -1435,7 +1439,8 @@ Section WithMap.
                 destruct (eqb y0 x_new) eqn:Hy0xn.
                 { right. assert (Heqy0 : y0 = x_new) by exact Hy0xn_dec. subst y0.
                   exists x.
-                  pose proof (clauses_to_instance_sub_mono cs ((x, x_new) :: sub0) e_unioned x x_new) as Hsm.
+                  pose proof (clauses_to_instance_sub_mono cs ((x, x_new) :: sub0) x x_new) as Hsm.
+                  unfold vc in Hsm. specialize (Hsm e_unioned).
                   cbn [named_list_lookup_err] in Hsm.
                   assert (Hxx2 : eqb x x = true) by
                     (pose proof (Eqb_idx_ok x x) as Hd;
@@ -1553,7 +1558,8 @@ Section WithMap.
               destruct (eqb y0 y_new) eqn:Hy0yn.
               { right. assert (Heqy0 : y0 = y_new) by exact Hy0yn_dec. subst y0.
                 exists y.
-                pose proof (clauses_to_instance_sub_mono cs ((y, y_new) :: (x, x_new) :: sub0) e_unioned y y_new) as Hsm.
+                pose proof (clauses_to_instance_sub_mono cs ((y, y_new) :: (x, x_new) :: sub0) y y_new) as Hsm.
+                unfold vc in Hsm. specialize (Hsm e_unioned).
                 cbn [named_list_lookup_err] in Hsm.
                 assert (Hyy2 : eqb y y = true) by
                   (pose proof (Eqb_idx_ok y y) as Hd;
@@ -1565,7 +1571,8 @@ Section WithMap.
                 destruct (eqb y0 x_new) eqn:Hy0xn.
                 { right. assert (Heqy0 : y0 = x_new) by exact Hy0xn_dec. subst y0.
                   exists x.
-                  pose proof (clauses_to_instance_sub_mono cs ((y, y_new) :: (x, x_new) :: sub0) e_unioned x x_new) as Hsm.
+                  pose proof (clauses_to_instance_sub_mono cs ((y, y_new) :: (x, x_new) :: sub0) x x_new) as Hsm.
+                  unfold vc in Hsm. specialize (Hsm e_unioned).
                   cbn [named_list_lookup_err] in Hsm.
                   assert (Hyx2 : eqb x y = false) by
                     (pose proof (Eqb_idx_ok x y) as Hd;
@@ -1646,7 +1653,7 @@ Section WithMap.
                                     args' x Hall_args'1 Hx))
                      Hkout'2 Hatom2).
         destruct Hue as (Hok3 & Hsnd3 & Hmono3).
-        pose proof (IH sub2 e3 i2 Hok3 Hsnd3 Hren2
+        pose proof (IH sub2 i2 e3 Hok3 Hsnd3 Hren2
                      ltac:(intros x0 y0 Hin; apply Hmono3; exact (Hsubdom2 _ _ Hin)) Hcs')
           as HIH.
         destruct (clauses_to_instance idx_succ cs sub2 e3) as [ [u_pp sub_final] e_final ] eqn:Hci.
@@ -1667,11 +1674,13 @@ Section WithMap.
                   (rename_lookup_sub_mono out sub1 e1 x'' y0 Hx'')
                   _ Hrlo) as Hs12.
                 cbn [snd fst] in Hs12.
-                pose proof (clauses_to_instance_sub_mono cs sub2 e3 x'' y0 Hs12) as Hs2f.
+                pose proof (clauses_to_instance_sub_mono cs sub2 x'' y0) as Hs2f.
+                unfold vc in Hs2f. specialize (Hs2f e3 Hs12).
                 rewrite Hci in Hs2f. exact Hs2f. } }
             { right. destruct Hsub2 as [x'' Hx''].
               exists x''.
-              pose proof (clauses_to_instance_sub_mono cs sub2 e3 x'' y0 Hx'') as Hs2f.
+              pose proof (clauses_to_instance_sub_mono cs sub2 x'' y0) as Hs2f.
+              unfold vc in Hs2f. specialize (Hs2f e3 Hx'').
               rewrite Hci in Hs2f. exact Hs2f. } }
           { right; exact Hsub_f. } }
   Qed.
@@ -2021,27 +2030,28 @@ Section WithMap.
   Lemma rename_lookup_struct
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
     (x : idx) (sub : named_list idx idx)
-    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
     (roots : list idx) :
-    union_find_ok lt (equiv e) roots ->
-    (forall a b y, named_list_lookup_err sub a = Some y ->
-                   named_list_lookup_err sub b = Some y -> a = b) ->
-    (forall a y, named_list_lookup_err sub a = Some y -> Sep.has_key y (parent (equiv e))) ->
-    match rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit x sub e with
-    | (x', sub', e') =>
-        (exists roots', union_find_ok lt (equiv e') roots') /\
-        (forall a b y, named_list_lookup_err sub' a = Some y ->
-                       named_list_lookup_err sub' b = Some y -> a = b) /\
-        (forall a y, named_list_lookup_err sub' a = Some y -> Sep.has_key y (parent (equiv e'))) /\
-        (forall a y, named_list_lookup_err sub a = Some y -> named_list_lookup_err sub' a = Some y) /\
-        named_list_lookup_err sub' x = Some x' /\
-        Sep.has_key x' (parent (equiv e')) /\
-        db e' = db e /\
-        worklist e' = worklist e /\
-        (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
-    end.
+    vc (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit x sub)
+       (fun e res =>
+          union_find_ok lt (equiv e) roots ->
+          (forall a b y, named_list_lookup_err sub a = Some y ->
+                         named_list_lookup_err sub b = Some y -> a = b) ->
+          (forall a y, named_list_lookup_err sub a = Some y -> Sep.has_key y (parent (equiv e))) ->
+          match res with
+          | (x', sub', e') =>
+              (exists roots', union_find_ok lt (equiv e') roots') /\
+              (forall a b y, named_list_lookup_err sub' a = Some y ->
+                             named_list_lookup_err sub' b = Some y -> a = b) /\
+              (forall a y, named_list_lookup_err sub' a = Some y -> Sep.has_key y (parent (equiv e'))) /\
+              (forall a y, named_list_lookup_err sub a = Some y -> named_list_lookup_err sub' a = Some y) /\
+              named_list_lookup_err sub' x = Some x' /\
+              Sep.has_key x' (parent (equiv e')) /\
+              db e' = db e /\
+              worklist e' = worklist e /\
+              (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
+          end).
   Proof.
-    intros Huf Hinj Hdom.
+    unfold vc; intro e. cbn beta. intros Huf Hinj Hdom.
     unfold rename_lookup.
     destruct (named_list_lookup_err sub x) as [x'|] eqn:Hlook.
     - (* HIT: rename_lookup returns (x', sub, e) *)
@@ -2160,9 +2170,11 @@ Section WithMap.
       { intros z Hz. exact Hz. }
     - (* cons a args0 *)
       cbn [list_Mmap].
-      pose proof (rename_lookup_struct Hlti Hlts Hltt a sub e roots Huf Hinj Hdom) as Hrl.
+      pose proof (rename_lookup_struct Hlti Hlts Hltt a sub roots) as Hrl.
+      unfold vc in Hrl. specialize (Hrl e).
       destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit
                   a sub e) as [ [a' sub1] e1 ] eqn:Hrla.
+      specialize (Hrl Huf Hinj Hdom).
       destruct Hrl as (Huf1_ex & Hinj1 & Hdom1 & Hext1 & Hlook1 & Hka'1 & Hdb1 & Hwl1 & Hmono1).
       destruct Huf1_ex as [roots1 Huf1].
       cbn -[rename_lookup list_Mmap] in *.
@@ -2242,30 +2254,31 @@ Section WithMap.
   Lemma rename_atom_struct
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
     (a : atom) (sub : named_list idx idx)
-    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
     (roots : list idx) :
-    union_find_ok lt (equiv e) roots ->
-    (forall a0 b y, named_list_lookup_err sub a0 = Some y ->
-                    named_list_lookup_err sub b = Some y -> a0 = b) ->
-    (forall a0 y, named_list_lookup_err sub a0 = Some y -> Sep.has_key y (parent (equiv e))) ->
-    match rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit a sub e with
-    | (a', sub', e') =>
-        (exists roots', union_find_ok lt (equiv e') roots') /\
-        (forall a0 b y, named_list_lookup_err sub' a0 = Some y ->
-                        named_list_lookup_err sub' b = Some y -> a0 = b) /\
-        (forall a0 y, named_list_lookup_err sub' a0 = Some y -> Sep.has_key y (parent (equiv e'))) /\
-        (forall z y, named_list_lookup_err sub z = Some y -> named_list_lookup_err sub' z = Some y) /\
-        atom_fn a' = atom_fn a /\
-        atom_args a' = map (named_list_lookup default sub') (atom_args a) /\
-        atom_ret a' = named_list_lookup default sub' (atom_ret a) /\
-        (forall z, In z (atom_ret a :: atom_args a) ->
-                   exists y, named_list_lookup_err sub' z = Some y) /\
-        db e' = db e /\
-        worklist e' = worklist e /\
-        (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
-    end.
+    vc (rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit a sub)
+       (fun e res =>
+          union_find_ok lt (equiv e) roots ->
+          (forall a0 b y, named_list_lookup_err sub a0 = Some y ->
+                          named_list_lookup_err sub b = Some y -> a0 = b) ->
+          (forall a0 y, named_list_lookup_err sub a0 = Some y -> Sep.has_key y (parent (equiv e))) ->
+          match res with
+          | (a', sub', e') =>
+              (exists roots', union_find_ok lt (equiv e') roots') /\
+              (forall a0 b y, named_list_lookup_err sub' a0 = Some y ->
+                              named_list_lookup_err sub' b = Some y -> a0 = b) /\
+              (forall a0 y, named_list_lookup_err sub' a0 = Some y -> Sep.has_key y (parent (equiv e'))) /\
+              (forall z y, named_list_lookup_err sub z = Some y -> named_list_lookup_err sub' z = Some y) /\
+              atom_fn a' = atom_fn a /\
+              atom_args a' = map (named_list_lookup default sub') (atom_args a) /\
+              atom_ret a' = named_list_lookup default sub' (atom_ret a) /\
+              (forall z, In z (atom_ret a :: atom_args a) ->
+                         exists y, named_list_lookup_err sub' z = Some y) /\
+              db e' = db e /\
+              worklist e' = worklist e /\
+              (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
+          end).
   Proof.
-    intros Huf Hinj Hdom.
+    unfold vc; intro e. cbn beta. intros Huf Hinj Hdom.
     destruct a as [f args out].
     unfold rename_atom.
     cbn [atom_fn atom_args atom_ret].
@@ -2281,12 +2294,13 @@ Section WithMap.
     destruct HF2 as (Huf1_ex & Hinj1 & Hdom1 & Hext1 & Hmap1 & Hdb1 & Hwl1 & Hmono1).
     destruct Huf1_ex as [roots1 Huf1].
     cbn [fst snd uncurry].
-    pose proof (rename_lookup_struct Hlti Hlts Hltt out sub1 e1 roots1
-                  Huf1 Hinj1 Hdom1) as HF1.
+    pose proof (rename_lookup_struct Hlti Hlts Hltt out sub1 roots1) as HF1.
+    unfold vc in HF1. specialize (HF1 e1).
     set (RL := rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
                  unit out sub1 e1) in *.
     destruct RL as [ [out' sub2] e2 ] eqn:Hout_eq.
     cbn [fst snd] in HF1.
+    specialize (HF1 Huf1 Hinj1 Hdom1).
     destruct HF1 as (Huf2_ex & Hinj2 & Hdom2 & Hext2 & Hlook2 & Hkout & Hdb2 & Hwl2 & Hmono2).
     cbn [fst snd uncurry atom_fn atom_args atom_ret].
     (* Result atom is Build_atom f args' out', sub'=sub2, e'=e2 *)
@@ -2370,14 +2384,15 @@ Section WithMap.
   (* Helper to get parent_closed from rename_atom chain *)
   (* The key theorem: with strengthened invariant *)
   Lemma force_equiv_preserves_sound (m : model symbol)
-    (i : idx_map (m.(domain symbol)))
-    (e : instance) :
-    (exists roots, union_find_ok lt (equiv e) roots) ->
-    Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie unit m i e ->
-    Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie unit m i
-      (snd (force_equiv idx Eqb_idx symbol symbol_map idx_map idx_trie (X:=unit) e)).
+    (i : idx_map (m.(domain symbol))) :
+    vc (force_equiv idx Eqb_idx symbol symbol_map idx_map idx_trie (X:=unit))
+      (fun e res =>
+         (exists roots, union_find_ok lt (equiv e) roots) ->
+         Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie unit m i e ->
+         Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie unit m i
+           (snd res)).
   Proof.
-    intros Huf Hsnd.
+    unfold vc; intro e; cbn beta. intros Huf Hsnd.
     eapply Semantics.fields_preserved_sound_for_interpretation; [exact Hsnd|].
     pose proof (@force_equiv_sound idx Eqb_idx Eqb_idx_ok lt symbol symbol_map idx_map idx_map_ok idx_trie unit) as Hfe.
     unfold vc in Hfe.
@@ -2659,18 +2674,20 @@ Section WithMap.
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
     (atoms_all : list atom)
     (Huniq : NoDup (map (fun a => (atom_fn a, atom_args a)) atoms_all)) :
-    forall (Pl todo : list atom) (sub : named_list idx idx)
-      (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) (roots : list idx),
-    atoms_all = Pl ++ todo ->
-    union_find_ok lt (equiv e) roots ->
-    rename_inv Pl sub e ->
-    match clauses_to_instance idx_succ (analysis_result:=unit) (map atom_clause todo) sub e with
-    | (_, sub1, e1) =>
-        exists roots1, union_find_ok lt (equiv e1) roots1 /\ rename_inv (Pl ++ todo) sub1 e1
-    end.
+    forall (Pl todo : list atom) (sub : named_list idx idx) (roots : list idx),
+    vc (clauses_to_instance idx_succ (analysis_result:=unit) (map atom_clause todo) sub)
+       (fun e res =>
+          atoms_all = Pl ++ todo ->
+          union_find_ok lt (equiv e) roots ->
+          rename_inv Pl sub e ->
+          match res with
+          | (_, sub1, e1) =>
+              exists roots1, union_find_ok lt (equiv e1) roots1 /\ rename_inv (Pl ++ todo) sub1 e1
+          end).
   Proof.
     intros Pl todo. revert Pl.
-    induction todo as [|a todo0 IH]; intros Pl sub e roots Hsplit Huf Hinv.
+    induction todo as [|a todo0 IH]; intros Pl sub roots;
+      unfold vc; intro e; cbn beta; intros Hsplit Huf Hinv.
     - (* BASE: todo = [] *)
       cbn [map clauses_to_instance list_Miter Mret StateMonad.state_monad fst snd].
       rewrite app_nil_r.
@@ -2735,8 +2752,10 @@ Section WithMap.
       (* Destruct rename_inv *)
       destruct Hinv as (Hinj & Hdom & Hwl & Hrows & Hfwd & Hvars).
       (* Apply rename_atom_struct *)
-      pose proof (rename_atom_struct Hlti Hlts Hltt a sub e roots Huf Hinj Hdom) as Hras.
+      pose proof (rename_atom_struct Hlti Hlts Hltt a sub roots) as Hras.
+      unfold vc in Hras. specialize (Hras e).
       rewrite Hra in Hras.
+      specialize (Hras Huf Hinj Hdom).
       destruct Hras as (Huf'_ex & Hinj' & Hdom' & Hext & Hfn & Hargs & Hret & Hvars_a &
                         Hdbe' & Hwle' & Hmono).
       destruct Huf'_ex as [roots' Huf'].
@@ -2850,7 +2869,7 @@ Section WithMap.
           + destruct (Hvars a0 Hin0 x Hx) as [y Hy]. exists y. exact (Hext x y Hy).
           + destruct Hin0 as [<- | Hf]; [| destruct Hf]. exact (Hvars_a x Hx). }
       (* Apply IH *)
-      specialize (IH (Pl ++ [a]) sub' e'' roots').
+      unfold vc in IH. specialize (IH (Pl ++ [a]) sub' roots' e'').
       assert (Hsplit2 : atoms_all = (Pl ++ [a]) ++ todo0).
       { rewrite <- app_assoc. cbn [app]. exact Hsplit. }
       specialize (IH Hsplit2 Huf'' Hinv2).
@@ -2875,10 +2894,9 @@ Section WithMap.
     end.
   Proof.
     pose proof (clauses_to_instance_atoms_inv Hlti Hlts Hltt atoms Huniq
-                  [] atoms []
-                  (Defs.empty_egraph idx_zero unit : instance)
-                  []
-                  eq_refl) as Hmain.
+                  [] atoms [] []) as Hmain.
+    unfold vc in Hmain.
+    specialize (Hmain (Defs.empty_egraph idx_zero unit : instance) eq_refl).
     (* Prove union_find_ok lt (equiv empty_egraph) [] *)
     assert (Huf_empty : union_find_ok lt
               (equiv (Defs.empty_egraph idx_zero unit : instance)) []).
@@ -3712,13 +3730,13 @@ Section WithMap.
     rewrite Hempty in Hget. discriminate Hget.
   Qed.
 
-  Lemma hash_clause_sets : forall (a : Defs.atom nat symbol) (S : St),
-    qc_entry (snd (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map a S))
-             (Defs.atom_fn a)
-             (fst (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map a S))
-             (Defs.atom_args a, Defs.atom_ret a).
+  Lemma hash_clause_sets : forall (a : Defs.atom nat symbol),
+    vc (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map a)
+       (fun S res =>
+          qc_entry (snd res) (Defs.atom_fn a) (fst res)
+                   (Defs.atom_args a, Defs.atom_ret a)).
   Proof.
-    intros [f args out] S.
+    intros [f args out]. unfold vc; intro S.
     unfold qc_entry.
     cbn [Defs.atom_fn Defs.atom_args Defs.atom_ret].
     destruct (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map
@@ -3747,10 +3765,11 @@ Section WithMap.
   Qed.
 
   Lemma hash_clause_preserves_wf (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt) :
-    forall (a : Defs.atom nat symbol) (S : St),
-      wf_qc_state S -> wf_qc_state (snd (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map a S)).
+    forall (a : Defs.atom nat symbol),
+      vc (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map a)
+         (fun S res => wf_qc_state S -> wf_qc_state (snd res)).
   Proof.
-    intros [f args out] S Hwf.
+    intros [f args out]. unfold vc; intro S. cbn beta. intro Hwf.
     unfold hash_clause.
     change St with (symbol_map (idx * idx_map (list nat * nat))) in *.
     cbn [fst snd].
@@ -3809,10 +3828,13 @@ Section WithMap.
   Qed.
 
   Lemma hash_clause_mono (Hlti : Asymmetric lt) :
-    forall (a : Defs.atom nat symbol) (S : St), wf_qc_state S ->
-    forall g j v, qc_entry S g j v -> qc_entry (snd (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map a S)) g j v.
+    forall (a : Defs.atom nat symbol),
+    vc (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map a)
+       (fun S res =>
+          wf_qc_state S ->
+          forall g j v, qc_entry S g j v -> qc_entry (snd res) g j v).
   Proof.
-    intros [f args out] S Hwf g j v (last & m & HgetSg & HgetMj).
+    intros [f args out]. unfold vc; intro S. cbn beta. intros Hwf g j v (last & m & HgetSg & HgetMj).
     unfold qc_entry.
     change St with (symbol_map (idx * idx_map (list nat * nat))) in *.
     unfold hash_clause. cbn [fst snd].
@@ -3860,38 +3882,39 @@ Section WithMap.
   Qed.
 
   Lemma list_Mmap_qc_preserves {A B} (step : A -> state St B)
-    (Hwf_step : forall a S, wf_qc_state S -> wf_qc_state (snd (step a S)))
-    (Hmono_step : forall a S, wf_qc_state S -> forall g j v, qc_entry S g j v -> qc_entry (snd (step a S)) g j v) :
-    forall (xs : list A) (S : St), wf_qc_state S ->
-      wf_qc_state (snd (list_Mmap step xs S))
-      /\ (forall g j v, qc_entry S g j v -> qc_entry (snd (list_Mmap step xs S)) g j v).
+    (Hwf_step : forall a, vc (step a) (fun S res => wf_qc_state S -> wf_qc_state (snd res)))
+    (Hmono_step : forall a, vc (step a) (fun S res => wf_qc_state S -> forall g j v, qc_entry S g j v -> qc_entry (snd res) g j v)) :
+    forall (xs : list A),
+      vc (list_Mmap step xs)
+         (fun S res =>
+            wf_qc_state S ->
+            wf_qc_state (snd res)
+            /\ (forall g j v, qc_entry S g j v -> qc_entry (snd res) g j v)).
   Proof.
-    induction xs as [|x xs' IH]; intros S Hs.
+    unfold vc in *.
+    induction xs as [|x xs' IH]; intro S; cbn beta; intro Hs.
     - cbn [list_Mmap Mbind Mret StateMonad.state_monad fst snd].
       split; [ exact Hs | intros g j v H; exact H ].
     - cbn [list_Mmap Mbind Mret StateMonad.state_monad].
+      pose proof (Hwf_step x S Hs) as Hwf1.
+      pose proof (Hmono_step x S Hs) as Hmono1.
       destruct (step x S) as [y S1] eqn:Hstep.
+      cbn [fst snd] in Hwf1, Hmono1.
+      specialize (IH S1 Hwf1).
       destruct (list_Mmap step xs' S1) as [ys S2] eqn:Hrec.
-      cbn [fst snd].
-      assert (HS1 : snd (step x S) = S1) by (rewrite Hstep; reflexivity).
-      assert (HS2 : snd (list_Mmap step xs' S1) = S2) by (rewrite Hrec; reflexivity).
-      rewrite <- HS1 in *.
-      specialize (IH (snd (step x S)) (Hwf_step x S Hs)).
-      rewrite HS2 in IH.
-      rewrite <- HS2 in IH.
+      cbn [fst snd] in IH |- *.
+      destruct IH as [IHwf IHmono].
       split.
-      + rewrite <- HS2. exact (proj1 IH).
-      + intros g j v Hentry.
-        rewrite <- HS2. apply (proj2 IH).
-        apply (Hmono_step x S Hs g j v Hentry).
+      + exact IHwf.
+      + intros g j v Hentry. apply IHmono. apply (Hmono1 g j v Hentry).
   Qed.
 
   Lemma compile_query_clause_preserves_wf (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt) :
-    forall (qvs : list idx) (a : Defs.atom idx symbol) (S : St),
-      wf_qc_state S ->
-      wf_qc_state (snd (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs a S)).
+    forall (qvs : list idx) (a : Defs.atom idx symbol),
+      vc (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs a)
+         (fun S res => wf_qc_state S -> wf_qc_state (snd res)).
   Proof.
-    intros qvs [f args out] S Hs.
+    intros qvs [f args out]. unfold vc; intro S. cbn beta. intro Hs.
     unfold compile_query_clause.
     cbn [Mbind Mret StateMonad.state_monad].
     set (cc := {| atom_fn := f;
@@ -3901,21 +3924,21 @@ Section WithMap.
                   atom_ret := named_list_lookup 0
                      (combine (sort_by_position_in idx Eqb_idx (out :: args) qvs)
                         (seq 0 (length (sort_by_position_in idx Eqb_idx (out :: args) qvs)))) out |}).
+    pose proof (hash_clause_preserves_wf Hlts Hltt cc) as Hhcw.
+    unfold vc in Hhcw. specialize (Hhcw S).
     destruct (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S) as [i S'] eqn:Hhc.
-    cbn [fst snd].
-    assert (HS' : S' = snd (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S)).
-    { rewrite Hhc. reflexivity. }
-    rewrite HS'.
-    apply (hash_clause_preserves_wf Hlts Hltt cc S Hs).
+    cbn [fst snd] in Hhcw |- *.
+    exact (Hhcw Hs).
   Qed.
 
   Lemma compile_query_clause_mono (Hlti : Asymmetric lt) :
-    forall (qvs : list idx) (a : Defs.atom idx symbol) (S : St),
-      wf_qc_state S ->
-      forall g j v, qc_entry S g j v ->
-      qc_entry (snd (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs a S)) g j v.
+    forall (qvs : list idx) (a : Defs.atom idx symbol),
+      vc (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs a)
+         (fun S res =>
+            wf_qc_state S ->
+            forall g j v, qc_entry S g j v -> qc_entry (snd res) g j v).
   Proof.
-    intros qvs [f args out] S Hs g j v Hentry.
+    intros qvs [f args out]. unfold vc; intro S. cbn beta. intros Hs g j v Hentry.
     unfold compile_query_clause.
     cbn [Mbind Mret StateMonad.state_monad].
     set (cc := {| atom_fn := f;
@@ -3925,65 +3948,69 @@ Section WithMap.
                   atom_ret := named_list_lookup 0
                      (combine (sort_by_position_in idx Eqb_idx (out :: args) qvs)
                         (seq 0 (length (sort_by_position_in idx Eqb_idx (out :: args) qvs)))) out |}).
+    pose proof (hash_clause_mono Hlti cc) as Hhcm.
+    unfold vc in Hhcm. specialize (Hhcm S).
     destruct (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S) as [i S'] eqn:Hhc.
-    cbn [fst snd].
-    assert (HS' : S' = snd (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S)).
-    { rewrite Hhc. reflexivity. }
-    rewrite HS'.
-    apply (hash_clause_mono Hlti cc S Hs g j v Hentry).
+    cbn [fst snd] in Hhcm |- *.
+    exact (Hhcm Hs g j v Hentry).
   Qed.
 
   Lemma compile_rule_preserves_wf
     (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt) (Hlti : Asymmetric lt) :
-    forall rf (r : sequent) (S : St),
-      wf_qc_state S ->
-      wf_qc_state (snd (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r S)).
+    forall rf (r : sequent),
+      vc (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r)
+         (fun S res => wf_qc_state S -> wf_qc_state (snd res)).
   Proof.
-    intros rf r S Hs.
+    intros rf r. unfold vc; intro S. cbn beta. intro Hs.
     unfold compile_rule.
     destruct (optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
       as [ [assumptions conclusion_atoms] conclusion_eqs ].
     cbn [Mbind Mret StateMonad.state_monad fst snd].
     set (qvs := dedup eqb (flat_map (atom_fvs idx symbol) assumptions)).
-    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
-                assumptions S) as [qcls_ptrs S1] eqn:Hlm.
-    cbn [fst snd].
-    assert (HS1 : S1 = snd (list_Mmap
-                     (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
-                     assumptions S)) by (rewrite Hlm; reflexivity).
-    destruct qcls_ptrs; cbn [fst snd]; rewrite HS1;
-    exact (proj1 (list_Mmap_qc_preserves
+    pose proof (list_Mmap_qc_preserves
       (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
       (compile_query_clause_preserves_wf Hlts Hltt qvs)
       (compile_query_clause_mono Hlti qvs)
-      assumptions S Hs)).
+      assumptions) as Hlmp.
+    unfold vc in Hlmp. specialize (Hlmp S).
+    pose (res := list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
+                assumptions S).
+    change (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
+                assumptions S) with res in Hlmp |- *.
+    destruct res as [qcls_ptrs S1] eqn:Hlm.
+    cbn [fst snd] in Hlmp.
+    destruct qcls_ptrs; cbn [fst snd];
+    exact (proj1 (Hlmp Hs)).
   Qed.
 
   Lemma compile_rule_mono
     (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt) (Hlti : Asymmetric lt) :
-    forall rf (r : sequent) (S : St),
-      wf_qc_state S ->
-      forall g j v, qc_entry S g j v ->
-      qc_entry (snd (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r S)) g j v.
+    forall rf (r : sequent),
+      vc (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r)
+         (fun S res =>
+            wf_qc_state S ->
+            forall g j v, qc_entry S g j v -> qc_entry (snd res) g j v).
   Proof.
-    intros rf r S Hs g j v Hentry.
+    intros rf r. unfold vc; intro S. cbn beta. intros Hs g j v Hentry.
     unfold compile_rule.
     destruct (optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
       as [ [assumptions conclusion_atoms] conclusion_eqs ].
     cbn [Mbind Mret StateMonad.state_monad fst snd].
     set (qvs := dedup eqb (flat_map (atom_fvs idx symbol) assumptions)).
-    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
-                assumptions S) as [qcls_ptrs S1] eqn:Hlm.
-    cbn [fst snd].
-    assert (HS1 : S1 = snd (list_Mmap
-                     (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
-                     assumptions S)) by (rewrite Hlm; reflexivity).
-    destruct qcls_ptrs; cbn [fst snd]; rewrite HS1;
-    exact (proj2 (list_Mmap_qc_preserves
+    pose proof (list_Mmap_qc_preserves
       (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
       (compile_query_clause_preserves_wf Hlts Hltt qvs)
       (compile_query_clause_mono Hlti qvs)
-      assumptions S Hs) g j v Hentry).
+      assumptions) as Hlmp.
+    unfold vc in Hlmp. specialize (Hlmp S).
+    pose (res := list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
+                assumptions S).
+    change (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
+                assumptions S) with res in Hlmp |- *.
+    destruct res as [qcls_ptrs S1] eqn:Hlm.
+    cbn [fst snd] in Hlmp.
+    destruct qcls_ptrs; cbn [fst snd];
+    exact (proj2 (Hlmp Hs) g j v Hentry).
   Qed.
 
   (* Combined result for the outer list_Mmap (compile_rule rf) rules loop *)
@@ -4015,29 +4042,33 @@ Section WithMap.
            (assumptions : list (Defs.atom idx symbol))
            (Hsub : forall a, In a assumptions ->
                    forall x, In x (Defs.atom_ret a :: Defs.atom_args a) -> In x qvs)
-           (S0 : St) (Hwf0 : wf_qc_state S0)
-           (Qfin : St)
-           (Hmono : forall g j v,
-              qc_entry (snd (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions S0)) g j v
-              -> qc_entry Qfin g j v),
-      map (fun ptr => let '(Build_erule_query_ptr _ _ f n cv_list) := ptr in
-             let '(cargs,cv) := match map.get (map_map snd Qfin) f with
-               | Some q_f => match map.get q_f n with Some c => c | None => ([],0) end
-               | None => ([],0) end in
-             Build_atom f (map (fun k => nth k cv_list idx_zero) cargs) (nth cv cv_list idx_zero))
-          (fst (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions S0))
-        = assumptions.
+           ,
+      vc (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions)
+        (fun S0 res =>
+           wf_qc_state S0 ->
+           forall (Qfin : St),
+             (forall g j v, qc_entry (snd res) g j v -> qc_entry Qfin g j v) ->
+             map (fun ptr => let '(Build_erule_query_ptr _ _ f n cv_list) := ptr in
+                    let '(cargs,cv) := match map.get (map_map snd Qfin) f with
+                      | Some q_f => match map.get q_f n with Some c => c | None => ([],0) end
+                      | None => ([],0) end in
+                    Build_atom f (map (fun k => nth k cv_list idx_zero) cargs) (nth cv cv_list idx_zero))
+                 (fst res)
+               = assumptions).
   Proof.
     intros qvs NDqvs assumptions.
-    induction assumptions as [|a rest IH].
-    - intros. cbn [list_Mmap Mbind Mret StateMonad.state_monad fst map]. reflexivity.
-    - intros Hsub S0 Hwf0 Qfin Hmono.
+    induction assumptions as [|a rest IH]; unfold vc in *.
+    - intros Hsub S0; cbn beta; intros Hwf0 Qfin Hmono. cbn [list_Mmap Mbind Mret StateMonad.state_monad fst map]. reflexivity.
+    - intros Hsub S0; cbn beta; intros Hwf0 Qfin Hmono.
       cbn [list_Mmap Mbind Mret StateMonad.state_monad].
       destruct (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs a S0) as [ptr S1] eqn:Hcqc.
       destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) rest S1) as [ptrs S2] eqn:Hrec.
       cbn [fst map].
       assert (HS1_snd : S1 = snd (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs a S0)) by (rewrite Hcqc; reflexivity).
-      assert (Hwf_S1 : wf_qc_state S1) by (rewrite HS1_snd; apply (compile_query_clause_preserves_wf Hlts Hltt qvs a S0 Hwf0)).
+      assert (Hwf_S1 : wf_qc_state S1).
+      { pose proof (compile_query_clause_preserves_wf Hlts Hltt qvs a) as Hcw.
+        unfold vc in Hcw. specialize (Hcw S0). rewrite Hcqc in Hcw. cbn [snd] in Hcw.
+        exact (Hcw Hwf0). }
       assert (Hmono' : forall g0 j0 v0,
           qc_entry (snd (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) rest S1)) g0 j0 v0
           -> qc_entry Qfin g0 j0 v0).
@@ -4068,14 +4099,17 @@ Section WithMap.
       assert (HS1'_eq : S1' = S1).
       { injection Hcqc; intros HS _. exact HS. }
       cbn. rewrite Hptr_eq. cbn.
-      pose proof (hash_clause_sets cc S0) as Hsets.
+      pose proof (hash_clause_sets cc) as Hsets.
+      unfold vc in Hsets. specialize (Hsets S0).
       cbn [Defs.atom_fn Defs.atom_args Defs.atom_ret] in Hsets.
       assert (HS1'snd : S1' = snd (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S0)) by (rewrite Hhc; reflexivity).
       assert (Hi_eq : i = fst (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S0)) by (rewrite Hhc; reflexivity).
       rewrite <- HS1'snd, <- Hi_eq in Hsets.
       rewrite HS1'_eq in Hsets.
       assert (Hwf_S1' : wf_qc_state S1').
-      { rewrite HS1'snd. apply (hash_clause_preserves_wf Hlts Hltt cc S0 Hwf0). }
+      { rewrite HS1'snd.
+        pose proof (hash_clause_preserves_wf Hlts Hltt cc) as Hcw'.
+        unfold vc in Hcw'. specialize (Hcw' S0). exact (Hcw' Hwf0). }
       pose proof (proj2 (list_Mmap_qc_preserves
         (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs)
         (compile_query_clause_preserves_wf Hlts Hltt qvs)
@@ -4256,11 +4290,13 @@ Section WithMap.
   Qed.
 
   Lemma list_Mmap_state_in :
-    forall (X S Y : Type) (f : X -> state S Y) (xs : list X) (s0 : S) (y : Y),
-      In y (fst (list_Mmap f xs s0)) ->
-      exists x s s', In x xs /\ f x s = (y, s').
+    forall (X S Y : Type) (f : X -> state S Y) (xs : list X),
+      vc (list_Mmap f xs)
+         (fun s0 res =>
+            forall (y : Y), In y (fst res) ->
+              exists x s s', In x xs /\ f x s = (y, s')).
   Proof.
-    intros X S Y f xs.
+    intros X S Y f xs. unfold vc.
     induction xs as [|x xs IH].
     - intros s0 y Hin. cbn in Hin. destruct Hin.
     - intros s0 y Hin.
@@ -4283,10 +4319,11 @@ Section WithMap.
   Qed.
 
   Lemma list_Mmap_state_length :
-    forall (Xt St0 Yt : Type) (f : Xt -> state St0 Yt) (xs : list Xt) (s0 : St0),
-      List.length (fst (list_Mmap f xs s0)) = List.length xs.
+    forall (Xt St0 Yt : Type) (f : Xt -> state St0 Yt) (xs : list Xt),
+      vc (list_Mmap f xs)
+         (fun s0 res => List.length (fst res) = List.length xs).
   Proof.
-    intros Xt St0 Yt f xs.
+    intros Xt St0 Yt f xs. unfold vc.
     induction xs as [|x xs IH]; intros s0.
     - cbn. reflexivity.
     - cbn [list_Mmap Mbind Mret StateMonad.state_monad].
@@ -4363,16 +4400,20 @@ Section WithMap.
   Lemma list_Mmap_state_in_mono
     {Y : Type}
     (step : sequent -> state St Y)
-    (Hwf : forall a (S : St), wf_qc_state S -> wf_qc_state (snd (step a S)))
-    (Hmono : forall a (S : St), wf_qc_state S -> forall g j v, qc_entry S g j v -> qc_entry (snd (step a S)) g j v) :
-    forall (xs : list sequent) (s0 : St) (y : Y),
-      wf_qc_state s0 ->
-      In y (fst (list_Mmap step xs s0)) ->
-      exists x s s', In x xs /\ step x s = (y, s') /\ wf_qc_state s /\
-        (forall g j v, qc_entry s' g j v ->
-           qc_entry (snd (list_Mmap step xs s0)) g j v).
+    (Hwf : forall a, vc (step a) (fun S res => wf_qc_state S -> wf_qc_state (snd res)))
+    (Hmono : forall a, vc (step a) (fun S res => wf_qc_state S -> forall g j v, qc_entry S g j v -> qc_entry (snd res) g j v)) :
+    forall (xs : list sequent),
+      vc (list_Mmap step xs)
+        (fun s0 res =>
+           wf_qc_state s0 ->
+           forall (y : Y),
+             In y (fst res) ->
+             exists x s s', In x xs /\ step x s = (y, s') /\ wf_qc_state s /\
+               (forall g j v, qc_entry s' g j v ->
+                  qc_entry (snd res) g j v)).
   Proof.
-    induction xs as [|x xs' IH]; intros s0 y Hwf0 Hin.
+    unfold vc in *.
+    induction xs as [|x xs' IH]; intros s0; cbn beta; intros Hwf0 y Hin.
     - cbn [list_Mmap Mbind Mret StateMonad.state_monad fst] in Hin. destruct Hin.
     - cbn [list_Mmap Mbind Mret StateMonad.state_monad] in Hin.
       destruct (step x s0) as [y0 s1] eqn:Hstep.
@@ -4382,6 +4423,7 @@ Section WithMap.
       assert (Hs1wf : wf_qc_state s1).
       { assert (Heqs1 : s1 = snd (step x s0)) by (rewrite Hstep; reflexivity).
         rewrite Heqs1. exact (Hwf x s0 Hwf0). }
+      (* Hwf is vc-shaped: [Hwf x s0] is [wf_qc_state s0 -> wf_qc_state (snd (step x s0))]. *)
       assert (Hs2 : s2 = snd (list_Mmap step xs' s1)).
       { rewrite Hrec. reflexivity. }
       assert (Hsnd_total : snd (list_Mmap step (x :: xs') s0) = s2).
@@ -4400,7 +4442,7 @@ Section WithMap.
       + (* tail case: y in ys *)
         assert (Hin' : In y (fst (list_Mmap step xs' s1))).
         { rewrite Hrec. cbn [fst]. exact Hin. }
-        specialize (IH s1 y Hs1wf Hin') as (x' & s & s' & Hxin & Hstep' & Hwfs & Hmono').
+        specialize (IH s1 Hs1wf y Hin') as (x' & s & s' & Hxin & Hstep' & Hwfs & Hmono').
         exists x', s, s'.
         split. { right. exact Hxin. }
         split. { exact Hstep'. }
@@ -4442,9 +4484,9 @@ Section WithMap.
     rewrite Hcrs in Hin.
     pose proof (list_Mmap_state_in_mono
       (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf)
-      (fun a S HS => compile_rule_preserves_wf Hlts Hltt Hlti rf a S HS)
-      (fun a S HS g j v Hentry => compile_rule_mono Hlts Hltt Hlti rf a S HS g j v Hentry)
-      rules map.empty (inl er) wf_qc_state_empty Hin)
+      (compile_rule_preserves_wf Hlts Hltt Hlti rf)
+      (compile_rule_mono Hlts Hltt Hlti rf)
+      rules map.empty wf_qc_state_empty (inl er) Hin)
       as (rule & st0 & st1 & Hrule_in & Hcompile & Hwf0 & Hmono_fin).
     exists rule, st0, st1.
     split. { exact Hrule_in. }
@@ -4711,23 +4753,22 @@ Section WithMap.
     (forall rule, In rule rules ->
        model_satisfies_rule m
          (QueryOpt.optimize_sequent idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rule rf)) ->
-    forall (i : idx_map (Semantics.domain symbol m))
-           (e : Defs.instance idx symbol symbol_map idx_map idx_trie A),
-      egraph_ok idx lt symbol symbol_map idx_map idx_trie A e ->
-      egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie A m i e ->
-      egraph_ok idx lt symbol symbol_map idx_map idx_trie A
-        (snd (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie A
-                (build_rule_set idx_succ idx_zero rf rules) e))
-      /\ exists i', map.extends i' i
-                    /\ egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie A m i'
-                         (snd (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie A
-                                 (build_rule_set idx_succ idx_zero rf rules) e)).
+    forall (i : idx_map (Semantics.domain symbol m)),
+      vc (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie A
+            (build_rule_set idx_succ idx_zero rf rules))
+        (fun e res =>
+           egraph_ok idx lt symbol symbol_map idx_map idx_trie A e ->
+           egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie A m i e ->
+           egraph_ok idx lt symbol symbol_map idx_map idx_trie A (snd res)
+           /\ exists i', map.extends i' i
+                         /\ egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie A m i'
+                              (snd res)).
   Proof.
-    intros Hmsr i e Hok Hsnd.
+    intros Hmsr i.
     exact (SemanticsExecConst.process_const_rules_sound (analysis_result := A) (H := HA)
-             Hlti Hlts Hltt Hm (build_rule_set idx_succ idx_zero rf rules)
+             Hlti Hlts Hltt (build_rule_set idx_succ idx_zero rf rules)
              (fun cr Hin => compile_rule_inr_const_sound m Hm rf rules cr Hmsr Hin)
-             i e Hok Hsnd).
+             i).
   Qed.
 
   (* ============================================================== *)
@@ -4768,24 +4809,26 @@ Section WithMap.
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt) :
     forall (qvs : list idx) (NDqvs : NoDup qvs)
            (assumptions : list (Defs.atom idx symbol))
-           (Hsub : forall a, In a assumptions -> forall x, In x (Defs.atom_ret a :: Defs.atom_args a) -> In x qvs)
-           (S0 : St) (Hwf0 : wf_qc_state S0)
-           (Qfin : St)
-           (Hmono : forall g j v,
-              qc_entry (snd (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions S0)) g j v -> qc_entry Qfin g j v),
-      forall fsym nptr cvars,
-        In (Build_erule_query_ptr idx symbol fsym nptr cvars)
-           (fst (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions S0)) ->
-        exists cargs cv out args,
-          qc_entry Qfin fsym nptr (cargs, cv)
-          /\ incl (out :: args) qvs
-          /\ cvars = filter (fun x => inb x (out :: args)) qvs
-          /\ cargs = map (named_list_lookup 0 (combine cvars (seq 0 (length cvars)))) args
-          /\ cv = named_list_lookup 0 (combine cvars (seq 0 (length cvars))) out
-          /\ (forall t, In t cargs -> t < length cvars)
-          /\ cv < length cvars.
+           (Hsub : forall a, In a assumptions -> forall x, In x (Defs.atom_ret a :: Defs.atom_args a) -> In x qvs),
+      vc (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions)
+        (fun S0 res =>
+           wf_qc_state S0 ->
+           forall (Qfin : St),
+             (forall g j v, qc_entry (snd res) g j v -> qc_entry Qfin g j v) ->
+             forall fsym nptr cvars,
+               In (Build_erule_query_ptr idx symbol fsym nptr cvars) (fst res) ->
+               exists cargs cv out args,
+                 qc_entry Qfin fsym nptr (cargs, cv)
+                 /\ incl (out :: args) qvs
+                 /\ cvars = filter (fun x => inb x (out :: args)) qvs
+                 /\ cargs = map (named_list_lookup 0 (combine cvars (seq 0 (length cvars)))) args
+                 /\ cv = named_list_lookup 0 (combine cvars (seq 0 (length cvars))) out
+                 /\ (forall t, In t cargs -> t < length cvars)
+                 /\ cv < length cvars).
   Proof.
-    induction assumptions as [|a rest IH]; intros Hsub S0 Hwf0 Qfin Hmono fsym nptr cvars Hin.
+    intros qvs NDqvs assumptions.
+    induction assumptions as [|a rest IH]; unfold vc in *;
+      intros Hsub S0; cbn beta; intros Hwf0 Qfin Hmono fsym nptr cvars Hin.
     - cbn [list_Mmap Mbind Mret StateMonad.state_monad fst] in Hin. destruct Hin.
     - cbn [list_Mmap Mbind Mret StateMonad.state_monad] in Hin.
       destruct (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs a S0) as [ptr S1] eqn:Hcqc.
@@ -4801,7 +4844,9 @@ Section WithMap.
         rewrite Hrec in Hentry; cbn [snd] in Hentry. exact Hentry. }
       assert (Hwf_S1_gen : wf_qc_state S1).
       { assert (HS1snd : S1 = snd (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs a S0)) by (rewrite Hcqc; reflexivity).
-        rewrite HS1snd. apply (compile_query_clause_preserves_wf Hlts Hltt qvs a S0 Hwf0). }
+        rewrite HS1snd.
+        pose proof (compile_query_clause_preserves_wf Hlts Hltt qvs a) as Hcw0.
+        unfold vc in Hcw0. specialize (Hcw0 S0). exact (Hcw0 Hwf0). }
       destruct Hin as [Heq | Hrest].
       + destruct a as [f args out].
         unfold compile_query_clause in Hcqc.
@@ -4820,8 +4865,11 @@ Section WithMap.
         subst fsym. subst nptr. subst cvars.
         assert (Hwf_S1 : wf_qc_state S1).
         { assert (HS1snd : S1 = snd (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S0)) by (rewrite Hhc; reflexivity).
-          rewrite HS1snd. apply (hash_clause_preserves_wf Hlts Hltt cc S0 Hwf0). }
-        pose proof (hash_clause_sets cc S0) as Hsets.
+          rewrite HS1snd.
+          pose proof (hash_clause_preserves_wf Hlts Hltt cc) as Hcw1.
+          unfold vc in Hcw1. specialize (Hcw1 S0). exact (Hcw1 Hwf0). }
+        pose proof (hash_clause_sets cc) as Hsets.
+        unfold vc in Hsets. specialize (Hsets S0).
         assert (Hi_eq : i = fst (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S0)) by (rewrite Hhc; reflexivity).
         assert (HS1snd2 : S1 = snd (hash_clause idx idx_succ idx_zero symbol symbol_map idx_map cc S0)) by (rewrite Hhc; reflexivity).
         rewrite <- HS1snd2, <- Hi_eq in Hsets.
@@ -5775,16 +5823,17 @@ Section WithMap.
     (Hlts : forall x, lt x (idx_succ x))
     (Hltt : Transitive lt)
     (cs : list (Semantics.clause idx symbol))
-    (sub0 : named_list idx idx)
-    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
-    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
-    | (_, sub1, e1) =>
-        idx_le ((equiv e0).(next _ _ _)) ((equiv e1).(next _ _ _))
-        /\ (forall x y, In (x, y) sub1 ->
-              In (x, y) sub0 \/ idx_le ((equiv e0).(next _ _ _)) y)
-    end.
+    (sub0 : named_list idx idx) :
+    vc (clauses_to_instance idx_succ (analysis_result:=unit) cs sub0)
+       (fun e0 res =>
+          match res with
+          | (_, sub1, e1) =>
+              idx_le ((equiv e0).(next _ _ _)) ((equiv e1).(next _ _ _))
+              /\ (forall x y, In (x, y) sub1 ->
+                    In (x, y) sub0 \/ idx_le ((equiv e0).(next _ _ _)) y)
+          end).
   Proof.
-    revert sub0 e0.
+    unfold vc. revert sub0.
     induction cs as [|c cs IH]; intros sub0 e0.
     - cbn. split.
       + apply idx_le_refl.
@@ -5822,18 +5871,20 @@ Section WithMap.
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
     (cs : list (Semantics.clause idx symbol))
     (sub0 : named_list idx idx)
-    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
     (x y : idx) :
-    (exists roots, UnionFind.union_find_ok lt (equiv e0) roots) ->
-    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
-    | (_, sub1, _) =>
-        In (x, y) sub1 ->
-        ~ In x (map fst sub0) ->
-        ~ Sep.has_key y (parent (equiv e0))
-    end.
+    vc (clauses_to_instance idx_succ (analysis_result:=unit) cs sub0)
+       (fun e0 res =>
+          (exists roots, UnionFind.union_find_ok lt (equiv e0) roots) ->
+          match res with
+          | (_, sub1, _) =>
+              In (x, y) sub1 ->
+              ~ In x (map fst sub0) ->
+              ~ Sep.has_key y (parent (equiv e0))
+          end).
   Proof.
-    intros [roots Hok].
-    pose proof (clauses_to_instance_next_invariant Hlts Hltt cs sub0 e0) as Hinv.
+    unfold vc; intro e0. cbn beta. intros [roots Hok].
+    pose proof (clauses_to_instance_next_invariant Hlts Hltt cs sub0) as Hinv.
+    unfold vc in Hinv. specialize (Hinv e0).
     destruct (clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0)
       as [ [u sub1] e1] eqn:Hctc.
     cbn [fst snd] in Hinv |- *.
@@ -5993,15 +6044,16 @@ Section WithMap.
   Lemma clauses_to_instance_sub_in_domain
     (cs : list (Semantics.clause idx symbol))
     (sub0 : named_list idx idx)
-    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
     (x y : idx) :
-    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
-    | (_, sub1, _) =>
-        In (x, y) sub1 ->
-        In x (map fst sub0) \/ In x (flat_map (clause_vars idx symbol) cs)
-    end.
+    vc (clauses_to_instance idx_succ (analysis_result:=unit) cs sub0)
+       (fun e0 res =>
+          match res with
+          | (_, sub1, _) =>
+              In (x, y) sub1 ->
+              In x (map fst sub0) \/ In x (flat_map (clause_vars idx symbol) cs)
+          end).
   Proof.
-    revert sub0 e0.
+    unfold vc. revert sub0.
     induction cs as [|c cs IH]; intros sub0 e0.
     - cbn. intros Hxy. left. exact (in_map fst sub0 (x,y) Hxy).
     - cbn [Semantics.clauses_to_instance list_Miter].
@@ -6105,7 +6157,8 @@ Section WithMap.
     assert (Hsub_mono : forall z w, named_list_lookup_err sub1 z = Some w ->
        named_list_lookup_err sub2 z = Some w)
       by (intros z w Hzw;
-          pose proof (clauses_to_instance_sub_mono (seq_conclusions s) sub1 e_assum z w Hzw) as Hmm;
+          pose proof (clauses_to_instance_sub_mono (seq_conclusions s) sub1 z w) as Hmm;
+          unfold vc in Hmm; specialize (Hmm e_assum Hzw);
           rewrite Hcti_c in Hmm; exact Hmm).
     assert (Hvars_sub2 : forall a, In a atoms -> forall x, In x (atom_ret a :: atom_args a) ->
        exists y, named_list_lookup_err sub2 x = Some y)
@@ -6133,12 +6186,13 @@ Section WithMap.
     destruct (Semantics.empty_sound_for_interpretation idx lt idx_succ idx_zero symbol symbol_map
                 symbol_map_ok idx_map idx_map_ok idx_trie unit m) as [Hok_empty Hsnd_empty].
     pose proof (clauses_to_instance_preserves_ok Hlti Hlts Hltt m Hm (map atom_clause atoms) []
-       (empty_egraph idx_zero unit) (map.empty : idx_map (domain symbol m)) a_src
-       Hok_empty Hsnd_empty
-       ltac:(intros ? ? []) ltac:(intros ? ? []) Hsrc_assum) as Hpo_a.
+       (map.empty : idx_map (domain symbol m)) a_src) as Hpo_a.
+    unfold vc in Hpo_a. specialize (Hpo_a (empty_egraph idx_zero unit)).
     rewrite Hcti_a in Hpo_a.
+    specialize (Hpo_a Hok_empty Hsnd_empty
+       ltac:(intros ? ? []) ltac:(intros ? ? []) Hsrc_assum).
     destruct Hpo_a as [Hok_e1 [i_e1 [Hext_e1 [Hsnd_e1 [Hren_e1 Hdom_e1] ] ] ] ].
-    pose proof (@Semantics.rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok unit _ m Hm (fun _ => True) RFUEL) as Hrs_a.
+    pose proof (@Semantics.rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok unit _ m Hm RFUEL) as Hrs_a.
     unfold vc in Hrs_a. specialize (Hrs_a e1). rewrite Hrb_a in Hrs_a. cbn [snd] in Hrs_a.
     specialize (Hrs_a Hok_e1). destruct Hrs_a as [Hok_assum Hde_a].
     pose proof (proj1 (Hde_a i_e1) Hsnd_e1) as Hsnd_assum.
@@ -6193,8 +6247,8 @@ Section WithMap.
         apply in_map_iff in Hin_keys.
         destruct Hin_keys as ((x' & y') & Hxeq & Hin_pair).
         cbn [fst] in Hxeq. subst x'.
-        pose proof (clauses_to_instance_sub_in_domain (map atom_clause atoms) []
-                      (empty_egraph idx_zero unit) x y') as Hsd.
+        pose proof (clauses_to_instance_sub_in_domain (map atom_clause atoms) [] x y') as Hsd.
+        unfold vc in Hsd. specialize (Hsd (empty_egraph idx_zero unit)).
         rewrite Hcti_a in Hsd. specialize (Hsd Hin_pair).
         unfold forall_vars. rewrite Hassum.
         destruct Hsd as [Hnil | Hfv]; [ destruct Hnil | exact Hfv ].
@@ -6204,9 +6258,10 @@ Section WithMap.
           by (intro Hc;
               apply (@inb_is_In idx Eqb_idx Eqb_idx_ok) in Hc;
               rewrite Hib in Hc; exact Hc).
-        pose proof (clauses_to_instance_new_key_fresh Hlti Hlts Hltt (seq_conclusions s) sub1 e_assum x y
-                      (Semantics.egraph_equiv_ok _ _ _ _ _ _ _ _ Hok_assum)) as Hfresh.
+        pose proof (clauses_to_instance_new_key_fresh Hlti Hlts Hltt (seq_conclusions s) sub1 x y) as Hfresh.
+        unfold vc in Hfresh. specialize (Hfresh e_assum).
         rewrite Hcti_c in Hfresh.
+        specialize (Hfresh (Semantics.egraph_equiv_ok _ _ _ _ _ _ _ _ Hok_assum)).
         exact (Hfresh Hin_xy Hnin Hy_assum). }
     unfold model_satisfies_rule in Hsat.
     specialize (Hsat a_src Hkeys_src Hconf_src Hsrc_assum_s).
@@ -6214,8 +6269,8 @@ Section WithMap.
     (* a_src is defined on every key of sub1 (sub1 keys are source vars). *)
     assert (Ha_src_sub1_def : forall x y, In (x,y) sub1 -> exists d, map.get a_src x = Some d)
       by (intros x y Hxy;
-          pose proof (clauses_to_instance_sub_in_domain (map atom_clause atoms) []
-                        (empty_egraph idx_zero unit) x y) as Hdom;
+          pose proof (clauses_to_instance_sub_in_domain (map atom_clause atoms) [] x y) as Hdom;
+          unfold vc in Hdom; specialize (Hdom (empty_egraph idx_zero unit));
           rewrite Hcti_a in Hdom; specialize (Hdom Hxy);
           assert (Hin_fv : In x (forall_vars s))
             by (unfold forall_vars; rewrite Hassum;
@@ -6237,16 +6292,19 @@ Section WithMap.
       pose proof (Hren_e1 x y Hxy d0 Ha0) as Hi.
       apply (Semantics.interpretation_exact _ _ _ _ _ _ _ _ _ Hsnd_assum y).
       rewrite Hi; exact I. }
-    pose proof (clauses_to_instance_preserves_ok Hlti Hlts Hltt m Hm (seq_conclusions s) sub1 e_assum i_e1 a_src'
-       Hok_assum Hsnd_assum Hren_in Hsubdom_c Hconcl_src') as Hpo_c.
+    pose proof (clauses_to_instance_preserves_ok Hlti Hlts Hltt m Hm (seq_conclusions s) sub1 i_e1 a_src') as Hpo_c.
+    unfold vc in Hpo_c. specialize (Hpo_c e_assum).
     rewrite Hcti_c in Hpo_c.
+    specialize (Hpo_c Hok_assum Hsnd_assum Hren_in Hsubdom_c Hconcl_src').
     destruct Hpo_c as [Hok_c0 [i_c [Hext_c [Hsnd_c0 [Hren_c Hdom_c] ] ] ] ].
-    pose proof (@Semantics.rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok unit _ m Hm (fun _ => True) RFUEL) as Hrs_c.
+    pose proof (@Semantics.rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok unit _ m Hm RFUEL) as Hrs_c.
     unfold vc in Hrs_c. specialize (Hrs_c e_c0). rewrite Hrb_c in Hrs_c. cbn [snd] in Hrs_c.
     specialize (Hrs_c Hok_c0). destruct Hrs_c as [Hok_c1 Hde_c].
     pose proof (proj1 (Hde_c i_c) Hsnd_c0) as Hsnd_c1.
-    pose proof (force_equiv_preserves_sound m i_c e_c1 (Semantics.egraph_equiv_ok _ _ _ _ _ _ _ _ Hok_c1) Hsnd_c1) as Hsnd_fe.
+    pose proof (force_equiv_preserves_sound m i_c) as Hsnd_fe.
+    unfold vc in Hsnd_fe. specialize (Hsnd_fe e_c1).
     rewrite Hfe_c in Hsnd_fe. cbn [snd] in Hsnd_fe.
+    specialize (Hsnd_fe (Semantics.egraph_equiv_ok _ _ _ _ _ _ _ _ Hok_c1) Hsnd_c1).
     (* Steps 8-9: the final witness [map.putmany i_c a_opt] extends a_opt and
        agrees with i_c on i_c's domain (adversary match); read back the
        optimized conclusions soundly under i_c. *)
@@ -6286,11 +6344,12 @@ Section WithMap.
             (in_map (fun q => @eq_clause idx symbol (fst q) (snd q)) _ _ Hp)) as Hsp;
           cbn [uncurry fst snd] in Hsp |- *; exact Hsp
         | apply SemanticsUtil.all_map_in; intros a0 Ha0;
+          pose proof (@QueryOpt.incl_remove_atoms idx Eqb_idx Eqb_idx_ok lt symbol Eqb_symbol Eqb_symbol_ok
+                 symbol_map symbol_map_ok idx_map idx_trie idx_trie_ok unit AA) as Hira;
+          unfold vc in Hira; specialize (Hira e_c2); cbn [snd] in Hira;
           exact (in_all (clause_sound_for_model idx symbol idx_map m i_c) _ _
             (db_to_atoms_sound m i_c e_c2 Hsnd_fe)
-            (in_map (@atom_clause idx symbol) _ _
-              (@QueryOpt.incl_remove_atoms idx Eqb_idx Eqb_idx_ok lt symbol Eqb_symbol Eqb_symbol_ok
-                 symbol_map symbol_map_ok idx_map idx_trie idx_trie_ok unit AA e_c2 a0 Ha0))) ] ].
+            (in_map (@atom_clause idx symbol) _ _ (Hira a0 Ha0))) ] ].
   Qed.
 
   (* ================================================================ *)

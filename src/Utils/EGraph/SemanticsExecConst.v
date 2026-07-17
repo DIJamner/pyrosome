@@ -18,14 +18,14 @@ Lemma exec_write_sound
   (idx_map : forall A, map.map idx A) (idx_map_ok : forall A, map.ok (idx_map A))
   (idx_trie : forall A, map.map (list idx) A) (idx_trie_ok : forall A, map.ok (idx_trie A))
   (analysis_result : Type) (H : analysis idx symbol analysis_result) (m : model symbol)
-  (Hm_sec : model_ok symbol m)
   (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
   (Hm : model_ok symbol m)
   (i : idx_map (domain symbol m))
   (r : erule idx symbol) (assignment : list idx)
-  (e : instance idx symbol symbol_map idx_map idx_trie analysis_result)
   (a_src : idx_map (domain symbol m)) :
   let env0 := map.of_list (combine (query_vars idx symbol r) assignment) in
+  vc (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r assignment)
+    (fun e res =>
   List.NoDup (write_vars idx symbol r) ->
   (forall x, In x (write_vars idx symbol r) -> map.get env0 x = None) ->
   (forall x, In x (write_vars idx symbol r) ->
@@ -42,15 +42,14 @@ Lemma exec_write_sound
   all (fun p => eq_sound_for_model idx symbol idx_map m a_src (fst p) (snd p)) (write_unifications idx symbol r) ->
   egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e ->
   egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i e ->
-  match exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r assignment e with
-  | (_, e') =>
-      egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e'
-      /\ (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
+      egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result (snd res)
+      /\ (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv (snd res))))
       /\ exists i', map.extends i' i
-                    /\ egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i' e'
-  end.
+                    /\ egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i' (snd res)).
 Proof.
-  intros env0 Hnodup Hfresh Hwf_wv Hcons Hcov_c Hcov_u Hsnd_c Hsnd_u Hok Hsnd.
+  intro env0.
+  unfold vc; intro e.
+  intros Hnodup Hfresh Hwf_wv Hcons Hcov_c Hcov_u Hsnd_c Hsnd_u Hok Hsnd.
   unfold exec_write.
   pose proof (@allocate_existential_vars_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result m Hlti Hlts Hltt a_src (write_vars idx symbol r) i env0) as Halloc.
   unfold vc in Halloc.
@@ -124,9 +123,11 @@ Proof.
                    /\ map.get i1 v = map.get a_src x).
       { intros x Hx. destruct (Hcons_cs c (or_introl eq_refl) x Hx) as (v & Hev & Hkv & Hiv).
         exists v. split; [exact Hev|]. split; [exact (Hmono_cur v Hkv)|]. exact Hiv. }
-      pose proof (@exec_clause_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm i1 env c a_src e_cur Hok_cur Hsnd_cur Hcc
-                    (Hsnd_cs c (or_introl eq_refl))) as Hec.
+      pose proof (@exec_clause_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm i1 env c a_src) as Hec.
+      unfold vc in Hec. specialize (Hec e_cur).
       destruct (exec_clause idx Eqb_idx idx_zero symbol symbol_map idx_map idx_trie analysis_result env c e_cur) as [u e_mid] eqn:Hec_eq.
+      cbn [snd] in Hec.
+      specialize (Hec Hok_cur Hsnd_cur Hcc (Hsnd_cs c (or_introl eq_refl))).
       destruct Hec as (Hok_mid & Hsnd_mid & Hkeys_mid).
       pose proof (IHcs (fun c0 Hc0 => Hsnd_cs c0 (or_intror Hc0))
                        (fun c0 Hc0 => Hcons_cs c0 (or_intror Hc0))
@@ -181,11 +182,16 @@ Proof.
       cbn [Mseq Mbind Mret StateMonad.state_monad].
       rewrite Hevx, Hevy. cbn [unwrap_with_default].
       pose proof Hok_cur as Hok_cur2. destruct Hok_cur2 as [Hroots_cur _ _ _].
-      pose proof (@union_preserves_egraph_ok_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H vx vy e_cur Hok_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy)) as Hok_mid.
-      pose proof (@union_preserves_sound_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H m Hm vx vy i1 e_cur Hok_cur Hsnd_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy) Hequ) as Hsnd_mid.
-      pose proof (fun z Hz => @union_extends_keys_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H vx vy e_cur Hroots_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy) z Hz) as Hkeys_mid.
+      pose proof (@union_preserves_egraph_ok_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H vx vy) as Hok_mid.
+      pose proof (@union_preserves_sound_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H m Hm vx vy i1) as Hsnd_mid.
+      pose proof (@union_extends_keys_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H vx vy) as Hkeys_mid.
+      unfold vc in Hok_mid, Hsnd_mid, Hkeys_mid.
+      specialize (Hok_mid e_cur). specialize (Hsnd_mid e_cur). specialize (Hkeys_mid e_cur).
       destruct (Defs.union vx vy e_cur) as [vu e_mid] eqn:Hu_eq.
       cbn [snd] in Hok_mid, Hsnd_mid, Hkeys_mid.
+      specialize (Hok_mid Hok_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy)).
+      specialize (Hsnd_mid Hok_cur Hsnd_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy) Hequ).
+      specialize (Hkeys_mid Hroots_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy)).
       pose proof (IHps (fun p0 Hp0 => Hcons_ps p0 (or_intror Hp0)) e_mid Hok_mid Hsnd_mid
                    (fun z Hz => Hkeys_mid z (Hmono_cur z Hz))) as HIH.
       destruct (list_Miter (fun '(x,y) => Defs.union (unwrap_with_default (map.get env x)) (unwrap_with_default (map.get env y))) ps' e_mid) as [vu2 e3] eqn:Hlm3.
@@ -219,10 +225,11 @@ Section Slice.
 
   Lemma exec_const_sound
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
-    (Hm2 : model_ok symbol m)
     (i : idx_map (domain symbol m))
-    (r : const_rule idx symbol) (e : instance)
+    (r : const_rule idx symbol)
     (a_src : idx_map (domain symbol m)) :
+    vc (exec_const idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r)
+      (fun e res =>
     List.NoDup (const_vars idx symbol r) ->
     (forall x, In x (const_vars idx symbol r) ->
         exists d, map.get a_src x = Some d /\ domain_wf symbol m d) ->
@@ -234,14 +241,12 @@ Section Slice.
     all (fun p => eq_sound_for_model idx symbol idx_map m a_src (fst p) (snd p)) (const_unifications idx symbol r) ->
     egraph_ok e ->
     egraph_sound_for_interpretation i e ->
-    match exec_const idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r e with
-    | (_, e') =>
-        egraph_ok e'
-        /\ (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
+        egraph_ok (snd res)
+        /\ (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv (snd res))))
         /\ exists i', map.extends i' i
-                      /\ egraph_sound_for_interpretation i' e'
-    end.
+                      /\ egraph_sound_for_interpretation i' (snd res)).
   Proof.
+    unfold vc; intro e.
     intros Hnodup Hwf_wv Hcov_c Hcov_u Hsnd_c Hsnd_u Hok Hsnd.
     unfold exec_const.
     pose proof (@allocate_existential_vars_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result m Hlti Hlts Hltt a_src (const_vars idx symbol r) i map.empty) as Halloc.
@@ -306,9 +311,11 @@ Section Slice.
                          /\ map.get i1 v = map.get a_src x)
               by (intros x Hx; destruct (Hcons_cs c (or_introl eq_refl) x Hx) as (v & Hev & Hkv & Hiv);
                   exists v; split; [exact Hev|]; split; [exact (Hmono_cur v Hkv)|]; exact Hiv);
-            pose proof (@exec_clause_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm i1 env c a_src e_cur Hok_cur Hsnd_cur Hcc
-                          (Hsnd_cs c (or_introl eq_refl))) as Hec;
+            pose proof (@exec_clause_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok analysis_result H m Hm i1 env c a_src) as Hec;
+            unfold vc in Hec; specialize (Hec e_cur);
             destruct (exec_clause idx Eqb_idx idx_zero symbol symbol_map idx_map idx_trie analysis_result env c e_cur) as [u e_mid] eqn:Hec_eq;
+            cbn [snd] in Hec;
+            specialize (Hec Hok_cur Hsnd_cur Hcc (Hsnd_cs c (or_introl eq_refl)));
             destruct Hec as (Hok_mid & Hsnd_mid & Hkeys_mid);
             pose proof (IHcs (fun c0 Hc0 => Hsnd_cs c0 (or_intror Hc0))
                              (fun c0 Hc0 => Hcons_cs c0 (or_intror Hc0))
@@ -361,11 +368,16 @@ Section Slice.
             cbn [Mseq Mbind Mret StateMonad.state_monad];
             rewrite Hevx, Hevy; cbn [unwrap_with_default];
             pose proof Hok_cur as Hok_cur2; destruct Hok_cur2 as [Hroots_cur _ _ _];
-            pose proof (@union_preserves_egraph_ok_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H vx vy e_cur Hok_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy)) as Hok_mid;
-            pose proof (@union_preserves_sound_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H m Hm vx vy i1 e_cur Hok_cur Hsnd_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy) Hequ) as Hsnd_mid;
-            pose proof (fun z Hz => @union_extends_keys_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H vx vy e_cur Hroots_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy) z Hz) as Hkeys_mid;
+            pose proof (@union_preserves_egraph_ok_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H vx vy) as Hok_mid;
+            pose proof (@union_preserves_sound_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H m Hm vx vy i1) as Hsnd_mid;
+            pose proof (@union_extends_keys_sem idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result H vx vy) as Hkeys_mid;
+            unfold vc in Hok_mid, Hsnd_mid, Hkeys_mid;
+            specialize (Hok_mid e_cur); specialize (Hsnd_mid e_cur); specialize (Hkeys_mid e_cur);
             destruct (Defs.union vx vy e_cur) as [vu e_mid] eqn:Hu_eq;
             cbn [snd] in Hok_mid, Hsnd_mid, Hkeys_mid;
+            specialize (Hok_mid Hok_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy));
+            specialize (Hsnd_mid Hok_cur Hsnd_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy) Hequ);
+            specialize (Hkeys_mid Hroots_cur (Hmono_cur vx Hkvx) (Hmono_cur vy Hkvy));
             pose proof (IHps (fun p0 Hp0 => Hcons_ps p0 (or_intror Hp0)) e_mid Hok_mid Hsnd_mid
                          (fun z Hz => Hkeys_mid z (Hmono_cur z Hz))) as HIH;
             destruct (list_Miter (fun '(x,y) => Defs.union (unwrap_with_default (map.get env x)) (unwrap_with_default (map.get env y))) ps' e_mid) as [vu2 e3] eqn:Hlm3;
@@ -390,17 +402,18 @@ Section Slice.
 
   Lemma process_const_rules_sound
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
-    (Hm2 : model_ok symbol m)
     (rs : rule_set idx symbol symbol_map idx_map)
     (Hcr : forall r, In r (compiled_const_rules idx symbol symbol_map idx_map rs) -> exists a_src, const_rule_sound a_src r) :
-    forall (i : idx_map (domain symbol m)) e,
+    forall (i : idx_map (domain symbol m)),
+      vc (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result rs)
+        (fun e res =>
       egraph_ok e ->
       egraph_sound_for_interpretation i e ->
-      egraph_ok (snd (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result rs e))
+      egraph_ok (snd res)
       /\ exists i', map.extends i' i
-                    /\ egraph_sound_for_interpretation i' (snd (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result rs e)).
+                    /\ egraph_sound_for_interpretation i' (snd res)).
   Proof.
-    intros i e Hok Hsnd.
+    intros i. unfold vc; intro e. intros Hok Hsnd.
     unfold process_const_rules.
     set (crs := compiled_const_rules idx symbol symbol_map idx_map rs).
     assert (Hcr' : forall r, In r crs -> exists a_src, const_rule_sound a_src r)
@@ -413,9 +426,11 @@ Section Slice.
       exists i. split; [apply Properties.map.extends_refl|exact Hsnd].
     - cbn [list_Miter Mbind Mret StateMonad.state_monad fst snd].
       destruct (Hcr' cr (or_introl eq_refl)) as (a_src & Hnd & Hwf & Hcov_c & Hcov_u & Hsnd_c & Hsnd_u).
-      pose proof (exec_const_sound Hlti Hlts Hltt Hm2 i cr e a_src Hnd Hwf Hcov_c Hcov_u Hsnd_c Hsnd_u Hok Hsnd) as Hec.
+      pose proof (exec_const_sound Hlti Hlts Hltt i cr a_src) as Hec.
+      unfold vc in Hec. specialize (Hec e).
       destruct (exec_const idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result cr e) as [u1 e1] eqn:Hec_eq.
       cbn [fst snd] in Hec.
+      specialize (Hec Hnd Hwf Hcov_c Hcov_u Hsnd_c Hsnd_u Hok Hsnd).
       destruct Hec as (Hok1 & _Hmono1 & i1 & Hext1 & Hsnd1).
       assert (Hcr'_tail : forall r, In r crs' -> exists a_src, const_rule_sound a_src r)
         by (intros r Hr; exact (Hcr' r (or_intror Hr))).
