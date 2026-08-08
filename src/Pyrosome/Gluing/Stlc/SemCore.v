@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-From Pyrosome.Gluing.Stlc Require Import Model Normalization NormalForms Eqns LogRel RSub.
+From Pyrosome.Gluing.Stlc Require Import Syntax Normalization NormalForms Eqns LogRel RSub.
 Import Core.Notations.
 
 (* Layer 4, semantic core.

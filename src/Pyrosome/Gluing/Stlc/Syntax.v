@@ -12,7 +12,11 @@ From Pyrosome.Gluing.Stlc Require Import Normalization.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC.
 Import Core.Notations.
 
-(* Groundwork for the normalization model of [stlc ++ exp_subst ++ value_subst].
+(* The syntactic vocabulary of [stlc_unit]: an abbreviation for every sort and
+   term former, and the two predicates [TyOk]/[EnvOk] that carve out the index
+   syntax the normalization model is stated over.  Everything downstream --
+   normal forms, reducibility, the model itself -- is written in these
+   abbreviations rather than in raw [con]/[scon].
 
    DESIGN.  The meta-level context is closed ([c = []]); openness is carried at
    the object level by the environment [G], so an "open term in context G" is a

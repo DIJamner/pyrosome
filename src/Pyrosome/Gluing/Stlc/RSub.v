@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab.
-From Pyrosome.Gluing.Stlc Require Import Model Normalization Eqns NormalForms LogRel.
+From Pyrosome.Gluing.Stlc Require Import Syntax Normalization Eqns NormalForms LogRel.
 Import Core.Notations.
 
 (* ================================================================== *)

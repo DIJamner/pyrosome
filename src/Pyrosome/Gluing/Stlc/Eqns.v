@@ -8,14 +8,14 @@ Open Scope list.
 From Utils Require Import Utils Ltac.
 From Pyrosome Require Import Theory.Core Tools.Matches.
 From Pyrosome.Tools.EGraph Require Import Automation ComputeWf.
-From Pyrosome.Gluing.Stlc Require Import Model Normalization.
+From Pyrosome.Gluing.Stlc Require Import Syntax Normalization.
 Import Core.Notations.
 
 (* The equational toolkit for [stlc_unit].
 
    Each of the language's 18 equations is repackaged here as a directly usable
    lemma: the equation instance is stated with explicit term arguments in the
-   abbreviation vocabulary of Gluing/Stlc/Model.v ([Cmp], [Snoc], [ValSubst],
+   abbreviation vocabulary of Gluing/Stlc/Syntax.v ([Cmp], [Snoc], [ValSubst],
    ...), and carries exactly the well-formedness hypotheses the instantiation
    needs -- one [wf_term] per variable of the rule's context, at that variable's
    sort, already instantiated by the preceding arguments.  The congruence rules

@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
-From Pyrosome.Gluing.Stlc Require Import Model Normalization NormalForms Eqns LogRel RSub Ceq ModelCong ModelEq.
+From Pyrosome.Gluing.Stlc Require Import Syntax Normalization NormalForms Eqns LogRel RSub Ceq ModelCong ModelEq.
 Import Core.Notations.
 
 (* Layer 4c: assembly.
