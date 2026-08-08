@@ -394,7 +394,18 @@ with NfE : term -> Prop :=
 with NeE : term -> Prop :=
 | nee_varapp : forall G A B x n,
     Var x -> NfE n -> NeE (App G A B (Ret G (Arr A B) x) n)
-| nee_app : forall G A B e n, NeE e -> NfE n -> NeE (App G A B e n).
+| nee_app : forall G A B e n, NeE e -> NfE n -> NeE (App G A B e n)
+(* A normal function VALUE applied to a NEUTRAL argument is stuck: in this
+   CBV presentation [STLC-beta] fires only when BOTH sides are [ret]s, so
+   [app (ret (lambda A e)) n] with [n] neutral reduces to nothing.  Without
+   this clause the grammar is incomplete and the normalization theorem is
+   false.  The clause is stated for an ARBITRARY normal function value (not
+   just a lambda), which subsumes the lambda case and keeps [nee_varapp]
+   coherent; the two overlap exactly when [v] is a variable and [n] is
+   neutral.  [nee_varapp] is NOT subsumed: it allows a NON-neutral (normal)
+   argument, which is stuck only because the function is a variable. *)
+| nee_lamapp : forall G A B v n,
+    NfV v -> NeE n -> NeE (App G A B (Ret G (Arr A B) v) n).
 
 (* ---- weakenings ----
 
@@ -447,7 +458,16 @@ with NeET : term -> term -> term -> Prop :=
     VarT G (Arr A B) x -> NfET G A n ->
     NeET G B (App G A B (Ret G (Arr A B) x) n)
 | neet_app : forall G A B e n,
-    NeET G (Arr A B) e -> NfET G A n -> NeET G B (App G A B e n).
+    NeET G (Arr A B) e -> NfET G A n -> NeET G B (App G A B e n)
+(* The typed form of [nee_lamapp] (see the comment there).
+   The [TyOk B] premise is REQUIRED and cannot be dropped: without it
+   [NeET_TyOk] is FALSE.  [TyOk A] is recovered from the [NeET G A n]
+   premise by [NeET_TyOk] itself, but the codomain [B] is only visible
+   through [NfVT G (Arr A B) v], and [NfVT] admits no type-formation lemma
+   ([nfvt_lam] can bind an arbitrary, even ill-formed, domain type). *)
+| neet_lamapp : forall G A B v n,
+    NfVT G (Arr A B) v -> NeET G A n -> TyOk B ->
+    NeET G B (App G A B (Ret G (Arr A B) v) n).
 
 Scheme NfVT_min := Minimality for NfVT Sort Prop
   with NfET_min := Minimality for NfET Sort Prop
@@ -544,6 +564,8 @@ Proof.
   induction 1; intro HG.
   - apply (VarT_TyOk H) in HG; apply TyOk_Arr_inv in HG; tauto.
   - apply IHNeET in HG; apply TyOk_Arr_inv in HG; tauto.
+  - (* neet_lamapp: exactly what the [TyOk B] premise is there for *)
+    assumption.
 Qed.
 
 Lemma NfT_wf
@@ -567,6 +589,12 @@ Proof.
     apply TyOk_Arr_inv in HAB as [HA HB].
     apply wf_App; auto using EnvOk_wf, TyOk_wf.
     apply H0; [ auto | constructor; auto ].
+  - (* neet_lamapp *)
+    assert (TyOk A) as HA by (eapply NeET_TyOk; eassumption).
+    assert (wft n (Sexp G A)) as Hn by auto.
+    assert (wft v (Sval G (Arr A B))) as Hv
+        by (apply H0; [ auto | constructor; auto ]).
+    apply wf_App; auto using EnvOk_wf, TyOk_wf, wf_Ret, wf_Arr.
 Qed.
 
 Definition NfVT_wf := proj1 NfT_wf.
@@ -792,6 +820,17 @@ Proof.
     exists (App D A B e' n'); split; [ apply neet_app; assumption | ].
     eapply eq_term_trans; [ apply eq_exp_subst_app; wfa | ].
     apply cong_App; [ wfa | wfa | wfa | exact Heqe | exact Heqn ].
+  - (* neet_lamapp *)
+    assert (TyOk A) as HA by (eapply NeET_TyOk; eassumption).
+    edestruct H0 as [v' [Hv' Heqv]];
+      [ eassumption | eassumption | eassumption | constructor; assumption | ].
+    edestruct H2 as [n' [Hn' Heqn]]; try eassumption.
+    exists (App D A B (Ret D (Arr A B) v') n'); split.
+    + apply neet_lamapp; assumption.
+    + eapply eq_term_trans; [ apply eq_exp_subst_app; wfa | ].
+      apply cong_App; [ wfa | wfa | wfa | | exact Heqn ].
+      eapply eq_term_trans; [ apply eq_exp_subst_ret; wfa | ].
+      apply cong_Ret; [ wfa | wfa | exact Heqv ].
 Qed.
 
 Definition NfVT_wk := proj1 NfT_wk.
