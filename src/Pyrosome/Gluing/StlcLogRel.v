@@ -57,22 +57,32 @@ Qed.
    makes [CR_reify] hold with no hypothesis on [A].  The recursive
    occurrences of [RV]/[RE] are inlined here (curried, since the fixpoint
    cannot mention [RV] itself); [RV_unit_iff] and [RV_arr_iff] below state the
-   intended reading of the two clauses, and are proved by unfolding alone. *)
+   intended reading of the two clauses, and are proved by unfolding alone.
+
+   The match is on the ARGUMENT-LIST SHAPE first, and only then on the head
+   symbol (via [eqb], not a literal string pattern): a two-argument
+   constructor whose name is [->] gets the arrow clause, and every other
+   shape -- including a variable, a different two-argument constructor, or
+   [unit] -- falls through to [True].  Matching shape-first keeps [A0], the
+   recursive occurrence's structural subterm, exposed to the guardedness
+   checker regardless of which head symbol is actually there. *)
 Fixpoint RVarr (G A v : term) {struct A} : Prop :=
   match A with
-  | con "->" [B; A0] =>
-      forall D w u,
-        Wk D G w -> EnvOk D ->
-        (* [RV D A0 u], inlined *)
-        (exists n, NfVT D A0 n /\ eqt (Sval D A0) u n) ->
-        RVarr D A0 u ->
-        (* [RE D B (App D A0 B (Ret D A (w[v])) (Ret D A0 u))], inlined *)
-        exists m,
-          NfET D B m
-          /\ eqt (Sexp D B)
-               (App D A0 B (Ret D A (ValSubst D G w A v)) (Ret D A0 u)) m
-          /\ (forall v', m = Ret D B v' ->
-                (exists n, NfVT D B n /\ eqt (Sval D B) v' n) /\ RVarr D B v')
+  | con n [B; A0] =>
+      if eqb n "->" then
+        forall D w u,
+          Wk D G w -> EnvOk D ->
+          (* [RV D A0 u], inlined *)
+          (exists n, NfVT D A0 n /\ eqt (Sval D A0) u n) ->
+          RVarr D A0 u ->
+          (* [RE D B (App D A0 B (Ret D A (w[v])) (Ret D A0 u))], inlined *)
+          exists m,
+            NfET D B m
+            /\ eqt (Sexp D B)
+                 (App D A0 B (Ret D A (ValSubst D G w A v)) (Ret D A0 u)) m
+            /\ (forall v', m = Ret D B v' ->
+                  (exists n, NfVT D B n /\ eqt (Sval D B) v' n) /\ RVarr D B v')
+      else True
   | _ => True
   end.
 
@@ -103,7 +113,9 @@ Lemma RV_arr_iff G A B v
                         (Ret D (Arr A B) (ValSubst D G w (Arr A B) v))
                         (Ret D A u))).
 Proof.
-  unfold RV, RE, Arr; cbn [RVarr]; split; intros [H1 H2]; (split; [exact H1|]).
+  unfold RV, RE, Arr; cbn [RVarr].
+  destruct (eqb_boolspec _ "->" "->") as [_|Hne]; [ | contradiction ].
+  split; intros [H1 H2]; (split; [exact H1|]).
   - intros D w u Hw HD [Hu1 Hu2]; apply H2; assumption.
   - intros D w u Hw HD Hu1 Hu2; apply H2; try assumption; split; assumption.
 Qed.
@@ -166,43 +178,43 @@ Proof.
   eapply eq_term_trans; [ apply eq_term_sym; exact Heq' | exact Heq ].
 Qed.
 
+(* Closure of [RV] under provable equality needs no [EnvOk]/[TyOk] side
+   condition, unlike a first glance at the arrow clause's Kripke quantifier
+   might suggest: inverting the SORT of the reducible value at hand
+   ([wft_val_inv], Gluing/StlcNormalForms.v) recovers well-formedness of its
+   indices directly, without ever needing to know they are [EnvOk]/[TyOk]. *)
 Lemma RV_eq G A v v'
-  : EnvOk G -> TyOk A -> RV G A v -> eqt (Sval G A) v v' -> RV G A v'.
+  : RV G A v -> eqt (Sval G A) v v' -> RV G A v'.
 Proof.
-  intros HG HA Hv Heq.
-  assert (wft v (Sval G A)) as Hwv by (eapply RV_wf; eassumption).
-  assert (wft v' (Sval G A)) as Hwv' by (eapply eqt_wf_r; eassumption).
-  destruct (CR_reify Hv) as [n [Hn Hvn]].
+  intros Hv Heq.
   assert (exists n, NfVT G A n /\ eqt (Sval G A) v' n) as Hnf'.
-  { exists n; split; [ exact Hn | ].
+  { destruct (CR_reify Hv) as [n [Hn Hvn]]; exists n; split; [ exact Hn | ].
     eapply eq_term_trans; [ apply eq_term_sym; exact Heq | exact Hvn ]. }
-  destruct HA as [ | A1 A2 HA1 HA2 ].
-  - (* Unit *)
-    apply RV_unit; exact Hnf'.
-  - (* Arr *)
-    apply RV_arr; [ exact Hnf' | ].
-    intros D w u Hw HD Hu.
-    assert (wft u (Sval D A1)) as Hwu by (eapply RV_wf; eassumption).
-    pose proof (RV_arr_app Hv Hw HD Hu) as Hre.
-      eapply RE_eq; [ exact Hre | ].
-      apply cong_App; [ wfa | wfa | wfa | | apply eq_term_refl; wfa ].
-      apply cong_Ret; [ wfa | wfa | ].
-      apply cong_ValSubst; [ wfa | wfa | wfa | apply eq_term_refl; wfa | ].
-      exact Heq.
-Qed.
-
-Corollary RE_eq_iff G A e e'
-  : eqt (Sexp G A) e e' -> (RE G A e <-> RE G A e').
-Proof.
-  intro Heq; split; intro H; eapply RE_eq;
-    try eassumption; apply eq_term_sym; assumption.
-Qed.
-
-Corollary RV_eq_iff G A v v'
-  : EnvOk G -> TyOk A -> eqt (Sval G A) v v' -> (RV G A v <-> RV G A v').
-Proof.
-  intros HG HA Heq; split; intro H; eapply RV_eq;
-    try eassumption; apply eq_term_sym; assumption.
+  unfold RV; split; [ exact Hnf' | ].
+  destruct A as [x|nm [|B[|A0[|]]]]; cbn [RVarr];
+    [ exact I | exact I | exact I | | exact I ].
+  destruct (eqb_boolspec _ nm "->") as [->|Hne]; [ | exact I ].
+  intros D w u Hw HD Hnfu HRu.
+  assert (Hu : RV D A0 u) by exact (conj Hnfu HRu).
+  assert (wft v (Sval G (Arr A0 B))) as Hwv by (eapply RV_wf; eassumption).
+  destruct (@wft_val_inv _ _ _ Hwv) as [HwG HwAB].
+  assert (EnvOk G) as HG by (eapply Wk_dom; eassumption).
+  assert (wft w (Ssub D G)) as Hww by (eapply Wk_wf; eassumption).
+  assert (wft u (Sval D A0)) as Hwu by (eapply RV_wf; eassumption).
+  destruct (@wft_val_inv _ _ _ Hwu) as [HwD HwA0].
+  pose proof (RV_arr_app Hv Hw HD Hu) as Hre.
+  assert (wft (App D A0 B
+                 (Ret D (Arr A0 B) (ValSubst D G w (Arr A0 B) v))
+                 (Ret D A0 u))
+            (Sexp D B)) as Hwapp by (eapply RE_wf; eassumption).
+  destruct (@wft_exp_inv _ _ _ Hwapp) as [_ HwB].
+  eapply RE_eq; [ exact Hre | ].
+  apply cong_App; [ assumption | assumption | assumption | | ].
+  - apply cong_Ret; [ assumption | assumption | ].
+    apply cong_ValSubst;
+      [ assumption | assumption | assumption
+      | apply eq_term_refl; assumption | exact Heq ].
+  - apply eq_term_refl; apply wf_Ret; assumption.
 Qed.
 
 (* ------------------------------------------------------------------ *)
@@ -291,17 +303,15 @@ Proof.
   - right; exists n0; split; auto.
 Qed.
 
-(* NOTE (for Layer 4).  [RE_cases] exposes the only gap in the canonical-form
-   grammar of Layer 1.  In the [app] congruence one has to combine an
-   expression that is a [ret] of a reducible value with an argument
-   expression that is NEUTRAL.  The resulting term
+(* [RE_cases] is why Layer 1's canonical-form grammar needs the [neet_lamapp]
+   clause alongside [neet_app].  In the [app] congruence's [RE_app] (Layer 4)
+   one has to combine an expression that is a [ret] of a reducible value with
+   an argument expression that is NEUTRAL.  The resulting term
      [app (ret (lambda A e)) n]     with [n] neutral
-   is stuck -- STLC-beta only fires when BOTH sides are [ret]s -- but it is
-   not in Layer 1's [NeET]/[NfET] grammar, whose [neet_app] clause requires
-   the FUNCTION to be neutral.  Nothing in this layer depends on that clause
-   set beyond the two constructors of [NfET] and the fact that every [NeET]
-   subject is an [app], so adding the missing stuck form to Layer 1 (plus its
-   weakening case in [NfT_wk]) leaves every proof below unchanged. *)
+   is stuck -- STLC-beta only fires when BOTH sides are [ret]s -- so it cannot
+   be classified by [neet_app], whose clause requires the FUNCTION to be
+   neutral; [neet_lamapp] is the grammar's other stuck shape, and is exactly
+   what [RE_app] reaches for in that case. *)
 
 (* ------------------------------------------------------------------ *)
 (* Stability under weakening                                            *)
@@ -354,10 +364,7 @@ Proof.
     assert (RV G0 A0 v0) as Hrv0 by (apply Hret; reflexivity).
     edestruct NfVT_wk as [v' [Hv' Heqv']]; try eassumption.
     assert (RV D A0 v') as Hrv'.
-    { eapply RV_eq;
-        [ eassumption | eassumption
-        | eapply RV_wk; eassumption
-        | exact Heqv' ]. }
+    { eapply RV_eq; [ eapply RV_wk; eassumption | exact Heqv' ]. }
     exists (Ret D A0 v'); split; [ | split ].
     + apply nfet_ret; assumption.
     + eapply eq_term_trans;

@@ -30,20 +30,29 @@ Import Core.Notations.
 Local Notation wft := (wf_term stlc_unit []).
 Local Notation eqt := (eq_term stlc_unit []).
 
+(* The match is on the ARGUMENT-LIST SHAPE first, and only then on the head
+   symbol (via [eqb]): a zero-argument constructor named [emp] gets the empty
+   clause, a two-argument constructor named [ext] gets the extension clause,
+   and every other shape falls through to [False].  [G0] stays a structural
+   subterm of [G] regardless of which head symbol is actually there, so the
+   recursion is guarded exactly as it was under the literal-string match. *)
 Fixpoint RSub (D G g : term) {struct G} : Prop :=
   match G with
-  | con "emp" [] => eqt (Ssub D Emp) g (Forget D)
-  | con "ext" [A; G0] =>
-      exists g0 v,
-        eqt (Ssub D (Ext G0 A)) g (Snoc D G0 g0 A v)
-        /\ RSub D G0 g0
-        /\ RV D A v
+  | con n [] => if eqb n "emp" then eqt (Ssub D Emp) g (Forget D) else False
+  | con n [A; G0] =>
+      if eqb n "ext" then
+        exists g0 v,
+          eqt (Ssub D (Ext G0 A)) g (Snoc D G0 g0 A v)
+          /\ RSub D G0 g0
+          /\ RV D A v
+      else False
   | _ => False
   end.
 
 (* The catch-all clause is [False]: [emp] and [ext] are the only environment
    formers, so every environment the development ever meets ([EnvOk]) is
-   covered, and the junk cases are ruled out rather than trivially satisfied. *)
+   covered, and the junk cases -- including a right-shaped constructor at the
+   wrong name -- are ruled out rather than trivially satisfied. *)
 
 (* ------------------------------------------------------------------ *)
 (* The intended reading of the two clauses                              *)
@@ -67,51 +76,56 @@ Lemma RSub_ext_elim D G A g
                  /\ RSub D G g0 /\ RV D A v.
 Proof. unfold Ext; cbn [RSub]; intro H; exact H. Qed.
 
-Corollary RSub_emp_iff D g
-  : RSub D Emp g <-> eqt (Ssub D Emp) g (Forget D).
-Proof. split; [ apply RSub_emp_elim | apply RSub_emp_intro ]. Qed.
-
-Corollary RSub_ext_iff D G A g
-  : RSub D (Ext G A) g
-    <-> exists g0 v, eqt (Ssub D (Ext G A)) g (Snoc D G g0 A v)
-                     /\ RSub D G g0 /\ RV D A v.
-Proof. split; [ apply RSub_ext_elim | apply RSub_ext_intro ]. Qed.
+(* Case on which of the two clauses a reducible substitution satisfies,
+   without inspecting [G] beyond that: unlike [RSub_emp_elim]/[RSub_ext_elim],
+   this does not assume the shape of [G] up front, so it is what lets the
+   rest of the file case on an ARBITRARY [RSub D G g] hypothesis. *)
+Lemma RSub_inv D G g
+  : RSub D G g ->
+    (G = Emp /\ eqt (Ssub D Emp) g (Forget D))
+    \/ (exists G0 A g0 v, G = Ext G0 A
+          /\ eqt (Ssub D (Ext G0 A)) g (Snoc D G0 g0 A v)
+          /\ RSub D G0 g0 /\ RV D A v).
+Proof.
+  destruct G as [x|n [|A [|G0 [|? ?]]]]; cbn [RSub]; try (intros []).
+  - destruct (eqb_boolspec _ n "emp") as [->|Hne]; [ | intros [] ].
+    intro H; left; split; [ reflexivity | exact H ].
+  - destruct (eqb_boolspec _ n "ext") as [->|Hne]; [ | intros [] ].
+    intros [g0 [v [Heq [Hg0 Hv]]]]; right.
+    exists G0, A, g0, v; split; [ reflexivity | split; [ exact Heq | split; assumption ] ].
+Qed.
 
 (* ------------------------------------------------------------------ *)
 (* Reducible substitutions are well typed                               *)
 (* ------------------------------------------------------------------ *)
 
 (* Both clauses hand back an equation whose left-hand side is [g] itself, at
-   the sort [sub D G]; so well-typedness needs no induction. *)
-Lemma RSub_wf D G g : RSub D G g -> EnvOk G -> wft g (Ssub D G).
+   the sort [sub D G]; so well-typedness needs no induction, and inverting the
+   equation's SORT ([wft_sub_inv], Gluing/StlcNormalForms.v) would recover
+   [EnvOk]-free well-formedness of [G] if this ever needed it -- it doesn't,
+   since [G] never appears as an index to be checked, only as the (already
+   well-formed, by [RSub_inv]) subject's sort. *)
+Lemma RSub_wf D G g : RSub D G g -> wft g (Ssub D G).
 Proof.
-  intros Hg HG.
-  destruct HG as [ | G0 A HG0 HA ].
-  - apply RSub_emp_elim in Hg; eapply eqt_wf_l; eassumption.
-  - apply RSub_ext_elim in Hg as [g0 [v [Heq _]]]; eapply eqt_wf_l; eassumption.
+  intro H; apply RSub_inv in H as [[-> Heq] | [G0 [A [g0 [v [-> [Heq _]]]]]]];
+    eapply eqt_wf_l; eassumption.
 Qed.
 
 (* ------------------------------------------------------------------ *)
 (* Closure under provable equality                                      *)
 (* ------------------------------------------------------------------ *)
 
-Lemma RSub_eq D G g g'
-  : RSub D G g -> eqt (Ssub D G) g g' -> EnvOk G -> RSub D G g'.
+(* No [EnvOk] hypothesis is needed here either, for the same reason as
+   [RSub_wf]: [RSub_inv] pins down [G]'s shape from [g] alone, and neither
+   resulting clause inspects [G] any further. *)
+Lemma RSub_eq D G g g' : RSub D G g -> eqt (Ssub D G) g g' -> RSub D G g'.
 Proof.
-  intros Hg Heq HG.
-  destruct HG as [ | G0 A HG0 HA ].
-  - apply RSub_emp_elim in Hg; apply RSub_emp_intro.
-    eapply eq_term_trans; [ apply eq_term_sym; exact Heq | exact Hg ].
-  - apply RSub_ext_elim in Hg as [g0 [v [Heqg [Hg0 Hv]]]].
-    apply RSub_ext_intro; exists g0, v; split; [ | split; assumption ].
-    eapply eq_term_trans; [ apply eq_term_sym; exact Heq | exact Heqg ].
-Qed.
-
-Corollary RSub_eq_iff D G g g'
-  : eqt (Ssub D G) g g' -> EnvOk G -> (RSub D G g <-> RSub D G g').
-Proof.
-  intros Heq HG; split; intro H; eapply RSub_eq;
-    try eassumption; apply eq_term_sym; assumption.
+  intros H Heq;
+    apply RSub_inv in H as [[-> He] | [G0 [A [g0 [v [-> [He [Hg0 Hv]]]]]]]].
+  - apply RSub_emp_intro; eapply eq_term_trans;
+      [ apply eq_term_sym; exact Heq | exact He ].
+  - apply RSub_ext_intro; exists g0, v; split; [ | split; assumption ].
+    eapply eq_term_trans; [ apply eq_term_sym; exact Heq | exact He ].
 Qed.
 
 (* ------------------------------------------------------------------ *)
@@ -139,12 +153,11 @@ Lemma RSub_proj D G A h
     RSub D G (Cmp D (Ext G A) G h (Wkn G A)).
 Proof.
   intros Hh HD HG HA.
-  assert (wft h (Ssub D (Ext G A))) as Hwh
-    by (eapply RSub_wf; [ eassumption | constructor; assumption ]).
+  assert (wft h (Ssub D (Ext G A))) as Hwh by (eapply RSub_wf; eassumption).
   apply RSub_ext_elim in Hh as [g0 [v [Heq [Hg0 Hv]]]].
   assert (wft g0 (Ssub D G)) as Hwg0 by (eapply RSub_wf; eassumption).
   assert (wft v (Sval D A)) as Hwv by (eapply RV_wf; eassumption).
-  eapply RSub_eq; [ exact Hg0 | | assumption ].
+  eapply RSub_eq; [ exact Hg0 | ].
   apply eq_term_sym.
   eapply eq_term_trans;
     [ apply cong_Cmp;
@@ -158,12 +171,11 @@ Lemma RSub_hd D G A h
     RV D A (ValSubst D (Ext G A) h A (Hd G A)).
 Proof.
   intros Hh HD HG HA.
-  assert (wft h (Ssub D (Ext G A))) as Hwh
-    by (eapply RSub_wf; [ eassumption | constructor; assumption ]).
+  assert (wft h (Ssub D (Ext G A))) as Hwh by (eapply RSub_wf; eassumption).
   apply RSub_ext_elim in Hh as [g0 [v [Heq [Hg0 Hv]]]].
   assert (wft g0 (Ssub D G)) as Hwg0 by (eapply RSub_wf; eassumption).
   assert (wft v (Sval D A)) as Hwv by (eapply RV_wf; eassumption).
-  eapply RV_eq; [ eassumption | eassumption | exact Hv | ].
+  eapply RV_eq; [ exact Hv | ].
   apply eq_term_sym.
   eapply eq_term_trans;
     [ apply cong_ValSubst;
@@ -222,7 +234,7 @@ Proof.
   - assert (EnvOk (Ext G0 A)) as HGA by (constructor; assumption).
     (* the tail: [wkn : sub (ext G0 A) G0] is reducible *)
     assert (RSub (Ext G0 A) G0 (Wkn G0 A)) as Hwkn.
-    { eapply RSub_eq; [ | | assumption ].
+    { eapply RSub_eq; [ | ].
       - eapply RSub_wk;
           [ exact IH
           | apply wk_ext; apply wk_id
@@ -237,23 +249,6 @@ Proof.
     + apply CR_reflect_V; [ apply vart_hd | exact HGA ].
 Qed.
 
-(* ------------------------------------------------------------------ *)
-(* Consequences                                                         *)
-(* ------------------------------------------------------------------ *)
-
-(* Every weakening is a reducible substitution. *)
-Corollary Wk_RSub D G w : Wk D G w -> EnvOk D -> RSub D G w.
-Proof.
-  intros Hw HD.
-  assert (EnvOk G) as HG by (eapply Wk_dom; eassumption).
-  assert (wft w (Ssub D G)) as Hww by (eapply Wk_wf; eassumption).
-  eapply RSub_eq; [ | | eassumption ].
-  - eapply RSub_wk;
-      [ apply RSub_id; eassumption | eassumption | eassumption
-      | eassumption | eassumption ].
-  - apply eq_id_right; wfa.
-Qed.
-
 (* The lifted substitution [<g o wkn, hd> : sub (ext D A) (ext G A)] -- the
    form produced by the [val_subst lambda] equation, hence the one Layer 4's
    [lambda] congruence consumes. *)
@@ -266,7 +261,7 @@ Proof.
   assert (EnvOk (Ext D A)) as HDA by (constructor; assumption).
   assert (wft g (Ssub D G)) as Hwg by (eapply RSub_wf; eassumption).
   apply RSub_ext.
-  - eapply RSub_eq; [ | | eassumption ].
+  - eapply RSub_eq; [ | ].
     + eapply RSub_wk;
         [ exact Hg
         | apply wk_ext; apply wk_id

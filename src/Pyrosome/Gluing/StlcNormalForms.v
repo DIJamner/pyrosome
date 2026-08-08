@@ -174,12 +174,67 @@ Proof. intros; wf_by "app". Qed.
 #[local] Hint Resolve wf_Unit wf_Arr wf_Emp wf_Ext wf_Id wf_Forget wf_Wkn wf_Hd
   wf_Cmp wf_Snoc wf_ValSubst wf_ExpSubst wf_Ret wf_Tt wf_Lam wf_App : stlc_nf.
 
+Local Notation wft := (wf_term stlc_unit []).
+Local Notation eqt := (eq_term stlc_unit []).
+
+(* ------------------------------------------------------------------ *)
+(* Sort inversion                                                       *)
+(* ------------------------------------------------------------------ *)
+
+(* Every sort former ([sub]/[val]/[exp]) determines its own indices by a
+   SINGLE rule of the language, so inverting [wf_sort] on a concrete sort
+   recovers plain well-formedness of those indices with no further
+   hypotheses -- in particular no [EnvOk]/[TyOk] on the indices themselves.
+   This is what [RSub_wf]/[RSub_eq] (Gluing/StlcRSub.v) and [RV_eq]
+   (Gluing/StlcLogRel.v) lean on to stay side-condition-free: given an
+   equation at [sub G G']/[val G A]/[exp G A], inverting the SORT of either
+   side is enough to reconstruct [wft G Senv]/[wft A Sty], without ever
+   needing [EnvOk]/[TyOk] for [G]/[A] themselves. *)
+
+Lemma eqt_wf_sort t e1 e2 : eqt t e1 e2 -> wf_sort stlc_unit [] t.
+Proof.
+  intro H; eapply eq_term_wf_sort; try typeclasses eauto;
+    [ exact stlc_unit_wf | constructor | exact H ].
+Qed.
+
+Lemma wft_wf_sort e t : wft e t -> wf_sort stlc_unit [] t.
+Proof. intro H; eapply eqt_wf_sort; apply eq_term_refl; exact H. Qed.
+
+Ltac sort_inv H :=
+  inversion H; subst;
+  match goal with
+  | [ Hin : In _ stlc_unit |- _ ] =>
+      vm_compute in Hin;
+      repeat (destruct Hin as [Hin|Hin]); try discriminate;
+      inversion Hin; subst; clear Hin
+  end;
+  repeat match goal with
+         | [ Ha : wf_args _ (_::_) _ |- _ ] => inversion Ha; subst; clear Ha
+         end;
+  cbn [Model.wf_term core_model] in *;
+  split; assumption.
+
+Lemma wf_sort_sub_inv G G' : wf_sort stlc_unit [] (Ssub G G') -> wft G Senv /\ wft G' Senv.
+Proof. unfold Ssub; intro H; sort_inv H. Qed.
+
+Lemma wf_sort_val_inv G A : wf_sort stlc_unit [] (Sval G A) -> wft G Senv /\ wft A Sty.
+Proof. unfold Sval; intro H; sort_inv H. Qed.
+
+Lemma wf_sort_exp_inv G A : wf_sort stlc_unit [] (Sexp G A) -> wft G Senv /\ wft A Sty.
+Proof. unfold Sexp; intro H; sort_inv H. Qed.
+
+Lemma wft_sub_inv G G' g : wft g (Ssub G G') -> wft G Senv /\ wft G' Senv.
+Proof. intro H; apply wf_sort_sub_inv; eapply wft_wf_sort; exact H. Qed.
+
+Lemma wft_val_inv G A v : wft v (Sval G A) -> wft G Senv /\ wft A Sty.
+Proof. intro H; apply wf_sort_val_inv; eapply wft_wf_sort; exact H. Qed.
+
+Lemma wft_exp_inv G A e : wft e (Sexp G A) -> wft G Senv /\ wft A Sty.
+Proof. intro H; apply wf_sort_exp_inv; eapply wft_wf_sort; exact H. Qed.
+
 (* ------------------------------------------------------------------ *)
 (* Congruence for the term formers                                      *)
 (* ------------------------------------------------------------------ *)
-
-Local Notation wft := (wf_term stlc_unit []).
-Local Notation eqt := (eq_term stlc_unit []).
 
 (* The 18 equation lemmas ([eq_val_subst_id], [eq_wkn_snoc], ...) and the
    [stlc_unit_cong_inst]-based congruence toolkit live in Gluing/StlcEqns.v;

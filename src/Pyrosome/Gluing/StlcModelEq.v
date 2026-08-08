@@ -152,57 +152,58 @@ Ltac ceq_wf :=
 (* Both conjuncts of [Ceq_term] are invariant under provable equality of the
    left term: the equation by transitivity, the semantic conjunct because the
    substitution instance is a congruence.  Nine of the eighteen obligations
-   are nothing but an instance of one of these three lemmas. *)
+   are nothing but an instance of one of these three lemmas.  No [EnvOk]/
+   [TyOk] hypothesis on the indices is needed: [RSub_wf]/[RSub_eq]/[RV_eq]
+   (Gluing/StlcRSub.v, Gluing/StlcLogRel.v) are side-condition-free, and
+   [wft_sub_inv]/[wft_val_inv]/[wft_exp_inv] (Gluing/StlcNormalForms.v)
+   recover well-formedness of [G]/[G']/[A] straight from [Ha]. *)
 
 Lemma Ceq_sub_left G G' a a' b
-  : Ceq_term (Ssub G G') a' b -> EnvOk G -> EnvOk G' ->
-    eqt (Ssub G G') a a' ->
-    Ceq_term (Ssub G G') a b.
+  : Ceq_term (Ssub G G') a' b -> eqt (Ssub G G') a a' -> Ceq_term (Ssub G G') a b.
 Proof.
-  intros Hab HG HG' Ha.
+  intros Hab Ha.
   apply Ceq_sub_e in Hab as [Heq Hsem].
+  assert (wft a (Ssub G G')) as Hwa by (eapply eqt_wf_l; eassumption).
+  assert (wft a' (Ssub G G')) as Hwa' by (eapply eqt_wf_r; eassumption).
+  destruct (@wft_sub_inv _ _ _ Hwa) as [HwG HwG'].
   apply ceq_sub.
   - eapply eq_term_trans; eassumption.
   - intros D h HD Hh.
     assert (wft h (Ssub D G)) as Hwh by (eapply RSub_wf; eassumption).
-    assert (wft a (Ssub G G')) as Hwa by (eapply eqt_wf_l; eassumption).
-    assert (wft a' (Ssub G G')) as Hwa' by (eapply eqt_wf_r; eassumption).
-    eapply RSub_eq; [ exact (Hsem D h HD Hh) | | assumption ].
+    eapply RSub_eq; [ exact (Hsem D h HD Hh) | ].
     apply cong_Cmp; [ wfa | wfa | wfa | apply eq_term_refl; wfa | ].
     apply eq_term_sym; exact Ha.
 Qed.
 
 Lemma Ceq_val_left G A a a' b
-  : Ceq_term (Sval G A) a' b -> EnvOk G -> TyOk A ->
-    eqt (Sval G A) a a' ->
-    Ceq_term (Sval G A) a b.
+  : Ceq_term (Sval G A) a' b -> eqt (Sval G A) a a' -> Ceq_term (Sval G A) a b.
 Proof.
-  intros Hab HG HA Ha.
+  intros Hab Ha.
   apply Ceq_val_e in Hab as [Heq Hsem].
+  assert (wft a (Sval G A)) as Hwa by (eapply eqt_wf_l; eassumption).
+  assert (wft a' (Sval G A)) as Hwa' by (eapply eqt_wf_r; eassumption).
+  destruct (@wft_val_inv _ _ _ Hwa) as [HwG HwA].
   apply ceq_val.
   - eapply eq_term_trans; eassumption.
   - intros D g HD Hg.
     assert (wft g (Ssub D G)) as Hwg by (eapply RSub_wf; eassumption).
-    assert (wft a (Sval G A)) as Hwa by (eapply eqt_wf_l; eassumption).
-    assert (wft a' (Sval G A)) as Hwa' by (eapply eqt_wf_r; eassumption).
-    eapply RV_eq; [ assumption | assumption | exact (Hsem D g HD Hg) | ].
+    eapply RV_eq; [ exact (Hsem D g HD Hg) | ].
     apply cong_ValSubst; [ wfa | wfa | wfa | apply eq_term_refl; wfa | ].
     apply eq_term_sym; exact Ha.
 Qed.
 
 Lemma Ceq_exp_left G A a a' b
-  : Ceq_term (Sexp G A) a' b -> EnvOk G -> TyOk A ->
-    eqt (Sexp G A) a a' ->
-    Ceq_term (Sexp G A) a b.
+  : Ceq_term (Sexp G A) a' b -> eqt (Sexp G A) a a' -> Ceq_term (Sexp G A) a b.
 Proof.
-  intros Hab HG HA Ha.
+  intros Hab Ha.
   apply Ceq_exp_e in Hab as [Heq Hsem].
+  assert (wft a (Sexp G A)) as Hwa by (eapply eqt_wf_l; eassumption).
+  assert (wft a' (Sexp G A)) as Hwa' by (eapply eqt_wf_r; eassumption).
+  destruct (@wft_exp_inv _ _ _ Hwa) as [HwG HwA].
   apply ceq_exp.
   - eapply eq_term_trans; eassumption.
   - intros D g HD Hg.
     assert (wft g (Ssub D G)) as Hwg by (eapply RSub_wf; eassumption).
-    assert (wft a (Sexp G A)) as Hwa by (eapply eqt_wf_l; eassumption).
-    assert (wft a' (Sexp G A)) as Hwa' by (eapply eqt_wf_r; eassumption).
     eapply RE_eq; [ exact (Hsem D g HD Hg) | ].
     apply cong_ExpSubst; [ wfa | wfa | wfa | apply eq_term_refl; wfa | ].
     apply eq_term_sym; exact Ha.
@@ -354,7 +355,7 @@ Lemma by_id_right X Y X' Y' f1 f2
     Ceq_term (Ssub Y Y') (Cmp X X' X' f1 (Id X')) f2.
 Proof.
   intros Hf HG' HG; ceq_prep; ceq_wf.
-  eapply Ceq_sub_left; [ exact Hf | assumption | assumption | ].
+  eapply Ceq_sub_left; [ exact Hf | ].
   apply eq_id_right; wfa.
 Qed.
 
@@ -364,7 +365,7 @@ Lemma by_id_left X Y X' Y' f1 f2
     Ceq_term (Ssub Y Y') (Cmp X X X' (Id X) f1) f2.
 Proof.
   intros Hf HG' HG; ceq_prep; ceq_wf.
-  eapply Ceq_sub_left; [ exact Hf | assumption | assumption | ].
+  eapply Ceq_sub_left; [ exact Hf | ].
   apply eq_id_left; wfa.
 Qed.
 
@@ -397,7 +398,7 @@ Proof.
     assert (RSub D Y4
               (Cmp D Y3 Y4 (Cmp D Y2 Y3 (Cmp D Y1 Y2 k f1) g1) h1)) as K3
         by (eapply (proj2 (Ceq_sub_e Hh)); eassumption).
-    eapply RSub_eq; [ exact K3 | | assumption ].
+    eapply RSub_eq; [ exact K3 | ].
     apply eq_term_sym.
     eapply eq_term_trans; [ apply eq_cmp_assoc; wfa | ].
     apply eq_cmp_assoc; wfa.
@@ -408,7 +409,7 @@ Lemma by_val_subst_id X Y A1 A2 v1 v2
     Ceq_term (Sval Y A2) (ValSubst X X (Id X) A1 v1) v2.
 Proof.
   intros Hv HA HG; ceq_prep; ceq_wf.
-  eapply Ceq_val_left; [ exact Hv | assumption | assumption | ].
+  eapply Ceq_val_left; [ exact Hv | ].
   apply eq_val_subst_id; wfa.
 Qed.
 
@@ -441,7 +442,7 @@ Proof.
     assert (RV D A2
               (ValSubst D Y3 (Cmp D Y2 Y3 (Cmp D Y1 Y2 k f1) g1) A2 v1)) as HV
         by (eapply (proj2 (Ceq_val_e Hv)); eassumption).
-    eapply RV_eq; [ assumption | assumption | exact HV | ].
+    eapply RV_eq; [ exact HV | ].
     apply eq_term_sym.
     eapply eq_term_trans; [ apply eq_val_subst_cmp; wfa | ].
     apply eq_val_subst_cmp; wfa.
@@ -469,7 +470,7 @@ Proof.
   - intros D h HD Hh.
     assert (EnvOk Emp) as HE by constructor.
     assert (wft h (Ssub D Emp)) as Hwh by (eapply RSub_wf; eassumption).
-    eapply RSub_eq; [ exact Hh | | assumption ].
+    eapply RSub_eq; [ exact Hh | ].
     apply eq_term_sym; apply eq_id_right; wfa.
 Qed.
 
@@ -482,7 +483,7 @@ Lemma by_wkn_snoc X Y X' Y' g1 g2 A1 A2 v1 v2
       (Cmp X (Ext X' A1) X' (Snoc X X' g1 A1 v1) (Wkn X' A1)) g2.
 Proof.
   intros Hv HA Hg HG' HG; ceq_prep; ceq_wf.
-  eapply Ceq_sub_left; [ exact Hg | assumption | assumption | ].
+  eapply Ceq_sub_left; [ exact Hg | ].
   apply eq_wkn_snoc; wfa.
 Qed.
 
@@ -495,7 +496,7 @@ Lemma by_snoc_hd X Y X' Y' g1 g2 A1 A2 v1 v2
       (ValSubst X (Ext X' A1) (Snoc X X' g1 A1 v1) A1 (Hd X' A1)) v2.
 Proof.
   intros Hv HA Hg HG' HG; ceq_prep; ceq_wf.
-  eapply Ceq_val_left; [ exact Hv | assumption | assumption | ].
+  eapply Ceq_val_left; [ exact Hv | ].
   apply eq_snoc_hd; wfa.
 Qed.
 
@@ -530,7 +531,7 @@ Proof.
               (Snoc D Y3 (Cmp D Y2 Y3 (Cmp D Y1 Y2 k f1) g1) A2
                  (ValSubst D Y2 (Cmp D Y1 Y2 k f1) A2 v1))) as HS
         by (apply RSub_ext; assumption).
-    eapply RSub_eq; [ exact HS | | constructor; assumption ].
+    eapply RSub_eq; [ exact HS | ].
     apply eq_term_sym.
     eapply eq_term_trans; [ apply eq_cmp_assoc; wfa | ].
     apply eq_cmp_snoc; wfa.
@@ -547,7 +548,7 @@ Proof.
   - intros D h HD Hh.
     assert (EnvOk (Ext Y A2)) as HYA by (constructor; assumption).
     assert (wft h (Ssub D (Ext Y A2))) as Hwh by (eapply RSub_wf; eassumption).
-    eapply RSub_eq; [ exact Hh | | assumption ].
+    eapply RSub_eq; [ exact Hh | ].
     apply eq_term_sym.
     eapply eq_term_trans;
       [ apply cong_Cmp;
@@ -563,7 +564,7 @@ Lemma by_exp_subst_id X Y A1 A2 e1 e2
     Ceq_term (Sexp Y A2) (ExpSubst X X (Id X) A1 e1) e2.
 Proof.
   intros He HA HG; ceq_prep; ceq_wf.
-  eapply Ceq_exp_left; [ exact He | assumption | assumption | ].
+  eapply Ceq_exp_left; [ exact He | ].
   apply eq_exp_subst_id; wfa.
 Qed.
 
@@ -705,7 +706,7 @@ Proof.
         by (apply RV_lam_sub;
             [ intros D' m HD' Hm; eapply (proj2 (Ceq_exp_e He)); eassumption
             | assumption .. ]).
-    eapply RV_eq; [ assumption | constructor; assumption | exact HV | ].
+    eapply RV_eq; [ exact HV | ].
     apply eq_term_sym.
     apply eq_val_subst_cmp; wfa.
 Qed.

@@ -29,164 +29,7 @@ Local Notation eqt := (eq_term stlc_unit []).
 Local Notation wft := (wf_term stlc_unit []).
 
 (* ================================================================== *)
-(* 1.  Sort inversion                                                  *)
-(* ================================================================== *)
-
-(* [RSub_eq]/[RV_eq] of the lower layers carry [EnvOk]/[TyOk] side conditions
-   that the symmetry obligation cannot supply (its hypothesis constrains only
-   the left-hand term, and neither [RSub] nor [RV] forces its index to be
-   [EnvOk]/[TyOk]).  What IS recoverable is plain well-formedness of the
-   indices, by inverting the sort of the subject; that is enough, and it is
-   what this section provides. *)
-
-Lemma eqt_wf_sort t e1 e2 : eqt t e1 e2 -> wf_sort stlc_unit [] t.
-Proof.
-  intro H; eapply eq_term_wf_sort; try typeclasses eauto;
-    [ exact stlc_unit_wf | constructor | exact H ].
-Qed.
-
-Lemma wft_wf_sort e t : wft e t -> wf_sort stlc_unit [] t.
-Proof. intro H; eapply eqt_wf_sort; apply eq_term_refl; exact H. Qed.
-
-Ltac sort_inv H :=
-  inversion H; subst;
-  match goal with
-  | [ Hin : In _ stlc_unit |- _ ] =>
-      vm_compute in Hin;
-      repeat (destruct Hin as [Hin|Hin]); try discriminate;
-      inversion Hin; subst; clear Hin
-  end;
-  repeat match goal with
-         | [ Ha : wf_args _ (_::_) _ |- _ ] => inversion Ha; subst; clear Ha
-         end;
-  cbn [Model.wf_term core_model] in *;
-  split; assumption.
-
-Lemma wf_sort_sub_inv G G' : wf_sort stlc_unit [] (Ssub G G') -> wft G Senv /\ wft G' Senv.
-Proof. unfold Ssub; intro H; sort_inv H. Qed.
-
-Lemma wf_sort_val_inv G A : wf_sort stlc_unit [] (Sval G A) -> wft G Senv /\ wft A Sty.
-Proof. unfold Sval; intro H; sort_inv H. Qed.
-
-Lemma wf_sort_exp_inv G A : wf_sort stlc_unit [] (Sexp G A) -> wft G Senv /\ wft A Sty.
-Proof. unfold Sexp; intro H; sort_inv H. Qed.
-
-Lemma wft_sub_inv G G' g : wft g (Ssub G G') -> wft G Senv /\ wft G' Senv.
-Proof. intro H; apply wf_sort_sub_inv; eapply wft_wf_sort; exact H. Qed.
-
-Lemma wft_val_inv G A v : wft v (Sval G A) -> wft G Senv /\ wft A Sty.
-Proof. intro H; apply wf_sort_val_inv; eapply wft_wf_sort; exact H. Qed.
-
-Lemma wft_exp_inv G A e : wft e (Sexp G A) -> wft G Senv /\ wft A Sty.
-Proof. intro H; apply wf_sort_exp_inv; eapply wft_wf_sort; exact H. Qed.
-
-(* ================================================================== *)
-(* 2.  Side-condition-free forms of [RSub_wf]/[RSub_eq]/[RV_eq]        *)
-(* ================================================================== *)
-
-Lemma RSub_inv D G g
-  : RSub D G g ->
-    (G = Emp /\ eqt (Ssub D Emp) g (Forget D))
-    \/ (exists G0 A g0 v, G = Ext G0 A
-          /\ eqt (Ssub D (Ext G0 A)) g (Snoc D G0 g0 A v)
-          /\ RSub D G0 g0 /\ RV D A v).
-Proof.
-  intro H; destruct G as [x|n l]; [ destruct H | ]; unfold RSub in H;
-    repeat (cbv beta iota in H;
-            first [ lazymatch type of H with False => destruct H end
-                  | match type of H with
-                    | context [ match ?x with _ => _ end ] => is_var x; destruct x
-                    end ]).
-  - left; split; [ reflexivity | exact H ].
-  - right; destruct H as [g0 [v [Heq [Hg0 Hv]]]].
-    exists t0, t, g0, v;
-      split; [ reflexivity
-             | split; [ exact Heq | split; [ exact Hg0 | exact Hv ] ] ].
-Qed.
-
-Lemma RSub_wf' D G g : RSub D G g -> wft g (Ssub D G).
-Proof.
-  intro H; apply RSub_inv in H as [[-> Heq] | [G0 [A [g0 [v [-> [Heq _]]]]]]];
-    eapply eqt_wf_l; eassumption.
-Qed.
-
-Lemma RSub_eq' D G g g' : RSub D G g -> eqt (Ssub D G) g g' -> RSub D G g'.
-Proof.
-  intros H Heq;
-    apply RSub_inv in H as [[-> He] | [G0 [A [g0 [v [-> [He [Hg0 Hv]]]]]]]].
-  - apply RSub_emp_intro; eapply eq_term_trans;
-      [ apply eq_term_sym; exact Heq | exact He ].
-  - apply RSub_ext_intro; exists g0, v; split; [ | split; assumption ].
-    eapply eq_term_trans; [ apply eq_term_sym; exact Heq | exact He ].
-Qed.
-
-(* A purely syntactic arrow test, used to case on the type without a [TyOk]
-   hypothesis: at a non-arrow type the type-directed half of [RV] is [True]. *)
-Definition is_arr (A : term) : bool :=
-  match A with
-  | con "->" [_; _] => true
-  | _ => false
-  end.
-
-Ltac arr_split H :=
-  unfold is_arr in H;
-  repeat (cbv beta iota in H;
-          first [ discriminate
-                | solve [ intros; exact I ]
-                | match type of H with
-                  | context [ match ?x with _ => _ end ] => is_var x; destruct x
-                  end ]).
-
-Lemma is_arr_true A : is_arr A = true -> exists A0 B, A = Arr A0 B.
-Proof.
-  intro H; destruct A as [x|n l]; [ discriminate | ];
-    unfold is_arr in H;
-    repeat (cbv beta iota in H;
-            first [ discriminate
-                  | match type of H with
-                    | context [ match ?x with _ => _ end ] => is_var x; destruct x
-                    end ]);
-    eexists; eexists; reflexivity.
-Qed.
-
-Lemma is_arr_false A : is_arr A = false -> forall G v, RVarr G A v.
-Proof.
-  intro H; destruct A as [x|n l]; [ intros; exact I | ]; arr_split H.
-Qed.
-
-Lemma RV_eq' G A v v' : RV G A v -> eqt (Sval G A) v v' -> RV G A v'.
-Proof.
-  intros Hv Heq.
-  assert (exists n, NfVT G A n /\ eqt (Sval G A) v' n) as Hnf'.
-  { destruct (CR_reify Hv) as [n [Hn Hvn]]; exists n; split; [ exact Hn | ].
-    eapply eq_term_trans; [ apply eq_term_sym; exact Heq | exact Hvn ]. }
-  destruct (is_arr A) eqn:Hia.
-  2:{ split; [ exact Hnf' | apply is_arr_false; exact Hia ]. }
-  apply is_arr_true in Hia as [A0 [B HA]]; subst A.
-  assert (wft v (Sval G (Arr A0 B))) as Hwv by (eapply RV_wf; eassumption).
-  destruct (@wft_val_inv _ _ _ Hwv) as [HwG HwAB].
-  apply RV_arr; [ exact Hnf' | ].
-  intros D w u Hw HD Hu.
-  assert (EnvOk G) as HG by (eapply Wk_dom; eassumption).
-  assert (wft w (Ssub D G)) as Hww by (eapply Wk_wf; eassumption).
-  assert (wft u (Sval D A0)) as Hwu by (eapply RV_wf; eassumption).
-  destruct (@wft_val_inv _ _ _ Hwu) as [HwD HwA0].
-  pose proof (RV_arr_app Hv Hw HD Hu) as Hre.
-  assert (wft (App D A0 B
-                 (Ret D (Arr A0 B) (ValSubst D G w (Arr A0 B) v)) (Ret D A0 u))
-            (Sexp D B)) as Hwapp by (eapply RE_wf; eassumption).
-  destruct (@wft_exp_inv _ _ _ Hwapp) as [_ HwB].
-  eapply RE_eq; [ exact Hre | ].
-  apply cong_App; [ assumption | assumption | assumption | | ].
-  - apply cong_Ret; [ assumption | assumption | ].
-    apply cong_ValSubst;
-      [ assumption | assumption | assumption
-      | apply eq_term_refl; assumption | exact Heq ].
-  - apply eq_term_refl; apply wf_Ret; assumption.
-Qed.
-
-(* ================================================================== *)
-(* 3.  The two cases with real content: [lambda] and [app]             *)
+(* 1.  The two cases with real content: [lambda] and [app]             *)
 (* ================================================================== *)
 
 (* Post-composing the lifted substitution with the beta substitution
@@ -247,7 +90,7 @@ Proof.
   assert (wft A Sty) as HwA by (apply TyOk_wf; assumption).
   assert (wft B Sty) as HwB by (apply TyOk_wf; assumption).
   assert (wft G Senv) as HwG by (apply EnvOk_wf; assumption).
-  assert (wft g (Ssub G Y)) as Hwg by (apply RSub_wf'; assumption).
+  assert (wft g (Ssub G Y)) as Hwg by (apply RSub_wf; assumption).
   assert (RE (Ext G A) B
             (ExpSubst (Ext G A) (Ext Y A)
                (Snoc (Ext G A) Y (Cmp (Ext G A) G Y (Wkn G A) g) A (Hd G A))
@@ -315,7 +158,7 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 4.  Decomposing the rule-membership hypothesis                      *)
+(* 2.  Decomposing the rule-membership hypothesis                      *)
 (* ================================================================== *)
 
 (* The language is a closed 39-element list, so [In] is a concrete
@@ -357,7 +200,7 @@ Ltac ceq_ty_env :=
   end.
 
 (* ================================================================== *)
-(* 5.  The obligations                                                 *)
+(* 3.  The obligations                                                 *)
 (* ================================================================== *)
 
 (* [cterm_var]: the ambient meta-context is empty (openness is object-level),
@@ -414,9 +257,10 @@ Qed.
 
 (* The semantic conjunct of every clause constrains only the LEFT term; the
    corresponding fact for the right one is recovered by transporting along the
-   equation.  That transport is where the side-condition-free [RSub_eq'] and
-   [RV_eq'] of section 2 are needed: nothing here supplies [EnvOk]/[TyOk] for
-   the sort's indices, only their well-formedness. *)
+   equation, via [RSub_eq]/[RV_eq] (Gluing/StlcRSub.v, Gluing/StlcLogRel.v).
+   Both are side-condition-free, which is exactly what this obligation needs:
+   its hypothesis constrains only the left-hand term, so nothing here supplies
+   [EnvOk]/[TyOk] for the sort's indices, only their well-formedness. *)
 Lemma term_sym_obligation
   : forall t e1 e2, Ceq_term t e1 e2 -> Ceq_term t e2 e1.
 Proof.
@@ -431,8 +275,8 @@ Proof.
     apply ceq_sub; [ apply eq_term_sym; exact Ha | ].
     intros D h HD Hh.
     assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-    assert (wft h (Ssub D G)) as Hwh by (apply RSub_wf'; assumption).
-    apply RSub_eq' with (g := Cmp D G G' h g1); [ apply Hb; assumption | ].
+    assert (wft h (Ssub D G)) as Hwh by (apply RSub_wf; assumption).
+    apply RSub_eq with (g := Cmp D G G' h g1); [ apply Hb; assumption | ].
     apply cong_Cmp;
       [ assumption | assumption | assumption
       | apply eq_term_refl; assumption | exact Ha ].
@@ -441,8 +285,8 @@ Proof.
     apply ceq_val; [ apply eq_term_sym; exact Ha | ].
     intros D g HD Hg.
     assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-    assert (wft g (Ssub D G)) as Hwg by (apply RSub_wf'; assumption).
-    apply RV_eq' with (v := ValSubst D G g A v1); [ apply Hb; assumption | ].
+    assert (wft g (Ssub D G)) as Hwg by (apply RSub_wf; assumption).
+    apply RV_eq with (v := ValSubst D G g A v1); [ apply Hb; assumption | ].
     apply cong_ValSubst;
       [ assumption | assumption | assumption
       | apply eq_term_refl; assumption | exact Ha ].
@@ -451,7 +295,7 @@ Proof.
     apply ceq_exp; [ apply eq_term_sym; exact Ha | ].
     intros D g HD Hg.
     assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-    assert (wft g (Ssub D G)) as Hwg by (apply RSub_wf'; assumption).
+    assert (wft g (Ssub D G)) as Hwg by (apply RSub_wf; assumption).
     apply RE_eq with (e := ExpSubst D G g A e1); [ apply Hb; assumption | ].
     apply cong_ExpSubst;
       [ assumption | assumption | assumption
@@ -482,7 +326,7 @@ Proof.
     + apply cong_App; [ wfa | wfa | wfa | exact Heq2 | exact Heq1 ].
     + intros D g HD Hg.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-      assert (wft g (Ssub D e9)) as Hwg by (apply RSub_wf'; assumption).
+      assert (wft g (Ssub D e9)) as Hwg by (apply RSub_wf; assumption).
       apply RE_eq with (e := App D e7 e5 (ExpSubst D e9 g (Arr e7 e5) e0)
                                          (ExpSubst D e9 g e7 e1)).
       * apply RE_app;
@@ -506,7 +350,7 @@ Proof.
     + apply eq_term_refl; apply wf_Tt; assumption.
     + intros D g HD Hg.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-      assert (wft g (Ssub D e2)) as Hwg by (apply RSub_wf'; assumption).
+      assert (wft g (Ssub D e2)) as Hwg by (apply RSub_wf; assumption).
       apply RV_unit; exists (Tt D); split;
         [ apply nfvt_tt | apply eq_val_subst_tt; wfa ].
   - (* unit *)
@@ -520,7 +364,7 @@ Proof.
     + apply cong_Ret; [ wfa | wfa | exact Heq1 ].
     + intros D g HD Hg.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-      assert (wft g (Ssub D e5)) as Hwg by (apply RSub_wf'; assumption).
+      assert (wft g (Ssub D e5)) as Hwg by (apply RSub_wf; assumption).
       apply RE_ret with (v := ValSubst D e5 g e3 e1);
         [ apply Hsem1; assumption
         | apply eq_exp_subst_ret; wfa
@@ -537,7 +381,7 @@ Proof.
     + apply cong_ExpSubst; [ wfa | wfa | wfa | exact Heq3 | exact Heq1 ].
     + intros D g HD Hg.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-      assert (wft g (Ssub D e9)) as Hwg by (apply RSub_wf'; assumption).
+      assert (wft g (Ssub D e9)) as Hwg by (apply RSub_wf; assumption).
       apply RE_eq with (e := ExpSubst D e7 (Cmp D e9 e7 g e4) e3 e1).
       * apply Hsem1; [ assumption | apply Hsem3; assumption ].
       * apply eq_term_sym; apply eq_exp_subst_cmp; wfa.
@@ -565,8 +409,8 @@ Proof.
     + apply cong_Snoc; [ wfa | wfa | wfa | exact Heq3 | exact Heq1 ].
     + intros D h HD Hh.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-      assert (wft h (Ssub D e9)) as Hwh by (apply RSub_wf'; assumption).
-      apply RSub_eq' with
+      assert (wft h (Ssub D e9)) as Hwh by (apply RSub_wf; assumption).
+      apply RSub_eq with
         (g := Snoc D e7 (Cmp D e9 e7 h e4) e3 (ValSubst D e9 h e3 e1)).
       * apply RSub_ext;
           [ apply Hsem3; assumption | apply Hsem1; assumption
@@ -580,7 +424,7 @@ Proof.
     + apply eq_term_refl; apply wf_Forget; assumption.
     + intros D h HD Hh.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-      assert (wft h (Ssub D e2)) as Hwh by (apply RSub_wf'; assumption).
+      assert (wft h (Ssub D e2)) as Hwh by (apply RSub_wf; assumption).
       apply RSub_emp_intro; apply eq_cmp_forget; wfa.
   - (* emp *)
     apply ceq_env; apply envok_emp.
@@ -596,8 +440,8 @@ Proof.
     + apply cong_ValSubst; [ wfa | wfa | wfa | exact Heq3 | exact Heq1 ].
     + intros D g HD Hg.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-      assert (wft g (Ssub D e9)) as Hwg by (apply RSub_wf'; assumption).
-      apply RV_eq' with (v := ValSubst D e7 (Cmp D e9 e7 g e4) e3 e1).
+      assert (wft g (Ssub D e9)) as Hwg by (apply RSub_wf; assumption).
+      apply RV_eq with (v := ValSubst D e7 (Cmp D e9 e7 g e4) e3 e1).
       * apply Hsem1; [ assumption | apply Hsem3; assumption ].
       * apply eq_term_sym; apply eq_val_subst_cmp; wfa.
   - (* cmp *)
@@ -612,8 +456,8 @@ Proof.
     + apply cong_Cmp; [ wfa | wfa | wfa | exact Heq2 | exact Heq1 ].
     + intros D h HD Hh.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-      assert (wft h (Ssub D e9)) as Hwh by (apply RSub_wf'; assumption).
-      apply RSub_eq' with (g := Cmp D e7 e5 (Cmp D e9 e7 h e0) e1).
+      assert (wft h (Ssub D e9)) as Hwh by (apply RSub_wf; assumption).
+      apply RSub_eq with (g := Cmp D e7 e5 (Cmp D e9 e7 h e0) e1).
       * apply Hsem1; [ assumption | apply Hsem2; assumption ].
       * apply eq_term_sym; apply eq_cmp_assoc; wfa.
   - (* id *)
@@ -622,7 +466,7 @@ Proof.
     + apply eq_term_refl; apply wf_Id; assumption.
     + intros D h HD Hh.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-      assert (wft h (Ssub D e2)) as Hwh by (apply RSub_wf'; assumption).
-      apply RSub_eq' with (g := h); [ assumption | ].
+      assert (wft h (Ssub D e2)) as Hwh by (apply RSub_wf; assumption).
+      apply RSub_eq with (g := h); [ assumption | ].
       apply eq_term_sym; apply eq_id_right; wfa.
 Qed.
