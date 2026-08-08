@@ -20,90 +20,13 @@ Import Core.Notations.
    separate file assembles the [Instance] (the [cterm_by] half -- the 18
    equation instances -- is developed independently).
 
-   Everything goes through the clause lemmas of Gluing/StlcCeq.v
-   ([Ceq_ty_iff] ... [Ceq_exp_iff]); [Ceq_term] is never unfolded by hand, and
+   Everything goes through the constructors and clause lemmas of
+   Gluing/StlcCeq.v ([ceq_ty] ... [ceq_exp], [Ceq_ty_e] ... [Ceq_exp_e]);
+   [Ceq_term] is never inverted by hand outside of those five lemmas, and
    [RVarr] is never unfolded either. *)
 
 Local Notation eqt := (eq_term stlc_unit []).
 Local Notation wft := (wf_term stlc_unit []).
-
-(* ================================================================== *)
-(* 0.  Reading the clauses of [Ceq_term]                               *)
-(* ================================================================== *)
-
-Lemma ceq_ty_i A1 A2 : A1 = A2 -> TyOk A1 -> Ceq_term Sty A1 A2.
-Proof. intros; apply (proj2 (Ceq_ty_iff A1 A2)); split; assumption. Qed.
-
-Lemma ceq_ty_e A1 A2 : Ceq_term Sty A1 A2 -> A1 = A2 /\ TyOk A1.
-Proof. apply (proj1 (Ceq_ty_iff A1 A2)). Qed.
-
-Lemma ceq_env_i G1 G2 : G1 = G2 -> EnvOk G1 -> Ceq_term Senv G1 G2.
-Proof. intros; apply (proj2 (Ceq_env_iff G1 G2)); split; assumption. Qed.
-
-Lemma ceq_env_e G1 G2 : Ceq_term Senv G1 G2 -> G1 = G2 /\ EnvOk G1.
-Proof. apply (proj1 (Ceq_env_iff G1 G2)). Qed.
-
-Lemma ceq_sub_i G G' g1 g2
-  : eqt (Ssub G G') g1 g2 ->
-    (forall D h, EnvOk D -> RSub D G h -> RSub D G' (Cmp D G G' h g1)) ->
-    Ceq_term (Ssub G G') g1 g2.
-Proof. intros; apply (proj2 (Ceq_sub_iff G G' g1 g2)); split; assumption. Qed.
-
-Lemma ceq_sub_e G G' g1 g2
-  : Ceq_term (Ssub G G') g1 g2 ->
-    eqt (Ssub G G') g1 g2
-    /\ (forall D h, EnvOk D -> RSub D G h -> RSub D G' (Cmp D G G' h g1)).
-Proof. apply (proj1 (Ceq_sub_iff G G' g1 g2)). Qed.
-
-Lemma ceq_val_i G A v1 v2
-  : eqt (Sval G A) v1 v2 ->
-    (forall D g, EnvOk D -> RSub D G g -> RV D A (ValSubst D G g A v1)) ->
-    Ceq_term (Sval G A) v1 v2.
-Proof. intros; apply (proj2 (Ceq_val_iff G A v1 v2)); split; assumption. Qed.
-
-Lemma ceq_val_e G A v1 v2
-  : Ceq_term (Sval G A) v1 v2 ->
-    eqt (Sval G A) v1 v2
-    /\ (forall D g, EnvOk D -> RSub D G g -> RV D A (ValSubst D G g A v1)).
-Proof. apply (proj1 (Ceq_val_iff G A v1 v2)). Qed.
-
-Lemma ceq_exp_i G A e1 e2
-  : eqt (Sexp G A) e1 e2 ->
-    (forall D g, EnvOk D -> RSub D G g -> RE D A (ExpSubst D G g A e1)) ->
-    Ceq_term (Sexp G A) e1 e2.
-Proof. intros; apply (proj2 (Ceq_exp_iff G A e1 e2)); split; assumption. Qed.
-
-Lemma ceq_exp_e G A e1 e2
-  : Ceq_term (Sexp G A) e1 e2 ->
-    eqt (Sexp G A) e1 e2
-    /\ (forall D g, EnvOk D -> RSub D G g -> RE D A (ExpSubst D G g A e1)).
-Proof. apply (proj1 (Ceq_exp_iff G A e1 e2)). Qed.
-
-(* The five clauses are the only inhabited ones.  Proved by splitting the
-   [match] of [Ceq_term] on the string/list scrutinees actually present in the
-   compiled decision tree; the dead leaves are literally [False]. *)
-Ltac ceq_shape_split H :=
-  unfold Ceq_term in H;
-  repeat (cbv beta iota in H;
-          first [ lazymatch type of H with False => destruct H end
-                | match type of H with
-                  | context [ match ?x with _ => _ end ] => is_var x; destruct x
-                  end ]).
-
-Lemma Ceq_term_shape (t : sort) (e1 e2 : term)
-  : Ceq_term t e1 e2 ->
-    t = Sty \/ t = Senv
-    \/ (exists G G', t = Ssub G G')
-    \/ (exists G A, t = Sval G A)
-    \/ (exists G A, t = Sexp G A).
-Proof.
-  destruct t as [n l]; intro H; ceq_shape_split H;
-    first [ now (left; reflexivity)
-          | now (right; left; reflexivity)
-          | now (right; right; left; eexists; eexists; reflexivity)
-          | now (right; right; right; left; eexists; eexists; reflexivity)
-          | now (right; right; right; right; eexists; eexists; reflexivity) ].
-Qed.
 
 (* ================================================================== *)
 (* 1.  Sort inversion                                                  *)
@@ -429,7 +352,7 @@ Ltac decomp :=
 Ltac ceq_ty_env :=
   repeat match goal with
   | [ H : Ceq_term _ _ _ |- _ ] =>
-      first [ apply ceq_ty_e in H | apply ceq_env_e in H ];
+      first [ apply Ceq_ty_e in H | apply Ceq_env_e in H ];
       destruct H as [? ?]; subst
   end.
 
@@ -481,19 +404,12 @@ Proof. unfold Ceq_sort; intros t1 t2 e1 e2 Ht H; subst; exact H. Qed.
 Lemma term_trans_obligation
   : forall t e1 e12 e2, Ceq_term t e1 e12 -> Ceq_term t e12 e2 -> Ceq_term t e1 e2.
 Proof.
-  intros t e1 e12 e2 H1 H2.
-  destruct (@Ceq_term_shape _ _ _ H1)
-    as [-> | [-> | [[G [G' ->]] | [[G [A ->]] | [G [A ->]]]]]].
-  - apply ceq_ty_e in H1 as [Ha Hb]; apply ceq_ty_e in H2 as [Hc _];
-      apply ceq_ty_i; [ congruence | assumption ].
-  - apply ceq_env_e in H1 as [Ha Hb]; apply ceq_env_e in H2 as [Hc _];
-      apply ceq_env_i; [ congruence | assumption ].
-  - apply ceq_sub_e in H1 as [Ha Hb]; apply ceq_sub_e in H2 as [Hc _];
-      apply ceq_sub_i; [ eapply eq_term_trans; eassumption | assumption ].
-  - apply ceq_val_e in H1 as [Ha Hb]; apply ceq_val_e in H2 as [Hc _];
-      apply ceq_val_i; [ eapply eq_term_trans; eassumption | assumption ].
-  - apply ceq_exp_e in H1 as [Ha Hb]; apply ceq_exp_e in H2 as [Hc _];
-      apply ceq_exp_i; [ eapply eq_term_trans; eassumption | assumption ].
+  intros t e1 e12 e2 H1 H2; destruct H1.
+  - apply Ceq_ty_e in H2 as [<- ?]; apply ceq_ty; assumption.
+  - apply Ceq_env_e in H2 as [<- ?]; apply ceq_env; assumption.
+  - apply Ceq_sub_e in H2 as [Hc _]; apply ceq_sub; [ eapply eq_term_trans; eassumption | assumption ].
+  - apply Ceq_val_e in H2 as [Hc _]; apply ceq_val; [ eapply eq_term_trans; eassumption | assumption ].
+  - apply Ceq_exp_e in H2 as [Hc _]; apply ceq_exp; [ eapply eq_term_trans; eassumption | assumption ].
 Qed.
 
 (* The semantic conjunct of every clause constrains only the LEFT term; the
@@ -504,39 +420,35 @@ Qed.
 Lemma term_sym_obligation
   : forall t e1 e2, Ceq_term t e1 e2 -> Ceq_term t e2 e1.
 Proof.
-  intros t e1 e2 H.
-  destruct (@Ceq_term_shape _ _ _ H)
-    as [-> | [-> | [[G [G' ->]] | [[G [A ->]] | [G [A ->]]]]]].
-  - apply ceq_ty_e in H as [Ha Hb]; subst;
-      apply ceq_ty_i; [ reflexivity | assumption ].
-  - apply ceq_env_e in H as [Ha Hb]; subst;
-      apply ceq_env_i; [ reflexivity | assumption ].
-  - apply ceq_sub_e in H as [Ha Hb].
-    assert (wft e1 (Ssub G G')) as Hw1 by (eapply eqt_wf_l; eassumption).
+  intros t e1 e2 H; destruct H as [ A HA | G HG
+                                   | G G' g1 g2 Ha Hb
+                                   | G A v1 v2 Ha Hb
+                                   | G A e1 e2 Ha Hb ].
+  - apply ceq_ty; assumption.
+  - apply ceq_env; assumption.
+  - assert (wft g1 (Ssub G G')) as Hw1 by (eapply eqt_wf_l; eassumption).
     destruct (@wft_sub_inv _ _ _ Hw1) as [HwG HwG'].
-    apply ceq_sub_i; [ apply eq_term_sym; exact Ha | ].
+    apply ceq_sub; [ apply eq_term_sym; exact Ha | ].
     intros D h HD Hh.
     assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
     assert (wft h (Ssub D G)) as Hwh by (apply RSub_wf'; assumption).
-    apply RSub_eq' with (g := Cmp D G G' h e1); [ apply Hb; assumption | ].
+    apply RSub_eq' with (g := Cmp D G G' h g1); [ apply Hb; assumption | ].
     apply cong_Cmp;
       [ assumption | assumption | assumption
       | apply eq_term_refl; assumption | exact Ha ].
-  - apply ceq_val_e in H as [Ha Hb].
-    assert (wft e1 (Sval G A)) as Hw1 by (eapply eqt_wf_l; eassumption).
+  - assert (wft v1 (Sval G A)) as Hw1 by (eapply eqt_wf_l; eassumption).
     destruct (@wft_val_inv _ _ _ Hw1) as [HwG HwA].
-    apply ceq_val_i; [ apply eq_term_sym; exact Ha | ].
+    apply ceq_val; [ apply eq_term_sym; exact Ha | ].
     intros D g HD Hg.
     assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
     assert (wft g (Ssub D G)) as Hwg by (apply RSub_wf'; assumption).
-    apply RV_eq' with (v := ValSubst D G g A e1); [ apply Hb; assumption | ].
+    apply RV_eq' with (v := ValSubst D G g A v1); [ apply Hb; assumption | ].
     apply cong_ValSubst;
       [ assumption | assumption | assumption
       | apply eq_term_refl; assumption | exact Ha ].
-  - apply ceq_exp_e in H as [Ha Hb].
-    assert (wft e1 (Sexp G A)) as Hw1 by (eapply eqt_wf_l; eassumption).
+  - assert (wft e1 (Sexp G A)) as Hw1 by (eapply eqt_wf_l; eassumption).
     destruct (@wft_exp_inv _ _ _ Hw1) as [HwG HwA].
-    apply ceq_exp_i; [ apply eq_term_sym; exact Ha | ].
+    apply ceq_exp; [ apply eq_term_sym; exact Ha | ].
     intros D g HD Hg.
     assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
     assert (wft g (Ssub D G)) as Hwg by (apply RSub_wf'; assumption).
@@ -559,14 +471,14 @@ Proof.
   intros c' name args t s1 s2 Hin Hargs.
   decomp; ceq_ty_env.
   - (* app *)
-    apply ceq_exp_e in X0 as [Heq1 Hsem1].
-    apply ceq_exp_e in X2 as [Heq2 Hsem2].
+    apply Ceq_exp_e in X0 as [Heq1 Hsem1].
+    apply Ceq_exp_e in X2 as [Heq2 Hsem2].
     assert (wft e9 Senv) as Hw9 by (apply EnvOk_wf; assumption).
     assert (wft e7 Sty) as Hw7 by (apply TyOk_wf; assumption).
     assert (wft e5 Sty) as Hw5 by (apply TyOk_wf; assumption).
     assert (wft e0 (Sexp e9 (Arr e7 e5))) as Hwe0 by (eapply eqt_wf_l; eassumption).
     assert (wft e1 (Sexp e9 e7)) as Hwe1 by (eapply eqt_wf_l; eassumption).
-    apply ceq_exp_i.
+    apply ceq_exp.
     + apply cong_App; [ wfa | wfa | wfa | exact Heq2 | exact Heq1 ].
     + intros D g HD Hg.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
@@ -578,19 +490,19 @@ Proof.
           | apply Hsem2; assumption | apply Hsem1; assumption ].
       * apply eq_term_sym; apply eq_exp_subst_app; wfa.
   - (* lambda *)
-    apply ceq_exp_e in X0 as [Heq1 Hsem1].
+    apply Ceq_exp_e in X0 as [Heq1 Hsem1].
     assert (wft e7 Senv) as Hw7 by (apply EnvOk_wf; assumption).
     assert (wft e5 Sty) as Hw5 by (apply TyOk_wf; assumption).
     assert (wft e3 Sty) as Hw3 by (apply TyOk_wf; assumption).
     assert (wft e1 (Sexp (Ext e7 e5) e3)) as Hwe1 by (eapply eqt_wf_l; eassumption).
-    apply ceq_val_i.
+    apply ceq_val.
     + apply cong_Lam; [ wfa | wfa | wfa | exact Heq1 ].
     + intros D g HD Hg; apply RV_lam; assumption.
   - (* -> *)
-    apply ceq_ty_i; [ reflexivity | apply tyok_arr; assumption ].
+    apply ceq_ty; apply tyok_arr; assumption.
   - (* tt *)
     assert (wft e2 Senv) as Hw2 by (apply EnvOk_wf; assumption).
-    apply ceq_val_i.
+    apply ceq_val.
     + apply eq_term_refl; apply wf_Tt; assumption.
     + intros D g HD Hg.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
@@ -598,13 +510,13 @@ Proof.
       apply RV_unit; exists (Tt D); split;
         [ apply nfvt_tt | apply eq_val_subst_tt; wfa ].
   - (* unit *)
-    apply ceq_ty_i; [ reflexivity | apply tyok_unit ].
+    apply ceq_ty; apply tyok_unit.
   - (* ret *)
-    apply ceq_val_e in X0 as [Heq1 Hsem1].
+    apply Ceq_val_e in X0 as [Heq1 Hsem1].
     assert (wft e5 Senv) as Hw5 by (apply EnvOk_wf; assumption).
     assert (wft e3 Sty) as Hw3 by (apply TyOk_wf; assumption).
     assert (wft e1 (Sval e5 e3)) as Hwe1 by (eapply eqt_wf_l; eassumption).
-    apply ceq_exp_i.
+    apply ceq_exp.
     + apply cong_Ret; [ wfa | wfa | exact Heq1 ].
     + intros D g HD Hg.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
@@ -614,14 +526,14 @@ Proof.
         | apply eq_exp_subst_ret; wfa
         | assumption | assumption ].
   - (* exp_subst *)
-    apply ceq_exp_e in X0 as [Heq1 Hsem1].
-    apply ceq_sub_e in X3 as [Heq3 Hsem3].
+    apply Ceq_exp_e in X0 as [Heq1 Hsem1].
+    apply Ceq_sub_e in X3 as [Heq3 Hsem3].
     assert (wft e9 Senv) as Hw9 by (apply EnvOk_wf; assumption).
     assert (wft e7 Senv) as Hw7 by (apply EnvOk_wf; assumption).
     assert (wft e3 Sty) as Hw3 by (apply TyOk_wf; assumption).
     assert (wft e1 (Sexp e7 e3)) as Hwe1 by (eapply eqt_wf_l; eassumption).
     assert (wft e4 (Ssub e9 e7)) as Hwe4 by (eapply eqt_wf_l; eassumption).
-    apply ceq_exp_i.
+    apply ceq_exp.
     + apply cong_ExpSubst; [ wfa | wfa | wfa | exact Heq3 | exact Heq1 ].
     + intros D g HD Hg.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
@@ -632,24 +544,24 @@ Proof.
   - (* hd *)
     assert (wft e3 Senv) as Hw3 by (apply EnvOk_wf; assumption).
     assert (wft e2 Sty) as Hw2 by (apply TyOk_wf; assumption).
-    apply ceq_val_i.
+    apply ceq_val.
     + apply eq_term_refl; apply wf_Hd; assumption.
     + intros D g HD Hg; apply RSub_hd; assumption.
   - (* wkn *)
     assert (wft e3 Senv) as Hw3 by (apply EnvOk_wf; assumption).
     assert (wft e2 Sty) as Hw2 by (apply TyOk_wf; assumption).
-    apply ceq_sub_i.
+    apply ceq_sub.
     + apply eq_term_refl; apply wf_Wkn; assumption.
     + intros D h HD Hh; apply RSub_proj; assumption.
   - (* snoc *)
-    apply ceq_val_e in X0 as [Heq1 Hsem1].
-    apply ceq_sub_e in X3 as [Heq3 Hsem3].
+    apply Ceq_val_e in X0 as [Heq1 Hsem1].
+    apply Ceq_sub_e in X3 as [Heq3 Hsem3].
     assert (wft e9 Senv) as Hw9 by (apply EnvOk_wf; assumption).
     assert (wft e7 Senv) as Hw7 by (apply EnvOk_wf; assumption).
     assert (wft e3 Sty) as Hw3 by (apply TyOk_wf; assumption).
     assert (wft e1 (Sval e9 e3)) as Hwe1 by (eapply eqt_wf_l; eassumption).
     assert (wft e4 (Ssub e9 e7)) as Hwe4 by (eapply eqt_wf_l; eassumption).
-    apply ceq_sub_i.
+    apply ceq_sub.
     + apply cong_Snoc; [ wfa | wfa | wfa | exact Heq3 | exact Heq1 ].
     + intros D h HD Hh.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
@@ -661,26 +573,26 @@ Proof.
           | assumption | assumption | assumption ].
       * apply eq_term_sym; apply eq_cmp_snoc; wfa.
   - (* ext *)
-    apply ceq_env_i; [ reflexivity | apply envok_ext; assumption ].
+    apply ceq_env; apply envok_ext; assumption.
   - (* forget *)
     assert (wft e2 Senv) as Hw2 by (apply EnvOk_wf; assumption).
-    apply ceq_sub_i.
+    apply ceq_sub.
     + apply eq_term_refl; apply wf_Forget; assumption.
     + intros D h HD Hh.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
       assert (wft h (Ssub D e2)) as Hwh by (apply RSub_wf'; assumption).
       apply RSub_emp_intro; apply eq_cmp_forget; wfa.
   - (* emp *)
-    apply ceq_env_i; [ reflexivity | apply envok_emp ].
+    apply ceq_env; apply envok_emp.
   - (* val_subst *)
-    apply ceq_val_e in X0 as [Heq1 Hsem1].
-    apply ceq_sub_e in X3 as [Heq3 Hsem3].
+    apply Ceq_val_e in X0 as [Heq1 Hsem1].
+    apply Ceq_sub_e in X3 as [Heq3 Hsem3].
     assert (wft e9 Senv) as Hw9 by (apply EnvOk_wf; assumption).
     assert (wft e7 Senv) as Hw7 by (apply EnvOk_wf; assumption).
     assert (wft e3 Sty) as Hw3 by (apply TyOk_wf; assumption).
     assert (wft e1 (Sval e7 e3)) as Hwe1 by (eapply eqt_wf_l; eassumption).
     assert (wft e4 (Ssub e9 e7)) as Hwe4 by (eapply eqt_wf_l; eassumption).
-    apply ceq_val_i.
+    apply ceq_val.
     + apply cong_ValSubst; [ wfa | wfa | wfa | exact Heq3 | exact Heq1 ].
     + intros D g HD Hg.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
@@ -689,14 +601,14 @@ Proof.
       * apply Hsem1; [ assumption | apply Hsem3; assumption ].
       * apply eq_term_sym; apply eq_val_subst_cmp; wfa.
   - (* cmp *)
-    apply ceq_sub_e in X0 as [Heq1 Hsem1].
-    apply ceq_sub_e in X2 as [Heq2 Hsem2].
+    apply Ceq_sub_e in X0 as [Heq1 Hsem1].
+    apply Ceq_sub_e in X2 as [Heq2 Hsem2].
     assert (wft e9 Senv) as Hw9 by (apply EnvOk_wf; assumption).
     assert (wft e7 Senv) as Hw7 by (apply EnvOk_wf; assumption).
     assert (wft e5 Senv) as Hw5 by (apply EnvOk_wf; assumption).
     assert (wft e0 (Ssub e9 e7)) as Hwe0 by (eapply eqt_wf_l; eassumption).
     assert (wft e1 (Ssub e7 e5)) as Hwe1 by (eapply eqt_wf_l; eassumption).
-    apply ceq_sub_i.
+    apply ceq_sub.
     + apply cong_Cmp; [ wfa | wfa | wfa | exact Heq2 | exact Heq1 ].
     + intros D h HD Hh.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
@@ -706,7 +618,7 @@ Proof.
       * apply eq_term_sym; apply eq_cmp_assoc; wfa.
   - (* id *)
     assert (wft e2 Senv) as Hw2 by (apply EnvOk_wf; assumption).
-    apply ceq_sub_i.
+    apply ceq_sub.
     + apply eq_term_refl; apply wf_Id; assumption.
     + intros D h HD Hh.
       assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).

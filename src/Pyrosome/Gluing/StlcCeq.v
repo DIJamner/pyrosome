@@ -34,7 +34,7 @@ Import Core.Notations.
 
    Note the semantic conjunct constrains only [e1].  The corresponding fact for
    [e2] is recovered from the equation via [RV_eq]/[RE_eq]/[RSub_eq]; that is
-   what [Ceq_term_sym] below does. *)
+   what [term_sym_obligation] in Gluing/StlcModelCong.v does. *)
 
 Local Notation eqt := (eq_term stlc_unit []).
 Local Notation wft := (wf_term stlc_unit []).
@@ -45,47 +45,56 @@ Local Notation wft := (wf_term stlc_unit []).
    [cterm_conv], [csort_trans] and [csort_sym] immediate. *)
 Definition Ceq_sort (t1 t2 : sort) : Prop := t1 = t2.
 
-Definition Ceq_term (t : sort) (e1 e2 : term) : Prop :=
-  match t with
-  | scon "ty" [] => e1 = e2 /\ TyOk e1
-  | scon "env" [] => e1 = e2 /\ EnvOk e1
-  | scon "sub" [G'; G] =>
-      eqt (Ssub G G') e1 e2
-      /\ (forall D h, EnvOk D -> RSub D G h -> RSub D G' (Cmp D G G' h e1))
-  | scon "val" [A; G] =>
-      eqt (Sval G A) e1 e2
-      /\ (forall D g, EnvOk D -> RSub D G g -> RV D A (ValSubst D G g A e1))
-  | scon "exp" [A; G] =>
-      eqt (Sexp G A) e1 e2
-      /\ (forall D g, EnvOk D -> RSub D G g -> RE D A (ExpSubst D G g A e1))
-  | _ => False
-  end.
+(* An inductive family rather than a sort-indexed match: off-diagonal sorts
+   ([Ceq_term] applied to a sort that is none of [Sty]/[Senv]/[Ssub _ _]/
+   [Sval _ _]/[Sexp _ _]) are then uninhabited for free -- there is simply no
+   constructor whose index can reach them -- rather than needing an explicit
+   [False] leaf, and reading a clause back is [inversion] instead of
+   decision-tree surgery. *)
+Inductive Ceq_term : sort -> term -> term -> Prop :=
+| ceq_ty : forall A, TyOk A -> Ceq_term Sty A A
+| ceq_env : forall G, EnvOk G -> Ceq_term Senv G G
+| ceq_sub : forall G G' g1 g2,
+    eqt (Ssub G G') g1 g2 ->
+    (forall D h, EnvOk D -> RSub D G h -> RSub D G' (Cmp D G G' h g1)) ->
+    Ceq_term (Ssub G G') g1 g2
+| ceq_val : forall G A v1 v2,
+    eqt (Sval G A) v1 v2 ->
+    (forall D g, EnvOk D -> RSub D G g -> RV D A (ValSubst D G g A v1)) ->
+    Ceq_term (Sval G A) v1 v2
+| ceq_exp : forall G A e1 e2,
+    eqt (Sexp G A) e1 e2 ->
+    (forall D g, EnvOk D -> RSub D G g -> RE D A (ExpSubst D G g A e1)) ->
+    Ceq_term (Sexp G A) e1 e2.
 
 (* Clause readings.  Downstream proofs should go through these rather than
-   unfolding [Ceq_term], so that a change of representation stays local. *)
-Lemma Ceq_ty_iff A1 A2 : Ceq_term Sty A1 A2 <-> (A1 = A2 /\ TyOk A1).
-Proof. reflexivity. Qed.
+   inverting [Ceq_term] by hand, so that a change of representation stays
+   local.  [Ceq_ty]/[Ceq_env] are stated at a single term in the inductive
+   (that is all a canonical-form gluing needs to produce), but [inversion]
+   recovers the two-term equation for callers that want to [subst] with it. *)
+Lemma Ceq_ty_e A1 A2 : Ceq_term Sty A1 A2 -> A1 = A2 /\ TyOk A1.
+Proof. intro H; inversion H; subst; auto. Qed.
 
-Lemma Ceq_env_iff G1 G2 : Ceq_term Senv G1 G2 <-> (G1 = G2 /\ EnvOk G1).
-Proof. reflexivity. Qed.
+Lemma Ceq_env_e G1 G2 : Ceq_term Senv G1 G2 -> G1 = G2 /\ EnvOk G1.
+Proof. intro H; inversion H; subst; auto. Qed.
 
-Lemma Ceq_sub_iff G G' g1 g2
+Lemma Ceq_sub_e G G' g1 g2
   : Ceq_term (Ssub G G') g1 g2
-    <-> (eqt (Ssub G G') g1 g2
-         /\ forall D h, EnvOk D -> RSub D G h -> RSub D G' (Cmp D G G' h g1)).
-Proof. reflexivity. Qed.
+    -> eqt (Ssub G G') g1 g2
+       /\ (forall D h, EnvOk D -> RSub D G h -> RSub D G' (Cmp D G G' h g1)).
+Proof. intro H; inversion H; subst; auto. Qed.
 
-Lemma Ceq_val_iff G A v1 v2
+Lemma Ceq_val_e G A v1 v2
   : Ceq_term (Sval G A) v1 v2
-    <-> (eqt (Sval G A) v1 v2
-         /\ forall D g, EnvOk D -> RSub D G g -> RV D A (ValSubst D G g A v1)).
-Proof. reflexivity. Qed.
+    -> eqt (Sval G A) v1 v2
+       /\ (forall D g, EnvOk D -> RSub D G g -> RV D A (ValSubst D G g A v1)).
+Proof. intro H; inversion H; subst; auto. Qed.
 
-Lemma Ceq_exp_iff G A e1 e2
+Lemma Ceq_exp_e G A e1 e2
   : Ceq_term (Sexp G A) e1 e2
-    <-> (eqt (Sexp G A) e1 e2
-         /\ forall D g, EnvOk D -> RSub D G g -> RE D A (ExpSubst D G g A e1)).
-Proof. reflexivity. Qed.
+    -> eqt (Sexp G A) e1 e2
+       /\ (forall D g, EnvOk D -> RSub D G g -> RE D A (ExpSubst D G g A e1)).
+Proof. intro H; inversion H; subst; auto. Qed.
 
 (* The model.  [CutTModel]'s carriers are Type-valued; Prop-valued relations are
    accepted by cumulativity, exactly as Gluing/SyntacticModel.v does. *)

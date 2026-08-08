@@ -54,7 +54,7 @@ Proof.
   (* the model gives content at [e] from well-typedness alone *)
   destruct (normalization_from_model (CM := StlcCM) (CMok := StlcCM_ok)
               stlc_unit_wf wf_ctx_nil_stlc Hwf) as [Hceq].
-  apply Ceq_exp_iff in Hceq.
+  apply Ceq_exp_e in Hceq.
   destruct Hceq as [_ Hsem].
   (* instantiate the reducible-substitution quantifier at the identity *)
   specialize (Hsem G (Id G) HG (RSub_id HG)).
@@ -78,7 +78,7 @@ Proof.
   intros HG HA Heq.
   destruct (eq_sound (CM := StlcCM) (CMok := StlcCM_ok)
               stlc_unit_wf wf_ctx_nil_stlc Heq) as [Hceq].
-  apply Ceq_exp_iff in Hceq.
+  apply Ceq_exp_e in Hceq.
   destruct Hceq as [Hq Hsem].
   specialize (Hsem G (Id G) HG (RSub_id HG)).
   assert (Hwf1 : wf_term stlc_unit [] e1 (Sexp G A)) by (eapply eqt_wf_l; exact Heq).
