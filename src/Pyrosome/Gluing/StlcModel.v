@@ -37,6 +37,8 @@ Definition Sexp (G A : term) : sort := scon "exp" [A; G].
 
 (* ---- term constructors (verified against the compiled language) ---- *)
 Definition Arr (A B : term) : term := con "->" [B; A].
+Definition Unit : term := con "unit" [].
+Definition Tt (G : term) : term := con "tt" [G].
 Definition Emp : term := con "emp" [].
 Definition Ext (G A : term) : term := con "ext" [A; G].
 Definition Id (G : term) : term := con "id" [G].
@@ -54,12 +56,13 @@ Definition App (G A B e e' : term) : term := con "app" [e'; e; B; A; G].
 (* ---- well-shapedness of the index syntax ----
 
    [ty] is a plain sort ([sort_rule [] []]) in this presentation, so with a
-   closed meta-context a type is built from [->] alone.  That has no base case,
-   so [TyOk] is empty for this particular language: [stlc] contributes no base
-   type.  The predicate is still the right one to recurse on -- it is what makes
-   recursion on the type well founded -- and adding a base type constructor is
-   exactly what makes the resulting normalization statement non-vacuous. *)
+   closed meta-context a type is built from the base type and [->] alone.  This
+   is the language [stlc_unit], where [unit_lang] supplies that base case; over
+   bare [stlc] the predicate would be empty and every normalization statement
+   vacuous.  Recursion on [TyOk] is what makes the reducibility relation well
+   founded. *)
 Inductive TyOk : term -> Prop :=
+| tyok_unit : TyOk Unit
 | tyok_arr : forall A B, TyOk A -> TyOk B -> TyOk (Arr A B).
 
 Inductive EnvOk : term -> Prop :=
