@@ -192,6 +192,30 @@ Proof: `normalization_from_model` (Gluing/StlcNormalization.v) gives
 quantifier at `D := G`, `g := Id G` via `RSub_id`; `exp_subst_id` rewrites `e[id]` to `e`; read off
 the normal form from `RE`.
 
+## Traps (found while building `StlcEqns.v` — later layers should follow these)
+
+1. **Do not transcribe rule shapes; read them from the compiled language.** Use
+   `Definition r_foo := Eval vm_compute in rule_of "foo".` plus an explicit
+   `Lemma in_foo : In ("foo", r_foo) stlc_unit` proved by
+   `apply named_list_lookup_err_in; vm_compute; reflexivity.` Each instance lemma is then checked
+   against the *real* rule by conversion at `apply` time.
+
+2. **Performance.** A driver that leaves `match named_list_lookup_err stlc_unit name with ...`
+   unreduced costs ~35 s *per lemma* at `apply` (the kernel reduces the lookup with default
+   machinery) — ~15 min for one file. The `Eval vm_compute in` + explicit `In` pattern above brings
+   the same file to ~1 s. Also: **`with_rule_in_wf_crush` does not terminate on this language**
+   (>10 min for a single `wf_ctx c'` goal); use `rule_in_wf` + `inversion` instead.
+
+3. **`wf_subst`/`wf_args`/`eq_args`/`wf_ctx` must be written with `(Model := core_model stlc_unit)`
+   explicitly.** `Core.v`'s `Notation wf_subst l := ...` is not in scope at top level after
+   `Import Core.Notations`, and bare `wf_subst stlc_unit ...` silently unifies `sort := rule string`
+   instead of erroring.
+
+4. **Congruence sorts are right-biased.** `term_con_congruence`/`eq_args` instantiate the later
+   arguments' hypothesis sorts, and the conclusion's sort, at the RIGHT-hand (`s2`) arguments — e.g.
+   `ValSubst_cong` concludes at `Sval G2 A2`, not `G1`/`A1`. Getting the left-sorted version needs
+   `eq_term_conv`. Callers with equal indices just pass `eq_term_refl`.
+
 ## Build
 
 ```
