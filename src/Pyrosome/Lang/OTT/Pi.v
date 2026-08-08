@@ -30,7 +30,7 @@ Import PreRule.Notations.
    implicit env/info args explicit) so it can be added with `push_rule` — which
    runs only the automated wf-CHECK (`compute_wf_rule`).  This avoids
    `elab_rule`/`infer_rule`, whose e-graph type-INFERENCE does not terminate on
-   this rule.  (Checked in isolation: compute_wf_rule closes it in ~31s / 0.5GB.)
+   this rule.  (compute_wf_rule itself closes it in ~90s / <1GB.)
 
    The equation is η-expansion `f = λx. (wk1 f) x`: in `ext G (El F)` the domain
    code F is weakened along wkn, the codomain code B lifted along `under' wkn`
@@ -243,10 +243,9 @@ Proof.
      type carries `info irr`, so any two inhabitants are already equal). *)
   (* η for proof-relevant Π — pre-elaborated, added via push_rule (automated
      wf-check only; see pi_rel_eta_rule above for why elab_rule cannot be used).
-     The wf-check's e-graph equality saturation does not currently terminate
-     (separate fix in progress), so the obligation is stubbed with `todo` via
-     push_rule_todo.  Restore `push_rule` once saturation is fixed. *)
-  push_rule_todo pi_rel_eta_rule.
+     The check runs the e-graph equality saturation on the fully-elaborated
+     rule and closes it in ~90s. *)
+  push_rule pi_rel_eta_rule.
 
   apply wf_lang_nil.
 Unshelve.
