@@ -192,6 +192,30 @@ Proof: `normalization_from_model` (Gluing/StlcNormalization.v) gives
 quantifier at `D := G`, `g := Id G` via `RSub_id`; `exp_subst_id` rewrites `e[id]` to `e`; read off
 the normal form from `RE`.
 
+## CORRECTION (found while proving Layer 2): the canonical-form grammar was INCOMPLETE
+
+`neet_app` requires the *function* to be neutral. But in CBV, `STLC-beta` fires only when BOTH
+sides are `ret`s, so
+
+    App G A B (Ret G (Arr A B) (Lam G A B e)) n        with n NEUTRAL
+
+is stuck and lies in neither `NeET` nor `NfET`. Witness: `G = Ext Emp (Arr Unit Unit)`,
+`n = App G Unit Unit (Ret G (Arr Unit Unit) (Hd Emp (Arr Unit Unit))) (Ret G Unit (Tt G))`, applied
+to the identity lambda — well typed, and provably equal to nothing in the grammar.
+
+Left unfixed this **falsifies the final theorem**, and shows up in Layer 4's `app` congruence as
+`RE_cases` giving "ret of a reducible value" for the function and "neutral" for the argument, with
+no way to combine them.
+
+FIX belongs in Layer 1 — generalize the argument-stuck case to any normal function value:
+
+    neet_lamapp : NfVT G (Arr A B) v -> NeET G A n ->
+                  NeET G B (App G A B (Ret G (Arr A B) v) n)
+
+plus the corresponding `*_wk` case. Layer 2 needs no change: its proofs use only the two `NfET`
+constructors, `NfVT_wk`/`NfET_wk`/`NeET_wk`, and the fact that every `NeET` subject is an `App`,
+all of which the new clause respects.
+
 ## Traps (found while building `StlcEqns.v` — later layers should follow these)
 
 1. **Do not transcribe rule shapes; read them from the compiled language.** Use
