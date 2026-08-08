@@ -7,21 +7,20 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-From Pyrosome.Gluing Require Import StlcModel StlcNormalization StlcNormalForms
-  StlcEqns StlcLogRel StlcRSub.
+From Pyrosome.Gluing.Stlc Require Import Model Normalization NormalForms Eqns LogRel RSub.
 Import Core.Notations.
 
 (* Layer 4, semantic core.
 
-   [StlcModelCong.v]'s congruence obligations and [StlcModelEq.v]'s equation
+   [ModelCong.v]'s congruence obligations and [ModelEq.v]'s equation
    obligations are developed independently -- neither file imports the other
    -- but each needs exactly the same TWO facts about reducibility: applying
    two reducible expressions is again reducible ([RE_app]), and a substituted
    lambda is reducible ([RV_lam_sub]/[RV_lam]).  Both are where the real work
    of Layer 4 happens: [RE_app] is where the "stuck" canonical forms of
-   Gluing/StlcNormalForms.v ([neet_app], [neet_lamapp]) actually get produced,
+   Gluing/Stlc/NormalForms.v ([neet_app], [neet_lamapp]) actually get produced,
    and [RV_lam_sub] is where a substitution gets pushed under a binder and the
-   beta equations of Gluing/StlcEqns.v get consumed.  Stating them once, here,
+   beta equations of Gluing/Stlc/Eqns.v get consumed.  Stating them once, here,
    is what lets the congruence and equation proofs stay genuinely independent
    of each other while still sharing the one place their semantics has
    content. *)
@@ -118,7 +117,7 @@ Qed.
 (* [RV_lam] is exactly [RV_lam_sub] with its target-context/substitution
    parameters ([D], [g]) pulled to a trailing [forall] and renamed ([G],
    [g]), and its own environment argument renamed [Y] -- the same fact,
-   reassociated so that [StlcModelCong.cong_obligation]'s [lambda] case, which
+   reassociated so that [ModelCong.cong_obligation]'s [lambda] case, which
    applies it by name via [apply RV_lam; assumption], sees an unchanged
    statement. *)
 Lemma RV_lam Y A B e

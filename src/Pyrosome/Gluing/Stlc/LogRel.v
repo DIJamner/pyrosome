@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab.
-From Pyrosome.Gluing Require Import StlcModel StlcNormalization StlcNormalForms.
+From Pyrosome.Gluing.Stlc Require Import Model Normalization NormalForms.
 Import Core.Notations.
 
 (* ================================================================== *)
@@ -181,7 +181,7 @@ Qed.
 (* Closure of [RV] under provable equality needs no [EnvOk]/[TyOk] side
    condition, unlike a first glance at the arrow clause's Kripke quantifier
    might suggest: inverting the SORT of the reducible value at hand
-   ([wft_val_inv], Gluing/StlcNormalForms.v) recovers well-formedness of its
+   ([wft_val_inv], Gluing/Stlc/NormalForms.v) recovers well-formedness of its
    indices directly, without ever needing to know they are [EnvOk]/[TyOk]. *)
 Lemma RV_eq G A v v'
   : RV G A v -> eqt (Sval G A) v v' -> RV G A v'.

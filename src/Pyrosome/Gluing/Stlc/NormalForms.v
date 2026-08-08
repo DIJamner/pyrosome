@@ -7,8 +7,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab.
-From Pyrosome.Gluing Require Import StlcModel StlcNormalization.
-From Pyrosome.Gluing Require Export StlcEqns.
+From Pyrosome.Gluing.Stlc Require Import Model Normalization.
+From Pyrosome.Gluing.Stlc Require Export Eqns.
 Import Core.Notations.
 
 Notation term := (@term string).
@@ -185,8 +185,8 @@ Local Notation eqt := (eq_term stlc_unit []).
    SINGLE rule of the language, so inverting [wf_sort] on a concrete sort
    recovers plain well-formedness of those indices with no further
    hypotheses -- in particular no [EnvOk]/[TyOk] on the indices themselves.
-   This is what [RSub_wf]/[RSub_eq] (Gluing/StlcRSub.v) and [RV_eq]
-   (Gluing/StlcLogRel.v) lean on to stay side-condition-free: given an
+   This is what [RSub_wf]/[RSub_eq] (Gluing/Stlc/RSub.v) and [RV_eq]
+   (Gluing/Stlc/LogRel.v) lean on to stay side-condition-free: given an
    equation at [sub G G']/[val G A]/[exp G A], inverting the SORT of either
    side is enough to reconstruct [wft G Senv]/[wft A Sty], without ever
    needing [EnvOk]/[TyOk] for [G]/[A] themselves. *)
@@ -237,10 +237,10 @@ Proof. intro H; apply wf_sort_exp_inv; eapply wft_wf_sort; exact H. Qed.
 (* ------------------------------------------------------------------ *)
 
 (* The 18 equation lemmas ([eq_val_subst_id], [eq_wkn_snoc], ...) and the
-   [stlc_unit_cong_inst]-based congruence toolkit live in Gluing/StlcEqns.v;
+   [stlc_unit_cong_inst]-based congruence toolkit live in Gluing/Stlc/Eqns.v;
    this file only needs the specializations below, whose statements pin the
    congruence rules' left- and right-hand sides together (the general form in
-   StlcEqns.v keeps them independent, which is more than the canonical-forms
+   Eqns.v keeps them independent, which is more than the canonical-forms
    development ever needs). *)
 
 Lemma cong_Cmp G1 G2 G3 f f' g g'
@@ -540,7 +540,7 @@ Ltac wfa :=
 
 (* [lift_cmp_wkn] -- the workhorse for both non-identity cases of [Wk_cmp]'s
    lift branch, post-composing a lifted weakening with a [wkn] drop -- is a
-   DERIVED RULE and lives in Gluing/StlcEqns.v, alongside [eq_lift_inst] and
+   DERIVED RULE and lives in Gluing/Stlc/Eqns.v, alongside [eq_lift_inst] and
    [eq_beta_lift]; [wfa] below discharges its [EnvOk]/[TyOk]-derived [wft]
    premises exactly as it would for a hand-proved lemma. *)
 

@@ -7,7 +7,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound StlcNormalization.
+From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
+From Pyrosome.Gluing.Stlc Require Import Normalization.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC.
 Import Core.Notations.
 

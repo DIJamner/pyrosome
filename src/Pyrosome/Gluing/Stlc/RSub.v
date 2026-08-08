@@ -7,8 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab.
-From Pyrosome.Gluing Require Import StlcModel StlcNormalization StlcEqns
-  StlcNormalForms StlcLogRel.
+From Pyrosome.Gluing.Stlc Require Import Model Normalization Eqns NormalForms LogRel.
 Import Core.Notations.
 
 (* ================================================================== *)
@@ -101,7 +100,7 @@ Qed.
 
 (* Both clauses hand back an equation whose left-hand side is [g] itself, at
    the sort [sub D G]; so well-typedness needs no induction, and inverting the
-   equation's SORT ([wft_sub_inv], Gluing/StlcNormalForms.v) would recover
+   equation's SORT ([wft_sub_inv], Gluing/Stlc/NormalForms.v) would recover
    [EnvOk]-free well-formedness of [G] if this ever needed it -- it doesn't,
    since [G] never appears as an index to be checked, only as the (already
    well-formed, by [RSub_inv]) subject's sort. *)

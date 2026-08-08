@@ -8,14 +8,14 @@ Open Scope list.
 From Utils Require Import Utils Ltac.
 From Pyrosome Require Import Theory.Core Tools.Matches.
 From Pyrosome.Tools.EGraph Require Import Automation ComputeWf.
-From Pyrosome.Gluing Require Import StlcModel StlcNormalization.
+From Pyrosome.Gluing.Stlc Require Import Model Normalization.
 Import Core.Notations.
 
 (* The equational toolkit for [stlc_unit].
 
    Each of the language's 18 equations is repackaged here as a directly usable
    lemma: the equation instance is stated with explicit term arguments in the
-   abbreviation vocabulary of Gluing/StlcModel.v ([Cmp], [Snoc], [ValSubst],
+   abbreviation vocabulary of Gluing/Stlc/Model.v ([Cmp], [Snoc], [ValSubst],
    ...), and carries exactly the well-formedness hypotheses the instantiation
    needs -- one [wf_term] per variable of the rule's context, at that variable's
    sort, already instantiated by the preceding arguments.  The congruence rules
@@ -441,7 +441,7 @@ Definition w0v := var "w0".
 
 (* ---- a lifted weakening composed with a drop peels the lift ---- *)
 
-(* The workhorse of [Wk_cmp]'s lift branch (Gluing/StlcNormalForms.v):
+(* The workhorse of [Wk_cmp]'s lift branch (Gluing/Stlc/NormalForms.v):
    post-composing a lifted weakening with a [wkn] drop collapses to a [wkn]
    in front of the composite of the two smaller weakenings. *)
 Definition c_lift_cmp_wkn : ctx string :=
@@ -487,7 +487,7 @@ Qed.
 (* ---- instantiating a lifted substitution ---- *)
 
 (* [<id, u> o <wkn o g, hd> = <g, u>].  This is the equational heart of both
-   lambda cases in Gluing/StlcSemCore.v: it is what turns "substitute under
+   lambda cases in Gluing/Stlc/SemCore.v: it is what turns "substitute under
    the binder, then beta" into "extend the substitution by the argument". *)
 Definition c_lift_inst : ctx string :=
   [("u", Sval Dv Av); ("g", Ssub Dv Gv); ("A", Sty); ("G", Senv); ("D", Senv)].
@@ -532,7 +532,7 @@ Qed.
    ([val_subst lambda]), fire [STLC-beta], then reassociate via
    [eq_lift_inst] above.  This is the equational content behind both the
    [lambda] congruence and the [STLC-beta] equation case of
-   Gluing/StlcSemCore.v -- what used to be a four-step hand-written chain is
+   Gluing/Stlc/SemCore.v -- what used to be a four-step hand-written chain is
    now one e-graph call. *)
 Definition c_beta_lift : ctx string :=
   [("e", Sexp (Ext Gv Av) Bv); ("u", Sval Dv Av); ("g", Ssub Dv Gv);

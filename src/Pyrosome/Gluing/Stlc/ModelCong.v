@@ -7,9 +7,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound
-  StlcModel StlcNormalization StlcNormalForms StlcEqns StlcLogRel StlcRSub
-  StlcSemCore StlcCeq.
+From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
+From Pyrosome.Gluing.Stlc Require Import Model Normalization NormalForms Eqns LogRel RSub SemCore Ceq.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC SimpleUnit.
 Import Core.Notations.
 
@@ -21,11 +20,11 @@ Import Core.Notations.
    equation instances -- is developed independently).
 
    Everything goes through the constructors and clause lemmas of
-   Gluing/StlcCeq.v ([ceq_ty] ... [ceq_exp], [Ceq_ty_e] ... [Ceq_exp_e]);
+   Gluing/Stlc/Ceq.v ([ceq_ty] ... [ceq_exp], [Ceq_ty_e] ... [Ceq_exp_e]);
    [Ceq_term] is never inverted by hand outside of those five lemmas, and
    [RVarr] is never unfolded either.  The two obligations with real semantic
    content -- [lambda] and [app] -- lean on [RV_lam]/[RE_app] from
-   Gluing/StlcSemCore.v, which is also what [StlcModelEq.v]'s equation
+   Gluing/Stlc/SemCore.v, which is also what [ModelEq.v]'s equation
    obligations reduce to. *)
 
 Local Notation eqt := (eq_term stlc_unit []).
@@ -131,7 +130,7 @@ Qed.
 
 (* The semantic conjunct of every clause constrains only the LEFT term; the
    corresponding fact for the right one is recovered by transporting along the
-   equation, via [RSub_eq]/[RV_eq] (Gluing/StlcRSub.v, Gluing/StlcLogRel.v).
+   equation, via [RSub_eq]/[RV_eq] (Gluing/Stlc/RSub.v, Gluing/Stlc/LogRel.v).
    Both are side-condition-free, which is exactly what this obligation needs:
    its hypothesis constrains only the left-hand term, so nothing here supplies
    [EnvOk]/[TyOk] for the sort's indices, only their well-formedness. *)

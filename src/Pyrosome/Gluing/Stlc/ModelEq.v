@@ -7,9 +7,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound
-  StlcModel StlcNormalization StlcNormalForms StlcEqns StlcLogRel StlcRSub
-  StlcSemCore StlcCeq.
+From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
+From Pyrosome.Gluing.Stlc Require Import Model Normalization NormalForms Eqns LogRel RSub SemCore Ceq.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC SimpleUnit.
 Import Core.Notations.
 
@@ -26,7 +25,7 @@ Import Core.Notations.
    It deliberately does NOT build the [Instance]; the congruence half and the
    assembly live elsewhere.
 
-   The shape of every proof is dictated by [Ceq_term] (Gluing/StlcCeq.v), which
+   The shape of every proof is dictated by [Ceq_term] (Gluing/Stlc/Ceq.v), which
    is a conjunction of
 
      (a) an EQUATION [eqt t e1[/s1/] e2[/s2/]], and
@@ -34,12 +33,12 @@ Import Core.Notations.
 
    (a) is always [congruence on e1 along the argument equations] followed by
    [the language's own equation, instantiated at s2] -- i.e. a direct hit in
-   Gluing/StlcEqns.v.  (b) is where the content is: it must be established for
+   Gluing/Stlc/Eqns.v.  (b) is where the content is: it must be established for
    [e1[/s1/]] from the semantic conjuncts of the arguments, transporting along
    the equation with [RV_eq]/[RE_eq]/[RSub_eq].
 
    Only three of the eighteen equations carry real content, and they all
-   funnel through [RE_app] and [RV_lam_sub] (Gluing/StlcSemCore.v) -- needed
+   funnel through [RE_app] and [RV_lam_sub] (Gluing/Stlc/SemCore.v) -- needed
    by [exp_subst app] and by [val_subst lambda]/[STLC-beta] respectively. *)
 
 Local Notation eqt := (eq_term stlc_unit []).
@@ -153,8 +152,8 @@ Ltac ceq_wf :=
    substitution instance is a congruence.  Nine of the eighteen obligations
    are nothing but an instance of one of these three lemmas.  No [EnvOk]/
    [TyOk] hypothesis on the indices is needed: [RSub_wf]/[RSub_eq]/[RV_eq]
-   (Gluing/StlcRSub.v, Gluing/StlcLogRel.v) are side-condition-free, and
-   [wft_sub_inv]/[wft_val_inv]/[wft_exp_inv] (Gluing/StlcNormalForms.v)
+   (Gluing/Stlc/RSub.v, Gluing/Stlc/LogRel.v) are side-condition-free, and
+   [wft_sub_inv]/[wft_val_inv]/[wft_exp_inv] (Gluing/Stlc/NormalForms.v)
    recover well-formedness of [G]/[G']/[A] straight from [Ha]. *)
 
 Lemma Ceq_sub_left G G' a a' b

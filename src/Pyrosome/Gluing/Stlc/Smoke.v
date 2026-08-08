@@ -6,8 +6,7 @@ Import ListNotations.
 Open Scope string. Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-From Pyrosome.Gluing Require Import StlcModel StlcNormalization StlcNormalForms
-  StlcLogRel StlcRSub StlcCeq StlcModelOk.
+From Pyrosome.Gluing.Stlc Require Import Model Normalization NormalForms LogRel RSub Ceq ModelOk.
 Import Core.Notations.
 
 (* NON-VACUITY: a concrete well-typed open term gets a normal form.

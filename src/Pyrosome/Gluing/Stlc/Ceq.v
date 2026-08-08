@@ -7,8 +7,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound
-  StlcModel StlcNormalization StlcNormalForms StlcEqns StlcLogRel StlcRSub.
+From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
+From Pyrosome.Gluing.Stlc Require Import Model Normalization NormalForms Eqns LogRel RSub.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC SimpleUnit.
 Import Core.Notations.
 
@@ -34,7 +34,7 @@ Import Core.Notations.
 
    Note the semantic conjunct constrains only [e1].  The corresponding fact for
    [e2] is recovered from the equation via [RV_eq]/[RE_eq]/[RSub_eq]; that is
-   what [term_sym_obligation] in Gluing/StlcModelCong.v does. *)
+   what [term_sym_obligation] in Gluing/Stlc/ModelCong.v does. *)
 
 Local Notation eqt := (eq_term stlc_unit []).
 Local Notation wft := (wf_term stlc_unit []).

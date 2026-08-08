@@ -7,15 +7,14 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound
-  StlcModel StlcNormalization StlcNormalForms StlcEqns StlcLogRel StlcRSub
-  StlcCeq StlcModelCong StlcModelEq.
+From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
+From Pyrosome.Gluing.Stlc Require Import Model Normalization NormalForms Eqns LogRel RSub Ceq ModelCong ModelEq.
 Import Core.Notations.
 
 (* Layer 4c: assembly.
 
    The two halves of [CutTModel_ok] -- the 16 congruence + 5 sort obligations
-   (StlcModelCong.v) and the 18 equation obligations (StlcModelEq.v) -- are
+   (ModelCong.v) and the 18 equation obligations (ModelEq.v) -- are
    plugged into the class, and the normalization theorem follows.
 
    [cterm_var] and [csort_by] are vacuous here: the meta-context is empty, and
