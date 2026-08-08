@@ -352,6 +352,19 @@ Section WithVar.
         eapply eval_term; eassumption.
       Qed.
 
+      (* The normalization driver.  Instantiating at [e1 = e2 = e] via
+         reflexivity turns well-typedness alone into the model's content at [e].
+         For a model whose [ceq_term t e e] says "e has a normal form of type t",
+         this IS the normalization statement -- so building such a model is all
+         that a normalization proof for [l] requires. *)
+      Corollary cut_model_normalization t e
+        : wf_term l c e t -> inhabited (ceq_term (CutTModel := CM) t e e).
+      Proof.
+        intro Hwf.
+        apply cut_model_inhabited.
+        apply eq_term_refl; assumption.
+      Qed.
+
     End WithModel.
 
   End WithLangAndCtx.
