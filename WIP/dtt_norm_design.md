@@ -355,6 +355,40 @@ Obligation count: `cterm_cong` 32, `cterm_by` 28, `csort_cong` 9, `csort_by` 0, 
 | **P9** | extensions: `ProofIrr`, `Sigma`, `Id`, `Computations` | — |
 | **—** | `Cast` | **breaks §2**: `u0` is a code for a universe, so eliminators can land in `U`, code rigidity fails, and the whole architecture reverts to the induction–recursion problem. Do not add `Cast` without redesigning Layers 0.5 and 2 |
 
+## 9b. The index-spelling mismatch, and why it is not an authoring bug
+
+`tlvl` has `next0` (`next L0 = iota L1`) and `next1` (`next L1 = inf`), and the compiled rules of
+`ott_dtt` do not agree on which representative to use — not merely between neighbouring rules, but
+between a term rule and its own substitution equation: `"Nat"` concludes at `rel (next L0)` and
+`"Nat subst"` at `rel (iota L1)`; `"Empty"` at `rel (iota L1)` and `"Empty subst"` at
+`rel (next L0)`; the codomain code `B` sits at `rel (iota L1)` in `"Pi_irr"`/`"Pi_irr subst"`/
+`"Pi_irr beta"` but at `rel (next L0)` in `"lam_irr"`/`"app_irr"`.
+
+**Writing the ideal representation in the prerule does not fix it.** `Lang/OTT/Nat.v` already
+writes `rel (next L0)` uniformly in all four Nat/Empty rules. `Elab.PreRule`'s `infer_rule` does
+not take the written conclusion sort as authoritative: it loads the sort into an e-graph,
+saturates, and re-**extracts** a representative with `TypeInference.mk_weight`, which charges 1
+per non-hole atom. `info rel (next L0)` and `info rel (iota L1)` both cost 4, so the winner is an
+arbitrary tie-break, and it depends on the *ambient language* rather than on the rule. Both halves
+checked directly:
+
+* `infer_rule (ott_base ++ subst_ott ++ ott_info) inj` applied to the `"Empty"` rule returns
+  `next L0` whether the prerule is written with `next L0` or with `iota L1` — the two prerules
+  elaborate to the **identical** rule;
+* inside `Nat.v`'s `Derive`, where the base has grown by `Nat`/`zero`/`suc` and their substitution
+  equations, the same rule comes out `iota L1`.
+
+Fixing it at the source would mean either hand-elaborating the affected rules and adding them with
+`push_rule` (as `Pi.v` now does for η), or changing the extraction weight in
+`Tools/EGraph/TypeInference.v` — which re-elaborates every language in the project.
+
+**The cheap fix is to let the e-graph bridge it.** `WIP/DttIdx.v`'s `egraph_eq` discharges the
+index equations in 0.005 s of tactic time and 0.7 s at `Qed`, axiom-free; the conversion lemmas
+built on them (`eq_sort_ty_cong`, `eq_sort_exp_cong`, `eq_sort_exp_ty`, `wft_U0irr_next`,
+`wft_U0irr_iota`) live in `WIP/DttNfWf.v`. Every conversion the development needs falls into
+exactly two families: this `next0` spelling mismatch, and the *named normal type* of a variable or
+neutral (bridged by the clause's own `eq_term` premise).
+
 ## 10. What the previous attempt got wrong (unchanged, still worth heeding)
 
 17 581 lines, three mutually incompatible architectures, zero `Admitted`, no fundamental
