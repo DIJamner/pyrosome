@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound
   StlcModel StlcNormalization StlcNormalForms StlcEqns StlcLogRel StlcRSub
-  StlcCeq.
+  StlcSemCore StlcCeq.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC SimpleUnit.
 Import Core.Notations.
 
@@ -23,142 +23,16 @@ Import Core.Notations.
    Everything goes through the constructors and clause lemmas of
    Gluing/StlcCeq.v ([ceq_ty] ... [ceq_exp], [Ceq_ty_e] ... [Ceq_exp_e]);
    [Ceq_term] is never inverted by hand outside of those five lemmas, and
-   [RVarr] is never unfolded either. *)
+   [RVarr] is never unfolded either.  The two obligations with real semantic
+   content -- [lambda] and [app] -- lean on [RV_lam]/[RE_app] from
+   Gluing/StlcSemCore.v, which is also what [StlcModelEq.v]'s equation
+   obligations reduce to. *)
 
 Local Notation eqt := (eq_term stlc_unit []).
 Local Notation wft := (wf_term stlc_unit []).
 
 (* ================================================================== *)
-(* 1.  The two cases with real content: [lambda] and [app]             *)
-(* ================================================================== *)
-
-(* Post-composing the lifted substitution with the beta substitution
-   [<id, u>] collapses to [<g, u>].  This is the whole computation behind the
-   [lambda] congruence: pushing a substitution under a binder produces the
-   lift, and the subsequent beta step consumes it. *)
-Lemma eq_beta_lift G Y g A u
-  : wft G Senv -> wft Y Senv -> wft A Sty ->
-    wft g (Ssub G Y) -> wft u (Sval G A) ->
-    eqt (Ssub G (Ext Y A))
-      (Cmp G (Ext G A) (Ext Y A)
-         (Snoc G G (Id G) A u)
-         (Snoc (Ext G A) Y (Cmp (Ext G A) G Y (Wkn G A) g) A (Hd G A)))
-      (Snoc G Y g A u).
-Proof.
-  intros HG HY HA Hg Hu.
-  eapply eq_term_trans; [ apply eq_cmp_snoc; wfa | ].
-  apply cong_Snoc; [ wfa | wfa | wfa | | ].
-  - eapply eq_term_trans; [ apply eq_cmp_assoc; wfa | ].
-    eapply eq_term_trans;
-      [ apply cong_Cmp;
-        [ wfa | wfa | wfa | apply eq_wkn_snoc; wfa | apply eq_term_refl; wfa ]
-      | ].
-    apply eq_id_left; wfa.
-  - apply eq_snoc_hd; wfa.
-Qed.
-
-(* Applying a substituted lambda to a value: push the substitution under the
-   binder ([val_subst lambda]), fire [STLC-beta], then reassociate. *)
-Lemma eq_lam_beta G Y g A B e u
-  : wft G Senv -> wft Y Senv -> wft A Sty -> wft B Sty ->
-    wft g (Ssub G Y) -> wft e (Sexp (Ext Y A) B) -> wft u (Sval G A) ->
-    eqt (Sexp G B)
-      (App G A B (Ret G (Arr A B) (ValSubst G Y g (Arr A B) (Lam Y A B e)))
-           (Ret G A u))
-      (ExpSubst G (Ext Y A) (Snoc G Y g A u) B e).
-Proof.
-  intros HG HY HA HB Hg He Hu.
-  eapply eq_term_trans.
-  { apply cong_App; [ wfa | wfa | wfa | | apply eq_term_refl; wfa ].
-    apply cong_Ret; [ wfa | wfa | apply eq_val_subst_lambda; wfa ]. }
-  eapply eq_term_trans; [ apply eq_stlc_beta; wfa | ].
-  eapply eq_term_trans; [ apply eq_exp_subst_cmp; wfa | ].
-  apply cong_ExpSubst;
-    [ wfa | wfa | wfa | apply eq_beta_lift; wfa | apply eq_term_refl; wfa ].
-Qed.
-
-(* The [lambda] congruence's semantic half. *)
-Lemma RV_lam Y A B e
-  : EnvOk Y -> TyOk A -> TyOk B -> wft e (Sexp (Ext Y A) B) ->
-    (forall D s, EnvOk D -> RSub D (Ext Y A) s ->
-                 RE D B (ExpSubst D (Ext Y A) s B e)) ->
-    forall G g, EnvOk G -> RSub G Y g ->
-      RV G (Arr A B) (ValSubst G Y g (Arr A B) (Lam Y A B e)).
-Proof.
-  intros HY HA HB Hwe Hsem G g HG Hg.
-  assert (wft Y Senv) as HwY by (apply EnvOk_wf; assumption).
-  assert (wft A Sty) as HwA by (apply TyOk_wf; assumption).
-  assert (wft B Sty) as HwB by (apply TyOk_wf; assumption).
-  assert (wft G Senv) as HwG by (apply EnvOk_wf; assumption).
-  assert (wft g (Ssub G Y)) as Hwg by (apply RSub_wf; assumption).
-  assert (RE (Ext G A) B
-            (ExpSubst (Ext G A) (Ext Y A)
-               (Snoc (Ext G A) Y (Cmp (Ext G A) G Y (Wkn G A) g) A (Hd G A))
-               B e)) as Hre.
-  { apply Hsem; [ constructor; assumption | apply RSub_lift; assumption ]. }
-  destruct (CR_reify_E Hre) as [m [Hm Hem]].
-  apply RV_arr.
-  - exists (Lam G A B m); split.
-    + apply nfvt_lam; assumption.
-    + eapply eq_term_trans; [ apply eq_val_subst_lambda; wfa | ].
-      apply cong_Lam; [ wfa | wfa | wfa | exact Hem ].
-  - intros D w u Hw HD Hu.
-    assert (wft D Senv) as HwD by (apply EnvOk_wf; assumption).
-    assert (wft w (Ssub D G)) as Hww by (eapply Wk_wf; eassumption).
-    assert (wft u (Sval D A)) as Hwu by (eapply RV_wf; eassumption).
-    assert (RSub D Y (Cmp D G Y w g)) as Hg' by (eapply RSub_wk; eassumption).
-    assert (wft (Cmp D G Y w g) (Ssub D Y)) as Hwg' by wfa.
-    assert (RSub D (Ext Y A) (Snoc D Y (Cmp D G Y w g) A u)) as Hs
-      by (apply RSub_ext; assumption).
-    pose proof (Hsem D (Snoc D Y (Cmp D G Y w g) A u) HD Hs) as Hfin.
-    eapply RE_eq; [ exact Hfin | ].
-    apply eq_term_sym.
-    eapply eq_term_trans.
-    { apply cong_App; [ wfa | wfa | wfa | | apply eq_term_refl; wfa ].
-      apply cong_Ret; [ wfa | wfa | apply eq_val_subst_cmp; wfa ]. }
-    apply eq_lam_beta; wfa.
-Qed.
-
-(* The [app] congruence's semantic half.  The function either reduces to a
-   [ret] of a reducible value -- and then the argument either does too (a real
-   beta step, via [RV_apply]) or is neutral, making the whole application
-   stuck-but-neutral by [neet_lamapp] -- or is itself neutral, in which case
-   [neet_app] applies. *)
-Lemma RE_app G A B E E'
-  : EnvOk G -> TyOk A -> TyOk B ->
-    RE G (Arr A B) E -> RE G A E' -> RE G B (App G A B E E').
-Proof.
-  intros HG HA HB HE HE'.
-  assert (wft G Senv) as HwG by (apply EnvOk_wf; assumption).
-  assert (wft A Sty) as HwA by (apply TyOk_wf; assumption).
-  assert (wft B Sty) as HwB by (apply TyOk_wf; assumption).
-  assert (wft E (Sexp G (Arr A B))) as HwE by (eapply RE_wf; eassumption).
-  assert (wft E' (Sexp G A)) as HwE' by (eapply RE_wf; eassumption).
-  destruct (RE_cases HE) as [[v [Hv Heqv]] | [n [Hn Heqn]]].
-  - assert (wft v (Sval G (Arr A B))) as Hwv by (eapply RV_wf; eassumption).
-    destruct (RE_cases HE') as [[u [Hu Hequ]] | [m [Hm Heqm]]].
-    + assert (wft u (Sval G A)) as Hwu by (eapply RV_wf; eassumption).
-      eapply RE_eq; [ eapply RV_apply; eassumption | ].
-      apply eq_term_sym; apply cong_App;
-        [ wfa | wfa | wfa | exact Heqv | exact Hequ ].
-    + destruct (CR_reify Hv) as [nv [Hnv Heqnv]].
-      assert (wft nv (Sval G (Arr A B))) as Hwnv by (eapply eqt_wf_r; eassumption).
-      assert (wft m (Sexp G A)) as Hwm by (eapply eqt_wf_r; eassumption).
-      eapply RE_ne with (n := App G A B (Ret G (Arr A B) nv) m);
-        [ apply neet_lamapp; assumption | | assumption | assumption ].
-      apply cong_App; [ wfa | wfa | wfa | | exact Heqm ].
-      eapply eq_term_trans; [ exact Heqv | ].
-      apply cong_Ret; [ wfa | wfa | exact Heqnv ].
-  - assert (wft n (Sexp G (Arr A B))) as Hwn by (eapply eqt_wf_r; eassumption).
-    destruct (CR_reify_E HE') as [m [Hm Heqm]].
-    assert (wft m (Sexp G A)) as Hwm by (eapply eqt_wf_r; eassumption).
-    eapply RE_ne with (n := App G A B n m);
-      [ apply neet_app; assumption | | assumption | assumption ].
-    apply cong_App; [ wfa | wfa | wfa | exact Heqn | exact Heqm ].
-Qed.
-
-(* ================================================================== *)
-(* 2.  Decomposing the rule-membership hypothesis                      *)
+(* 1.  Decomposing the rule-membership hypothesis                      *)
 (* ================================================================== *)
 
 (* The language is a closed 39-element list, so [In] is a concrete
@@ -200,7 +74,7 @@ Ltac ceq_ty_env :=
   end.
 
 (* ================================================================== *)
-(* 3.  The obligations                                                 *)
+(* 2.  The obligations                                                 *)
 (* ================================================================== *)
 
 (* [cterm_var]: the ambient meta-context is empty (openness is object-level),

@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound
   StlcModel StlcNormalization StlcNormalForms StlcEqns StlcLogRel StlcRSub
-  StlcCeq.
+  StlcSemCore StlcCeq.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC SimpleUnit.
 Import Core.Notations.
 
@@ -39,9 +39,8 @@ Import Core.Notations.
    the equation with [RV_eq]/[RE_eq]/[RSub_eq].
 
    Only three of the eighteen equations carry real content, and they all
-   funnel through the three lemmas in the "semantic core" section below:
-   [RE_app] (needed by [exp_subst app]), [eq_beta_lift] and [RV_lam_sub]
-   (needed by [val_subst lambda] and [STLC-beta]). *)
+   funnel through [RE_app] and [RV_lam_sub] (Gluing/StlcSemCore.v) -- needed
+   by [exp_subst app] and by [val_subst lambda]/[STLC-beta] respectively. *)
 
 Local Notation eqt := (eq_term stlc_unit []).
 Local Notation wft := (wf_term stlc_unit []).
@@ -210,136 +209,7 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 3.  The semantic core                                               *)
-(* ================================================================== *)
-
-(* ---- application of two reducible expressions ---- *)
-
-(* This is where Layer 1's [neet_lamapp] clause earns its keep: the middle
-   case combines a function that is the [ret] of a reducible value with a
-   NEUTRAL argument, and the result is stuck without being an application of
-   a neutral. *)
-Lemma RE_app G A B ef ea
-  : RE G (Arr A B) ef -> RE G A ea -> EnvOk G -> TyOk A -> TyOk B ->
-    RE G B (App G A B ef ea).
-Proof.
-  intros Hf Ha HG HA HB.
-  assert (wft ef (Sexp G (Arr A B))) as Hwf by (eapply RE_wf; eassumption).
-  assert (wft ea (Sexp G A)) as Hwa by (eapply RE_wf; eassumption).
-  destruct (RE_cases Hf) as [[vf [Hvf Heqf]] | [nf [Hnf Heqf]]].
-  - assert (wft vf (Sval G (Arr A B))) as Hwvf by (eapply RV_wf; eassumption).
-    destruct (RE_cases Ha) as [[va [Hva Heqa]] | [na [Hna Heqa]]].
-    + (* ret / ret : a genuine beta redex, handled by [RV_apply] *)
-      assert (wft va (Sval G A)) as Hwva by (eapply RV_wf; eassumption).
-      eapply RE_eq; [ eapply RV_apply; eassumption | ].
-      apply cong_App; [ wfa | wfa | wfa | | ];
-        apply eq_term_sym; assumption.
-    + (* ret / neutral : stuck, [neet_lamapp] *)
-      destruct (CR_reify Hvf) as [nv [Hnv Heqv]].
-      assert (wft nv (Sval G (Arr A B))) as Hwnv by (eapply eqt_wf_r; eassumption).
-      assert (wft na (Sexp G A)) as Hwna by (eapply eqt_wf_r; eassumption).
-      eapply RE_ne with (n := App G A B (Ret G (Arr A B) nv) na);
-        [ apply neet_lamapp; assumption | | assumption | assumption ].
-      apply cong_App; [ wfa | wfa | wfa | | exact Heqa ].
-      eapply eq_term_trans; [ exact Heqf | ].
-      apply cong_Ret; [ wfa | wfa | exact Heqv ].
-  - (* neutral function : stuck, [neet_app] *)
-    destruct (CR_reify_E Ha) as [na [Hna Heqa]].
-    assert (wft nf (Sexp G (Arr A B))) as Hwnf by (eapply eqt_wf_r; eassumption).
-    assert (wft na (Sexp G A)) as Hwna by (eapply eqt_wf_r; eassumption).
-    eapply RE_ne with (n := App G A B nf na);
-      [ apply neet_app; assumption | | assumption | assumption ].
-    apply cong_App; [ wfa | wfa | wfa | exact Heqf | exact Heqa ].
-Qed.
-
-(* ---- instantiating a lifted substitution ---- *)
-
-(* [<id, u> o <wkn o g, hd> = <g, u>].  This is the equational heart of the
-   two lambda cases: it is what turns "substitute under the binder, then beta"
-   into "extend the substitution by the argument". *)
-Lemma eq_lift_inst D G g A u
-  : EnvOk D -> EnvOk G -> TyOk A -> wft g (Ssub D G) -> wft u (Sval D A) ->
-    eqt (Ssub D (Ext G A))
-      (Cmp D (Ext D A) (Ext G A)
-         (Snoc D D (Id D) A u)
-         (Snoc (Ext D A) G (Cmp (Ext D A) D G (Wkn D A) g) A (Hd D A)))
-      (Snoc D G g A u).
-Proof.
-  intros HD HG HA Hg Hu.
-  eapply eq_term_trans; [ apply eq_cmp_snoc; wfa | ].
-  apply cong_Snoc; [ wfa | wfa | wfa | | ].
-  - eapply eq_term_trans; [ apply eq_cmp_assoc; wfa | ].
-    eapply eq_term_trans;
-      [ apply cong_Cmp;
-        [ wfa | wfa | wfa | apply eq_wkn_snoc; wfa | apply eq_term_refl; wfa ]
-      | ].
-    apply eq_id_left; wfa.
-  - apply eq_snoc_hd; wfa.
-Qed.
-
-(* Beta at a substituted lambda: [(g[lambda e]) u = e[<g,u>]]. *)
-Lemma eq_beta_lift D G g A B u e
-  : EnvOk D -> EnvOk G -> TyOk A -> TyOk B ->
-    wft g (Ssub D G) -> wft u (Sval D A) -> wft e (Sexp (Ext G A) B) ->
-    eqt (Sexp D B)
-      (App D A B (Ret D (Arr A B) (ValSubst D G g (Arr A B) (Lam G A B e)))
-         (Ret D A u))
-      (ExpSubst D (Ext G A) (Snoc D G g A u) B e).
-Proof.
-  intros HD HG HA HB Hg Hu He.
-  eapply eq_term_trans.
-  { apply cong_App; [ wfa | wfa | wfa | | apply eq_term_refl; wfa ].
-    apply cong_Ret; [ wfa | wfa | apply eq_val_subst_lambda; wfa ]. }
-  eapply eq_term_trans; [ apply eq_stlc_beta; wfa | ].
-  eapply eq_term_trans; [ apply eq_exp_subst_cmp; wfa | ].
-  apply cong_ExpSubst; [ wfa | wfa | wfa | | apply eq_term_refl; wfa ].
-  apply eq_lift_inst; wfa.
-Qed.
-
-(* ---- a substituted lambda is reducible ---- *)
-
-(* The one place a substitution has to be pushed under a binder.  [RSub_lift]
-   produces EXACTLY the substitution the [val_subst lambda] equation
-   generates, which is why the normal-form half goes through unchanged. *)
-Lemma RV_lam_sub G A B e D g
-  : (forall D' m, EnvOk D' -> RSub D' (Ext G A) m ->
-                  RE D' B (ExpSubst D' (Ext G A) m B e)) ->
-    EnvOk D -> EnvOk G -> TyOk A -> TyOk B -> RSub D G g ->
-    wft e (Sexp (Ext G A) B) ->
-    RV D (Arr A B) (ValSubst D G g (Arr A B) (Lam G A B e)).
-Proof.
-  intros He HD HG HA HB Hg Hwe.
-  assert (wft g (Ssub D G)) as Hwg by (eapply RSub_wf; eassumption).
-  apply RV_arr.
-  - (* the normal form: reify the body under the lifted substitution *)
-    assert (EnvOk (Ext D A)) as HDA by (constructor; assumption).
-    assert (RSub (Ext D A) (Ext G A)
-              (Snoc (Ext D A) G (Cmp (Ext D A) D G (Wkn D A) g) A (Hd D A)))
-      as Hlift by (apply RSub_lift; assumption).
-    destruct (CR_reify_E (He _ _ HDA Hlift)) as [n [Hn Heqn]].
-    exists (Lam D A B n); split.
-    + apply nfvt_lam; assumption.
-    + eapply eq_term_trans; [ apply eq_val_subst_lambda; wfa | ].
-      apply cong_Lam; [ wfa | wfa | wfa | exact Heqn ].
-  - (* the Kripke clause: shift along [w], then beta *)
-    intros D' w u Hw HD' Hu.
-    assert (wft w (Ssub D' D)) as Hww by (eapply Wk_wf; eassumption).
-    assert (wft u (Sval D' A)) as Hwu by (eapply RV_wf; eassumption).
-    assert (RSub D' G (Cmp D' D G w g)) as Hg''
-        by (eapply RSub_wk; eassumption).
-    assert (wft (Cmp D' D G w g) (Ssub D' G)) as Hwg'' by wfa.
-    assert (RSub D' (Ext G A) (Snoc D' G (Cmp D' D G w g) A u)) as Hsn
-        by (apply RSub_ext; assumption).
-    eapply RE_eq; [ exact (He _ _ HD' Hsn) | ].
-    apply eq_term_sym.
-    eapply eq_term_trans.
-    { apply cong_App; [ wfa | wfa | wfa | | apply eq_term_refl; wfa ].
-      apply cong_Ret; [ wfa | wfa | apply eq_val_subst_cmp; wfa ]. }
-    apply eq_beta_lift; wfa.
-Qed.
-
-(* ================================================================== *)
-(* 4.  One lemma per equation                                          *)
+(* 3.  One lemma per equation                                          *)
 (* ================================================================== *)
 
 (* Naming convention: the [X1]/[Y1] pairs are the left- and right-hand values
@@ -766,7 +636,7 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 5.  Decomposing rule membership                                     *)
+(* 4.  Decomposing rule membership                                     *)
 (* ================================================================== *)
 
 (* Performance note (see WIP/stlc_norm_design.md, "Traps").  A driver that
@@ -787,7 +657,7 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 6.  The obligation                                                  *)
+(* 5.  The obligation                                                  *)
 (* ================================================================== *)
 
 Lemma by_obligation

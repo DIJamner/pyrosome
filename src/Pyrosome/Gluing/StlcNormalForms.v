@@ -538,26 +538,11 @@ Ltac wfa :=
     | solve [ eapply VarT_TyOk; wfa ]
     | solve [ eapply NeET_TyOk; wfa ] ].
 
-(* The workhorse for both non-identity cases of [Wk_cmp]'s lift branch:
-   post-composing a lifted weakening with a [wkn] drop peels the lift. *)
-Lemma lift_cmp_wkn D0 G0 X A w0 u
-  : EnvOk D0 -> EnvOk G0 -> EnvOk X -> TyOk A ->
-    wft w0 (Ssub D0 G0) -> wft u (Ssub G0 X) ->
-    eqt (Ssub (Ext D0 A) X)
-      (Cmp (Ext D0 A) (Ext G0 A) X
-         (Snoc (Ext D0 A) G0 (Cmp (Ext D0 A) D0 G0 (Wkn D0 A) w0) A (Hd D0 A))
-         (Cmp (Ext G0 A) G0 X (Wkn G0 A) u))
-      (Cmp (Ext D0 A) D0 X (Wkn D0 A) (Cmp D0 G0 X w0 u)).
-Proof.
-  intros HD0 HG0 HX HA Hw0 Hu.
-  eapply eq_term_trans; [ apply eq_cmp_assoc; wfa | ].
-  eapply eq_term_trans;
-    [ apply cong_Cmp;
-      [ wfa | wfa | wfa | apply eq_wkn_snoc; wfa | apply eq_term_refl; wfa ]
-    | ].
-  apply eq_term_sym.
-  apply eq_cmp_assoc; wfa.
-Qed.
+(* [lift_cmp_wkn] -- the workhorse for both non-identity cases of [Wk_cmp]'s
+   lift branch, post-composing a lifted weakening with a [wkn] drop -- is a
+   DERIVED RULE and lives in Gluing/StlcEqns.v, alongside [eq_lift_inst] and
+   [eq_beta_lift]; [wfa] below discharges its [EnvOk]/[TyOk]-derived [wft]
+   premises exactly as it would for a hand-proved lemma. *)
 
 Lemma Ext_inj G A G' A' : Ext G A = Ext G' A' -> G = G' /\ A = A'.
 Proof. unfold Ext; intro H; inversion H; auto. Qed.
