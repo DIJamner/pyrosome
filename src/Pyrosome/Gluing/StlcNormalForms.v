@@ -8,6 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab.
 From Pyrosome.Gluing Require Import StlcModel StlcNormalization.
+From Pyrosome.Gluing Require Export StlcEqns.
 Import Core.Notations.
 
 Notation term := (@term string).
@@ -174,205 +175,59 @@ Proof. intros; wf_by "app". Qed.
   wf_Cmp wf_Snoc wf_ValSubst wf_ExpSubst wf_Ret wf_Tt wf_Lam wf_App : stlc_nf.
 
 (* ------------------------------------------------------------------ *)
-(* The substitution equations, instantiated at the empty meta-context   *)
+(* Congruence for the term formers                                      *)
 (* ------------------------------------------------------------------ *)
 
 Local Notation wft := (wf_term stlc_unit []).
 Local Notation eqt := (eq_term stlc_unit []).
 
-Ltac wf_subst_solve :=
-  repeat first
-    [ simple apply wf_subst_nil
-    | simple eapply wf_subst_cons
-    | progress cbn [combine map fst]
-    | progress cbn [Model.wf_term core_model]
-    | progress norm_wf_goal
-    | eassumption ].
-
-(* Instantiate the equation rule [name] at the argument list [s] (given in the
-   rule context's own -- most-recent-first -- order). *)
-Ltac eq_step nm sl :=
-  eapply eq_term_step with (name := nm) (s := sl);
-  [ exact stlc_unit_wf
-  | solve_in
-  | solve_len_eq
-  | left; vm_compute; reflexivity
-  | left; vm_compute; reflexivity
-  | left; vm_compute; reflexivity
-  | wf_subst_solve ].
-
-Lemma eq_val_subst_id G A v
-  : wft G Senv -> wft A Sty -> wft v (Sval G A) ->
-    eqt (Sval G A) (ValSubst G G (Id G) A v) v.
-Proof. intros; eq_step "val_subst_id" [v; A; G]. Qed.
-
-Lemma eq_exp_subst_id G A e
-  : wft G Senv -> wft A Sty -> wft e (Sexp G A) ->
-    eqt (Sexp G A) (ExpSubst G G (Id G) A e) e.
-Proof. intros; eq_step "exp_subst_id" [e; A; G]. Qed.
-
-Lemma eq_val_subst_cmp G1 G2 G3 f g A v
-  : wft G1 Senv -> wft G2 Senv -> wft G3 Senv ->
-    wft f (Ssub G1 G2) -> wft g (Ssub G2 G3) ->
-    wft A Sty -> wft v (Sval G3 A) ->
-    eqt (Sval G1 A)
-      (ValSubst G1 G2 f A (ValSubst G2 G3 g A v))
-      (ValSubst G1 G3 (Cmp G1 G2 G3 f g) A v).
-Proof. intros; eq_step "val_subst_cmp" [v; A; g; f; G3; G2; G1]. Qed.
-
-Lemma eq_exp_subst_cmp G1 G2 G3 f g A e
-  : wft G1 Senv -> wft G2 Senv -> wft G3 Senv ->
-    wft f (Ssub G1 G2) -> wft g (Ssub G2 G3) ->
-    wft A Sty -> wft e (Sexp G3 A) ->
-    eqt (Sexp G1 A)
-      (ExpSubst G1 G2 f A (ExpSubst G2 G3 g A e))
-      (ExpSubst G1 G3 (Cmp G1 G2 G3 f g) A e).
-Proof. intros; eq_step "exp_subst_cmp" [e; A; g; f; G3; G2; G1]. Qed.
-
-Lemma eq_wkn_snoc G G' g A v
-  : wft G Senv -> wft G' Senv -> wft g (Ssub G G') ->
-    wft A Sty -> wft v (Sval G A) ->
-    eqt (Ssub G G') (Cmp G (Ext G' A) G' (Snoc G G' g A v) (Wkn G' A)) g.
-Proof. intros; eq_step "wkn_snoc" [v; A; g; G'; G]. Qed.
-
-Lemma eq_snoc_hd G G' g A v
-  : wft G Senv -> wft G' Senv -> wft g (Ssub G G') ->
-    wft A Sty -> wft v (Sval G A) ->
-    eqt (Sval G A) (ValSubst G (Ext G' A) (Snoc G G' g A v) A (Hd G' A)) v.
-Proof. intros; eq_step "snoc_hd" [v; A; g; G'; G]. Qed.
-
-Lemma eq_cmp_snoc G1 G2 G3 f g A v
-  : wft G1 Senv -> wft G2 Senv -> wft G3 Senv ->
-    wft f (Ssub G1 G2) -> wft g (Ssub G2 G3) ->
-    wft A Sty -> wft v (Sval G2 A) ->
-    eqt (Ssub G1 (Ext G3 A))
-      (Cmp G1 G2 (Ext G3 A) f (Snoc G2 G3 g A v))
-      (Snoc G1 G3 (Cmp G1 G2 G3 f g) A (ValSubst G1 G2 f A v)).
-Proof. intros; eq_step "cmp_snoc" [v; A; g; f; G3; G2; G1]. Qed.
-
-Lemma eq_snoc_wkn_hd G A
-  : wft G Senv -> wft A Sty ->
-    eqt (Ssub (Ext G A) (Ext G A))
-      (Snoc (Ext G A) G (Wkn G A) A (Hd G A)) (Id (Ext G A)).
-Proof. intros; eq_step "snoc_wkn_hd" [A; G]. Qed.
-
-Lemma eq_cmp_assoc G1 G2 G3 G4 f g h
-  : wft G1 Senv -> wft G2 Senv -> wft G3 Senv -> wft G4 Senv ->
-    wft f (Ssub G1 G2) -> wft g (Ssub G2 G3) -> wft h (Ssub G3 G4) ->
-    eqt (Ssub G1 G4)
-      (Cmp G1 G2 G4 f (Cmp G2 G3 G4 g h))
-      (Cmp G1 G3 G4 (Cmp G1 G2 G3 f g) h).
-Proof. intros; eq_step "cmp_assoc" [h; g; f; G4; G3; G2; G1]. Qed.
-
-Lemma eq_id_left G G' f
-  : wft G Senv -> wft G' Senv -> wft f (Ssub G G') ->
-    eqt (Ssub G G') (Cmp G G G' (Id G) f) f.
-Proof. intros; eq_step "id_left" [f; G'; G]. Qed.
-
-Lemma eq_id_right G G' f
-  : wft G Senv -> wft G' Senv -> wft f (Ssub G G') ->
-    eqt (Ssub G G') (Cmp G G' G' f (Id G')) f.
-Proof. intros; eq_step "id_right" [f; G'; G]. Qed.
-
-Lemma eq_exp_subst_ret G G' g A v
-  : wft G Senv -> wft G' Senv -> wft g (Ssub G' G) ->
-    wft A Sty -> wft v (Sval G A) ->
-    eqt (Sexp G' A)
-      (ExpSubst G' G g A (Ret G A v)) (Ret G' A (ValSubst G' G g A v)).
-Proof. intros; eq_step "exp_subst ret" [g; G'; v; A; G]. Qed.
-
-Lemma eq_exp_subst_app G G' g A B e e'
-  : wft G Senv -> wft G' Senv -> wft g (Ssub G' G) ->
-    wft A Sty -> wft B Sty ->
-    wft e (Sexp G (Arr A B)) -> wft e' (Sexp G A) ->
-    eqt (Sexp G' B)
-      (ExpSubst G' G g B (App G A B e e'))
-      (App G' A B (ExpSubst G' G g (Arr A B) e) (ExpSubst G' G g A e')).
-Proof. intros; eq_step "exp_subst app" [g; G'; e'; e; B; A; G]. Qed.
-
-Lemma eq_val_subst_lambda G G' g A B e
-  : wft G Senv -> wft G' Senv -> wft g (Ssub G' G) ->
-    wft A Sty -> wft B Sty -> wft e (Sexp (Ext G A) B) ->
-    eqt (Sval G' (Arr A B))
-      (ValSubst G' G g (Arr A B) (Lam G A B e))
-      (Lam G' A B
-         (ExpSubst (Ext G' A) (Ext G A)
-            (Snoc (Ext G' A) G (Cmp (Ext G' A) G' G (Wkn G' A) g) A (Hd G' A))
-            B e)).
-Proof. intros; eq_step "val_subst lambda" [g; G'; e; B; A; G]. Qed.
-
-Lemma eq_val_subst_tt G G' g
-  : wft G Senv -> wft G' Senv -> wft g (Ssub G' G) ->
-    eqt (Sval G' Unit) (ValSubst G' G g Unit (Tt G)) (Tt G').
-Proof. intros; eq_step "val_subst tt" [g; G'; G]. Qed.
-
-(* ------------------------------------------------------------------ *)
-(* Congruence for the term formers                                      *)
-(* ------------------------------------------------------------------ *)
-
-Ltac norm_eq_goal :=
-  match goal with
-  | [|- eq_term ?l ?c ?t ?e1 ?e2] =>
-      let c' := eval vm_compute in c in
-      let t' := eval vm_compute in t in
-      let e1' := eval vm_compute in e1 in
-      let e2' := eval vm_compute in e2 in
-      change_no_check (eq_term l c' t' e1' e2')
-  end.
-
-Ltac eq_args_solve :=
-  repeat first
-    [ simple apply eq_args_nil
-    | simple eapply eq_args_cons
-    | progress cbn [Model.eq_term core_model]
-    | progress norm_eq_goal
-    | eassumption
-    | solve [apply eq_term_refl; eauto with stlc_nf] ].
-
-Ltac cong_by nm :=
-  eapply (term_con_congruence nm);
-  [ solve_in | right; vm_compute; reflexivity | exact stlc_unit_wf | eq_args_solve ].
+(* The 18 equation lemmas ([eq_val_subst_id], [eq_wkn_snoc], ...) and the
+   [stlc_unit_cong_inst]-based congruence toolkit live in Gluing/StlcEqns.v;
+   this file only needs the specializations below, whose statements pin the
+   congruence rules' left- and right-hand sides together (the general form in
+   StlcEqns.v keeps them independent, which is more than the canonical-forms
+   development ever needs). *)
 
 Lemma cong_Cmp G1 G2 G3 f f' g g'
   : wft G1 Senv -> wft G2 Senv -> wft G3 Senv ->
     eqt (Ssub G1 G2) f f' -> eqt (Ssub G2 G3) g g' ->
     eqt (Ssub G1 G3) (Cmp G1 G2 G3 f g) (Cmp G1 G2 G3 f' g').
-Proof. intros; cong_by "cmp". Qed.
+Proof. intros; apply Cmp_cong; auto using eq_term_refl. Qed.
 
 Lemma cong_Snoc G G' g g' A v v'
   : wft G Senv -> wft G' Senv -> wft A Sty ->
     eqt (Ssub G G') g g' -> eqt (Sval G A) v v' ->
     eqt (Ssub G (Ext G' A)) (Snoc G G' g A v) (Snoc G G' g' A v').
-Proof. intros; cong_by "snoc". Qed.
+Proof. intros; apply Snoc_cong; auto using eq_term_refl. Qed.
 
 Lemma cong_ValSubst G G' g g' A v v'
   : wft G Senv -> wft G' Senv -> wft A Sty ->
     eqt (Ssub G G') g g' -> eqt (Sval G' A) v v' ->
     eqt (Sval G A) (ValSubst G G' g A v) (ValSubst G G' g' A v').
-Proof. intros; cong_by "val_subst". Qed.
+Proof. intros; apply ValSubst_cong; auto using eq_term_refl. Qed.
 
 Lemma cong_ExpSubst G G' g g' A e e'
   : wft G Senv -> wft G' Senv -> wft A Sty ->
     eqt (Ssub G G') g g' -> eqt (Sexp G' A) e e' ->
     eqt (Sexp G A) (ExpSubst G G' g A e) (ExpSubst G G' g' A e').
-Proof. intros; cong_by "exp_subst". Qed.
+Proof. intros; apply ExpSubst_cong; auto using eq_term_refl. Qed.
 
 Lemma cong_Ret G A v v'
   : wft G Senv -> wft A Sty -> eqt (Sval G A) v v' ->
     eqt (Sexp G A) (Ret G A v) (Ret G A v').
-Proof. intros; cong_by "ret". Qed.
+Proof. intros; apply Ret_cong; auto using eq_term_refl. Qed.
 
 Lemma cong_Lam G A B e e'
   : wft G Senv -> wft A Sty -> wft B Sty ->
     eqt (Sexp (Ext G A) B) e e' ->
     eqt (Sval G (Arr A B)) (Lam G A B e) (Lam G A B e').
-Proof. intros; cong_by "lambda". Qed.
+Proof. intros; apply Lam_cong; auto using eq_term_refl. Qed.
 
 Lemma cong_App G A B e e' n n'
   : wft G Senv -> wft A Sty -> wft B Sty ->
     eqt (Sexp G (Arr A B)) e e' -> eqt (Sexp G A) n n' ->
     eqt (Sexp G B) (App G A B e n) (App G A B e' n').
-Proof. intros; cong_by "app". Qed.
+Proof. intros; apply App_cong; auto using eq_term_refl. Qed.
 
 (* ================================================================== *)
 (* LAYER 1: canonical forms and weakenings                             *)
@@ -492,9 +347,7 @@ Proof.
     eauto using NfV, NfE, NeE, VarT_Var.
 Qed.
 
-Definition NfVT_NfV := proj1 NfT_Nf.
 Definition NfET_NfE := proj1 (proj2 NfT_Nf).
-Definition NeET_NeE := proj2 (proj2 NfT_Nf).
 
 (* ------------------------------------------------------------------ *)
 (* Inversion helpers for the index predicates                           *)
@@ -836,39 +689,3 @@ Qed.
 Definition NfVT_wk := proj1 NfT_wk.
 Definition NfET_wk := proj1 (proj2 NfT_wk).
 Definition NeET_wk := proj2 (proj2 NfT_wk).
-
-(* Erased forms of stability: the conclusions phrased with the untyped
-   predicates of the design doc, which is what the normalization statement
-   ("[e] is provably equal to a canonical form") consumes. *)
-Corollary Var_wk G A x D w
-  : VarT G A x -> Wk D G w -> EnvOk D ->
-    exists x', Var x' /\ eqt (Sval D A) (ValSubst D G w A x) x'.
-Proof.
-  intros Hx Hw HD.
-  edestruct VarT_wk as [x' [Hx' Heq]]; try eassumption.
-  eauto using VarT_Var.
-Qed.
-
-Corollary NfV_wk G A v D w
-  : NfVT G A v -> Wk D G w -> EnvOk D -> EnvOk G -> TyOk A ->
-    exists n, NfV n /\ eqt (Sval D A) (ValSubst D G w A v) n.
-Proof.
-  intros; edestruct NfVT_wk as [n [Hn Heq]]; try eassumption.
-  eauto using NfVT_NfV.
-Qed.
-
-Corollary NfE_wk G A e D w
-  : NfET G A e -> Wk D G w -> EnvOk D -> EnvOk G -> TyOk A ->
-    exists n, NfE n /\ eqt (Sexp D A) (ExpSubst D G w A e) n.
-Proof.
-  intros; edestruct NfET_wk as [n [Hn Heq]]; try eassumption.
-  eauto using NfET_NfE.
-Qed.
-
-Corollary NeE_wk G A e D w
-  : NeET G A e -> Wk D G w -> EnvOk D -> EnvOk G -> TyOk A ->
-    exists n, NeE n /\ eqt (Sexp D A) (ExpSubst D G w A e) n.
-Proof.
-  intros; edestruct NeET_wk as [n [Hn Heq]]; try eassumption.
-  eauto using NeET_NeE.
-Qed.

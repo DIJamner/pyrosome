@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core.
+From Pyrosome Require Import Theory.Core Tools.Matches.
 From Pyrosome.Gluing Require Import StlcModel StlcNormalization.
 Import Core.Notations.
 
@@ -20,130 +20,42 @@ Import Core.Notations.
    sort, already instantiated by the preceding arguments.  The congruence rules
    for the seven constructors the later layers use get the same treatment.
 
-   Nothing here guesses shapes from the surface notation.  The rules themselves
-   are not transcribed at all: [rule_of] reads them out of the compiled language
-   and each [r_*] below is its [vm_compute]d value, so the statements of the
-   instance lemmas are checked against the real rules by conversion. *)
+   [Tools.Matches.eredex_steps_with] does the actual instantiation: given a
+   rule name, it looks the rule up in [stlc_unit] and infers, by unification
+   against the goal, the substitution that turns the rule's LHS/RHS into the
+   goal's; all that is left is to discharge the resulting well-formedness
+   side conditions. *)
 
-Definition rule_of (n : string) : rule string :=
-  match named_list_lookup_err stlc_unit n with
-  | Some r => r
-  | None => sort_rule [] []
-  end.
-
-Ltac in_stlc_unit := apply named_list_lookup_err_in; vm_compute; reflexivity.
-
-(* ---------------------------------------------------------------- *)
-(* The rules, read off the compiled language                          *)
-(* ---------------------------------------------------------------- *)
-
-Definition r_id_right := Eval vm_compute in rule_of "id_right".
-Definition r_id_left := Eval vm_compute in rule_of "id_left".
-Definition r_cmp_assoc := Eval vm_compute in rule_of "cmp_assoc".
-Definition r_val_subst_id := Eval vm_compute in rule_of "val_subst_id".
-Definition r_val_subst_cmp := Eval vm_compute in rule_of "val_subst_cmp".
-Definition r_cmp_forget := Eval vm_compute in rule_of "cmp_forget".
-Definition r_id_emp_forget := Eval vm_compute in rule_of "id_emp_forget".
-Definition r_wkn_snoc := Eval vm_compute in rule_of "wkn_snoc".
-Definition r_snoc_hd := Eval vm_compute in rule_of "snoc_hd".
-Definition r_cmp_snoc := Eval vm_compute in rule_of "cmp_snoc".
-Definition r_snoc_wkn_hd := Eval vm_compute in rule_of "snoc_wkn_hd".
-Definition r_exp_subst_id := Eval vm_compute in rule_of "exp_subst_id".
-Definition r_exp_subst_cmp := Eval vm_compute in rule_of "exp_subst_cmp".
-Definition r_exp_subst_ret := Eval vm_compute in rule_of "exp_subst ret".
-Definition r_exp_subst_app := Eval vm_compute in rule_of "exp_subst app".
-Definition r_val_subst_lambda := Eval vm_compute in rule_of "val_subst lambda".
-Definition r_stlc_beta := Eval vm_compute in rule_of "STLC-beta".
-Definition r_val_subst_tt := Eval vm_compute in rule_of "val_subst tt".
-
-Definition r_ret := Eval vm_compute in rule_of "ret".
-Definition r_app := Eval vm_compute in rule_of "app".
-Definition r_lambda := Eval vm_compute in rule_of "lambda".
-Definition r_val_subst := Eval vm_compute in rule_of "val_subst".
-Definition r_exp_subst := Eval vm_compute in rule_of "exp_subst".
-Definition r_snoc := Eval vm_compute in rule_of "snoc".
-Definition r_cmp := Eval vm_compute in rule_of "cmp".
-
-Lemma in_id_right : In ("id_right", r_id_right) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_id_left : In ("id_left", r_id_left) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_cmp_assoc : In ("cmp_assoc", r_cmp_assoc) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_val_subst_id : In ("val_subst_id", r_val_subst_id) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_val_subst_cmp : In ("val_subst_cmp", r_val_subst_cmp) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_cmp_forget : In ("cmp_forget", r_cmp_forget) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_id_emp_forget : In ("id_emp_forget", r_id_emp_forget) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_wkn_snoc : In ("wkn_snoc", r_wkn_snoc) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_snoc_hd : In ("snoc_hd", r_snoc_hd) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_cmp_snoc : In ("cmp_snoc", r_cmp_snoc) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_snoc_wkn_hd : In ("snoc_wkn_hd", r_snoc_wkn_hd) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_exp_subst_id : In ("exp_subst_id", r_exp_subst_id) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_exp_subst_cmp : In ("exp_subst_cmp", r_exp_subst_cmp) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_exp_subst_ret : In ("exp_subst ret", r_exp_subst_ret) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_exp_subst_app : In ("exp_subst app", r_exp_subst_app) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_val_subst_lambda : In ("val_subst lambda", r_val_subst_lambda) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_stlc_beta : In ("STLC-beta", r_stlc_beta) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_val_subst_tt : In ("val_subst tt", r_val_subst_tt) stlc_unit.
-Proof. in_stlc_unit. Qed.
-
-Lemma in_ret : In ("ret", r_ret) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_app : In ("app", r_app) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_lambda : In ("lambda", r_lambda) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_val_subst : In ("val_subst", r_val_subst) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_exp_subst : In ("exp_subst", r_exp_subst) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_snoc : In ("snoc", r_snoc) stlc_unit.
-Proof. in_stlc_unit. Qed.
-Lemma in_cmp : In ("cmp", r_cmp) stlc_unit.
-Proof. in_stlc_unit. Qed.
-
-(* ---------------------------------------------------------------- *)
-(* Generic drivers                                                    *)
-(* ---------------------------------------------------------------- *)
-
-(* A rule's context is well formed, since the language is. *)
-Lemma stlc_unit_eq_rule_ctx_wf (name : string) c' e1 e2 t
-  : In (name, term_eq_rule c' e1 e2 t) stlc_unit ->
-    wf_ctx (Model := core_model stlc_unit) c'.
+(* A rule's context is well formed, since the language is.  [eredex_steps_with]
+   leaves exactly this goal (headed by the rule's own, unsubstituted context)
+   whenever the built substitution doesn't already settle it via
+   [cleanup_auto_elab]. *)
+Lemma stlc_unit_rule_ctx_wf n r
+  : named_list_lookup_err stlc_unit n = Some r ->
+    wf_ctx (Model := core_model stlc_unit) (Rule.get_ctx r).
 Proof.
-  intro Hin.
-  pose proof (rule_in_wf (l_pre := []) _ _ stlc_unit_wf Hin) as Hr.
+  intro Hlook.
+  pose proof (rule_in_wf (l_pre := []) _ _ stlc_unit_wf
+                (named_list_lookup_err_in _ _ (eq_sym Hlook))) as Hr.
   rewrite app_nil_r in Hr.
-  inversion Hr; subst; assumption.
+  destruct r; cbn in *; inversion Hr; subst; assumption.
 Qed.
 
-(* Instantiating an equation rule at a well-formed substitution.  [s] fills in
-   the rule's context, most-recent-first. *)
-Lemma stlc_unit_eq_inst (name : string) c' e1 e2 t (s : subst string)
-  : In (name, term_eq_rule c' e1 e2 t) stlc_unit ->
-    wf_subst (Model := core_model stlc_unit) [] s c' ->
-    eq_term stlc_unit [] t[/s/] e1[/s/] e2[/s/].
-Proof.
-  intros Hin Hs.
-  eapply eq_term_subst.
-  - eapply eq_term_by; exact Hin.
-  - apply eq_subst_refl; exact Hs.
-  - eapply stlc_unit_eq_rule_ctx_wf; exact Hin.
-Qed.
+Ltac wf_subst_solve :=
+  repeat first [ simple apply wf_subst_nil
+               | simple eapply wf_subst_cons
+               | progress cbn [combine map fst]
+               | progress cbn [Model.wf_term core_model]
+               | eassumption ].
+
+(* [eredex_steps_with] leaves either one goal ([wf_ctx], when the built
+   substitution is itself trivial) or two ([wf_subst] then [wf_ctx]); the
+   plain semicolon below runs the combined solver on every goal it leaves,
+   whichever shape that turns out to be. *)
+Ltac estep nm :=
+  eredex_steps_with stlc_unit nm;
+  first [ solve [ wf_subst_solve ]
+        | exact (stlc_unit_rule_ctx_wf nm eq_refl) ].
 
 (* Instantiating a term rule's congruence. *)
 Lemma stlc_unit_cong_inst (name : string) c' args t' (s1 s2 : list (term string))
@@ -160,13 +72,19 @@ Proof.
   - exact Hargs.
 Qed.
 
-Ltac wf_subst_solve :=
-  repeat apply wf_subst_cons;
-  first [ apply wf_subst_nil | eassumption ].
-
 Ltac eq_args_solve :=
   repeat apply eq_args_cons;
   first [ apply eq_args_nil | eassumption ].
+
+(* [name_list_lookup_err_in ... eq_refl] pins the rule's [term_rule] shape to
+   the concrete value [named_list_lookup_err stlc_unit nm] reduces to; [refine]
+   (unlike [apply]) propagates that expected-type information down into the
+   hole, so the reduction actually fires instead of getting stuck on an
+   uninstantiated evar. *)
+Ltac cong_step nm s1 s2 :=
+  refine (stlc_unit_cong_inst (named_list_lookup_err_in stlc_unit nm eq_refl)
+            (s1 := s1) (s2 := s2) _);
+  eq_args_solve.
 
 (* ---------------------------------------------------------------- *)
 (* value_subst: the substitution calculus                             *)
@@ -177,24 +95,14 @@ Lemma eq_id_right G G' f
     wf_term stlc_unit [] G' Senv ->
     wf_term stlc_unit [] f (Ssub G G') ->
     eq_term stlc_unit [] (Ssub G G') (Cmp G G' G' f (Id G')) f.
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_id_right
-           (s := [("f", f); ("G'", G'); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "id_right". Qed.
 
 Lemma eq_id_left G G' f
   : wf_term stlc_unit [] G Senv ->
     wf_term stlc_unit [] G' Senv ->
     wf_term stlc_unit [] f (Ssub G G') ->
     eq_term stlc_unit [] (Ssub G G') (Cmp G G G' (Id G) f) f.
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_id_left
-           (s := [("f", f); ("G'", G'); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "id_left". Qed.
 
 Lemma eq_cmp_assoc G1 G2 G3 G4 f g h
   : wf_term stlc_unit [] G1 Senv ->
@@ -207,25 +115,14 @@ Lemma eq_cmp_assoc G1 G2 G3 G4 f g h
     eq_term stlc_unit [] (Ssub G1 G4)
       (Cmp G1 G2 G4 f (Cmp G2 G3 G4 g h))
       (Cmp G1 G3 G4 (Cmp G1 G2 G3 f g) h).
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_cmp_assoc
-           (s := [("h", h); ("g", g); ("f", f);
-                  ("G4", G4); ("G3", G3); ("G2", G2); ("G1", G1)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "cmp_assoc". Qed.
 
 Lemma eq_val_subst_id G A v
   : wf_term stlc_unit [] G Senv ->
     wf_term stlc_unit [] A Sty ->
     wf_term stlc_unit [] v (Sval G A) ->
     eq_term stlc_unit [] (Sval G A) (ValSubst G G (Id G) A v) v.
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_val_subst_id
-           (s := [("v", v); ("A", A); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "val_subst_id". Qed.
 
 Lemma eq_val_subst_cmp G1 G2 G3 f g A v
   : wf_term stlc_unit [] G1 Senv ->
@@ -238,13 +135,7 @@ Lemma eq_val_subst_cmp G1 G2 G3 f g A v
     eq_term stlc_unit [] (Sval G1 A)
       (ValSubst G1 G2 f A (ValSubst G2 G3 g A v))
       (ValSubst G1 G3 (Cmp G1 G2 G3 f g) A v).
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_val_subst_cmp
-           (s := [("v", v); ("A", A); ("g", g); ("f", f);
-                  ("G3", G3); ("G2", G2); ("G1", G1)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "val_subst_cmp". Qed.
 
 Lemma eq_cmp_forget G G' g
   : wf_term stlc_unit [] G Senv ->
@@ -252,19 +143,11 @@ Lemma eq_cmp_forget G G' g
     wf_term stlc_unit [] g (Ssub G G') ->
     eq_term stlc_unit [] (Ssub G Emp)
       (Cmp G G' Emp g (Forget G')) (Forget G).
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_cmp_forget
-           (s := [("g", g); ("G'", G'); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "cmp_forget". Qed.
 
 Lemma eq_id_emp_forget
   : eq_term stlc_unit [] (Ssub Emp Emp) (Id Emp) (Forget Emp).
-Proof.
-  apply (stlc_unit_eq_inst in_id_emp_forget (s := [])).
-  wf_subst_solve.
-Qed.
+Proof. estep "id_emp_forget". Qed.
 
 Lemma eq_wkn_snoc G G' g A v
   : wf_term stlc_unit [] G Senv ->
@@ -274,12 +157,7 @@ Lemma eq_wkn_snoc G G' g A v
     wf_term stlc_unit [] v (Sval G A) ->
     eq_term stlc_unit [] (Ssub G G')
       (Cmp G (Ext G' A) G' (Snoc G G' g A v) (Wkn G' A)) g.
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_wkn_snoc
-           (s := [("v", v); ("A", A); ("g", g); ("G'", G'); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "wkn_snoc". Qed.
 
 Lemma eq_snoc_hd G G' g A v
   : wf_term stlc_unit [] G Senv ->
@@ -289,12 +167,7 @@ Lemma eq_snoc_hd G G' g A v
     wf_term stlc_unit [] v (Sval G A) ->
     eq_term stlc_unit [] (Sval G A)
       (ValSubst G (Ext G' A) (Snoc G G' g A v) A (Hd G' A)) v.
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_snoc_hd
-           (s := [("v", v); ("A", A); ("g", g); ("G'", G'); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "snoc_hd". Qed.
 
 Lemma eq_cmp_snoc G1 G2 G3 f g A v
   : wf_term stlc_unit [] G1 Senv ->
@@ -307,24 +180,14 @@ Lemma eq_cmp_snoc G1 G2 G3 f g A v
     eq_term stlc_unit [] (Ssub G1 (Ext G3 A))
       (Cmp G1 G2 (Ext G3 A) f (Snoc G2 G3 g A v))
       (Snoc G1 G3 (Cmp G1 G2 G3 f g) A (ValSubst G1 G2 f A v)).
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_cmp_snoc
-           (s := [("v", v); ("A", A); ("g", g); ("f", f);
-                  ("G3", G3); ("G2", G2); ("G1", G1)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "cmp_snoc". Qed.
 
 Lemma eq_snoc_wkn_hd G A
   : wf_term stlc_unit [] G Senv ->
     wf_term stlc_unit [] A Sty ->
     eq_term stlc_unit [] (Ssub (Ext G A) (Ext G A))
       (Snoc (Ext G A) G (Wkn G A) A (Hd G A)) (Id (Ext G A)).
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_snoc_wkn_hd (s := [("A", A); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "snoc_wkn_hd". Qed.
 
 (* ---------------------------------------------------------------- *)
 (* exp_subst                                                          *)
@@ -335,12 +198,7 @@ Lemma eq_exp_subst_id G A e
     wf_term stlc_unit [] A Sty ->
     wf_term stlc_unit [] e (Sexp G A) ->
     eq_term stlc_unit [] (Sexp G A) (ExpSubst G G (Id G) A e) e.
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_exp_subst_id
-           (s := [("e", e); ("A", A); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "exp_subst_id". Qed.
 
 Lemma eq_exp_subst_cmp G1 G2 G3 f g A e
   : wf_term stlc_unit [] G1 Senv ->
@@ -353,17 +211,11 @@ Lemma eq_exp_subst_cmp G1 G2 G3 f g A e
     eq_term stlc_unit [] (Sexp G1 A)
       (ExpSubst G1 G2 f A (ExpSubst G2 G3 g A e))
       (ExpSubst G1 G3 (Cmp G1 G2 G3 f g) A e).
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_exp_subst_cmp
-           (s := [("e", e); ("A", A); ("g", g); ("f", f);
-                  ("G3", G3); ("G2", G2); ("G1", G1)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "exp_subst_cmp". Qed.
 
 (* [exp_subst ret]: substitution commutes with the value/expression coercion.
-   The rule's context interleaves the two environments, so [g] and [G'] come
-   first in [s]. *)
+   The rule's context interleaves the two environments, but [estep] infers the
+   substitution by unification, so the argument order here doesn't matter. *)
 Lemma eq_exp_subst_ret G G' g A v
   : wf_term stlc_unit [] G Senv ->
     wf_term stlc_unit [] A Sty ->
@@ -373,12 +225,7 @@ Lemma eq_exp_subst_ret G G' g A v
     eq_term stlc_unit [] (Sexp G' A)
       (ExpSubst G' G g A (Ret G A v))
       (Ret G' A (ValSubst G' G g A v)).
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_exp_subst_ret
-           (s := [("g", g); ("G'", G'); ("v", v); ("A", A); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "exp_subst ret". Qed.
 
 (* ---------------------------------------------------------------- *)
 (* stlc                                                               *)
@@ -395,13 +242,7 @@ Lemma eq_exp_subst_app G G' g A B e e'
     eq_term stlc_unit [] (Sexp G' B)
       (ExpSubst G' G g B (App G A B e e'))
       (App G' A B (ExpSubst G' G g (Arr A B) e) (ExpSubst G' G g A e')).
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_exp_subst_app
-           (s := [("g", g); ("G'", G'); ("e'", e'); ("e", e);
-                  ("B", B); ("A", A); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "exp_subst app". Qed.
 
 Lemma eq_val_subst_lambda G G' g A B e
   : wf_term stlc_unit [] G Senv ->
@@ -416,13 +257,7 @@ Lemma eq_val_subst_lambda G G' g A B e
          (ExpSubst (Ext G' A) (Ext G A)
             (Snoc (Ext G' A) G (Cmp (Ext G' A) G' G (Wkn G' A) g) A (Hd G' A))
             B e)).
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_val_subst_lambda
-           (s := [("g", g); ("G'", G'); ("e", e);
-                  ("B", B); ("A", A); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "val_subst lambda". Qed.
 
 Lemma eq_stlc_beta G A B e v
   : wf_term stlc_unit [] G Senv ->
@@ -433,12 +268,7 @@ Lemma eq_stlc_beta G A B e v
     eq_term stlc_unit [] (Sexp G B)
       (App G A B (Ret G (Arr A B) (Lam G A B e)) (Ret G A v))
       (ExpSubst G (Ext G A) (Snoc G G (Id G) A v) B e).
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_stlc_beta
-           (s := [("v", v); ("e", e); ("B", B); ("A", A); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "STLC-beta". Qed.
 
 (* ---------------------------------------------------------------- *)
 (* unit                                                               *)
@@ -450,12 +280,7 @@ Lemma eq_val_subst_tt G G' g
     wf_term stlc_unit [] g (Ssub G' G) ->
     eq_term stlc_unit [] (Sval G' Unit)
       (ValSubst G' G g Unit (Tt G)) (Tt G').
-Proof.
-  intros.
-  apply (stlc_unit_eq_inst in_val_subst_tt
-           (s := [("g", g); ("G'", G'); ("G", G)])).
-  wf_subst_solve.
-Qed.
+Proof. intros; estep "val_subst tt". Qed.
 
 (* ---------------------------------------------------------------- *)
 (* Congruences                                                        *)
@@ -470,12 +295,7 @@ Lemma Ret_cong G1 G2 A1 A2 v1 v2
     eq_term stlc_unit [] Sty A1 A2 ->
     eq_term stlc_unit [] (Sval G2 A2) v1 v2 ->
     eq_term stlc_unit [] (Sexp G2 A2) (Ret G1 A1 v1) (Ret G2 A2 v2).
-Proof.
-  intros.
-  apply (stlc_unit_cong_inst in_ret
-           (s1 := [v1; A1; G1]) (s2 := [v2; A2; G2])).
-  eq_args_solve.
-Qed.
+Proof. intros; cong_step "ret" [v1; A1; G1] [v2; A2; G2]. Qed.
 
 Lemma App_cong G1 G2 A1 A2 B1 B2 e1 e2 e1' e2'
   : eq_term stlc_unit [] Senv G1 G2 ->
@@ -485,12 +305,7 @@ Lemma App_cong G1 G2 A1 A2 B1 B2 e1 e2 e1' e2'
     eq_term stlc_unit [] (Sexp G2 A2) e1' e2' ->
     eq_term stlc_unit [] (Sexp G2 B2)
       (App G1 A1 B1 e1 e1') (App G2 A2 B2 e2 e2').
-Proof.
-  intros.
-  apply (stlc_unit_cong_inst in_app
-           (s1 := [e1'; e1; B1; A1; G1]) (s2 := [e2'; e2; B2; A2; G2])).
-  eq_args_solve.
-Qed.
+Proof. intros; cong_step "app" [e1'; e1; B1; A1; G1] [e2'; e2; B2; A2; G2]. Qed.
 
 Lemma Lam_cong G1 G2 A1 A2 B1 B2 e1 e2
   : eq_term stlc_unit [] Senv G1 G2 ->
@@ -499,12 +314,7 @@ Lemma Lam_cong G1 G2 A1 A2 B1 B2 e1 e2
     eq_term stlc_unit [] (Sexp (Ext G2 A2) B2) e1 e2 ->
     eq_term stlc_unit [] (Sval G2 (Arr A2 B2))
       (Lam G1 A1 B1 e1) (Lam G2 A2 B2 e2).
-Proof.
-  intros.
-  apply (stlc_unit_cong_inst in_lambda
-           (s1 := [e1; B1; A1; G1]) (s2 := [e2; B2; A2; G2])).
-  eq_args_solve.
-Qed.
+Proof. intros; cong_step "lambda" [e1; B1; A1; G1] [e2; B2; A2; G2]. Qed.
 
 Lemma ValSubst_cong G1 G2 G1' G2' g1 g2 A1 A2 v1 v2
   : eq_term stlc_unit [] Senv G1 G2 ->
@@ -515,10 +325,7 @@ Lemma ValSubst_cong G1 G2 G1' G2' g1 g2 A1 A2 v1 v2
     eq_term stlc_unit [] (Sval G2 A2)
       (ValSubst G1 G1' g1 A1 v1) (ValSubst G2 G2' g2 A2 v2).
 Proof.
-  intros.
-  apply (stlc_unit_cong_inst in_val_subst
-           (s1 := [v1; A1; g1; G1'; G1]) (s2 := [v2; A2; g2; G2'; G2])).
-  eq_args_solve.
+  intros; cong_step "val_subst" [v1; A1; g1; G1'; G1] [v2; A2; g2; G2'; G2].
 Qed.
 
 Lemma ExpSubst_cong G1 G2 G1' G2' g1 g2 A1 A2 e1 e2
@@ -530,10 +337,7 @@ Lemma ExpSubst_cong G1 G2 G1' G2' g1 g2 A1 A2 e1 e2
     eq_term stlc_unit [] (Sexp G2 A2)
       (ExpSubst G1 G1' g1 A1 e1) (ExpSubst G2 G2' g2 A2 e2).
 Proof.
-  intros.
-  apply (stlc_unit_cong_inst in_exp_subst
-           (s1 := [e1; A1; g1; G1'; G1]) (s2 := [e2; A2; g2; G2'; G2])).
-  eq_args_solve.
+  intros; cong_step "exp_subst" [e1; A1; g1; G1'; G1] [e2; A2; g2; G2'; G2].
 Qed.
 
 Lemma Snoc_cong G1 G2 G1' G2' g1 g2 A1 A2 v1 v2
@@ -545,10 +349,7 @@ Lemma Snoc_cong G1 G2 G1' G2' g1 g2 A1 A2 v1 v2
     eq_term stlc_unit [] (Ssub G2 (Ext G2' A2))
       (Snoc G1 G1' g1 A1 v1) (Snoc G2 G2' g2 A2 v2).
 Proof.
-  intros.
-  apply (stlc_unit_cong_inst in_snoc
-           (s1 := [v1; A1; g1; G1'; G1]) (s2 := [v2; A2; g2; G2'; G2])).
-  eq_args_solve.
+  intros; cong_step "snoc" [v1; A1; g1; G1'; G1] [v2; A2; g2; G2'; G2].
 Qed.
 
 Lemma Cmp_cong X1 Y1 X2 Y2 X3 Y3 f1 f2 g1 g2
@@ -559,9 +360,4 @@ Lemma Cmp_cong X1 Y1 X2 Y2 X3 Y3 f1 f2 g1 g2
     eq_term stlc_unit [] (Ssub Y2 Y3) g1 g2 ->
     eq_term stlc_unit [] (Ssub Y1 Y3)
       (Cmp X1 X2 X3 f1 g1) (Cmp Y1 Y2 Y3 f2 g2).
-Proof.
-  intros.
-  apply (stlc_unit_cong_inst in_cmp
-           (s1 := [g1; f1; X3; X2; X1]) (s2 := [g2; f2; Y3; Y2; Y1])).
-  eq_args_solve.
-Qed.
+Proof. intros; cong_step "cmp" [g1; f1; X3; X2; X1] [g2; f2; Y3; Y2; Y1]. Qed.
