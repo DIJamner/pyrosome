@@ -376,7 +376,35 @@ free). At the two interesting sorts:
 ```
 
 with `RTmN` the ∀-over-normal-representatives form of §3 — now legitimate, because
-`RTy_fun_eq` is available. `Ceq_sort` stays as in the old plan:
+`RTy_fun_eq` is available.
+
+**Every index of a semantic conjunct is quantified up to `eq_term`, not held fixed** — the
+environment via `RSubN`, the info and the type via `RTmN`/`RTyN`:
+
+```coq
+RTmN G i A e := forall i0 A0, eqt sInfo i i0 -> TyOk G i0 A0 -> eqt (sTy G i0) A A0 -> RTm G i0 A0 e
+RTyN G i A   := exists i0 A0 P, eqt sInfo i i0 /\ TyOk G i0 A0 /\ eqt (sTy G i0) A A0 /\ RTy G i0 A0 P
+RSubN D G g  := exists G0, EnvOk G0 /\ eqt sEnv G G0 /\ RSub D G0 g
+```
+
+This is forced, not stylistic, and it is the one place a first pass got the contract wrong.
+`csort_cong` varies all three indices, and with the **info** held fixed the corresponding
+transfer is not merely unproved but **refutable modulo consistency** — `WIP/DttModelStruct.v`
+proves it. `TyOk`'s info index is syntactic *by design* (a universe is pinned at `iCode l`, an
+`El` at `iEl r l`), but `next0` makes `iCode L0` and `iEl rel L1` provably equal and `Ceq_term`
+at `tyinfo` relates them, since it only demands equal `ninfo`s. So `ty G (iCode L0)` and
+`ty G (iEl rel L1)` are provably equal sorts whose sets of normal representatives are
+**disjoint**, and a transfer between them forces the closed universe `U irr L0` to be provably
+equal to the `El` of a closed relevant `Pi` code. The **environment** index has a milder form of
+the same disease: `RSub` is a `Fixpoint` on the *syntax* of `G`, so pushing it through an
+environment equation asks, in the `ext` case, for reducibility of the entry at the other info —
+i.e. for the normalization theorem itself.
+
+With all three quantified, both directions of every transfer are transitivity alone, and nothing
+in Layers 1–3 has to move: `TyOk` keeps its pinned infos, `RSub` keeps its structural recursion,
+and the aliasing is absorbed by the wrappers.
+
+`Ceq_sort` stays as in the old plan:
 
 ```coq
 Definition Ceq_sort (t1 t2 : sort) : Prop :=
