@@ -378,7 +378,8 @@ mention `RTy`, which is what kills the would-be negative occurrence there. Every
 * **The Π candidate needs no `HasNf` conjunct.** Without η one has to carry "…and it has a
   normal form" separately, because a neutral at a Π type is already normal. With η the normal
   form of an inhabitant of a Π type *is* its η-expansion, so it is derivable.
-* **Escape and reflect are one mutual induction on the `RTy` derivation.** At Π:
+* **Escape and reflect are one mutual induction on the `RTy` derivation** (`RTy_escape_reflect`,
+  proved). At Π:
   * *reflect*: given a neutral `n`, show `P n`, i.e. that `n[w] a` is in the codomain
     candidate for every reducible `a`. By IH-escape at the domain, `a` has a normal form; so
     `n[w] a` is neutral (clause (c) above); by IH-reflect at the codomain, done.
