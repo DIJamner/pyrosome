@@ -829,3 +829,501 @@ Proof.
   - (* wkn *) apply cong_wkn; assumption.
   - (* hd *) apply cong_hd; assumption.
 Qed.
+
+(* ================================================================== *)
+(* 3.  The thirteen equations                                          *)
+(* ================================================================== *)
+
+(* Each is the same three moves:
+     - instantiate the LANGUAGE's equation at the s1-side arguments
+       (whose well-formedness is the s2-side one converted back along the
+       argument equations);
+     - convert its sort to the s2 sort the obligation demands;
+     - hand the result to [Ceq_*_eq_l] together with the [Ceq_term] of the
+       right-hand side, which is built by APPLYING SECTION 1's
+       congruences to the arguments.
+   Nothing semantic happens here: every clause's content travels with the
+   congruences. *)
+
+Lemma eqt_conv_ty_l G1 G2 i1 i2 A1 A2
+  : eqt sEnv G1 G2 -> eqt sInfo i1 i2 -> eqt (sTy G2 i2) A1 A2 ->
+    eqt (sTy G1 i1) A1 A2.
+Proof.
+  intros; eapply eq_term_conv;
+    [ eassumption | apply eq_sort_sym; apply sTy_cong; assumption ].
+Qed.
+
+(* ---- the three [cmp] laws --------------------------------------- *)
+
+Lemma by_id_left Ga Gb Ga' Gb' f1 f2
+  : Ceq_term sEnv Ga Gb -> Ceq_term sEnv Ga' Gb' ->
+    Ceq_term (sSub Gb Gb') f1 f2 ->
+    Ceq_term (sSub Gb Gb') (oCmp Ga Ga Ga' (oId Ga) f1) f2.
+Proof.
+  intros HG HG' Hf.
+  pose proof (Ceq_env_e HG) as [HGa _]; pose proof (Ceq_env_e HG') as [HGa' _].
+  pose proof (Ceq_sub_e Hf) as [Hfa _].
+  assert (wft Ga sEnv) as Hwa by (eapply eqt_wf_l; exact HGa).
+  assert (wft Ga' sEnv) as Hwa' by (eapply eqt_wf_l; exact HGa').
+  assert (wft f1 (sSub Ga Ga')) as Hwf
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hfa
+        | apply eq_term_sym; exact HGa | apply eq_term_sym; exact HGa' ]).
+  eapply Ceq_sub_eq_l; [ exact Hf | ].
+  eapply eq_term_conv;
+    [ apply eq_id_left; assumption | apply sSub_cong; assumption ].
+Qed.
+
+Lemma by_id_right Ga Gb Ga' Gb' f1 f2
+  : Ceq_term sEnv Ga Gb -> Ceq_term sEnv Ga' Gb' ->
+    Ceq_term (sSub Gb Gb') f1 f2 ->
+    Ceq_term (sSub Gb Gb') (oCmp Ga Ga' Ga' f1 (oId Ga')) f2.
+Proof.
+  intros HG HG' Hf.
+  pose proof (Ceq_env_e HG) as [HGa _]; pose proof (Ceq_env_e HG') as [HGa' _].
+  pose proof (Ceq_sub_e Hf) as [Hfa _].
+  assert (wft Ga sEnv) as Hwa by (eapply eqt_wf_l; exact HGa).
+  assert (wft Ga' sEnv) as Hwa' by (eapply eqt_wf_l; exact HGa').
+  assert (wft f1 (sSub Ga Ga')) as Hwf
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hfa
+        | apply eq_term_sym; exact HGa | apply eq_term_sym; exact HGa' ]).
+  eapply Ceq_sub_eq_l; [ exact Hf | ].
+  eapply eq_term_conv;
+    [ apply eq_id_right; assumption | apply sSub_cong; assumption ].
+Qed.
+
+Lemma by_cmp_assoc Ga1 Gb1 Ga2 Gb2 Ga3 Gb3 Ga4 Gb4 f1 f2 g1 g2 h1 h2
+  : Ceq_term sEnv Ga1 Gb1 -> Ceq_term sEnv Ga2 Gb2 -> Ceq_term sEnv Ga3 Gb3 ->
+    Ceq_term sEnv Ga4 Gb4 ->
+    Ceq_term (sSub Gb1 Gb2) f1 f2 -> Ceq_term (sSub Gb2 Gb3) g1 g2 ->
+    Ceq_term (sSub Gb3 Gb4) h1 h2 ->
+    Ceq_term (sSub Gb1 Gb4)
+      (oCmp Ga1 Ga2 Ga4 f1 (oCmp Ga2 Ga3 Ga4 g1 h1))
+      (oCmp Gb1 Gb3 Gb4 (oCmp Gb1 Gb2 Gb3 f2 g2) h2).
+Proof.
+  intros H1 H2 H3 H4 Hf Hg Hh.
+  pose proof (Ceq_env_e H1) as [Ha1 _]; pose proof (Ceq_env_e H2) as [Ha2 _];
+    pose proof (Ceq_env_e H3) as [Ha3 _]; pose proof (Ceq_env_e H4) as [Ha4 _].
+  pose proof (Ceq_sub_e Hf) as [Hfa _]; pose proof (Ceq_sub_e Hg) as [Hga _];
+    pose proof (Ceq_sub_e Hh) as [Hha _].
+  assert (wft Ga1 sEnv) as Hw1 by (eapply eqt_wf_l; exact Ha1).
+  assert (wft Ga2 sEnv) as Hw2 by (eapply eqt_wf_l; exact Ha2).
+  assert (wft Ga3 sEnv) as Hw3 by (eapply eqt_wf_l; exact Ha3).
+  assert (wft Ga4 sEnv) as Hw4 by (eapply eqt_wf_l; exact Ha4).
+  assert (wft f1 (sSub Ga1 Ga2)) as Hwf
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hfa
+        | apply eq_term_sym; exact Ha1 | apply eq_term_sym; exact Ha2 ]).
+  assert (wft g1 (sSub Ga2 Ga3)) as Hwg
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hga
+        | apply eq_term_sym; exact Ha2 | apply eq_term_sym; exact Ha3 ]).
+  assert (wft h1 (sSub Ga3 Ga4)) as Hwh
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hha
+        | apply eq_term_sym; exact Ha3 | apply eq_term_sym; exact Ha4 ]).
+  eapply Ceq_sub_eq_l;
+    [ apply cong_cmp;
+      [ exact H1 | exact H3 | exact H4
+      | apply cong_cmp; [ exact H1 | exact H2 | exact H3 | exact Hf | exact Hg ]
+      | exact Hh ]
+    | ].
+  eapply eq_term_conv;
+    [ apply eq_cmp_assoc; assumption | apply sSub_cong; assumption ].
+Qed.
+
+Lemma by_cmp_forget Ga Gb Ga' Gb' g1 g2
+  : Ceq_term sEnv Ga Gb -> Ceq_term sEnv Ga' Gb' ->
+    Ceq_term (sSub Gb Gb') g1 g2 ->
+    Ceq_term (sSub Gb oEmp) (oCmp Ga Ga' oEmp g1 (oForget Ga')) (oForget Gb).
+Proof.
+  intros HG HG' Hg.
+  pose proof (Ceq_env_e HG) as [HGa _]; pose proof (Ceq_env_e HG') as [HGa' _].
+  pose proof (Ceq_sub_e Hg) as [Hga _].
+  assert (wft Ga sEnv) as Hwa by (eapply eqt_wf_l; exact HGa).
+  assert (wft Ga' sEnv) as Hwa' by (eapply eqt_wf_l; exact HGa').
+  assert (wft g1 (sSub Ga Ga')) as Hwg
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hga
+        | apply eq_term_sym; exact HGa | apply eq_term_sym; exact HGa' ]).
+  eapply Ceq_sub_eq_l; [ apply cong_forget; exact HG | ].
+  eapply eq_term_conv;
+    [ apply eq_cmp_forget; assumption
+    | apply sSub_cong; [ exact HGa | apply eq_term_refl; apply wf_Emp ] ].
+Qed.
+
+Lemma by_id_emp_forget : Ceq_term (sSub oEmp oEmp) (oId oEmp) (oForget oEmp).
+Proof.
+  eapply Ceq_sub_eq_l;
+    [ apply cong_forget; apply cong_emp | apply eq_id_emp_forget ].
+Qed.
+
+(* ---- the two [ty_subst] laws ------------------------------------ *)
+
+Lemma by_ty_subst_id Ga Gb i1 i2 A1 A2
+  : Ceq_term sEnv Ga Gb -> Ceq_term sInfo i1 i2 -> Ceq_term (sTy Gb i2) A1 A2 ->
+    Ceq_term (sTy Gb i2) (oTySubst Ga Ga (oId Ga) i1 A1) A2.
+Proof.
+  intros HG Hi HA.
+  pose proof (Ceq_env_e HG) as [HGa _].
+  pose proof (Ceq_tyinfo_e Hi) as (Hia & _ & _).
+  pose proof (Ceq_ty_e HA) as [HAa _].
+  assert (wft Ga sEnv) as Hwa by (eapply eqt_wf_l; exact HGa).
+  assert (wft i1 sInfo) as Hwi by (eapply eqt_wf_l; exact Hia).
+  assert (wft A1 (sTy Ga i1)) as HwA
+    by (eapply wft_conv_ty;
+        [ eapply eqt_wf_l; exact HAa
+        | apply eq_term_sym; exact HGa | apply eq_term_sym; exact Hia ]).
+  eapply Ceq_ty_eq_l; [ exact HA | ].
+  eapply eq_term_conv;
+    [ apply eq_ty_subst_id; assumption | apply sTy_cong; assumption ].
+Qed.
+
+Lemma by_ty_subst_cmp Ga1 Gb1 Ga2 Gb2 Ga3 Gb3 f1 f2 g1 g2 i1 i2 A1 A2
+  : Ceq_term sEnv Ga1 Gb1 -> Ceq_term sEnv Ga2 Gb2 -> Ceq_term sEnv Ga3 Gb3 ->
+    Ceq_term (sSub Gb1 Gb2) f1 f2 -> Ceq_term (sSub Gb2 Gb3) g1 g2 ->
+    Ceq_term sInfo i1 i2 -> Ceq_term (sTy Gb3 i2) A1 A2 ->
+    Ceq_term (sTy Gb1 i2)
+      (oTySubst Ga1 Ga2 f1 i1 (oTySubst Ga2 Ga3 g1 i1 A1))
+      (oTySubst Gb1 Gb3 (oCmp Gb1 Gb2 Gb3 f2 g2) i2 A2).
+Proof.
+  intros H1 H2 H3 Hf Hg Hi HA.
+  pose proof (Ceq_env_e H1) as [Ha1 _]; pose proof (Ceq_env_e H2) as [Ha2 _];
+    pose proof (Ceq_env_e H3) as [Ha3 _].
+  pose proof (Ceq_sub_e Hf) as [Hfa _]; pose proof (Ceq_sub_e Hg) as [Hga _].
+  pose proof (Ceq_tyinfo_e Hi) as (Hia & _ & _).
+  pose proof (Ceq_ty_e HA) as [HAa _].
+  assert (wft Ga1 sEnv) as Hw1 by (eapply eqt_wf_l; exact Ha1).
+  assert (wft Ga2 sEnv) as Hw2 by (eapply eqt_wf_l; exact Ha2).
+  assert (wft Ga3 sEnv) as Hw3 by (eapply eqt_wf_l; exact Ha3).
+  assert (wft i1 sInfo) as Hwi by (eapply eqt_wf_l; exact Hia).
+  assert (wft f1 (sSub Ga1 Ga2)) as Hwf
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hfa
+        | apply eq_term_sym; exact Ha1 | apply eq_term_sym; exact Ha2 ]).
+  assert (wft g1 (sSub Ga2 Ga3)) as Hwg
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hga
+        | apply eq_term_sym; exact Ha2 | apply eq_term_sym; exact Ha3 ]).
+  assert (wft A1 (sTy Ga3 i1)) as HwA
+    by (eapply wft_conv_ty;
+        [ eapply eqt_wf_l; exact HAa
+        | apply eq_term_sym; exact Ha3 | apply eq_term_sym; exact Hia ]).
+  eapply Ceq_ty_eq_l;
+    [ apply cong_ty_subst;
+      [ exact H1 | exact H3
+      | apply cong_cmp; [ exact H1 | exact H2 | exact H3 | exact Hf | exact Hg ]
+      | exact Hi | exact HA ]
+    | ].
+  eapply eq_term_conv;
+    [ apply eq_ty_subst_cmp; assumption | apply sTy_cong; assumption ].
+Qed.
+
+(* ---- the two [exp_subst] laws ----------------------------------- *)
+
+Lemma wft_conv_exp_l e G1 G2 i1 i2 A1 A2
+  : wft e (sExp G2 i2 A2) -> eqt sEnv G1 G2 -> eqt sInfo i1 i2 ->
+    eqt (sTy G2 i2) A1 A2 -> wft e (sExp G1 i1 A1).
+Proof.
+  intros He HG Hi HA; eapply wft_conv_exp;
+    [ exact He
+    | apply eq_term_sym; exact HG
+    | apply eq_term_sym; exact Hi
+    | apply eq_term_sym; eapply eqt_conv_ty_l; eassumption ].
+Qed.
+
+Lemma by_exp_subst_id Ga Gb i1 i2 A1 A2 v1 v2
+  : Ceq_term sEnv Ga Gb -> Ceq_term sInfo i1 i2 -> Ceq_term (sTy Gb i2) A1 A2 ->
+    Ceq_term (sExp Gb i2 A2) v1 v2 ->
+    Ceq_term (sExp Gb i2 A2) (oExpSubst Ga Ga (oId Ga) i1 A1 v1) v2.
+Proof.
+  intros HG Hi HA Hv.
+  pose proof (Ceq_env_e HG) as [HGa _].
+  pose proof (Ceq_tyinfo_e Hi) as (Hia & _ & _).
+  pose proof (Ceq_ty_e HA) as [HAa _].
+  pose proof (Ceq_exp_e Hv) as [Hva _].
+  assert (wft Ga sEnv) as Hwa by (eapply eqt_wf_l; exact HGa).
+  assert (wft i1 sInfo) as Hwi by (eapply eqt_wf_l; exact Hia).
+  assert (wft A1 (sTy Ga i1)) as HwA
+    by (eapply wft_conv_ty;
+        [ eapply eqt_wf_l; exact HAa
+        | apply eq_term_sym; exact HGa | apply eq_term_sym; exact Hia ]).
+  assert (wft v1 (sExp Ga i1 A1)) as Hwv
+    by (eapply wft_conv_exp_l;
+        [ eapply eqt_wf_l; exact Hva | exact HGa | exact Hia | exact HAa ]).
+  eapply Ceq_exp_eq_l; [ exact Hv | ].
+  eapply eq_term_conv;
+    [ apply eq_exp_subst_id; assumption | apply sExp_cong; assumption ].
+Qed.
+
+Lemma by_exp_subst_cmp Ga1 Gb1 Ga2 Gb2 Ga3 Gb3 f1 f2 g1 g2 i1 i2 A1 A2 v1 v2
+  : Ceq_term sEnv Ga1 Gb1 -> Ceq_term sEnv Ga2 Gb2 -> Ceq_term sEnv Ga3 Gb3 ->
+    Ceq_term (sSub Gb1 Gb2) f1 f2 -> Ceq_term (sSub Gb2 Gb3) g1 g2 ->
+    Ceq_term sInfo i1 i2 -> Ceq_term (sTy Gb3 i2) A1 A2 ->
+    Ceq_term (sExp Gb3 i2 A2) v1 v2 ->
+    Ceq_term (sExp Gb1 i2 (oTySubst Gb1 Gb2 f2 i2 (oTySubst Gb2 Gb3 g2 i2 A2)))
+      (oExpSubst Ga1 Ga2 f1 i1 (oTySubst Ga2 Ga3 g1 i1 A1)
+         (oExpSubst Ga2 Ga3 g1 i1 A1 v1))
+      (oExpSubst Gb1 Gb3 (oCmp Gb1 Gb2 Gb3 f2 g2) i2 A2 v2).
+Proof.
+  intros H1 H2 H3 Hf Hg Hi HA Hv.
+  pose proof (Ceq_env_e H1) as [Ha1 _]; pose proof (Ceq_env_e H2) as [Ha2 _];
+    pose proof (Ceq_env_e H3) as [Ha3 _].
+  pose proof (Ceq_sub_e Hf) as [Hfa _]; pose proof (Ceq_sub_e Hg) as [Hga _].
+  pose proof (Ceq_tyinfo_e Hi) as (Hia & _ & _).
+  pose proof (Ceq_ty_e HA) as [HAa _].
+  pose proof (Ceq_exp_e Hv) as [Hva _].
+  assert (wft Ga1 sEnv) as Hw1 by (eapply eqt_wf_l; exact Ha1).
+  assert (wft Ga2 sEnv) as Hw2 by (eapply eqt_wf_l; exact Ha2).
+  assert (wft Ga3 sEnv) as Hw3 by (eapply eqt_wf_l; exact Ha3).
+  assert (wft Gb1 sEnv) as Hwb1 by (eapply eqt_wf_r; exact Ha1).
+  assert (wft Gb2 sEnv) as Hwb2 by (eapply eqt_wf_r; exact Ha2).
+  assert (wft Gb3 sEnv) as Hwb3 by (eapply eqt_wf_r; exact Ha3).
+  assert (wft i1 sInfo) as Hwi by (eapply eqt_wf_l; exact Hia).
+  assert (wft i2 sInfo) as Hwi2 by (eapply eqt_wf_r; exact Hia).
+  assert (wft f2 (sSub Gb1 Gb2)) as Hwf2 by (eapply eqt_wf_r; exact Hfa).
+  assert (wft g2 (sSub Gb2 Gb3)) as Hwg2 by (eapply eqt_wf_r; exact Hga).
+  assert (wft A2 (sTy Gb3 i2)) as HwA2 by (eapply eqt_wf_r; exact HAa).
+  assert (wft f1 (sSub Ga1 Ga2)) as Hwf
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hfa
+        | apply eq_term_sym; exact Ha1 | apply eq_term_sym; exact Ha2 ]).
+  assert (wft g1 (sSub Ga2 Ga3)) as Hwg
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hga
+        | apply eq_term_sym; exact Ha2 | apply eq_term_sym; exact Ha3 ]).
+  assert (wft A1 (sTy Ga3 i1)) as HwA
+    by (eapply wft_conv_ty;
+        [ eapply eqt_wf_l; exact HAa
+        | apply eq_term_sym; exact Ha3 | apply eq_term_sym; exact Hia ]).
+  assert (wft v1 (sExp Ga3 i1 A1)) as Hwv
+    by (eapply wft_conv_exp_l;
+        [ eapply eqt_wf_l; exact Hva | exact Ha3 | exact Hia | exact HAa ]).
+  eapply Ceq_exp_eq_l.
+  - eapply ceq_exp_transfer;
+      [ apply eq_term_refl; exact Hwb1
+      | apply eq_term_refl; exact Hwi2
+      | apply eq_term_sym; apply eq_ty_subst_cmp; assumption
+      | apply cong_exp_subst;
+        [ exact H1 | exact H3
+        | apply cong_cmp;
+          [ exact H1 | exact H2 | exact H3 | exact Hf | exact Hg ]
+        | exact Hi | exact HA | exact Hv ] ].
+  - eapply eq_term_conv;
+      [ apply eq_exp_subst_cmp; assumption
+      | apply sExp_cong;
+        [ exact Ha1 | exact Hia
+        | apply TySubst_cong;
+          [ exact Ha1 | exact Ha2 | exact Hfa | exact Hia
+          | apply TySubst_cong;
+            [ exact Ha2 | exact Ha3 | exact Hga | exact Hia | exact HAa ] ] ] ].
+Qed.
+
+(* ---- the four [snoc] laws --------------------------------------- *)
+
+Lemma by_wkn_snoc Ga Gb Ga' Gb' i1 i2 A1 A2 g1 g2 v1 v2
+  : Ceq_term sEnv Ga Gb -> Ceq_term sEnv Ga' Gb' ->
+    Ceq_term (sSub Gb Gb') g1 g2 -> Ceq_term sInfo i1 i2 ->
+    Ceq_term (sTy Gb' i2) A1 A2 ->
+    Ceq_term (sExp Gb i2 (oTySubst Gb Gb' g2 i2 A2)) v1 v2 ->
+    Ceq_term (sSub Gb Gb')
+      (oCmp Ga (oExt Ga' i1 A1) Ga'
+         (oSnoc Ga Ga' i1 A1 g1 v1) (oWkn Ga' i1 A1)) g2.
+Proof.
+  intros HG HG' Hg Hi HA Hv.
+  pose proof (Ceq_env_e HG) as [HGa _]; pose proof (Ceq_env_e HG') as [HGa' _].
+  pose proof (Ceq_sub_e Hg) as [Hga _].
+  pose proof (Ceq_tyinfo_e Hi) as (Hia & _ & _).
+  pose proof (Ceq_ty_e HA) as [HAa _].
+  pose proof (Ceq_exp_e Hv) as [Hva _].
+  assert (wft Ga sEnv) as Hwa by (eapply eqt_wf_l; exact HGa).
+  assert (wft Ga' sEnv) as Hwa' by (eapply eqt_wf_l; exact HGa').
+  assert (wft i1 sInfo) as Hwi by (eapply eqt_wf_l; exact Hia).
+  assert (wft g1 (sSub Ga Ga')) as Hwg
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hga
+        | apply eq_term_sym; exact HGa | apply eq_term_sym; exact HGa' ]).
+  assert (wft A1 (sTy Ga' i1)) as HwA
+    by (eapply wft_conv_ty;
+        [ eapply eqt_wf_l; exact HAa
+        | apply eq_term_sym; exact HGa' | apply eq_term_sym; exact Hia ]).
+  assert (eqt (sTy Gb i2)
+            (oTySubst Ga Ga' g1 i1 A1) (oTySubst Gb Gb' g2 i2 A2)) as Hty
+    by (apply TySubst_cong; assumption).
+  assert (wft v1 (sExp Ga i1 (oTySubst Ga Ga' g1 i1 A1))) as Hwv
+    by (eapply wft_conv_exp_l;
+        [ eapply eqt_wf_l; exact Hva | exact HGa | exact Hia | exact Hty ]).
+  eapply Ceq_sub_eq_l; [ exact Hg | ].
+  eapply eq_term_conv;
+    [ apply eq_wkn_snoc; assumption | apply sSub_cong; assumption ].
+Qed.
+
+Lemma by_snoc_hd Ga Gb Ga' Gb' i1 i2 A1 A2 g1 g2 v1 v2
+  : Ceq_term sEnv Ga Gb -> Ceq_term sEnv Ga' Gb' ->
+    Ceq_term (sSub Gb Gb') g1 g2 -> Ceq_term sInfo i1 i2 ->
+    Ceq_term (sTy Gb' i2) A1 A2 ->
+    Ceq_term (sExp Gb i2 (oTySubst Gb Gb' g2 i2 A2)) v1 v2 ->
+    Ceq_term (sExp Gb i2 (oTySubst Gb Gb' g2 i2 A2))
+      (oExpSubst Ga (oExt Ga' i1 A1) (oSnoc Ga Ga' i1 A1 g1 v1) i1
+         (oTySubst (oExt Ga' i1 A1) Ga' (oWkn Ga' i1 A1) i1 A1)
+         (oHd Ga' i1 A1))
+      v2.
+Proof.
+  intros HG HG' Hg Hi HA Hv.
+  pose proof (Ceq_env_e HG) as [HGa _]; pose proof (Ceq_env_e HG') as [HGa' _].
+  pose proof (Ceq_sub_e Hg) as [Hga _].
+  pose proof (Ceq_tyinfo_e Hi) as (Hia & _ & _).
+  pose proof (Ceq_ty_e HA) as [HAa _].
+  pose proof (Ceq_exp_e Hv) as [Hva _].
+  assert (wft Ga sEnv) as Hwa by (eapply eqt_wf_l; exact HGa).
+  assert (wft Ga' sEnv) as Hwa' by (eapply eqt_wf_l; exact HGa').
+  assert (wft i1 sInfo) as Hwi by (eapply eqt_wf_l; exact Hia).
+  assert (wft g1 (sSub Ga Ga')) as Hwg
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hga
+        | apply eq_term_sym; exact HGa | apply eq_term_sym; exact HGa' ]).
+  assert (wft A1 (sTy Ga' i1)) as HwA
+    by (eapply wft_conv_ty;
+        [ eapply eqt_wf_l; exact HAa
+        | apply eq_term_sym; exact HGa' | apply eq_term_sym; exact Hia ]).
+  assert (eqt (sTy Gb i2)
+            (oTySubst Ga Ga' g1 i1 A1) (oTySubst Gb Gb' g2 i2 A2)) as Hty
+    by (apply TySubst_cong; assumption).
+  assert (wft v1 (sExp Ga i1 (oTySubst Ga Ga' g1 i1 A1))) as Hwv
+    by (eapply wft_conv_exp_l;
+        [ eapply eqt_wf_l; exact Hva | exact HGa | exact Hia | exact Hty ]).
+  eapply Ceq_exp_eq_l; [ exact Hv | ].
+  eapply eq_term_conv;
+    [ apply eq_snoc_hd; assumption | apply sExp_cong; assumption ].
+Qed.
+
+Lemma by_cmp_snoc Ga1 Gb1 Ga2 Gb2 Ga3 Gb3 f1 f2 g1 g2 i1 i2 A1 A2 v1 v2
+  : Ceq_term sEnv Ga1 Gb1 -> Ceq_term sEnv Ga2 Gb2 -> Ceq_term sEnv Ga3 Gb3 ->
+    Ceq_term (sSub Gb1 Gb2) f1 f2 -> Ceq_term (sSub Gb2 Gb3) g1 g2 ->
+    Ceq_term sInfo i1 i2 -> Ceq_term (sTy Gb3 i2) A1 A2 ->
+    Ceq_term (sExp Gb2 i2 (oTySubst Gb2 Gb3 g2 i2 A2)) v1 v2 ->
+    Ceq_term (sSub Gb1 (oExt Gb3 i2 A2))
+      (oCmp Ga1 Ga2 (oExt Ga3 i1 A1) f1 (oSnoc Ga2 Ga3 i1 A1 g1 v1))
+      (oSnoc Gb1 Gb3 i2 A2 (oCmp Gb1 Gb2 Gb3 f2 g2)
+         (oExpSubst Gb1 Gb2 f2 i2 (oTySubst Gb2 Gb3 g2 i2 A2) v2)).
+Proof.
+  intros H1 H2 H3 Hf Hg Hi HA Hv.
+  pose proof (Ceq_env_e H1) as [Ha1 _]; pose proof (Ceq_env_e H2) as [Ha2 _];
+    pose proof (Ceq_env_e H3) as [Ha3 _].
+  pose proof (Ceq_sub_e Hf) as [Hfa _]; pose proof (Ceq_sub_e Hg) as [Hga _].
+  pose proof (Ceq_tyinfo_e Hi) as (Hia & _ & _).
+  pose proof (Ceq_ty_e HA) as [HAa _].
+  pose proof (Ceq_exp_e Hv) as [Hva _].
+  assert (wft Ga1 sEnv) as Hw1 by (eapply eqt_wf_l; exact Ha1).
+  assert (wft Ga2 sEnv) as Hw2 by (eapply eqt_wf_l; exact Ha2).
+  assert (wft Ga3 sEnv) as Hw3 by (eapply eqt_wf_l; exact Ha3).
+  assert (wft Gb1 sEnv) as Hwb1 by (eapply eqt_wf_r; exact Ha1).
+  assert (wft Gb2 sEnv) as Hwb2 by (eapply eqt_wf_r; exact Ha2).
+  assert (wft Gb3 sEnv) as Hwb3 by (eapply eqt_wf_r; exact Ha3).
+  assert (wft i1 sInfo) as Hwi by (eapply eqt_wf_l; exact Hia).
+  assert (wft i2 sInfo) as Hwi2 by (eapply eqt_wf_r; exact Hia).
+  assert (wft f2 (sSub Gb1 Gb2)) as Hwf2 by (eapply eqt_wf_r; exact Hfa).
+  assert (wft g2 (sSub Gb2 Gb3)) as Hwg2 by (eapply eqt_wf_r; exact Hga).
+  assert (wft A2 (sTy Gb3 i2)) as HwA2 by (eapply eqt_wf_r; exact HAa).
+  assert (wft f1 (sSub Ga1 Ga2)) as Hwf
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hfa
+        | apply eq_term_sym; exact Ha1 | apply eq_term_sym; exact Ha2 ]).
+  assert (wft g1 (sSub Ga2 Ga3)) as Hwg
+    by (eapply wft_conv_sub;
+        [ eapply eqt_wf_l; exact Hga
+        | apply eq_term_sym; exact Ha2 | apply eq_term_sym; exact Ha3 ]).
+  assert (wft A1 (sTy Ga3 i1)) as HwA
+    by (eapply wft_conv_ty;
+        [ eapply eqt_wf_l; exact HAa
+        | apply eq_term_sym; exact Ha3 | apply eq_term_sym; exact Hia ]).
+  assert (eqt (sTy Gb2 i2)
+            (oTySubst Ga2 Ga3 g1 i1 A1) (oTySubst Gb2 Gb3 g2 i2 A2)) as Hty
+    by (apply TySubst_cong; assumption).
+  assert (wft v1 (sExp Ga2 i1 (oTySubst Ga2 Ga3 g1 i1 A1))) as Hwv
+    by (eapply wft_conv_exp_l;
+        [ eapply eqt_wf_l; exact Hva | exact Ha2 | exact Hia | exact Hty ]).
+  eapply Ceq_sub_eq_l.
+  - apply cong_snoc;
+      [ exact H1 | exact H3 | exact Hi | exact HA
+      | apply cong_cmp; [ exact H1 | exact H2 | exact H3 | exact Hf | exact Hg ]
+      | eapply ceq_exp_transfer;
+        [ apply eq_term_refl; exact Hwb1
+        | apply eq_term_refl; exact Hwi2
+        | apply eq_ty_subst_cmp; assumption
+        | apply cong_exp_subst;
+          [ exact H1 | exact H2 | exact Hf | exact Hi
+          | apply cong_ty_subst;
+            [ exact H2 | exact H3 | exact Hg | exact Hi | exact HA ]
+          | exact Hv ] ] ].
+  - eapply eq_term_conv;
+      [ apply eq_cmp_snoc; assumption
+      | apply sSub_cong; [ exact Ha1 | apply Ext_cong; assumption ] ].
+Qed.
+
+Lemma by_snoc_wkn_hd Ga Gb i1 i2 A1 A2
+  : Ceq_term sEnv Ga Gb -> Ceq_term sInfo i1 i2 -> Ceq_term (sTy Gb i2) A1 A2 ->
+    Ceq_term (sSub (oExt Gb i2 A2) (oExt Gb i2 A2))
+      (oSnoc (oExt Ga i1 A1) Ga i1 A1 (oWkn Ga i1 A1) (oHd Ga i1 A1))
+      (oId (oExt Gb i2 A2)).
+Proof.
+  intros HG Hi HA.
+  pose proof (Ceq_env_e HG) as [HGa _].
+  pose proof (Ceq_tyinfo_e Hi) as (Hia & _ & _).
+  pose proof (Ceq_ty_e HA) as [HAa _].
+  assert (wft Ga sEnv) as Hwa by (eapply eqt_wf_l; exact HGa).
+  assert (wft i1 sInfo) as Hwi by (eapply eqt_wf_l; exact Hia).
+  assert (wft A1 (sTy Ga i1)) as HwA
+    by (eapply wft_conv_ty;
+        [ eapply eqt_wf_l; exact HAa
+        | apply eq_term_sym; exact HGa | apply eq_term_sym; exact Hia ]).
+  assert (eqt sEnv (oExt Ga i1 A1) (oExt Gb i2 A2)) as Hext
+    by (apply Ext_cong; assumption).
+  eapply Ceq_sub_eq_l;
+    [ apply cong_id; apply cong_ext; [ exact HG | exact Hi | exact HA ] | ].
+  eapply eq_term_conv;
+    [ apply eq_snoc_wkn_hd; assumption | apply sSub_cong; assumption ].
+Qed.
+
+(* ================================================================== *)
+(* 4.  The equation dispatcher                                         *)
+(* ================================================================== *)
+
+(* [eapply]/[eassumption] rather than [apply]/[assumption]: two rules
+   ("cmp_forget", "wkn_snoc") do not mention every s2-side argument in
+   their conclusion, so those stay as evars until the corresponding
+   argument clause is matched. *)
+
+Lemma subst_by_obligation
+  : forall c' name e1 e2 t s1 s2,
+    In (name, term_eq_rule c' e1 e2 t) ott_dtt ->
+    (name = "id_left" \/ name = "id_right" \/ name = "cmp_assoc"
+     \/ name = "cmp_forget" \/ name = "id_emp_forget"
+     \/ name = "ty_subst_id" \/ name = "ty_subst_cmp"
+     \/ name = "exp_subst_id" \/ name = "exp_subst_cmp"
+     \/ name = "wkn_snoc" \/ name = "snoc_hd" \/ name = "cmp_snoc"
+     \/ name = "snoc_wkn_hd") ->
+    ceq_args (CM := DttCM) c' s1 s2 ->
+    Ceq_term t[/with_names_from c' s2/]
+             e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
+Proof.
+  intros c' name e1 e2 t s1 s2 Hin Hname Hargs.
+  destruct Hname
+    as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->
+       ]]]]]]]]]]]];
+    subst_pin.
+  - (* id_left *) eapply by_id_left; eassumption.
+  - (* id_right *) eapply by_id_right; eassumption.
+  - (* cmp_assoc *) eapply by_cmp_assoc; eassumption.
+  - (* cmp_forget *) eapply by_cmp_forget; eassumption.
+  - (* id_emp_forget *) exact by_id_emp_forget.
+  - (* ty_subst_id *) eapply by_ty_subst_id; eassumption.
+  - (* ty_subst_cmp *) eapply by_ty_subst_cmp; eassumption.
+  - (* exp_subst_id *) eapply by_exp_subst_id; eassumption.
+  - (* exp_subst_cmp *) eapply by_exp_subst_cmp; eassumption.
+  - (* wkn_snoc *) eapply by_wkn_snoc; eassumption.
+  - (* snoc_hd *) eapply by_snoc_hd; eassumption.
+  - (* cmp_snoc *) eapply by_cmp_snoc; eassumption.
+  - (* snoc_wkn_hd *) eapply by_snoc_wkn_hd; eassumption.
+Qed.
