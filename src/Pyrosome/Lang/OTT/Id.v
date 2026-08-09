@@ -225,6 +225,94 @@ Proof.
     ]}%prerule
     (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
+  (* ---- Idcong computation: push under each constructor / neutral (Nat frag) ---- *)
+
+  (* suc: cong of (suc n) is the cong of n, transported across Id-Nat-SS
+     (which reduces Id ℕ ℕ (suc _) (suc _) to Id ℕ ℕ _ _).  Pushes under suc. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "n" : #"exp" (#"ext" "G" (#"El" "A")) (#"info" #"rel" (#"iota" #"L0"))
+                       (#"El" ["G" := #"ext" "G" (#"El" "A")] ["r" := #"rel"] ["l" := #"L0"]
+                             (#"Nat" ["G" := #"ext" "G" (#"El" "A")])),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+      ----------------------------------------------- ("Idcong-suc")
+      #"Idcong" "A" (#"Nat") (#"suc" "n") "t" "u" "e"
+        = #"Idcong" "A" (#"Nat") "n" "t" "u" "e"
+      : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+        (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+              (#"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"])
+                    (#"exp_subst" (#"snoc" #"id" "t") (#"suc" "n"))
+                    (#"exp_subst" (#"snoc" #"id" "u") (#"suc" "n"))))
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* zero: a nullary (constant) constructor; there is nothing under it, so cong
+     bottoms out at reflexivity.  Id ℕ ℕ zero zero further reduces to sUnit
+     (Id-Nat-00, in Computations.v), of which Idrefl ℕ zero is an inhabitant. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+      ----------------------------------------------- ("Idcong-zero")
+      #"Idcong" "A" (#"Nat") (#"zero") "t" "u" "e"
+        = #"Idrefl" (#"Nat" ["G" := "G"]) (#"zero" ["G" := "G"])
+      : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+        (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+              (#"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"])
+                    (#"zero" ["G" := "G"]) (#"zero" ["G" := "G"])))
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* variable (neutral base case): cong of the extra variable itself is the
+     given proof.  Here b := hd, B := A weakened along wkn, so both instances
+     collapse to the endpoints and Id (B[t]) (B[u]) (hd[t]) (hd[u]) = Id A A t u,
+     whose proof is e.  This is where the structural recursion bottoms out. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+      ----------------------------------------------- ("Idcong-var")
+      #"Idcong" "A" (#"exp_subst" #"wkn" "A") #"hd" "t" "u" "e"
+        = "e"
+      : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+        (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+              (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* closed subterm (normal form not mentioning the variable): a term weakened
+     along wkn ignores the extra variable, so both instances are the closed term
+     c and cong bottoms out at Idrefl C c.  This is the general leaf for any
+     type; the literal zero rule above is the corresponding leaf for the ℕ
+     recursion (where the closed subterm appears as the bare literal, not wkn·_). *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl", "lB" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "C" : #"exp" "G" (#"info" #"rel" (#"next" "lB")) (#"U" ["G" := "G"] #"rel" "lB"),
+          "c" : #"exp" "G" (#"info" #"rel" (#"iota" "lB")) (#"El" "C"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+      ----------------------------------------------- ("Idcong-wkn")
+      #"Idcong" "A" (#"exp_subst" #"wkn" "C") (#"exp_subst" #"wkn" "c") "t" "u" "e"
+        = #"Idrefl" "C" "c"
+      : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+        (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+              (#"Id" ["G" := "G"] ["l" := "lB"] "C" "C" "c" "c"))
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
