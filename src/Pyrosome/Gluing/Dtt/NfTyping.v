@@ -22,7 +22,8 @@ Import Core.Notations.
        ([wft_El_args], [wft_PiRel_args], [wft_PiIrr_args]);
      * the sort congruences [eq_sort_ty_cong] / [eq_sort_exp_cong] and the
        "next0" sort bridges;
-     * the structural corollaries [Nf_EnvOk], [VarT_TyOk], [NeET_TyOk],
+     * the structural corollaries [Nf_EnvOk], [EnvOk_ext_inv],
+       [VarT_TyOk], [VarT_hd_inv], [VarT_wkn_inv], [NeET_TyOk],
        [NfET_TyOk], [NfCode_idx];
      * the combined typing theorem [Nf_wf] and its six projections;
      * [Wk_dom] / [Wk_cod] / [Wk_wf].
@@ -315,9 +316,34 @@ Proof.
   - unfold oU, oEl in HA; congruence.
 Qed.
 
+Lemma EnvOk_ext_inv G i A : EnvOk (oExt G i A) -> EnvOk G /\ TyOk G i A.
+Proof. inversion 1; subst; split; assumption. Qed.
+
 (* Both [VarT] clauses carry the normal type as an explicit premise. *)
 Lemma VarT_TyOk G i A x : VarT G i A x -> TyOk G i A.
 Proof. destruct 1; assumption. Qed.
+
+(* The two [VarT] clauses, inverted on the shape of the SUBJECT term.
+   Both hand back the clause's own [eq_term] premise, which is what pins
+   the NAMED normal representative [A] of the variable's (weakened) type;
+   src/Pyrosome/Gluing/Dtt/Inj.v spends exactly that. *)
+
+Lemma VarT_hd_inv Gx i A G0 i0 A0
+  : VarT Gx i A (oHd G0 i0 A0) ->
+    Gx = oExt G0 i0 A0 /\ i = i0
+    /\ TyOk (oExt G0 i0 A0) i0 A
+    /\ eqt (sTy (oExt G0 i0 A0) i0)
+           (oTySubst (oExt G0 i0 A0) G0 (oWkn G0 i0 A0) i0 A0) A.
+Proof. inversion 1; subst; repeat split; assumption. Qed.
+
+Lemma VarT_wkn_inv Gx i A G0 j B i0 A0 x
+  : VarT Gx i A (oExpSubst (oExt G0 j B) G0 (oWkn G0 j B) i0 A0 x) ->
+    Gx = oExt G0 j B /\ i = i0
+    /\ VarT G0 i0 A0 x
+    /\ TyOk (oExt G0 j B) i0 A
+    /\ eqt (sTy (oExt G0 j B) i0)
+           (oTySubst (oExt G0 j B) G0 (oWkn G0 j B) i0 A0) A.
+Proof. inversion 1; subst; repeat split; assumption. Qed.
 
 Lemma NfCode_idx G r l c : NfCode G r l c -> RelNf r /\ LvlNf l.
 Proof.

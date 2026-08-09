@@ -7,7 +7,9 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.Erase Pyrosome.Gluing.Dtt.Rigid Pyrosome.Gluing.Dtt.RigidOk.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms
+  Pyrosome.Gluing.Dtt.NfTyping Pyrosome.Gluing.Dtt.Rigid
+  Pyrosome.Gluing.Dtt.RigidOk.
 Import Core.Notations.
 
 (* =====================================================================
@@ -19,41 +21,48 @@ Import Core.Notations.
      TyOk_inj   : normal types are determined by provable equality
      EnvOk_inj  : normal environments are determined by provable equality
 
-   src/Pyrosome/Gluing/Dtt/Erase.v proves the syntactic half (a de Bruijn
-   erasure of the normal forms, total and functional);
    src/Pyrosome/Gluing/Dtt/Rigid.v + src/Pyrosome/Gluing/Dtt/RigidOk.v
-   supply the semantic half ([rigid_env]/[rigid_ty]/[rigid_code]).  What
-   is left is the composition, and the only thing in it that is not
-   routine is the variable case: [VarT] NAMES the normal representative of
-   a weakened type and pins it only by an [eq_term] premise, so the
+   supply the semantic input, in exactly the form these theorems want:
+   [rigid_env]/[rigid_ty]/[rigid_code] read a provable equation as a
+   COMMON interpretation of the two sides, e.g.
+
+     Req_code G e1 e2 := exists E n, IEnv G E /\ ICode E e1 n /\ ICode E e2 n.
+
+   So injectivity is stated over the model's own relations [ICode]/[ITy]/
+   [IEnv] -- two normal objects with the SAME interpretation at the SAME
+   [renv] are syntactically equal -- and the export is then two lines,
+   with nothing to construct.  In particular there is no second erasure
+   system, no totality lemma, and no index alignment: the model has
+   already chosen the [renv], and both sides are already interpreted at
+   it.
+
+   The only thing in the argument that is not routine is the variable
+   case: [VarT] (NormalForms.v) NAMES the normal representative of a
+   weakened type and pins it only by an [eq_term] premise, so the
    index-[k+1] variable term CONTAINS the named representative of the
    index-[k] one, and injectivity on variables is uniqueness of that
-   naming.
-
-   That is settled by
+   naming.  That is settled by
 
      THE UNIVERSE OBSERVATION.  The named type a code variable carries is
      always a UNIVERSE -- a code variable's type is [oU G r l] and nothing
      else.  And at a universe, uniqueness of the naming is
      UNCONDITIONAL: a normal type over [G] whose weakening is provably
-     equal to [oU (ext G j B) r l] is syntactically [oU G r l], with the
+     equal to [oU (oExt G j B) r l] is syntactically [oU G r l], with the
      SAME [r] and [l].  There is no recursion at all.
 
    So the file is linear:
 
-     1-2. Inversions for the interpretation relations of Rigid.v.
-     3.   [WknU_shape] -- the universe case of the naming, unconditional.
-     4.   [Nf_EnvOk] -- every normal-form judgement carries [EnvOk].
-     5.   [Nf_ErI] -- one mutual induction producing, for a normal object,
-          an erasure that is SIMULTANEOUSLY an [Er...] and an [I...]
-          derivation.  This is the seam between Erase.v's syntactic
-          relations and Rigid.v's semantic ones; running both in a
-          single induction is what keeps their [renv] indices in step.
-          The variable clause is where [WknU_shape] is spent.
-     6.   [VarTU_erase_inj] / [NfCode_erase_inj_u] / [TyOk_erase_inj_u] /
-          [EnvOk_erase_inj_u] -- injectivity of the erasure on normal
-          forms.
-     7.   The three exported theorems.
+     1.  Inversions for the interpretation relations of Rigid.v.
+     2.  [TyOk_ITy_U] -- a normal type interpreted as a universe IS one.
+     3.  [WknU_shape] -- uniqueness of the naming, at a universe.
+     4.  Variables: their interpretation is a de Bruijn index
+         ([VarT_ICode_var]), and a weakened one is a successor over the
+         tail of the [renv] ([ICode_wkn_var]).
+     5.  [VarTU_I_inj] / [NfCode_I_inj] / [TyOk_I_inj] / [EnvOk_I_inj] --
+         injectivity, by induction on the de Bruijn index, on the
+         interpreted code, and on the [renv] respectively.
+     6.  The three exported theorems, plus the info-general
+         [TyOk_inj_gen] of which [TyOk_inj] is the corollary.
 
    Zero axioms, zero admits.
    ===================================================================== *)
@@ -61,15 +70,18 @@ Import Core.Notations.
 Local Notation eqt := (eq_term ott_dtt []).
 
 (* =====================================================================
-   1. Inversions for [IEnv] / [ITy].
+   1. Inversions for [IEnv] / [ITy] / [ICode] / [ISub].
+
+   All of them are one [inversion] away; stating them keeps every proof
+   below free of generated hypothesis names.  The [IEnv] pair is inverted
+   on the shape of the [renv], the rest on the shape of the SUBJECT term.
    ===================================================================== *)
 
-Lemma IEnv_emp_inv E : IEnv oEmp E -> E = [].
+Lemma IEnv_nil_inv G : IEnv G [] -> G = oEmp.
 Proof. inversion 1; reflexivity. Qed.
 
-Lemma IEnv_ext_inv G i A E
-  : IEnv (oExt G i A) E ->
-    exists T E0, E = T :: E0 /\ IEnv G E0 /\ ITy E0 A T.
+Lemma IEnv_cons_inv G T E
+  : IEnv G (T :: E) -> exists G0 i A, G = oExt G0 i A /\ IEnv G0 E /\ ITy E A T.
 Proof. inversion 1; subst; eauto 10. Qed.
 
 Lemma ITy_U_inv E G r l T
@@ -95,6 +107,38 @@ Lemma ISub_wkn_inv E E' G i A s
     exists T, E = T :: E' /\ IEnv G E' /\ ITy E' A T /\ s = rshift.
 Proof. inversion 1; subst; eauto 10. Qed.
 
+Lemma ICode_hd_inv E G i A n : ICode E (oHd G i A) n -> n = rc_var 0.
+Proof. inversion 1; subst; reflexivity. Qed.
+
+(* NB the image here is [csub s n0], NOT a constructor pattern: the
+   [icode_subst] clause applies the interpreted substitution.  That is why
+   the shape of a variable's interpretation needs section 4 rather than an
+   inversion. *)
+Lemma ICode_subst_inv E G G' g i A v n
+  : ICode E (oExpSubst G G' g i A v) n ->
+    exists E' s n0, ISub E E' g s /\ ICode E' v n0 /\ n = csub s n0.
+Proof. inversion 1; subst; eauto 10. Qed.
+
+Lemma ICode_nat_inv E G0 n : ICode E (oNat G0) n -> n = rc_nat.
+Proof. inversion 1; subst; reflexivity. Qed.
+
+Lemma ICode_empty_inv E G0 n : ICode E (oEmpty G0) n -> n = rc_empty.
+Proof. inversion 1; subst; reflexivity. Qed.
+
+Lemma ICode_pi_rel_inv E G0 rF lF lG F B n
+  : ICode E (oPiRel G0 rF lF lG F B) n ->
+    exists brF blF nF nB,
+      n = rc_pi true brF blF nF nB /\ ErRel rF brF /\ ErLvl lF blF
+      /\ ICode E F nF /\ ICode (rt_El brF blF nF :: E) B nB.
+Proof. inversion 1; subst; eauto 20. Qed.
+
+Lemma ICode_pi_irr_inv E G0 rF lF F B n
+  : ICode E (oPiIrr G0 rF lF F B) n ->
+    exists brF blF nF nB,
+      n = rc_pi false brF blF nF nB /\ ErRel rF brF /\ ErLvl lF blF
+      /\ ICode E F nF /\ ICode (rt_El brF blF nF :: E) B nB.
+Proof. inversion 1; subst; eauto 20. Qed.
+
 (* =====================================================================
    2. A normal type whose interpretation is a universe IS a universe.
    ===================================================================== *)
@@ -115,8 +159,8 @@ Qed.
 (* =====================================================================
    3. [WknU_shape]: uniqueness of the naming, at a universe.
 
-   Given a normal type [A] over [G] whose weakening to [ext G j B] is
-   provably equal to the universe [oU (ext G j B) r l], [A] is [oU G r l]
+   Given a normal type [A] over [G] whose weakening to [oExt G j B] is
+   provably equal to the universe [oU (oExt G j B) r l], [A] is [oU G r l]
    -- the SAME [r] and [l].  Unconditional: no induction, no appeal to
    type injectivity at any environment.
 
@@ -148,274 +192,262 @@ Proof.
 Qed.
 
 (* =====================================================================
-   4. Every normal-form judgement carries its environment's [EnvOk].
+   4. Variables interpret to de Bruijn indices.
+
+   [ICode]'s [icode_subst] clause produces [csub s n0], which is not a
+   constructor pattern, so the shape of a variable's interpretation is not
+   read off by inversion alone -- it needs the induction below.  These two
+   lemmas are the whole of that cost.
    ===================================================================== *)
 
-Lemma Nf_EnvOk :
-  (forall G, EnvOk G -> True)
-  /\ (forall G i A, TyOk G i A -> EnvOk G)
-  /\ (forall G r l c, NfCode G r l c -> EnvOk G)
-  /\ (forall G i A x, VarT G i A x -> EnvOk G)
-  /\ (forall G i A e, NeET G i A e -> EnvOk G)
-  /\ (forall G i A e, NfET G i A e -> EnvOk G).
+Lemma VarT_ICode_var G i A x (H : VarT G i A x)
+  : forall E n, ICode E x n -> exists k, n = rc_var k.
 Proof.
-  apply Nf_mutind; intros; try exact I; try assumption;
-    try (econstructor; eassumption).
+  induction H; intros E n HI.
+  - apply ICode_hd_inv in HI; eauto.
+  - apply ICode_subst_inv in HI.
+    destruct HI as [E' [s [n0 [Hs [Hn0 ->]]]]].
+    apply ISub_wkn_inv in Hs; destruct Hs as [T [-> [_ [_ ->]]]].
+    destruct (IHVarT _ _ Hn0) as [k ->].
+    exists (S k); reflexivity.
 Qed.
 
-Definition TyOk_EnvOk := proj1 (proj2 Nf_EnvOk).
-Definition NfCode_EnvOk := proj1 (proj2 (proj2 Nf_EnvOk)).
-Definition VarT_EnvOk := proj1 (proj2 (proj2 (proj2 Nf_EnvOk))).
+(* The subject of a [VarT] is an [oHd] or a [wkn]-substituted variable. *)
+Lemma VarT_shape G i A x : VarT G i A x ->
+  (exists G0 i0 A0, x = oHd G0 i0 A0)
+  \/ (exists G0 j B i0 A0 y,
+         x = oExpSubst (oExt G0 j B) G0 (oWkn G0 j B) i0 A0 y).
+Proof. destruct 1; [ left | right ]; eauto 10. Qed.
 
-(* =====================================================================
-   5. The seam: erasure and interpretation, in one induction.
-
-   For a normal object over a normal environment, Erase.v's syntactic
-   erasure and Rigid.v's semantic interpretation are produced together,
-   at the SAME [renv] and with the SAME image.  Doing both in one
-   induction is what keeps the two systems' environment indices in step;
-   proving them separately and matching afterwards would need exactly the
-   agreement being proved.
-
-   The variable clause carries the side condition that the named type is
-   a universe -- which is where [ICode] lives (a variable of an [El] type
-   is not a code) and is exactly the shape [nfcode_var] hands over.
-   ===================================================================== *)
-
-Lemma Nf_ErI :
-  (forall G, EnvOk G -> exists E, ErEnv G E /\ IEnv G E)
-  /\ (forall G i A, TyOk G i A ->
-        forall E, ErEnv G E -> IEnv G E ->
-          exists T, ErTy E G i A T /\ ITy E A T)
-  /\ (forall G r l c, NfCode G r l c ->
-        forall E, ErEnv G E -> IEnv G E ->
-          exists n, ErCode E G r l c n /\ ICode E c n)
-  /\ (forall G i A x, VarT G i A x ->
-        forall r l, A = oU G r l ->
-        forall E, ErEnv G E -> IEnv G E ->
-          exists k, ErVar E G i A x k /\ ICode E x (rc_var k))
-  /\ (forall G i A e, NeET G i A e -> True)
-  /\ (forall G i A e, NfET G i A e -> True).
+(* A weakened variable interprets to a SUCCESSOR, over the tail of [E]. *)
+Lemma ICode_wkn_var G0 j B i0 A0 y E k
+  : VarT G0 i0 A0 y ->
+    ICode E (oExpSubst (oExt G0 j B) G0 (oWkn G0 j B) i0 A0 y) (rc_var k) ->
+    exists k0 E0 T, k = S k0 /\ E = T :: E0 /\ ICode E0 y (rc_var k0).
 Proof.
-  apply Nf_mutind; try (intros; exact I).
-  (* envok_emp *)
-  - exists (@nil rty); split; constructor.
-  (* envok_ext *)
-  - intros G i A HG IHG HA IHA.
-    destruct IHG as [E [HEr HI]].
-    destruct (IHA E HEr HI) as [T [HTr HTi]].
-    exists (T :: E); split; econstructor; eassumption.
-  (* tyok_U *)
-  - intros G r l HG IHG Hr Hl E HEr HI.
-    destruct (RelNf_ErRel Hr) as [br Hbr].
-    destruct (LvlNf_ErLvl Hl) as [bl Hbl].
-    exists (rt_U br bl); split; econstructor; eassumption.
-  (* tyok_El *)
-  - intros G r l c Hc IHc E HEr HI.
-    destruct (NfCode_nf_indices Hc) as [Hr Hl].
-    destruct (RelNf_ErRel Hr) as [br Hbr].
-    destruct (LvlNf_ErLvl Hl) as [bl Hbl].
-    destruct (IHc E HEr HI) as [n [Hnr Hni]].
-    exists (rt_El br bl n); split; econstructor; eassumption.
-  (* nfcode_nat *)
-  - intros G HG IHG E HEr HI.
-    exists rc_nat; split; econstructor; eassumption.
-  (* nfcode_empty *)
-  - intros G HG IHG E HEr HI.
-    exists rc_empty; split; econstructor; eassumption.
-  (* nfcode_pi_rel *)
-  - intros G rF lF lG F B HrF HlF HlG HF IHF HB IHB E HEr HI.
-    destruct (RelNf_ErRel HrF) as [brF HbrF].
-    destruct (LvlNf_ErLvl HlF) as [blF HblF].
-    destruct (IHF E HEr HI) as [nF [HnFr HnFi]].
-    destruct (IHB (rt_El brF blF nF :: E)
-                (ErEnv_extC HEr HbrF HblF HnFr)
-                (IEnv_extC HI HbrF HblF HnFi)) as [nB [HnBr HnBi]].
-    exists (rc_pi true brF blF nF nB); split; econstructor; eassumption.
-  (* nfcode_pi_irr *)
-  - intros G rF lF F B HrF HlF HF IHF HB IHB E HEr HI.
-    destruct (RelNf_ErRel HrF) as [brF HbrF].
-    destruct (LvlNf_ErLvl HlF) as [blF HblF].
-    destruct (IHF E HEr HI) as [nF [HnFr HnFi]].
-    destruct (IHB (rt_El brF blF nF :: E)
-                (ErEnv_extC HEr HbrF HblF HnFr)
-                (IEnv_extC HI HbrF HblF HnFi)) as [nB [HnBr HnBi]].
-    exists (rc_pi false brF blF nF nB); split; econstructor; eassumption.
-  (* nfcode_var *)
-  - intros G r l c Hv IHv E HEr HI.
-    destruct (IHv r l eq_refl E HEr HI) as [k [Hkr Hki]].
-    exists (rc_var k); split; [ constructor | ]; assumption.
-  (* vart_hd *)
-  - intros G i A A' HG IHG HA IHA HA' IHA' Heq r l HA'eq E HEr HI.
-    subst A'.
-    pose proof (WknU_shape HA Heq) as HAeq; subst A.
-    apply ErEnv_ext_inv in HEr.
-    destruct HEr as [T [E0 [HEeq [HErG HTr]]]]; subst E.
-    apply IEnv_ext_inv in HI.
-    destruct HI as [T' [E0' [HEeq' [HIG HTi]]]].
-    injection HEeq' as HTT HEE; subst T' E0'.
-    apply ITy_U_inv in HTi.
-    destruct HTi as [br [bl [HTeq [_ [Hbr Hbl]]]]]; subst T.
-    exists 0; split.
-    + econstructor; eassumption.
-    + econstructor; [ eassumption | ].
-      econstructor; eassumption.
-  (* vart_wkn *)
-  - intros G i A x j B A' Hx IHx HB IHB HA' IHA' Heq r l HA'eq E HEr HI.
-    subst A'.
-    pose proof (WknU_shape (VarT_TyOk Hx) Heq) as HAeq; subst A.
-    apply ErEnv_ext_inv in HEr.
-    destruct HEr as [TB [E0 [HEeq [HErG HTr]]]]; subst E.
-    pose proof HI as HIfull.
-    apply IEnv_ext_inv in HI.
-    destruct HI as [T' [E0' [HEeq' [HIG HTi]]]].
-    injection HEeq' as HTT HEE; subst T' E0'.
-    destruct (IHx r l eq_refl E0 HErG HIG) as [k [Hkr Hki]].
-    exists (S k); split.
-    + econstructor; eassumption.
-    + change (rc_var (S k)) with (csub rshift (rc_var k)).
-      eapply icode_subst; try eassumption.
-      econstructor; eassumption.
+  intros Hv Hi.
+  apply ICode_subst_inv in Hi.
+  destruct Hi as [E' [s [n0 [Hs [Hn0 Heq]]]]].
+  apply ISub_wkn_inv in Hs; destruct Hs as [T [HE [_ [_ ->]]]].
+  destruct (VarT_ICode_var Hv Hn0) as [k0 ->].
+  cbn in Heq; safe_invert Heq.
+  exists k0, E', T; repeat split; assumption.
 Qed.
 
-Definition EnvOk_ErI := proj1 Nf_ErI.
-Definition TyOk_ErI := proj1 (proj2 Nf_ErI).
-Definition NfCode_ErI := proj1 (proj2 (proj2 Nf_ErI)).
-
 (* =====================================================================
-   6. Injectivity of the erasure.
+   5. Injectivity, over the interpretation relations.
 
-   The variable statement is specialized to a universe-typed variable, so
-   that the variable case can spend [WknU_shape] -- which costs nothing,
-   since that is the only instance the code theorem uses.
+   Order: variables first (induction on the de Bruijn INDEX), then codes
+   (induction on the interpreted code), then types (one case analysis) and
+   environments (induction on the [renv]).
    ===================================================================== *)
 
-Theorem VarTU_erase_inj :
+(* Variables, at a universe type.  That is the only form the code-level
+   theorem needs -- a code variable's type is [oU G r l], whose [r] and
+   [l] the statement of [NfCode_I_inj] fixes -- and it is the form whose
+   naming is settled by [WknU_shape].
+
+   Index 0 is settled by the ambient environment's own syntax; index k+1
+   is where [WknU_shape] is spent. *)
+Theorem VarTU_I_inj :
   forall k E G r l x1 x2,
     VarT G (iCode l) (oU G r l) x1 -> VarT G (iCode l) (oU G r l) x2 ->
-    ErVar E G (iCode l) (oU G r l) x1 k ->
-    ErVar E G (iCode l) (oU G r l) x2 k ->
-    x1 = x2.
+    ICode E x1 (rc_var k) -> ICode E x2 (rc_var k) -> x1 = x2.
 Proof.
-  induction k; intros E G r l x1 x2 Hv1 Hv2 He1 He2.
-  - (* index 0: the head variable is determined by the environment *)
-    apply ErVar_0_inv in He1.
-    destruct He1 as [G0 [i0 [A0 [T [E0 [_ [HGx [_ Hx1]]]]]]]]; subst.
-    apply ErVar_0_inv in He2.
-    destruct He2 as [G0' [i0' [A0' [T' [E0' [_ [HGx' [_ Hx2]]]]]]]]; subst.
-    inversion HGx'; subst.
-    reflexivity.
-  - (* index k+1: the named type of the inner variable is a universe *)
-    apply ErVar_S_inv in He1.
-    destruct He1 as [G0 [j [B [A1 [y1 [TB [E0 [HEa [HGx [Hx1 Hi1]]]]]]]]]]; subst.
-    apply ErVar_S_inv in He2.
-    destruct He2 as [G0' [j' [B' [A2 [y2 [TB' [E0' [HEb [HGx' [Hx2 Hi2]]]]]]]]]].
-    inversion HGx'; inversion HEb; subst.
-    apply VarT_wkn_inv in Hv1; destruct Hv1 as [_ [_ [Hin1 [_ Heq1]]]].
-    apply VarT_wkn_inv in Hv2; destruct Hv2 as [_ [_ [Hin2 [_ Heq2]]]].
-    pose proof (WknU_shape (VarT_TyOk Hin1) Heq1) as HA1; subst A1.
-    pose proof (WknU_shape (VarT_TyOk Hin2) Heq2) as HA2; subst A2.
-    pose proof (IHk _ _ _ _ _ _ Hin1 Hin2 Hi1 Hi2) as ->.
-    reflexivity.
+  induction k; intros E G r l x1 x2 Hv1 Hv2 Hi1 Hi2;
+    destruct (VarT_shape Hv1) as [ [Ga [ia [Aa ->]]]
+                                 | [Ga [ja [Ba [ia [Aa [ya ->]]]]]] ];
+    destruct (VarT_shape Hv2) as [ [Gb [ib [Ab ->]]]
+                                 | [Gb [jb [Bb [ib [Ab [yb ->]]]]]] ].
+  - (* 0: hd / hd -- the ambient environment determines the head *)
+    apply VarT_hd_inv in Hv1; destruct Hv1 as [-> _].
+    apply VarT_hd_inv in Hv2; destruct Hv2 as [Heq _].
+    unfold oExt in Heq; safe_invert Heq; reflexivity.
+  - (* 0: hd / wkn -- a weakening never interprets to index 0 *)
+    apply VarT_wkn_inv in Hv2; destruct Hv2 as [_ [_ [Hin2 _]]].
+    destruct (ICode_wkn_var Hin2 Hi2) as [? [? [? [Habs _]]]]; discriminate.
+  - apply VarT_wkn_inv in Hv1; destruct Hv1 as [_ [_ [Hin1 _]]].
+    destruct (ICode_wkn_var Hin1 Hi1) as [? [? [? [Habs _]]]]; discriminate.
+  - apply VarT_wkn_inv in Hv1; destruct Hv1 as [_ [_ [Hin1 _]]].
+    destruct (ICode_wkn_var Hin1 Hi1) as [? [? [? [Habs _]]]]; discriminate.
+  - (* S k: hd / hd -- [hd] never interprets to a successor *)
+    apply ICode_hd_inv in Hi1; discriminate.
+  - apply ICode_hd_inv in Hi1; discriminate.
+  - apply ICode_hd_inv in Hi2; discriminate.
+  - (* S k: wkn / wkn -- the named types are universes by [WknU_shape],
+       and the inner variables agree by the induction hypothesis *)
+    apply VarT_wkn_inv in Hv1; destruct Hv1 as [HGa [Hia [Hin1 [_ Heq1]]]].
+    apply VarT_wkn_inv in Hv2; destruct Hv2 as [HGb [Hib [Hin2 [_ Heq2]]]].
+    subst G; unfold oExt in HGb; safe_invert HGb.
+    subst.
+    pose proof (WknU_shape (VarT_TyOk Hin1) Heq1) as ->.
+    pose proof (WknU_shape (VarT_TyOk Hin2) Heq2) as ->.
+    f_equal.
+    destruct (ICode_wkn_var Hin1 Hi1) as [ka [Ea [Ta [Hka [HEa Ha]]]]].
+    subst E.
+    destruct (ICode_wkn_var Hin2 Hi2) as [kb [Eb [Tb [Hkb [HEb Hb]]]]].
+    safe_invert HEb; safe_invert Hka; safe_invert Hkb.
+    eapply IHk; eassumption.
 Qed.
 
-Theorem NfCode_erase_inj_u :
+(* A canonical code never interprets to a variable's index. *)
+Ltac kill_var Hi :=
+  match goal with
+  | Hv : VarT _ _ _ _ |- _ =>
+      let k := fresh in let Habs := fresh in
+      destruct (VarT_ICode_var Hv Hi) as [k Habs]; discriminate
+  end.
+
+(* Codes.  The [Pi] clauses need nothing about variables: the domain's
+   relevance and level are recovered from the interpretation by
+   [ErRel_inj]/[ErLvl_inj] (the design point of Rigid.v section 0), after
+   which the two extended [renv]s are literally the same and the induction
+   hypotheses apply. *)
+Theorem NfCode_I_inj :
   forall n E G r l c1 c2,
     NfCode G r l c1 -> NfCode G r l c2 ->
-    ErCode E G r l c1 n -> ErCode E G r l c2 n ->
-    c1 = c2.
+    ICode E c1 n -> ICode E c2 n -> c1 = c2.
 Proof.
   induction n as [ k | | | b brF blF nF IHF nB IHB ];
-    intros E G r l c1 c2 Hc1 Hc2 He1 He2.
-  - (* rc_var: both codes are variables of the SAME universe type *)
-    apply ErCode_var_inv in He1; apply ErCode_var_inv in He2.
-    pose proof (NfCode_of_var Hc1 He1) as Hv1.
-    pose proof (NfCode_of_var Hc2 He2) as Hv2.
-    eapply VarTU_erase_inj; eassumption.
+    intros E G r l c1 c2 Hc1 Hc2 Hi1 Hi2.
+  - (* rc_var *)
+    destruct Hc1; try (apply ICode_nat_inv in Hi1; discriminate);
+      try (apply ICode_empty_inv in Hi1; discriminate);
+      try (apply ICode_pi_rel_inv in Hi1;
+           destruct Hi1 as [? [? [? [? [Habs _]]]]]; discriminate);
+      try (apply ICode_pi_irr_inv in Hi1;
+           destruct Hi1 as [? [? [? [? [Habs _]]]]]; discriminate).
+    destruct Hc2; try (apply ICode_nat_inv in Hi2; discriminate);
+      try (apply ICode_empty_inv in Hi2; discriminate);
+      try (apply ICode_pi_rel_inv in Hi2;
+           destruct Hi2 as [? [? [? [? [Habs _]]]]]; discriminate);
+      try (apply ICode_pi_irr_inv in Hi2;
+           destruct Hi2 as [? [? [? [? [Habs _]]]]]; discriminate).
+    eapply VarTU_I_inj; eassumption.
   - (* rc_nat *)
-    apply ErCode_nat_inv in He1; destruct He1 as [_ [_ ->]].
-    apply ErCode_nat_inv in He2; destruct He2 as [_ [_ ->]].
+    destruct Hc1; try (apply ICode_empty_inv in Hi1; discriminate);
+      try (apply ICode_pi_rel_inv in Hi1;
+           destruct Hi1 as [? [? [? [? [Habs _]]]]]; discriminate);
+      try (apply ICode_pi_irr_inv in Hi1;
+           destruct Hi1 as [? [? [? [? [Habs _]]]]]; discriminate);
+      try (kill_var Hi1).
+    destruct Hc2; try (apply ICode_empty_inv in Hi2; discriminate);
+      try (apply ICode_pi_rel_inv in Hi2;
+           destruct Hi2 as [? [? [? [? [Habs _]]]]]; discriminate);
+      try (apply ICode_pi_irr_inv in Hi2;
+           destruct Hi2 as [? [? [? [? [Habs _]]]]]; discriminate);
+      try (kill_var Hi2).
     reflexivity.
   - (* rc_empty *)
-    apply ErCode_empty_inv in He1; destruct He1 as [_ [_ ->]].
-    apply ErCode_empty_inv in He2; destruct He2 as [_ [_ ->]].
+    destruct Hc1; try (apply ICode_nat_inv in Hi1; discriminate);
+      try (apply ICode_pi_rel_inv in Hi1;
+           destruct Hi1 as [? [? [? [? [Habs _]]]]]; discriminate);
+      try (apply ICode_pi_irr_inv in Hi1;
+           destruct Hi1 as [? [? [? [? [Habs _]]]]]; discriminate);
+      try (kill_var Hi1).
+    destruct Hc2; try (apply ICode_nat_inv in Hi2; discriminate);
+      try (apply ICode_pi_rel_inv in Hi2;
+           destruct Hi2 as [? [? [? [? [Habs _]]]]]; discriminate);
+      try (apply ICode_pi_irr_inv in Hi2;
+           destruct Hi2 as [? [? [? [? [Habs _]]]]]; discriminate);
+      try (kill_var Hi2).
     reflexivity.
-  - destruct b.
-    + (* Pi_rel *)
-      apply ErCode_pi_true_inv in He1.
-      destruct He1 as [rF1 [lF1 [F1 [B1 [Hr1 [Hc1e [HrF1 [HlF1 [HF1 HB1]]]]]]]]].
-      apply ErCode_pi_true_inv in He2.
-      destruct He2 as [rF2 [lF2 [F2 [B2 [Hr2 [Hc2e [HrF2 [HlF2 [HF2 HB2]]]]]]]]].
-      subst.
-      pose proof (ErRel_inj HrF1 HrF2) as ?; subst.
-      pose proof (ErLvl_inj HlF1 HlF2) as ?; subst.
-      apply NfCode_pi_rel_inv in Hc1; destruct Hc1 as [_ [_ [HNF1 HNB1]]].
-      apply NfCode_pi_rel_inv in Hc2; destruct Hc2 as [_ [_ [HNF2 HNB2]]].
-      pose proof (IHF _ _ _ _ _ _ HNF1 HNF2 HF1 HF2) as ?; subst.
-      pose proof (IHB _ _ _ _ _ _ HNB1 HNB2 HB1 HB2) as ?; subst.
-      reflexivity.
-    + (* Pi_irr *)
-      apply ErCode_pi_false_inv in He1.
-      destruct He1 as [rF1 [lF1 [F1 [B1 [Hr1 [Hl1 [Hc1e [HrF1 [HlF1 [HF1 HB1]]]]]]]]]].
-      apply ErCode_pi_false_inv in He2.
-      destruct He2 as [rF2 [lF2 [F2 [B2 [Hr2 [Hl2 [Hc2e [HrF2 [HlF2 [HF2 HB2]]]]]]]]]].
-      subst.
-      pose proof (ErRel_inj HrF1 HrF2) as ?; subst.
-      pose proof (ErLvl_inj HlF1 HlF2) as ?; subst.
-      apply NfCode_pi_irr_inv in Hc1; destruct Hc1 as [_ [_ [HNF1 HNB1]]].
-      apply NfCode_pi_irr_inv in Hc2; destruct Hc2 as [_ [_ [HNF2 HNB2]]].
-      pose proof (IHF _ _ _ _ _ _ HNF1 HNF2 HF1 HF2) as ?; subst.
-      pose proof (IHB _ _ _ _ _ _ HNB1 HNB2 HB1 HB2) as ?; subst.
-      reflexivity.
+  - (* rc_pi *)
+    destruct Hc1; try (apply ICode_nat_inv in Hi1; discriminate);
+      try (apply ICode_empty_inv in Hi1; discriminate);
+      try (kill_var Hi1).
+    + (* pi_rel *)
+      destruct Hc2; try (apply ICode_nat_inv in Hi2; discriminate);
+        try (apply ICode_empty_inv in Hi2; discriminate);
+        try (kill_var Hi2).
+      * apply ICode_pi_rel_inv in Hi1.
+        destruct Hi1 as [br1 [bl1 [n1 [m1 [Heq1 [Hr1 [Hl1 [HF1 HB1]]]]]]]].
+        apply ICode_pi_rel_inv in Hi2.
+        destruct Hi2 as [br2 [bl2 [n2 [m2 [Heq2 [Hr2 [Hl2 [HF2 HB2]]]]]]]].
+        safe_invert Heq1; safe_invert Heq2.
+        pose proof (ErRel_inj Hr1 Hr2) as ->.
+        pose proof (ErLvl_inj Hl1 Hl2) as ->.
+        pose proof (IHF _ _ _ _ _ _ Hc1_1 Hc2_1 HF1 HF2) as ->.
+        pose proof (IHB _ _ _ _ _ _ Hc1_2 Hc2_2 HB1 HB2) as ->.
+        reflexivity.
+      * apply ICode_pi_rel_inv in Hi1.
+        destruct Hi1 as [? [? [? [? [Heq1 _]]]]].
+        apply ICode_pi_irr_inv in Hi2.
+        destruct Hi2 as [? [? [? [? [Heq2 _]]]]].
+        rewrite Heq1 in Heq2; discriminate.
+    + (* pi_irr *)
+      destruct Hc2; try (apply ICode_nat_inv in Hi2; discriminate);
+        try (apply ICode_empty_inv in Hi2; discriminate);
+        try (kill_var Hi2).
+      * apply ICode_pi_irr_inv in Hi1.
+        destruct Hi1 as [? [? [? [? [Heq1 _]]]]].
+        apply ICode_pi_rel_inv in Hi2.
+        destruct Hi2 as [? [? [? [? [Heq2 _]]]]].
+        rewrite Heq1 in Heq2; discriminate.
+      * apply ICode_pi_irr_inv in Hi1.
+        destruct Hi1 as [br1 [bl1 [n1 [m1 [Heq1 [Hr1 [Hl1 [HF1 HB1]]]]]]]].
+        apply ICode_pi_irr_inv in Hi2.
+        destruct Hi2 as [br2 [bl2 [n2 [m2 [Heq2 [Hr2 [Hl2 [HF2 HB2]]]]]]]].
+        safe_invert Heq1; safe_invert Heq2.
+        pose proof (ErRel_inj Hr1 Hr2) as ->.
+        pose proof (ErLvl_inj Hl1 Hl2) as ->.
+        pose proof (IHF _ _ _ _ _ _ Hc1_1 Hc2_1 HF1 HF2) as ->.
+        pose proof (IHB _ _ _ _ _ _ Hc1_2 Hc2_2 HB1 HB2) as ->.
+        reflexivity.
 Qed.
 
-Theorem TyOk_erase_inj_u E G i1 A1 i2 A2 T
-  : TyOk G i1 A1 -> TyOk G i2 A2 ->
-    ErTy E G i1 A1 T -> ErTy E G i2 A2 T ->
+(* Types.  Also concludes that the two info indices agree, which
+   [EnvOk_I_inj] needs. *)
+Theorem TyOk_I_inj E G i1 A1 i2 A2 T
+  : TyOk G i1 A1 -> TyOk G i2 A2 -> ITy E A1 T -> ITy E A2 T ->
     i1 = i2 /\ A1 = A2.
 Proof.
-  intros Ht1 Ht2 He1 He2.
-  destruct T as [ br bl | br bl n ].
-  - apply ErTy_U_inv in He1; destruct He1 as [r1 [l1 [-> [-> [Hr1 Hl1]]]]].
-    apply ErTy_U_inv in He2; destruct He2 as [r2 [l2 [-> [-> [Hr2 Hl2]]]]].
-    pose proof (ErRel_inj Hr1 Hr2) as ?; subst.
-    pose proof (ErLvl_inj Hl1 Hl2) as ?; subst.
+  intros Ht1 Ht2 Hi1 Hi2.
+  destruct Ht1 as [ G r1 l1 | G r1 l1 c1 ];
+    destruct Ht2 as [ G r2 l2 | G r2 l2 c2 ].
+  - apply ITy_U_inv in Hi1; destruct Hi1 as [br1 [bl1 [-> [_ [Hr1 Hl1]]]]].
+    apply ITy_U_inv in Hi2; destruct Hi2 as [br2 [bl2 [Heq [_ [Hr2 Hl2]]]]].
+    safe_invert Heq.
+    pose proof (ErRel_inj Hr1 Hr2) as ->.
+    pose proof (ErLvl_inj Hl1 Hl2) as ->.
     split; reflexivity.
-  - apply ErTy_El_inv in He1;
-      destruct He1 as [r1 [l1 [cc1 [-> [-> [Hr1 [Hl1 Hc1]]]]]]].
-    apply ErTy_El_inv in He2;
-      destruct He2 as [r2 [l2 [cc2 [-> [-> [Hr2 [Hl2 Hc2]]]]]]].
-    pose proof (ErRel_inj Hr1 Hr2) as ?; subst.
-    pose proof (ErLvl_inj Hl1 Hl2) as ?; subst.
-    apply TyOk_El_inv in Ht1; destruct Ht1 as [_ HN1].
-    apply TyOk_El_inv in Ht2; destruct Ht2 as [_ HN2].
-    pose proof (NfCode_erase_inj_u HN1 HN2 Hc1 Hc2) as ?; subst.
+  - apply ITy_U_inv in Hi1; destruct Hi1 as [? [? [-> _]]].
+    apply ITy_El_inv in Hi2; destruct Hi2 as [? [? [? [Heq _]]]]; discriminate.
+  - apply ITy_U_inv in Hi2; destruct Hi2 as [? [? [-> _]]].
+    apply ITy_El_inv in Hi1; destruct Hi1 as [? [? [? [Heq _]]]]; discriminate.
+  - apply ITy_El_inv in Hi1;
+      destruct Hi1 as [br1 [bl1 [n1 [-> [_ [Hr1 [Hl1 Hc1]]]]]]].
+    apply ITy_El_inv in Hi2;
+      destruct Hi2 as [br2 [bl2 [n2 [Heq [_ [Hr2 [Hl2 Hc2]]]]]]].
+    safe_invert Heq.
+    pose proof (ErRel_inj Hr1 Hr2) as ->.
+    pose proof (ErLvl_inj Hl1 Hl2) as ->.
+    pose proof (NfCode_I_inj H H0 Hc1 Hc2) as ->.
     split; reflexivity.
 Qed.
 
-Theorem EnvOk_erase_inj_u :
-  forall E G1 G2, EnvOk G1 -> EnvOk G2 -> ErEnv G1 E -> ErEnv G2 E -> G1 = G2.
+Theorem EnvOk_I_inj :
+  forall E G1 G2, EnvOk G1 -> EnvOk G2 -> IEnv G1 E -> IEnv G2 E -> G1 = G2.
 Proof.
-  induction E as [ | T E IHE ]; intros G1 G2 H1 H2 He1 He2.
-  - apply ErEnv_nil_inv in He1; apply ErEnv_nil_inv in He2; subst; reflexivity.
-  - apply ErEnv_cons_inv in He1;
-      destruct He1 as [Ga [ia [Aa [-> [HEa HTa]]]]].
-    apply ErEnv_cons_inv in He2;
-      destruct He2 as [Gb [ib [Ab [-> [HEb HTb]]]]].
+  induction E as [ | T E IHE ]; intros G1 G2 H1 H2 Hi1 Hi2.
+  - apply IEnv_nil_inv in Hi1; apply IEnv_nil_inv in Hi2; subst; reflexivity.
+  - apply IEnv_cons_inv in Hi1;
+      destruct Hi1 as [Ga [ia [Aa [-> [HEa HTa]]]]].
+    apply IEnv_cons_inv in Hi2;
+      destruct Hi2 as [Gb [ib [Ab [-> [HEb HTb]]]]].
     apply EnvOk_ext_inv in H1; destruct H1 as [HOa HTya].
     apply EnvOk_ext_inv in H2; destruct H2 as [HOb HTyb].
-    pose proof (IHE _ _ HOa HOb HEa HEb) as ?; subst.
-    destruct (TyOk_erase_inj_u HTya HTyb HTa HTb) as [? ?]; subst.
+    pose proof (IHE _ _ HOa HOb HEa HEb) as ->.
+    destruct (TyOk_I_inj HTya HTyb HTa HTb) as [-> ->].
     reflexivity.
 Qed.
 
 (* =====================================================================
-   7. The exported theorems.
+   6. The exported theorems.
 
-   Each is: read the equation through the rigid model to get a COMMON
-   interpretation; produce the erasure of each normal form together with
-   its interpretation (section 5); identify the two by functionality of
-   the interpretation (Rigid.v section 5); conclude by section 6.
+   Each is: read the equation through the rigid model, which hands back a
+   COMMON interpretation of the two sides at a common [renv]; then apply
+   section 5.  Nothing is constructed.
    ===================================================================== *)
 
 Theorem NfCode_inj G r l c1 c2 :
@@ -423,28 +455,30 @@ Theorem NfCode_inj G r l c1 c2 :
   eq_term ott_dtt [] (sCode G r l) c1 c2 -> c1 = c2.
 Proof.
   intros Hc1 Hc2 Heq.
-  destruct (rigid_code Heq) as [E [n [HIG [HI1 HI2]]]].
-  destruct (EnvOk_ErI (NfCode_EnvOk Hc1)) as [E0 [HEr0 HI0]].
-  pose proof (IEnv_fun HI0 HIG) as ?; subst E0.
-  destruct (NfCode_ErI Hc1 HEr0 HI0) as [n1 [Hn1r Hn1i]].
-  destruct (NfCode_ErI Hc2 HEr0 HI0) as [n2 [Hn2r Hn2i]].
-  destruct (ICode_fun Hn1i HI1) as [_ ?]; subst n1.
-  destruct (ICode_fun Hn2i HI2) as [_ ?]; subst n2.
-  eapply NfCode_erase_inj_u; eassumption.
+  destruct (rigid_code Heq) as [E [n [_ [HI1 HI2]]]].
+  eapply NfCode_I_inj; eassumption.
+Qed.
+
+(* The INFO-GENERAL form: the sort [j] at which the equation is read is
+   unrelated to the infos [i1]/[i2] the two normal types are pinned at.
+   [rceq_term] at a [ty] sort is [Req_ty G A1 A2], which does not mention
+   the info at all, and the interpretation pins the infos anyway -- so
+   there is nothing extra to do.  src/Pyrosome/Gluing/Dtt/LogRelFun.v needs
+   this form; the info-fixed [TyOk_inj] below is its corollary. *)
+Theorem TyOk_inj_gen G j i1 A1 i2 A2
+  : TyOk G i1 A1 -> TyOk G i2 A2 ->
+    eq_term ott_dtt [] (sTy G j) A1 A2 -> i1 = i2 /\ A1 = A2.
+Proof.
+  intros Ht1 Ht2 Heq.
+  destruct (rigid_ty Heq) as [E [T [_ [HI1 HI2]]]].
+  eapply TyOk_I_inj; eassumption.
 Qed.
 
 Theorem TyOk_inj G i A1 A2 :
   TyOk G i A1 -> TyOk G i A2 -> eq_term ott_dtt [] (sTy G i) A1 A2 -> A1 = A2.
 Proof.
   intros Ht1 Ht2 Heq.
-  destruct (rigid_ty Heq) as [E [T [HIG [HI1 HI2]]]].
-  destruct (EnvOk_ErI (TyOk_EnvOk Ht1)) as [E0 [HEr0 HI0]].
-  pose proof (IEnv_fun HI0 HIG) as ?; subst E0.
-  destruct (TyOk_ErI Ht1 HEr0 HI0) as [T1 [HT1r HT1i]].
-  destruct (TyOk_ErI Ht2 HEr0 HI0) as [T2 [HT2r HT2i]].
-  destruct (ITy_fun HT1i HI1) as [_ ?]; subst T1.
-  destruct (ITy_fun HT2i HI2) as [_ ?]; subst T2.
-  destruct (TyOk_erase_inj_u Ht1 Ht2 HT1r HT2r) as [_ ?]; assumption.
+  destruct (TyOk_inj_gen Ht1 Ht2 Heq) as [_ ?]; assumption.
 Qed.
 
 Theorem EnvOk_inj G1 G2 :
@@ -452,9 +486,5 @@ Theorem EnvOk_inj G1 G2 :
 Proof.
   intros H1 H2 Heq.
   destruct (rigid_env Heq) as [E [HI1 HI2]].
-  destruct (EnvOk_ErI H1) as [E1 [HEr1 HIa]].
-  destruct (EnvOk_ErI H2) as [E2 [HEr2 HIb]].
-  pose proof (IEnv_fun HIa HI1) as ?; subst E1.
-  pose proof (IEnv_fun HIb HI2) as ?; subst E2.
-  eapply EnvOk_erase_inj_u; eassumption.
+  eapply EnvOk_I_inj; eassumption.
 Qed.

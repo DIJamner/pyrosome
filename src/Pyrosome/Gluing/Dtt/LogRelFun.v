@@ -8,8 +8,8 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
-  Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand Pyrosome.Gluing.Dtt.Erase Pyrosome.Gluing.Dtt.Rigid
-  Pyrosome.Gluing.Dtt.RigidOk Pyrosome.Gluing.Dtt.Inj.
+  Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand
+  Pyrosome.Gluing.Dtt.Inj.
 Import Core.Notations.
 
 (* =====================================================================
@@ -73,25 +73,6 @@ Qed.
 (* [RTmN] quantifies over every normal representative of the type (and of
    the info); building it from one representative is exactly what rigidity
    buys, and is the form every congruence case will use. *)
-
-(* First, the info-agnostic form of [TyOk_inj].  src/Pyrosome/Gluing/Dtt/Inj.v states it at
-   a fixed info because that is what its own composition needed, but the
-   proof does not use the info at all -- [rceq_term] at a [ty] sort is
-   [Req_ty G A1 A2], which does not mention it -- and the erasure pins the
-   info anyway.  So the general form is the same proof. *)
-Theorem TyOk_inj_gen G j i1 A1 i2 A2
-  : TyOk G i1 A1 -> TyOk G i2 A2 -> eqt (sTy G j) A1 A2 -> i1 = i2 /\ A1 = A2.
-Proof.
-  intros Ht1 Ht2 Heq.
-  destruct (rigid_ty Heq) as [E [T [HIG [HI1 HI2]]]].
-  destruct (EnvOk_ErI (TyOk_EnvOk Ht1)) as [E0 [HEr0 HI0]].
-  pose proof (IEnv_fun HI0 HIG) as ?; subst E0.
-  destruct (TyOk_ErI Ht1 HEr0 HI0) as [T1 [HT1r HT1i]].
-  destruct (TyOk_ErI Ht2 HEr0 HI0) as [T2 [HT2r HT2i]].
-  destruct (ITy_fun HT1i HI1) as [_ ?]; subst T1.
-  destruct (ITy_fun HT2i HI2) as [_ ?]; subst T2.
-  exact (TyOk_erase_inj_u Ht1 Ht2 HT1r HT2r).
-Qed.
 
 Lemma RTmN_intro G i A i0 A0 P e
   : eqt sInfo i i0 -> TyOk G i0 A0 -> eqt (sTy G i0) A A0 ->

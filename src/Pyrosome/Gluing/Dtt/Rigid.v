@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
-Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.Erase.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms.
 Import Core.Notations.
 
 (* =====================================================================
@@ -26,7 +26,7 @@ Import Core.Notations.
    at [El]-sorts and are discharged by [exact I].  The obligations that
    carry content are exactly the sigma ones.
 
-   The semantic domain is the de Bruijn domain of src/Pyrosome/Gluing/Dtt/Erase.v
+   The semantic domain is the first-order de Bruijn domain of section 0
    ([rcode]/[rty]/[renv]) plus rigid substitutions
 
      rsub := nat -> rcode
@@ -51,6 +51,79 @@ Import Core.Notations.
    ===================================================================== *)
 
 Local Notation eqt := (eq_term ott_dtt []).
+
+(* =====================================================================
+   0.  The semantic domain: first-order de Bruijn codes and types.
+
+   The domain the interpretation lands in, and the erasure of the two
+   rigid index sorts.  This is all that survived of the separate
+   [Dtt/Erase.v]: the erasure RELATIONS that file also carried duplicated
+   the interpretation relations of section 4, and injectivity is now
+   proved directly over the latter (src/Pyrosome/Gluing/Dtt/Inj.v).
+
+   DESIGN POINT: [rc_pi] RECORDS THE DOMAIN'S RELEVANCE AND LEVEL.
+
+   [oPiRel G rF lF lG F B] carries [rF] and [lF] as SUBTERMS, so
+   injectivity has to recover them from the interpretation.  They cannot
+   be recovered from the interpreted domain [nF]: when [F] is a variable,
+   its relevance and level are those of its NAMED type, which the
+   interpretation does not see and which the environment pins down only up
+   to provable equality.  So [rc_pi] carries them:
+
+       rc_pi (pi-relevance) (domain-relevance) (domain-level)
+             (domain-code) (codomain-code)
+
+   This costs nothing semantically -- [rt_El brF blF nF] is exactly the
+   entry the binder pushes onto the environment, so the two bits are
+   already present in [renv] -- and it is what lets the [Pi] clauses of
+   [NfCode_I_inj] go through with no assumption about variables at all.
+   The Pi's own level [lG] is NOT recorded: it is the level index of the
+   judgement, which the statement fixes.
+   ===================================================================== *)
+
+(* A normal code with all index arguments dropped.  [rc_var] carries a de
+   Bruijn INDEX (0 = the most recently bound variable).  For [rc_pi] the
+   three bools are, in order: [true] for [Pi_rel] and [false] for
+   [Pi_irr]; the domain's relevance; the domain's level. *)
+Inductive rcode : Type :=
+| rc_var : nat -> rcode
+| rc_nat : rcode
+| rc_empty : rcode
+| rc_pi : bool -> bool -> bool -> rcode -> rcode -> rcode.
+
+(* A normal type: a universe [U r l], or an [El] of a normal code.  In
+   both cases the first [bool] is the relevance ([true] = [rel]) and the
+   second the level ([true] = [L1]). *)
+Inductive rty : Type :=
+| rt_U : bool -> bool -> rty
+| rt_El : bool -> bool -> rcode -> rty.
+
+(* MOST-RECENT-FIRST, matching [ott]'s [ext]: the head of the list is the
+   interpretation of the type bound by the innermost [ext]. *)
+Definition renv := list rty.
+
+(* [relevance] and [lvl] have two closed constructors each and no
+   equations, so their interpretation is a bijection onto [bool]. *)
+
+Inductive ErRel : term -> bool -> Prop :=
+| errel_rel : ErRel oRel true
+| errel_irr : ErRel oIrr false.
+
+Inductive ErLvl : term -> bool -> Prop :=
+| erlvl_L0 : ErLvl oL0 false
+| erlvl_L1 : ErLvl oL1 true.
+
+Lemma ErRel_fun r b1 b2 : ErRel r b1 -> ErRel r b2 -> b1 = b2.
+Proof. intros H1 H2; destruct H1; inversion H2; reflexivity. Qed.
+
+Lemma ErLvl_fun l b1 b2 : ErLvl l b1 -> ErLvl l b2 -> b1 = b2.
+Proof. intros H1 H2; destruct H1; inversion H2; reflexivity. Qed.
+
+Lemma ErRel_inj r1 r2 b : ErRel r1 b -> ErRel r2 b -> r1 = r2.
+Proof. intros H1 H2; destruct H1; inversion H2; reflexivity. Qed.
+
+Lemma ErLvl_inj l1 l2 b : ErLvl l1 b -> ErLvl l2 b -> l1 = l2.
+Proof. intros H1 H2; destruct H1; inversion H2; reflexivity. Qed.
 
 (* =====================================================================
    1.  Rigid substitutions and their calculus.
