@@ -1836,3 +1836,105 @@ Proof.
   - apply TySub_El_inv in H2; destruct H2 as [c2 [HA2 HC2]].
     assert (c1 = c2) by (eapply CodeSub_det; eassumption); congruence.
 Qed.
+
+(* ================================================================== *)
+(* (a) THE FOUR NEW SUBSTITUTION COMMUTATIONS                          *)
+(*                                                                     *)
+(* [ott_subst_commute] (Lang/OTT/SubstCommute.v) supplies the rules     *)
+(* that were missing when the first half of this file was written:      *)
+(* "app_rel subst", "app_irr subst", "lam_irr subst", "Emptyrec subst". *)
+(* They are repackaged here in the vocabulary of WIP/DttSyntax.v,       *)
+(* exactly as WIP/DttEqns.v does for the other 28.                      *)
+(*                                                                     *)
+(* Two spelling facts, both deliberate on the language side:            *)
+(*   - the two [app] rules and [lam_irr subst] lift [g] with            *)
+(*     [DttSyntax.oLift], i.e. over [ext G [rF,iota lF] (El G rF lF     *)
+(*     g[F])], the same shape "Pi_rel subst"/"lam_rel subst" use;       *)
+(*   - their codomain code [B] sits at [iCode _] ([info rel (next _)]), *)
+(*     matching [lam_irr]/[app_irr]/[app_rel] -- NOT at [Pi_irr]'s      *)
+(*     [info rel (iota L1)].  So NO "next0" bridge is needed for any of *)
+(*     the four.                                                        *)
+(* ================================================================== *)
+
+Lemma eq_lam_irr_subst G G' g rF lF F B t
+  : wft G sEnv -> wft G' sEnv -> wft g (sSub G G') ->
+    wft rF sRelevance -> wft lF sLvl ->
+    wft F (sCode G' rF lF) ->
+    wft B (sCode (oExtC G' rF lF F) oIrr oL0) ->
+    wft t (sElt (oExtC G' rF lF F) oIrr oL0 B) ->
+    eqt (sExp G (iEl oIrr oL0)
+           (oTySubst G G' g (iEl oIrr oL0)
+              (oEl G' oIrr oL0 (oPiIrr G' rF lF F B))))
+      (oExpSubst G G' g (iEl oIrr oL0)
+         (oEl G' oIrr oL0 (oPiIrr G' rF lF F B))
+         (oLamIrr G' rF lF F B t))
+      (oLamIrr G rF lF (oCodeSubst G G' g rF lF F)
+         (oExpSubst (oExtC G rF lF (oCodeSubst G G' g rF lF F))
+            (oExtC G' rF lF F) (oLift G G' g rF lF F)
+            (iCode oL0) (oU (oExtC G' rF lF F) oIrr oL0) B)
+         (oExpSubst (oExtC G rF lF (oCodeSubst G G' g rF lF F))
+            (oExtC G' rF lF F) (oLift G G' g rF lF F)
+            (iEl oIrr oL0) (oEl (oExtC G' rF lF F) oIrr oL0 B) t)).
+Proof. intros; estep "lam_irr subst". Qed.
+
+Lemma eq_app_irr_subst G G' g rF lF F B f a
+  : wft G sEnv -> wft G' sEnv -> wft g (sSub G G') ->
+    wft rF sRelevance -> wft lF sLvl ->
+    wft F (sCode G' rF lF) ->
+    wft B (sCode (oExtC G' rF lF F) oIrr oL0) ->
+    wft f (sElt G' oIrr oL0 (oPiIrr G' rF lF F B)) ->
+    wft a (sElt G' rF lF F) ->
+    eqt (sExp G (iEl oIrr oL0)
+           (oTySubst G G' g (iEl oIrr oL0)
+              (oTySubst G' (oExtC G' rF lF F) (oInst G' rF lF F a)
+                 (iEl oIrr oL0) (oEl (oExtC G' rF lF F) oIrr oL0 B))))
+      (oExpSubst G G' g (iEl oIrr oL0)
+         (oTySubst G' (oExtC G' rF lF F) (oInst G' rF lF F a)
+            (iEl oIrr oL0) (oEl (oExtC G' rF lF F) oIrr oL0 B))
+         (oAppIrr G' rF lF F B f a))
+      (oAppIrr G rF lF (oCodeSubst G G' g rF lF F)
+         (oExpSubst (oExtC G rF lF (oCodeSubst G G' g rF lF F))
+            (oExtC G' rF lF F) (oLift G G' g rF lF F)
+            (iCode oL0) (oU (oExtC G' rF lF F) oIrr oL0) B)
+         (oExpSubst G G' g (iEl oIrr oL0)
+            (oEl G' oIrr oL0 (oPiIrr G' rF lF F B)) f)
+         (oExpSubst G G' g (iEl rF lF) (oEl G' rF lF F) a)).
+Proof. intros; estep "app_irr subst". Qed.
+
+Lemma eq_app_rel_subst G G' g rF lF lG F B f a
+  : wft G sEnv -> wft G' sEnv -> wft g (sSub G G') ->
+    wft rF sRelevance -> wft lF sLvl -> wft lG sLvl ->
+    wft F (sCode G' rF lF) ->
+    wft B (sCode (oExtC G' rF lF F) oRel lG) ->
+    wft f (sElt G' oRel lG (oPiRel G' rF lF lG F B)) ->
+    wft a (sElt G' rF lF F) ->
+    eqt (sExp G (iEl oRel lG)
+           (oTySubst G G' g (iEl oRel lG)
+              (oTySubst G' (oExtC G' rF lF F) (oInst G' rF lF F a)
+                 (iEl oRel lG) (oEl (oExtC G' rF lF F) oRel lG B))))
+      (oExpSubst G G' g (iEl oRel lG)
+         (oTySubst G' (oExtC G' rF lF F) (oInst G' rF lF F a)
+            (iEl oRel lG) (oEl (oExtC G' rF lF F) oRel lG B))
+         (oAppRel G' rF lF lG F B f a))
+      (oAppRel G rF lF lG (oCodeSubst G G' g rF lF F)
+         (oExpSubst (oExtC G rF lF (oCodeSubst G G' g rF lF F))
+            (oExtC G' rF lF F) (oLift G G' g rF lF F)
+            (iCode lG) (oU (oExtC G' rF lF F) oRel lG) B)
+         (oExpSubst G G' g (iEl oRel lG)
+            (oEl G' oRel lG (oPiRel G' rF lF lG F B)) f)
+         (oExpSubst G G' g (iEl rF lF) (oEl G' rF lF F) a)).
+Proof. intros; estep "app_rel subst". Qed.
+
+Lemma eq_Emptyrec_subst G G' g rA lA A e
+  : wft G sEnv -> wft G' sEnv -> wft g (sSub G G') ->
+    wft rA sRelevance -> wft lA sLvl ->
+    wft A (sCode G' rA lA) ->
+    wft e (sElt G' oIrr oL0 (oEmpty G')) ->
+    eqt (sExp G (iEl rA lA)
+           (oTySubst G G' g (iEl rA lA) (oEl G' rA lA A)))
+      (oExpSubst G G' g (iEl rA lA) (oEl G' rA lA A)
+         (oEmptyrec G' rA lA A e))
+      (oEmptyrec G rA lA (oCodeSubst G G' g rA lA A)
+         (oExpSubst G G' g (iEl oIrr oL0)
+            (oEl G' oIrr oL0 (oEmpty G')) e)).
+Proof. intros; estep "Emptyrec subst". Qed.
