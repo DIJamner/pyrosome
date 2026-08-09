@@ -83,10 +83,19 @@ closed under substitution *structurally*: substituting into a code only ever rep
 universe-typed variables, and a reducible substitution supplies **normal codes** at those
 slots. Three consequences, each of which the pre-η plan either got wrong or left open:
 
-* **R2 dissolves.** "Normal codes are closed under reducible substitution" — which the old
+* **R2 dissolves — for weakening.** "Normal codes are closed under substitution", which the old
   plan flagged as *the single lemma most likely to force a restructuring*, requiring the
-  code-level fundamental theorem to be merged into Layer 2 — is now a **plain structural
-  induction on the code**, provable in Layer 1 with no reducibility at all.
+  code-level fundamental theorem to be merged into Layer 2, is a **plain structural induction on
+  the code**. `NfCode_wk` is proved that way, with no reducibility at all.
+
+  The *general* statement is weaker than first claimed, and two corrections are on the record:
+  (i) the class of normal substitutions must constrain only the **universe-typed** entries — the
+  naive "every entry is an `NfET`" class is not closed under lifting, because going under a
+  binder snocs `hd`, and `hd` at a `Pi_rel` type is not η-long normal; (ii) the variable case
+  needs **`TyOk_inj`, i.e. Layer 0.5** — reading a code variable off a `snoc` gives a normal term
+  at the entry's normal type, and turning that into an `NfCode D r l` requires knowing the type
+  is *syntactically* `oU D r l`. The head and the level come for free (a `TyOk` at info `iCode l`
+  can only be `oU _ _ l`, since `oIota l0 ≠ oNext l`), but the **relevance** does not.
 * **Type equality is a σ-calculus question.** Two normal types can be provably equal only
   through the substitution calculus; β and η live at `El`-sorts and can never rewrite a code.
 * **Level stratification is a non-issue.** `RTy` (§5) is an inductive with no measure, so the
@@ -439,6 +448,26 @@ Obligation count: `cterm_cong` 32, `cterm_by` 28, `csort_cong` 9, `csort_by` 0, 
 | **P8** | Layer 4c, theorems, smoke test | — |
 | **P9** | extensions: `ProofIrr`, `Sigma`, `Id`, `Computations` | — |
 | **—** | `Cast` | **breaks §2**: `u0` is a code for a universe, so eliminators can land in `U`, code rigidity fails, and the whole architecture reverts to the induction–recursion problem. Do not add `Cast` without redesigning Layers 0.5 and 2 |
+
+## 9a. A language gap: four missing substitution commutations
+
+`ott_dtt`'s 28 equations contain **no `"app_rel subst"`, `"app_irr subst"`, `"lam_irr subst"` or
+`"Emptyrec subst"`** (verified against the compiled language). So `(app_rel … f a)[w]`,
+`(lam_irr … t)[w]` and `(Emptyrec … e)[w]` cannot be pushed inwards at all: those terms are
+**stuck under an explicit substitution**, and consequently normal forms are not stable under
+weakening — `NeET_wk`/`NfET_wk` are simply not provable, and the normalization statement itself
+is false for the language as it stands, since a stuck `exp_subst` has no normal form.
+
+`"app_rel subst"` is *derivable* (η, β, `"lam_rel subst"` and the σ-identity
+`⟨id,a'⟩ ∘ w↑ = w ∘ ⟨id,a⟩`). The other three are not: `Pi_irr` has no η and `Emptyrec` has no η,
+so nothing can move the substitution past them. `Lang/OTT/Pi.v`'s own comment says `lam_irr subst`
+is "subsumed by proof irrelevance" — true in the full theory with `Lang/OTT/ProofIrr.v`, whose
+single rule equates any two inhabitants of a proof-irrelevant type, but `ProofIrr` is out of scope
+here, so for `ott_dtt` the rules are genuinely absent.
+
+Fixed by `src/Pyrosome/Lang/OTT/SubstCommute.v`, a separate extension rather than an edit to
+`Pi.v`/`Nat.v` — that leaves every already-compiled language (`Sigma`, `Id`, `Cast`, `ProofIrr`,
+`Computations`) untouched and avoids re-elaborating them. Upstreaming is a later decision.
 
 ## 9b. The index-spelling mismatch, and why it is not an authoring bug
 
