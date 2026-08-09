@@ -210,13 +210,35 @@ Definition RTm (G i A e : term) : Prop :=
   forall P, RTy G i A P -> P e.
 
 (* At an ARBITRARY type: quantified over the normal representatives.  Two
-   provably-equal sorts have literally the same set of normal
+   provably-equal sorts then have literally the same set of normal
    representatives, which is what makes the [Ceq_sort] transfer of Layer 4a
    free; and Layer 0.5's [TyOk_inj] says that set is a singleton, which is
-   what makes this usable at all (see WIP/dtt_norm_design.md section 3). *)
-Definition RTmN (G i A e : term) : Prop :=
-  forall A0, TyOk G i A0 -> eqt (sTy G i) A A0 -> RTm G i A0 e.
+   what makes this usable at all (see WIP/dtt_norm_design.md section 3).
 
-(* "A is a reducible type", up to provable equality. *)
+   THE INFO INDEX MUST BE QUANTIFIED TOO, and this is not cosmetic.  The
+   first version of these definitions held [i] fixed, and the resulting
+   [Ceq_sort] transfer for the sort [ty G i] is REFUTABLE modulo
+   consistency -- a fact WIP/DttModelStruct.v proves rather than merely
+   asserts.  The reason: [TyOk]'s info index is syntactic BY DESIGN (a
+   universe is pinned at [iCode l], an [El] at [iEl r l]), but "next0"
+   makes [iCode L0] and [iEl rel L1] provably equal, and [Ceq_term] at
+   [tyinfo] relates them -- it only demands equal [ninfo]s.  So
+   [ty G (iCode L0)] and [ty G (iEl rel L1)] are provably equal sorts whose
+   sets of normal representatives are DISJOINT, and a transfer between them
+   would force the closed universe [U irr L0] to be provably equal to the
+   [El] of a closed relevant [Pi] code.
+
+   Quantifying [i] as well fixes it outright: both definitions are then
+   stable under [eqt sInfo] in the index in BOTH directions by transitivity
+   alone, which is exactly what the two directions of [Ceq_sort] need, and
+   nothing in Layers 1-3 has to move -- [TyOk] keeps its pinned infos and
+   the aliasing is absorbed here. *)
+Definition RTmN (G i A e : term) : Prop :=
+  forall i0 A0,
+    eqt sInfo i i0 -> TyOk G i0 A0 -> eqt (sTy G i0) A A0 -> RTm G i0 A0 e.
+
+(* "A is a reducible type", up to provable equality -- of the type AND of
+   the info. *)
 Definition RTyN (G i A : term) : Prop :=
-  exists A0 P, TyOk G i A0 /\ eqt (sTy G i) A A0 /\ RTy G i A0 P.
+  exists i0 A0 P,
+    eqt sInfo i i0 /\ TyOk G i0 A0 /\ eqt (sTy G i0) A A0 /\ RTy G i0 A0 P.

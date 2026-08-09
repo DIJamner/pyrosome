@@ -666,20 +666,58 @@ Lemma RTm_eq (Hce : CandEqOk) G i A e e'
   : RTm G i A e -> eqt (sExp G i A) e e' -> RTm G i A e'.
 Proof. intros He Heq P HP; exact (Hce _ _ _ _ HP e e' (He P HP) Heq). Qed.
 
+(* The info index is quantified as well as the type (see [RTmN]'s comment
+   in WIP/DttLR.v), so the sort conversion here varies BOTH -- [sExp_cong]
+   rather than [sExp_cong_ty].  Its [sEnv] premise is recovered by
+   inverting the sort of the type equation, exactly as [sExp_cong_ty]
+   does. *)
 Lemma RTmN_eq (Hce : CandEqOk) G i A e e'
   : RTmN G i A e -> eqt (sExp G i A) e e' -> RTmN G i A e'.
 Proof.
-  intros He Heq A0 HT HA0.
+  intros He Heq i0 A0 Hi HT HA0.
   eapply (RTm_eq Hce); [ apply He; assumption | ].
-  eapply eq_term_conv; [ exact Heq | apply sExp_cong_ty; exact HA0 ].
+  eapply eq_term_conv; [ exact Heq | ].
+  destruct (wf_sort_ty_inv (eqt_wf_sort HA0)) as [HG _].
+  apply sExp_cong; [ apply eq_term_refl; exact HG | exact Hi | exact HA0 ].
 Qed.
 
 (* Closure of [RTyN] under equality of the TYPE, on the other hand, is
    free: the normal representative is unchanged. *)
+(* The [ty] analogue of [sExp_cong]. *)
+Lemma sTy_cong G1 G2 i1 i2
+  : eqt sEnv G1 G2 -> eqt sInfo i1 i2 ->
+    eq_sort ott_dtt [] (sTy G1 i1) (sTy G2 i2).
+Proof. intros; scong_step "ty" [i1; G1] [i2; G2]. Qed.
+
 Lemma RTyN_eq G i A A'
   : RTyN G i A -> eqt (sTy G i) A A' -> RTyN G i A'.
 Proof.
-  intros [A0 [P (HT & Heq & HR)]] Heq'.
-  exists A0, P; split; [ exact HT | split; [ | exact HR ] ].
-  eapply eq_term_trans; [ apply eq_term_sym; exact Heq' | exact Heq ].
+  intros [i0 [A0 [P (Hi & HT & Heq & HR)]]] Heq'.
+  exists i0, A0, P; split; [ exact Hi | split; [ exact HT | split; [ | exact HR ] ] ].
+  (* [Heq'] lives at [sTy G i]; the representative was named at [sTy G i0].
+     They are equal sorts, by [Hi]. *)
+  destruct (wf_sort_ty_inv (eqt_wf_sort Heq')) as [HG _].
+  assert (eqt (sTy G i0) A A') as Heq''.
+  { eapply eq_term_conv; [ exact Heq' | ].
+    apply sTy_cong; [ apply eq_term_refl; exact HG | exact Hi ]. }
+  eapply eq_term_trans; [ apply eq_term_sym; exact Heq'' | exact Heq ].
+Qed.
+
+(* Closure of [RTyN]/[RTmN] under equality of the INFO index -- the whole
+   point of quantifying it (see [RTmN] in WIP/DttLR.v).  Both directions,
+   and both by transitivity alone. *)
+Lemma RTyN_eq_info G i i' A
+  : RTyN G i A -> eqt sInfo i i' -> RTyN G i' A.
+Proof.
+  intros [i0 [A0 [P (Hi & HT & Heq & HR)]]] Hii'.
+  exists i0, A0, P; repeat split; try assumption.
+  eapply eq_term_trans; [ apply eq_term_sym; exact Hii' | exact Hi ].
+Qed.
+
+Lemma RTmN_eq_info G i i' A e
+  : RTmN G i A e -> eqt sInfo i i' -> RTmN G i' A e.
+Proof.
+  intros He Hii' i0 A0 Hi HT HA0.
+  apply He; try assumption.
+  eapply eq_term_trans; [ exact Hii' | exact Hi ].
 Qed.

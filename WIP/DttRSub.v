@@ -7,7 +7,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttNf WIP.DttLR.
+Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttNfWf
+  WIP.DttLR WIP.DttLRBasics.
 Import Core.Notations.
 
 (* =====================================================================
@@ -114,4 +115,61 @@ Proof.
     eapply eq_term_trans; [ apply eq_term_sym; exact Heq | exact Hf ].
   - apply RSub_ext_intro; exists g0, v; repeat split; try assumption.
     eapply eq_term_trans; [ apply eq_term_sym; exact Heq | exact Hs ].
+Qed.
+
+(* ------------------------------------------------------------------ *)
+(* [RSubN]: reducible substitution, up to provable equality of the       *)
+(* CODOMAIN ENVIRONMENT                                                  *)
+(* ------------------------------------------------------------------ *)
+
+(* [RSub] is a [Fixpoint] on the SYNTAX of [G], so it is not stable under
+   provable equality of [G] -- and [csort_cong] at the sort [sub G G']
+   varies exactly that.  The wrapper below restores stability the same way
+   [RTmN]/[RTyN] (WIP/DttLR.v) do for the info and the type: quantify a
+   normal representative and identify it up to [eq_term].  Both directions
+   of the [Ceq_sort] transfer are then transitivity alone.
+
+   This is not cosmetic either: without it the [sub] transfer would have to
+   push [RSub] through an environment equation clause by clause, and in the
+   [ext] case that asks for reducibility of the entry at the OTHER info --
+   i.e. for the normalization theorem itself. *)
+
+Lemma sSub_cong G1 G2 G1' G2'
+  : eqt sEnv G1 G2 -> eqt sEnv G1' G2' ->
+    eq_sort ott_dtt [] (sSub G1 G1') (sSub G2 G2').
+Proof. intros; scong_step "sub" [G1'; G1] [G2'; G2]. Qed.
+
+Definition RSubN (D G g : term) : Prop :=
+  exists G0, EnvOk G0 /\ eqt sEnv G G0 /\ RSub D G0 g.
+
+Lemma RSubN_of_RSub D G g : EnvOk G -> RSub D G g -> RSubN D G g.
+Proof.
+  intros HG HR; exists G; repeat split; try assumption.
+  apply eq_term_refl, EnvOk_wf; assumption.
+Qed.
+
+Lemma RSubN_elim D G g
+  : RSubN D G g -> exists G0, EnvOk G0 /\ eqt sEnv G G0 /\ RSub D G0 g.
+Proof. exact (fun H => H). Qed.
+
+(* The point of the wrapper: stability under equality of the environment,
+   in both directions, by transitivity alone. *)
+Lemma RSubN_env D G G' g
+  : RSubN D G g -> eqt sEnv G G' -> RSubN D G' g.
+Proof.
+  intros [G0 (HG0 & Heq & HR)] Heq'.
+  exists G0; repeat split; try assumption.
+  eapply eq_term_trans; [ apply eq_term_sym; exact Heq' | exact Heq ].
+Qed.
+
+Lemma RSubN_eq D G g g'
+  : RSubN D G g -> eqt (sSub D G) g g' -> RSubN D G g'.
+Proof.
+  intros [G0 (HG0 & Heq & HR)] Heq'.
+  assert (wf_term ott_dtt [] D sEnv) as HD
+    by (eapply wft_sub_dom; eapply eqt_wf_l; exact Heq').
+  exists G0; repeat split; try assumption.
+  eapply RSub_eq; [ exact HR | ].
+  eapply eq_term_conv; [ exact Heq' | ].
+  apply sSub_cong; [ apply eq_term_refl; exact HD | exact Heq ].
 Qed.

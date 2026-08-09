@@ -59,6 +59,20 @@ Import Core.Notations.
        equal environments with different syntax.  So the [env] clause says
        `has a normal environment`, and Layer 0.5's [EnvOk_inj] is what
        makes that a singleton.
+
+   (iv) EVERY index of a semantic conjunct is quantified up to [eq_term],
+       not held fixed: the environment via [RSubN] (WIP/DttRSub.v), the
+       info and the type via [RTmN]/[RTyN] (WIP/DttLR.v).  This is forced,
+       not stylistic.  [csort_cong] varies all three, and with any of them
+       held fixed the corresponding [Ceq_sort] transfer is unprovable --
+       for the info it is REFUTABLE modulo consistency, which
+       WIP/DttModelStruct.v proves: `next0` makes [ty G (iCode L0)] and
+       [ty G (iEl rel L1)] provably equal sorts whose sets of normal
+       representatives are disjoint (because [TyOk] pins each former's
+       info), so a transfer between them would force the closed universe
+       [U irr L0] to be provably equal to the [El] of a closed relevant
+       [Pi] code.  With all three quantified, both directions of every
+       transfer are transitivity alone.
    ===================================================================== *)
 
 Local Notation eqt := (eq_term ott_dtt []).
@@ -102,7 +116,7 @@ Inductive Ceq_term : sort -> term -> term -> Prop :=
 (* ---- substitutions ---- *)
 | ceq_sub : forall G G' g1 g2,
     eqt (sSub G G') g1 g2 ->
-    (forall D h, EnvOk D -> RSub D G h -> RSub D G' (oCmp D G G' h g1)) ->
+    (forall D h, EnvOk D -> RSubN D G h -> RSubN D G' (oCmp D G G' h g1)) ->
     Ceq_term (sSub G G') g1 g2
 
 (* ---- types ---- *)
@@ -112,14 +126,14 @@ Inductive Ceq_term : sort -> term -> term -> Prop :=
    [A2] for free. *)
 | ceq_ty : forall G i A1 A2,
     eqt (sTy G i) A1 A2 ->
-    (forall D g, EnvOk D -> RSub D G g ->
+    (forall D g, EnvOk D -> RSubN D G g ->
        RTyN D i (oTySubst D G g i A1)) ->
     Ceq_term (sTy G i) A1 A2
 
 (* ---- terms ---- *)
 | ceq_exp : forall G i A e1 e2,
     eqt (sExp G i A) e1 e2 ->
-    (forall D g, EnvOk D -> RSub D G g ->
+    (forall D g, EnvOk D -> RSubN D G g ->
        RTmN D i (oTySubst D G g i A) (oExpSubst D G g i A e1)) ->
     Ceq_term (sExp G i A) e1 e2.
 
@@ -159,19 +173,19 @@ Proof. intro H; inversion H; subst; auto. Qed.
 Lemma Ceq_sub_e G G' g1 g2
   : Ceq_term (sSub G G') g1 g2 ->
     eqt (sSub G G') g1 g2
-    /\ (forall D h, EnvOk D -> RSub D G h -> RSub D G' (oCmp D G G' h g1)).
+    /\ (forall D h, EnvOk D -> RSubN D G h -> RSubN D G' (oCmp D G G' h g1)).
 Proof. intro H; inversion H; subst; auto. Qed.
 
 Lemma Ceq_ty_e G i A1 A2
   : Ceq_term (sTy G i) A1 A2 ->
     eqt (sTy G i) A1 A2
-    /\ (forall D g, EnvOk D -> RSub D G g -> RTyN D i (oTySubst D G g i A1)).
+    /\ (forall D g, EnvOk D -> RSubN D G g -> RTyN D i (oTySubst D G g i A1)).
 Proof. intro H; inversion H; subst; auto. Qed.
 
 Lemma Ceq_exp_e G i A e1 e2
   : Ceq_term (sExp G i A) e1 e2 ->
     eqt (sExp G i A) e1 e2
-    /\ (forall D g, EnvOk D -> RSub D G g ->
+    /\ (forall D g, EnvOk D -> RSubN D G g ->
           RTmN D i (oTySubst D G g i A) (oExpSubst D G g i A e1)).
 Proof. intro H; inversion H; subst; auto. Qed.
 
