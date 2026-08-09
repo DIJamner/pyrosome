@@ -575,3 +575,54 @@ one failure mode I would call unfixable in place. (5) η was designed around, re
 
 All five are avoided by: staying inside the theory (everything up to `eq_term`), staying in
 `Prop`, one architecture with one file per layer, no universe tower (§7), and η first (§6).
+
+---
+
+## 11. The review pass
+
+After the proof closed, four reviews went over it looking for duplicated work, over-complex
+definitions and circuitous strategies. What they found, and what was done:
+
+**The single biggest defect was not a proof at all — it was the rule dispatch.** Every one of the
+64 rule obligations pinned its rule by expanding `In (name, rule) ott_dtt` into a 73-fold
+disjunction of fully-evaluated rules, *in the proof term*, so `Qed` paid again: 2.6 s per
+invocation, ~68 invocations. Pinning by `named_list_lookup_err_in` + `in_all_fresh_same` instead
+is 236× faster and O(1) in the proof term. **Layer 4b went from 221 s to 59 s.** For perspective,
+`ModelPi.v`'s entire mathematical content — 5 000 lines, 17 obligations — type-checks in under
+two seconds; the rest was dispatch.
+
+**Three things were reconstructed by hand that already existed.**
+
+* `NfWk.v` built shape relations with determinism proofs to pin a normal type, because the
+  `∃A'. TyOk A' ∧ A[w] ≡ A'` form "cannot drive its own induction". True — but `TyOk_inj` (§4)
+  does exactly that, and `NfWk.v` already imported it and already used it a hundred lines away.
+  The detour was an artefact of build order: weakening was attempted before rigidity landed.
+* `Erase.v` defined a second erasure system alongside `Rigid.v`'s interpretation relations, and
+  `Inj.v` needed a simultaneous induction to keep the two in step. But `rigid_code`/`rigid_ty`/
+  `rigid_env` already hand back the model's own derivations *for both sides at a common index*, so
+  stating injectivity there makes the seam disappear rather than move. `Erase.v` is gone.
+* The `cterm_by` recipe that two fragments independently discovered and wrote up as a finding is
+  `Gluing/SyntacticModel.v`'s `synm_cterm_by` — in the same directory, generic, six lines. A small
+  bridge (`Ceq_term_eqt`, `Ceq_args_syn`) hands every obligation its `eq_term` conjunct for free.
+  `by_PiRel_eta` went from 109 lines to 4.
+
+**One mismatch in a definition cost ~350 lines.** `Wk`'s one-step weakening was `wkn ∘ id`, while
+η is stated with the bare `wkn`; a 263-line section existed to bridge that, for a single call
+site. Adding a `wk_wkn` clause is safe exactly where a `wk_conv` clause would not be — the four
+clauses keep pairwise-distinct head symbols, so `Wk` stays the *syntactic* class Layer 2 needs.
+With it, `appAtRel … wkn e hd` **is** η's left-hand side and the conversion disappears entirely.
+
+**Two suspicions were wrong, and checking them was worth more than the fixes.** `WIS` looks like a
+redundant fourth substitution class; it is not — under the general class the image of a code
+variable is only "some normal code", and turning that into a candidate is `RTyEx_of_NfCode`, the
+theorem under proof. And `Rigid.v`'s junk-at-non-universe-slots representation is *forced* by
+`snoc_wkn_hd`, not a convenience.
+
+**A process lesson.** Five separate pieces of machinery were "independently re-derived" —
+`ceq_refl_l` byte-identical in two files, four byte-identical dispatcher tactics, `RSub_wf`
+duplicated with a justification contradicted eleven lines above it. That is the direct cost of
+fanning work out across agents told not to depend on each other's files: the isolation that makes
+parallel proof development safe is exactly what manufactures this duplication. Budget a
+consolidation pass.
+
+Net: 29 files → 28, 25 228 lines → 23 111, no `Admitted` and no `Axiom` at any point.
