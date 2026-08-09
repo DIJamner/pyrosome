@@ -85,6 +85,56 @@ Section WithVar.
     (cmp : closed_compiler) (l : lang) (c : ctx) (CM : ClosedModel) : Prop :=
     ClosedModel_ok l c (CM := compile_model cmp CM).
 
+  (* The inductive, per-rule characterization of a preserving compiler (the
+     closed analogue of CompilerDefs.preserving_compiler_ext).  It walks the
+     source language rule-by-rule; each constructor carries EXACTLY ONE
+     obligation for that rule, phrased entirely in the target model [CM] on the
+     compiled syntax.  The equational structural laws (transitivity, symmetry,
+     conversion) and the variable case are NOT obligations here -- they are
+     discharged once and generically from [CM]'s own [ClosedModel_ok] in
+     ClosedCompilers.preserving_closed_compiler_ext_sound.
+
+     Each obligation quantifies over argument lists [s1]/[s2] related by the
+     pullback's [ceq_args]: this is the analogue of the open compiler's single
+     wf/eq fact, but here it must range over instantiations directly because the
+     cut-free target model has no primitive substitution law to lift a single
+     fact with. *)
+  Inductive preserving_closed_compiler_ext
+    (cmp : closed_compiler) (CM : ClosedModel) : lang -> Prop :=
+  | preserving_closed_nil : preserving_closed_compiler_ext cmp CM []
+  | preserving_closed_sort_rule : forall l n c' args,
+      preserving_closed_compiler_ext cmp CM l ->
+      (forall s1 s2 : list term,
+          ceq_args (CM := compile_model cmp CM) c' s1 s2 ->
+          ceq_sort (ClosedModel := CM)
+                   (compile_sort cmp (scon n s1)) (compile_sort cmp (scon n s2))) ->
+      preserving_closed_compiler_ext cmp CM ((n, sort_rule c' args) :: l)
+  | preserving_closed_term_rule : forall l n c' args t,
+      preserving_closed_compiler_ext cmp CM l ->
+      (forall s1 s2 : list term,
+          ceq_args (CM := compile_model cmp CM) c' s1 s2 ->
+          ceq_term (ClosedModel := CM)
+                   (compile_sort cmp (t [/with_names_from c' s2/]))
+                   (compile cmp (con n s1)) (compile cmp (con n s2))) ->
+      preserving_closed_compiler_ext cmp CM ((n, term_rule c' args t) :: l)
+  | preserving_closed_sort_eq_rule : forall l n c' t1 t2,
+      preserving_closed_compiler_ext cmp CM l ->
+      (forall s1 s2 : list term,
+          ceq_args (CM := compile_model cmp CM) c' s1 s2 ->
+          ceq_sort (ClosedModel := CM)
+                   (compile_sort cmp (t1 [/with_names_from c' s1/]))
+                   (compile_sort cmp (t2 [/with_names_from c' s2/]))) ->
+      preserving_closed_compiler_ext cmp CM ((n, sort_eq_rule c' t1 t2) :: l)
+  | preserving_closed_term_eq_rule : forall l n c' e1 e2 t,
+      preserving_closed_compiler_ext cmp CM l ->
+      (forall s1 s2 : list term,
+          ceq_args (CM := compile_model cmp CM) c' s1 s2 ->
+          ceq_term (ClosedModel := CM)
+                   (compile_sort cmp (t [/with_names_from c' s2/]))
+                   (compile cmp (e1 [/with_names_from c' s1/]))
+                   (compile cmp (e2 [/with_names_from c' s2/]))) ->
+      preserving_closed_compiler_ext cmp CM ((n, term_eq_rule c' e1 e2 t) :: l).
+
 End WithVar.
 
 Arguments closed_compiler_case : clear implicits.
