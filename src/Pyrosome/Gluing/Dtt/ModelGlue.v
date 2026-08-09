@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-From Pyrosome.Gluing Require Import CutTModel.
+From Pyrosome.Gluing Require Import CutTModel SyntacticModel.
 Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
   Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq
   Pyrosome.Gluing.Dtt.ModelStruct.
@@ -48,6 +48,30 @@ Import Core.Notations.
        the same info, and these four lemmas are the only place that is paid
        for.  ModelBase.v and ModelPi.v had reached [eq_U_subst_iota1] by
        two independent routes.
+
+   (4) THE EQUATION RECIPE, WHICH WAS ALREADY PROVED GENERICALLY.  Both the
+       substitution fragment and the binder fragment independently arrived
+       at the same three moves for a [cterm_by] case -- instantiate the
+       LANGUAGE's equation at the s1-side arguments, convert its sort to
+       the s2-side one the obligation demands, and hand the result to
+       [ceq_*_eq_l] -- and each paid for the first two with a per-rule
+       retyping prelude, ten to fifty lines long, whose only purpose was to
+       feed the instantiation.  But that is exactly
+       src/Pyrosome/Gluing/SyntacticModel.v's [synm_cterm_by], proved once
+       and generically.  The only thing missing was a bridge:
+       [Ceq_term_eqt] forgets a clause down to its [eq_term] conjunct (at
+       the two rigid index sorts, where the clause is an identity plus a
+       normal form, the equation is [eq_term_refl]), [Ceq_args_syn] lifts
+       that pointwise over [ceq_args], and [dtt_eqt_by] / [dtt_eqt_cong]
+       are the two obligations read in the syntactic model.  Every
+       [cterm_by] case now gets its [eq_term] conjunct for free and only
+       has to supply the RIGHT-hand side's [Ceq_term], which is one
+       congruence of its own fragment.
+
+       NB the maximally general version -- one that also MANUFACTURED the
+       right-hand side's reflexive [Ceq_term] -- would need a substitution
+       closure lemma for [Ceq_term], which is precisely what the cut-free
+       [CutTModel] interface exists to avoid.
 
    The rule-pinning tactics [pin_lookup] / [rule_pin] / [pin_name] are also
    shared, but they live in ModelStruct.v because ModelStruct.v's own two
@@ -248,3 +272,52 @@ Proof.
     | apply sTy_cong;
       [ apply eq_term_refl; exact HG | apply eq_info_next0 ] ].
 Qed.
+
+(* ================================================================== *)
+(* 5.  The equation recipe, from the syntactic model                   *)
+(* ================================================================== *)
+
+(* A clause forgets to its [eq_term] conjunct.  Seven of the nine carry one
+   outright; [relevance] and [lvl] are RIGID, so their clause is a
+   syntactic identity plus a normal form and the equation is reflexivity
+   at [RelNf_wf]/[LvlNf_wf]. *)
+Lemma Ceq_term_eqt t e1 e2 : Ceq_term t e1 e2 -> eqt t e1 e2.
+Proof.
+  destruct 1; try assumption.
+  - apply eq_term_refl; apply RelNf_wf; assumption.
+  - apply eq_term_refl; apply LvlNf_wf; assumption.
+Qed.
+
+(* ... pointwise, which is exactly a [ceq_args] of the SYNTACTIC model. *)
+Lemma Ceq_args_syn c' s1 s2
+  : ceq_args (CM := DttCM) c' s1 s2 ->
+    ceq_args (CM := SynM ott_dtt []) c' s1 s2.
+Proof.
+  induction 1.
+  - constructor.
+  - constructor; [ assumption | ].
+    apply Ceq_term_eqt; assumption.
+Qed.
+
+Lemma dtt_eq_args c' s1 s2
+  : ceq_args (CM := DttCM) c' s1 s2 ->
+    eq_args (Model := core_model ott_dtt) [] c' s1 s2.
+Proof. intro H; apply synm_ceq_args, Ceq_args_syn, H. Qed.
+
+(* THE [eq_term] CONJUNCT OF EVERY [cterm_by] OBLIGATION, for free. *)
+Lemma dtt_eqt_by c' name e1 e2 t s1 s2
+  : In (name, term_eq_rule c' e1 e2 t) ott_dtt ->
+    ceq_args (CM := DttCM) c' s1 s2 ->
+    eqt t[/with_names_from c' s2/]
+        e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
+Proof.
+  intros Hin Hargs; apply Ceq_args_syn in Hargs.
+  eapply synm_cterm_by; [ exact ott_dtt_wf | exact Hin | exact Hargs ].
+Qed.
+
+(* ... and of every [cterm_cong] one. *)
+Lemma dtt_eqt_cong c' name args t s1 s2
+  : In (name, term_rule c' args t) ott_dtt ->
+    ceq_args (CM := DttCM) c' s1 s2 ->
+    eqt t[/with_names_from c' s2/] (con name s1) (con name s2).
+Proof. intros Hin Hargs; exact (ott_dtt_cong_inst Hin (dtt_eq_args Hargs)). Qed.

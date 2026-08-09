@@ -35,7 +35,10 @@ Import Core.Notations.
        and [Ceq_sub]'s conjunct says [g' o g] is reducible.  That is
        [ceq_exp_subst_l] below, stated ONCE; each of the seven substitution
        equations is then that lemma applied to the fragment's own
-       congruence, plus the equation itself.  (The universe/base fragment
+       congruence, plus the equation itself -- and the equation is now
+       HANDED DOWN, not proved: it is [dtt_eqt_by]
+       (src/Pyrosome/Gluing/Dtt/ModelGlue.v), the generic [cterm_by] recipe
+       read in the syntactic model.  (The universe/base fragment
        rediscovered this move twice, in "El subst" and "suc subst"; here it
        would have been rediscovered seven times.)
 
@@ -49,7 +52,9 @@ Import Core.Notations.
    (3) ETA IS THE CHEAPEST OF THE TEN.  Its right-hand side is the bare
        argument [f], whose clause is a hypothesis; the left-hand side is
        provably equal to it by the rule, and [ceq_exp_eq_l] transports the
-       clause across.  No reducibility reasoning at all.
+       clause across.  No reducibility reasoning at all -- with the
+       equation handed down, the whole obligation is
+       [ceq_exp_eq_l Heq (ceq_refl_r Hfc)].
 
    STATUS.  ALL SEVENTEEN are proved here and axiom-free, and the two
    dispatchers at the end are stated over all of them.
@@ -1190,17 +1195,18 @@ Qed.
    reused verbatim below:
 
      goal      Ceq_term t2 (g1[X args1]) (X (g2-substituted args2))
-     step 1    [ceq_exp_eq_l]: replace the left term by [g2[X args2]] --
-               one [ExpSubst_cong] over the argument equations;
-     step 2    [ceq_exp_eq_r]: the remaining [Ceq_term t2 (g2[X args2])
-               (g2[X args2])] is [ceq_exp_subst_l] applied to the
-               substitution argument's clause and to THIS FRAGMENT'S OWN
-               congruence at the reflexive right arguments, transported to
-               the goal's sort by [ceq_exp_transfer];
-     step 3    the right term is reached by the language's own equation.
+     step 1    [ceq_exp_eq_l] against the GIVEN equation [Heq], which
+               reduces the goal to the right-hand side's own reflexive
+               clause;
+     step 2    that clause is [ceq_exp_subst_l] applied to the substitution
+               argument's clause and to THIS FRAGMENT'S OWN congruence at
+               the reflexive right arguments, transported to the goal's
+               sort by [ceq_exp_transfer], and moved onto the right-hand
+               side by [ceq_exp_eq_r] and the language's own "X subst".
 
-   Only steps 1 and 3 mention the rule at all; nothing semantic is
-   reproved. *)
+   Nothing semantic is reproved, and nothing about the rule's left-hand
+   side is spelled out: step 1 used to be a twenty-line [ExpSubst_cong]
+   over the argument equations, and is now the hypothesis. *)
 
 Lemma by_PiRel_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 lG1 lG2 F1 F2 B1 B2
   : Ceq_term sEnv G1 G2 -> Ceq_term sEnv G1' G2' ->
@@ -1209,6 +1215,13 @@ Lemma by_PiRel_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 lG1 lG2 F1 F2 B1 B2
     Ceq_term sLvl lG1 lG2 ->
     Ceq_term (sCode G2' rF2 lF2) F1 F2 ->
     Ceq_term (sCode (oExtC G2' rF2 lF2 F2) oRel lG2) B1 B2 ->
+    eqt (sCode G2 oRel lG2)
+      (oExpSubst G1 G1' g1 (iCode lG1) (oU G1' oRel lG1)
+         (oPiRel G1' rF1 lF1 lG1 F1 B1))
+      (oPiRel G2 rF2 lF2 lG2 (oCodeSubst G2 G2' g2 rF2 lF2 F2)
+         (oExpSubst (oExtC G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2))
+            (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
+            (iCode lG2) (oU (oExtC G2' rF2 lF2 F2) oRel lG2) B2)) ->
     Ceq_term (sCode G2 oRel lG2)
       (oExpSubst G1 G1' g1 (iCode lG1) (oU G1' oRel lG1)
          (oPiRel G1' rF1 lF1 lG1 F1 B1))
@@ -1217,7 +1230,7 @@ Lemma by_PiRel_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 lG1 lG2 F1 F2 B1 B2
             (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
             (iCode lG2) (oU (oExtC G2' rF2 lF2 F2) oRel lG2) B2)).
 Proof.
-  intros HGc HGc' Hgc Hr Hlf Hlg HFc HBc.
+  intros HGc HGc' Hgc Hr Hlf Hlg HFc HBc Heq.
   pose proof (ceq_refl_r Hgc) as Hg2c.
   pose proof (ceq_refl_r (cong_PiRel HGc' Hr Hlf Hlg HFc HBc)) as HPi2.
   apply Ceq_env_e in HGc as [HG _].
@@ -1239,38 +1252,19 @@ Proof.
       by (eapply eqt_wf_r; exact HBa).
   assert (wft (iCode lG2) sInfo) as HcG
       by (unfold iCode; apply wf_Info; [ apply wf_Rel | apply wf_Next; exact HwlG ]).
-  eapply ceq_exp_eq_l with
-    (e2 := oExpSubst G2 G2' g2 (iCode lG2) (oU G2' oRel lG2)
-             (oPiRel G2' rF2 lF2 lG2 F2 B2)).
-  - eapply eq_term_conv.
-    + apply ExpSubst_cong;
-        [ exact HG | exact HG' | exact Hga
-        | apply eq_term_refl; exact HcG
-        | apply U_cong;
-          [ exact HG' | apply eq_term_refl; apply wf_Rel
-          | apply eq_term_refl; exact HwlG ]
-        | apply PiRel_cong;
-          [ exact HG'
-          | apply eq_term_refl; exact Hwr
-          | apply eq_term_refl; exact HwlF
-          | apply eq_term_refl; exact HwlG
-          | exact HFa | exact HBa ] ].
-    + apply eq_sort_exp_ty;
-        [ exact HwG2 | exact HcG
-        | apply eq_U_subst;
-          [ exact HwG2 | exact HwG2' | exact Hwg2 | apply wf_Rel
-          | exact HwlG ] ].
-  - eapply ceq_exp_eq_r.
-    + eapply ceq_exp_transfer;
-        [ apply eq_term_refl; exact HwG2
-        | apply eq_term_refl; exact HcG
-        | apply eq_U_subst;
-          [ exact HwG2 | exact HwG2' | exact Hwg2 | apply wf_Rel
-          | exact HwlG ]
-        | eapply ceq_exp_subst_l; [ exact Hg2c | exact HPi2 ] ].
-    + apply eq_Pi_rel_subst;
-        [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
-        | exact HwlG | exact HwF2 | exact HwB2 ].
+  eapply ceq_exp_eq_l; [ exact Heq | ].
+  eapply ceq_refl_r.
+  eapply ceq_exp_eq_r.
+  - eapply ceq_exp_transfer;
+      [ apply eq_term_refl; exact HwG2
+      | apply eq_term_refl; exact HcG
+      | apply eq_U_subst;
+        [ exact HwG2 | exact HwG2' | exact Hwg2 | apply wf_Rel
+        | exact HwlG ]
+      | eapply ceq_exp_subst_l; [ exact Hg2c | exact HPi2 ] ].
+  - apply eq_Pi_rel_subst;
+      [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
+      | exact HwlG | exact HwF2 | exact HwB2 ].
 Qed.
 
 Lemma by_PiIrr_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 F1 F2 B1 B2
@@ -1280,6 +1274,13 @@ Lemma by_PiIrr_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 F1 F2 B1 B2
     Ceq_term (sCode G2' rF2 lF2) F1 F2 ->
     Ceq_term (sExp (oExtC G2' rF2 lF2 F2) (oInfo oRel (oIota oL1))
                 (oU (oExtC G2' rF2 lF2 F2) oIrr oL0)) B1 B2 ->
+    eqt (sExp G2 (oInfo oRel (oIota oL1)) (oU G2 oIrr oL0))
+      (oExpSubst G1 G1' g1 (oInfo oRel (oIota oL1)) (oU G1' oIrr oL0)
+         (oPiIrr G1' rF1 lF1 F1 B1))
+      (oPiIrr G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2)
+         (oExpSubst (oExtC G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2))
+            (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
+            (oInfo oRel (oIota oL1)) (oU (oExtC G2' rF2 lF2 F2) oIrr oL0) B2)) ->
     Ceq_term (sExp G2 (oInfo oRel (oIota oL1)) (oU G2 oIrr oL0))
       (oExpSubst G1 G1' g1 (oInfo oRel (oIota oL1)) (oU G1' oIrr oL0)
          (oPiIrr G1' rF1 lF1 F1 B1))
@@ -1288,7 +1289,7 @@ Lemma by_PiIrr_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 F1 F2 B1 B2
             (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
             (oInfo oRel (oIota oL1)) (oU (oExtC G2' rF2 lF2 F2) oIrr oL0) B2)).
 Proof.
-  intros HGc HGc' Hgc Hr Hlf HFc HBc.
+  intros HGc HGc' Hgc Hr Hlf HFc HBc Heq.
   pose proof (ceq_refl_r Hgc) as Hg2c.
   pose proof (ceq_refl_r (cong_PiIrr HGc' Hr Hlf HFc HBc)) as HPi2.
   apply Ceq_env_e in HGc as [HG _].
@@ -1309,38 +1310,18 @@ Proof.
       by (eapply eqt_wf_r; exact HBa).
   assert (wft (oInfo oRel (oIota oL1)) sInfo) as Hi1L
       by (apply wf_Info; [ apply wf_Rel | apply wf_Iota; apply wf_L1 ]).
-  eapply ceq_exp_eq_l with
-    (e2 := oExpSubst G2 G2' g2 (oInfo oRel (oIota oL1)) (oU G2' oIrr oL0)
-             (oPiIrr G2' rF2 lF2 F2 B2)).
-  - eapply eq_term_conv.
-    + apply ExpSubst_cong;
-        [ exact HG | exact HG' | exact Hga
-        | apply eq_term_refl; exact Hi1L
-        | eapply eq_term_conv;
-          [ apply U_cong;
-            [ exact HG' | apply eq_term_refl; apply wf_Irr
-            | apply eq_term_refl; apply wf_L0 ]
-          | apply sTy_cong;
-            [ apply eq_term_refl; exact HwG2' | apply eq_info_next0 ] ]
-        | apply PiIrr_cong;
-          [ exact HG'
-          | apply eq_term_refl; exact Hwr
-          | apply eq_term_refl; exact HwlF
-          | exact HFa | exact HBa ] ].
-    + apply eq_sort_exp_ty;
-        [ exact HwG2 | exact Hi1L
-        | apply eq_U_subst_iota1;
-          [ exact HwG2 | exact HwG2' | exact Hwg2 | apply wf_Irr ] ].
-  - eapply ceq_exp_eq_r.
-    + eapply ceq_exp_transfer;
-        [ apply eq_term_refl; exact HwG2
-        | apply eq_term_refl; exact Hi1L
-        | apply eq_U_subst_iota1;
-          [ exact HwG2 | exact HwG2' | exact Hwg2 | apply wf_Irr ]
-        | eapply ceq_exp_subst_l; [ exact Hg2c | exact HPi2 ] ].
-    + apply eq_Pi_irr_subst;
-        [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
-        | exact HwF2 | exact HwB2 ].
+  eapply ceq_exp_eq_l; [ exact Heq | ].
+  eapply ceq_refl_r.
+  eapply ceq_exp_eq_r.
+  - eapply ceq_exp_transfer;
+      [ apply eq_term_refl; exact HwG2
+      | apply eq_term_refl; exact Hi1L
+      | apply eq_U_subst_iota1;
+        [ exact HwG2 | exact HwG2' | exact Hwg2 | apply wf_Irr ]
+      | eapply ceq_exp_subst_l; [ exact Hg2c | exact HPi2 ] ].
+  - apply eq_Pi_irr_subst;
+      [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
+      | exact HwF2 | exact HwB2 ].
 Qed.
 
 (* [Emptyrec]'s conclusion sort is the substituted type verbatim, so no
@@ -1351,6 +1332,12 @@ Lemma by_Emptyrec_subst G1 G2 G1' G2' g1 g2 rA1 rA2 lA1 lA2 A1 A2 e1 e2
     Ceq_term sRelevance rA1 rA2 -> Ceq_term sLvl lA1 lA2 ->
     Ceq_term (sCode G2' rA2 lA2) A1 A2 ->
     Ceq_term (sElt G2' oIrr oL0 (oEmpty G2')) e1 e2 ->
+    eqt (sExp G2 (iEl rA2 lA2)
+                (oTySubst G2 G2' g2 (iEl rA2 lA2) (oEl G2' rA2 lA2 A2)))
+      (oExpSubst G1 G1' g1 (iEl rA1 lA1) (oEl G1' rA1 lA1 A1)
+         (oEmptyrec G1' rA1 lA1 A1 e1))
+      (oEmptyrec G2 rA2 lA2 (oCodeSubst G2 G2' g2 rA2 lA2 A2)
+         (oExpSubst G2 G2' g2 (iEl oIrr oL0) (oEl G2' oIrr oL0 (oEmpty G2')) e2)) ->
     Ceq_term (sExp G2 (iEl rA2 lA2)
                 (oTySubst G2 G2' g2 (iEl rA2 lA2) (oEl G2' rA2 lA2 A2)))
       (oExpSubst G1 G1' g1 (iEl rA1 lA1) (oEl G1' rA1 lA1 A1)
@@ -1358,7 +1345,7 @@ Lemma by_Emptyrec_subst G1 G2 G1' G2' g1 g2 rA1 rA2 lA1 lA2 A1 A2 e1 e2
       (oEmptyrec G2 rA2 lA2 (oCodeSubst G2 G2' g2 rA2 lA2 A2)
          (oExpSubst G2 G2' g2 (iEl oIrr oL0) (oEl G2' oIrr oL0 (oEmpty G2')) e2)).
 Proof.
-  intros HGc HGc' Hgc Hr Hl HAc Hec.
+  intros HGc HGc' Hgc Hr Hl HAc Hec Heq.
   pose proof (ceq_refl_r Hgc) as Hg2c.
   pose proof (ceq_refl_r (cong_Emptyrec HGc' Hr Hl HAc Hec)) as HEr2.
   apply Ceq_env_e in HGc as [HG _].
@@ -1378,23 +1365,13 @@ Proof.
       by (eapply eqt_wf_r; exact Hea).
   assert (wft (iEl rA2 lA2) sInfo) as HiA
       by (unfold iEl; apply wf_Info; [ exact Hwr | apply wf_Iota; exact Hwl ]).
-  eapply ceq_exp_eq_l with
-    (e2 := oExpSubst G2 G2' g2 (iEl rA2 lA2) (oEl G2' rA2 lA2 A2)
-             (oEmptyrec G2' rA2 lA2 A2 e2)).
-  - apply ExpSubst_cong;
-      [ exact HG | exact HG' | exact Hga
-      | apply eq_term_refl; exact HiA
-      | apply El_cong;
-        [ exact HG' | apply eq_term_refl; exact Hwr
-        | apply eq_term_refl; exact Hwl | exact HAa ]
-      | apply Emptyrec_cong;
-        [ exact HG' | apply eq_term_refl; exact Hwr
-        | apply eq_term_refl; exact Hwl | exact HAa | exact Hea ] ].
-  - eapply ceq_exp_eq_r.
-    + eapply ceq_exp_subst_l; [ exact Hg2c | exact HEr2 ].
-    + apply eq_Emptyrec_subst;
-        [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact Hwl
-        | exact HwA2 | exact Hwe2 ].
+  eapply ceq_exp_eq_l; [ exact Heq | ].
+  eapply ceq_refl_r.
+  eapply ceq_exp_eq_r.
+  - eapply ceq_exp_subst_l; [ exact Hg2c | exact HEr2 ].
+  - apply eq_Emptyrec_subst;
+      [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact Hwl
+      | exact HwA2 | exact Hwe2 ].
 Qed.
 
 (* THE CHEAPEST OF THE TEN.  The right-hand side of "Pi_rel eta" IS the
@@ -1408,6 +1385,24 @@ Lemma by_PiRel_eta G1 G2 rF1 rF2 lF1 lF2 lG1 lG2 F1 F2 B1 B2 f1 f2
     Ceq_term (sCode G2 rF2 lF2) F1 F2 ->
     Ceq_term (sCode (oExtC G2 rF2 lF2 F2) oRel lG2) B1 B2 ->
     Ceq_term (sElt G2 oRel lG2 (oPiRel G2 rF2 lF2 lG2 F2 B2)) f1 f2 ->
+    eqt (sElt G2 oRel lG2 (oPiRel G2 rF2 lF2 lG2 F2 B2))
+      (oLamRel G1 rF1 lF1 lG1 F1 B1
+         (oAppRel (oExtC G1 rF1 lF1 F1) rF1 lF1 lG1
+            (oCodeSubst (oExtC G1 rF1 lF1 F1) G1
+               (oWkn G1 (iEl rF1 lF1) (oEl G1 rF1 lF1 F1)) rF1 lF1 F1)
+            (oExpSubst
+               (oExtC (oExtC G1 rF1 lF1 F1) rF1 lF1
+                  (oCodeSubst (oExtC G1 rF1 lF1 F1) G1
+                     (oWkn G1 (iEl rF1 lF1) (oEl G1 rF1 lF1 F1)) rF1 lF1 F1))
+               (oExtC G1 rF1 lF1 F1)
+               (oLift (oExtC G1 rF1 lF1 F1) G1
+                  (oWkn G1 (iEl rF1 lF1) (oEl G1 rF1 lF1 F1)) rF1 lF1 F1)
+               (iCode lG1) (oU (oExtC G1 rF1 lF1 F1) oRel lG1) B1)
+            (oExpSubst (oExtC G1 rF1 lF1 F1) G1
+               (oWkn G1 (iEl rF1 lF1) (oEl G1 rF1 lF1 F1))
+               (iEl oRel lG1) (oEl G1 oRel lG1 (oPiRel G1 rF1 lF1 lG1 F1 B1)) f1)
+            (oHd G1 (iEl rF1 lF1) (oEl G1 rF1 lF1 F1))))
+      f2 ->
     Ceq_term (sElt G2 oRel lG2 (oPiRel G2 rF2 lF2 lG2 F2 B2))
       (oLamRel G1 rF1 lF1 lG1 F1 B1
          (oAppRel (oExtC G1 rF1 lF1 F1) rF1 lF1 lG1
@@ -1427,89 +1422,8 @@ Lemma by_PiRel_eta G1 G2 rF1 rF2 lF1 lF2 lG1 lG2 F1 F2 B1 B2 f1 f2
             (oHd G1 (iEl rF1 lF1) (oEl G1 rF1 lF1 F1))))
       f2.
 Proof.
-  intros HGc Hr Hlf Hlg HFc HBc Hfc.
-  pose proof Hfc as Hfc0.
-  apply Ceq_env_e in HGc as [HG _].
-  apply Ceq_relevance_e in Hr as [Hrq Hrnf]; subst rF1.
-  apply Ceq_lvl_e in Hlf as [Hlfq Hlfnf]; subst lF1.
-  apply Ceq_lvl_e in Hlg as [Hlgq Hlgnf]; subst lG1.
-  apply Ceq_exp_e in HFc as [HFa _].
-  apply Ceq_exp_e in HBc as [HBa _].
-  apply Ceq_exp_e in Hfc as [Hfa _].
-  assert (wft rF2 sRelevance) as Hwr by (apply RelNf_wf; exact Hrnf).
-  assert (wft lF2 sLvl) as HwlF by (apply LvlNf_wf; exact Hlfnf).
-  assert (wft lG2 sLvl) as HwlG by (apply LvlNf_wf; exact Hlgnf).
-  assert (wft G1 sEnv) as HwG1 by (eapply eqt_wf_l; exact HG).
-  assert (wft G2 sEnv) as HwG2 by (eapply eqt_wf_r; exact HG).
-  assert (wft F1 (sCode G2 rF2 lF2)) as HwF1 by (eapply eqt_wf_l; exact HFa).
-  assert (wft F2 (sCode G2 rF2 lF2)) as HwF2 by (eapply eqt_wf_r; exact HFa).
-  assert (wft B1 (sCode (oExtC G2 rF2 lF2 F2) oRel lG2)) as HwB1
-      by (eapply eqt_wf_l; exact HBa).
-  assert (wft f1 (sElt G2 oRel lG2 (oPiRel G2 rF2 lF2 lG2 F2 B2))) as Hwf1
-      by (eapply eqt_wf_l; exact Hfa).
-  assert (wft (iEl rF2 lF2) sInfo) as HiF
-      by (unfold iEl; apply wf_Info; [ exact Hwr | apply wf_Iota; exact HwlF ]).
-  assert (wft (iCode lG2) sInfo) as HcG
-      by (unfold iCode; apply wf_Info; [ apply wf_Rel | apply wf_Next; exact HwlG ]).
-  assert (wft (iCode lF2) sInfo) as HcF
-      by (unfold iCode; apply wf_Info; [ apply wf_Rel | apply wf_Next; exact HwlF ]).
-  (* the "1" arguments, retyped over [G1] *)
-  assert (wft F1 (sCode G1 rF2 lF2)) as HwF1'.
-  { eapply wf_term_conv; [ exact HwF1 | ].
-    apply sExp_cong;
-      [ apply eq_term_sym; exact HG | apply eq_term_refl; exact HcF
-      | apply U_cong;
-        [ apply eq_term_sym; exact HG | apply eq_term_refl; exact Hwr
-        | apply eq_term_refl; exact HwlF ] ]. }
-  assert (eqt (sCode G1 rF2 lF2) F2 F1) as HFa'.
-  { eapply eq_term_conv; [ apply eq_term_sym; exact HFa | ].
-    apply sExp_cong;
-      [ apply eq_term_sym; exact HG | apply eq_term_refl; exact HcF
-      | apply U_cong;
-        [ apply eq_term_sym; exact HG | apply eq_term_refl; exact Hwr
-        | apply eq_term_refl; exact HwlF ] ]. }
-  assert (eqt sEnv (oExtC G2 rF2 lF2 F2) (oExtC G1 rF2 lF2 F1)) as HExtEq.
-  { unfold oExtC; apply Ext_cong;
-      [ apply eq_term_sym; exact HG | apply eq_term_refl; exact HiF
-      | apply El_cong;
-        [ apply eq_term_sym; exact HG | apply eq_term_refl; exact Hwr
-        | apply eq_term_refl; exact HwlF | exact HFa' ] ]. }
-  assert (wft (oExtC G1 rF2 lF2 F1) sEnv) as HwGF1
-      by (apply wf_ExtC; assumption).
-  assert (wft B1 (sCode (oExtC G1 rF2 lF2 F1) oRel lG2)) as HwB1'.
-  { eapply wf_term_conv; [ exact HwB1 | ].
-    apply sExp_cong;
-      [ exact HExtEq | apply eq_term_refl; exact HcG
-      | apply U_cong;
-        [ exact HExtEq | apply eq_term_refl; apply wf_Rel
-        | apply eq_term_refl; exact HwlG ] ]. }
-  assert (eqt (sTy G2 (iEl oRel lG2))
-            (oEl G1 oRel lG2 (oPiRel G1 rF2 lF2 lG2 F1 B1))
-            (oEl G2 oRel lG2 (oPiRel G2 rF2 lF2 lG2 F2 B2))) as HElPi.
-  { apply El_cong;
-      [ exact HG | apply eq_term_refl; apply wf_Rel
-      | apply eq_term_refl; exact HwlG
-      | apply PiRel_cong;
-        [ exact HG | apply eq_term_refl; exact Hwr
-        | apply eq_term_refl; exact HwlF
-        | apply eq_term_refl; exact HwlG
-        | exact HFa | exact HBa ] ]. }
-  assert (wft f1 (sElt G1 oRel lG2 (oPiRel G1 rF2 lF2 lG2 F1 B1))) as Hwf1'.
-  { eapply wf_term_conv; [ exact Hwf1 | ].
-    apply eq_sort_sym; apply sExp_cong;
-      [ exact HG | apply eq_term_refl; unfold iEl; apply wf_Info;
-        [ apply wf_Rel | apply wf_Iota; exact HwlG ]
-      | exact HElPi ]. }
-  eapply ceq_exp_eq_l with (e2 := f1); [ | exact Hfc0 ].
-  eapply eq_term_conv.
-  - apply eq_Pi_rel_eta;
-      [ exact HwG1 | exact Hwr | exact HwlF | exact HwlG | exact HwF1'
-      | exact HwB1' | exact Hwf1' ].
-  - apply sExp_cong;
-      [ exact HG
-      | apply eq_term_refl; unfold iEl; apply wf_Info;
-        [ apply wf_Rel | apply wf_Iota; exact HwlG ]
-      | exact HElPi ].
+  intros HGc Hr Hlf Hlg HFc HBc Hfc Heq.
+  exact (ceq_exp_eq_l Heq (ceq_refl_r Hfc)).
 Qed.
 
 (* ================================================================== *)
@@ -2036,6 +1950,22 @@ Lemma by_AppRel_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 lG1 lG2
     Ceq_term (sCode (oExtC G2' rF2 lF2 F2) oRel lG2) B1 B2 ->
     Ceq_term (sElt G2' oRel lG2 (oPiRel G2' rF2 lF2 lG2 F2 B2)) f1 f2 ->
     Ceq_term (sElt G2' rF2 lF2 F2) a1 a2 ->
+    eqt
+      (sExp G2 (iEl oRel lG2)
+         (oTySubst G2 G2' g2 (iEl oRel lG2)
+            (oTySubst G2' (oExtC G2' rF2 lF2 F2) (oInst G2' rF2 lF2 F2 a2)
+               (iEl oRel lG2) (oEl (oExtC G2' rF2 lF2 F2) oRel lG2 B2))))
+      (oExpSubst G1 G1' g1 (iEl oRel lG1)
+         (oTySubst G1' (oExtC G1' rF1 lF1 F1) (oInst G1' rF1 lF1 F1 a1)
+            (iEl oRel lG1) (oEl (oExtC G1' rF1 lF1 F1) oRel lG1 B1))
+         (oAppRel G1' rF1 lF1 lG1 F1 B1 f1 a1))
+      (oAppRel G2 rF2 lF2 lG2 (oCodeSubst G2 G2' g2 rF2 lF2 F2)
+         (oExpSubst (oExtC G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2))
+            (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
+            (iCode lG2) (oU (oExtC G2' rF2 lF2 F2) oRel lG2) B2)
+         (oExpSubst G2 G2' g2 (iEl oRel lG2)
+            (oEl G2' oRel lG2 (oPiRel G2' rF2 lF2 lG2 F2 B2)) f2)
+         (oExpSubst G2 G2' g2 (iEl rF2 lF2) (oEl G2' rF2 lF2 F2) a2)) ->
     Ceq_term
       (sExp G2 (iEl oRel lG2)
          (oTySubst G2 G2' g2 (iEl oRel lG2)
@@ -2053,7 +1983,7 @@ Lemma by_AppRel_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 lG1 lG2
             (oEl G2' oRel lG2 (oPiRel G2' rF2 lF2 lG2 F2 B2)) f2)
          (oExpSubst G2 G2' g2 (iEl rF2 lF2) (oEl G2' rF2 lF2 F2) a2)).
 Proof.
-  intros HGc HGc' Hgc Hr Hlf Hlg HFc HBc Hfc Hac.
+  intros HGc HGc' Hgc Hr Hlf Hlg HFc HBc Hfc Hac Heq.
   pose proof (ceq_refl_r Hgc) as Hg2c.
   pose proof (ceq_refl_r (cong_AppRel HGc' Hr Hlf Hlg HFc HBc Hfc Hac)) as HAp2.
   apply Ceq_env_e in HGc as [HG _].
@@ -2088,55 +2018,13 @@ Proof.
       by (apply wf_ExtC; assumption).
   assert (wft (oEl G2' rF2 lF2 F2) (sTy G2' (iEl rF2 lF2))) as HwElF
       by (apply wf_El; assumption).
-  eapply ceq_exp_eq_l with
-    (e2 := oExpSubst G2 G2' g2 (iEl oRel lG2)
-             (oTySubst G2' (oExtC G2' rF2 lF2 F2) (oInst G2' rF2 lF2 F2 a2)
-                (iEl oRel lG2) (oEl (oExtC G2' rF2 lF2 F2) oRel lG2 B2))
-             (oAppRel G2' rF2 lF2 lG2 F2 B2 f2 a2)).
-  - apply ExpSubst_cong;
-      [ exact HG | exact HG' | exact Hga
-      | apply eq_term_refl; exact HiG
-      | (* the two conclusion types agree *)
-        apply TySubst_cong;
-        [ exact HG'
-        | unfold oExtC; apply Ext_cong;
-          [ exact HG' | apply eq_term_refl; exact HiF
-          | apply El_cong;
-            [ exact HG' | apply eq_term_refl; exact Hwr
-            | apply eq_term_refl; exact HwlF | exact HFa ] ]
-        | unfold oInst, oExtC; apply Snoc_cong;
-          [ exact HG' | exact HG' | apply eq_term_refl; exact HiF
-          | apply El_cong;
-            [ exact HG' | apply eq_term_refl; exact Hwr
-            | apply eq_term_refl; exact HwlF | exact HFa ]
-          | apply Id_cong; exact HG'
-          | eapply eq_term_conv;
-            [ exact Haa
-            | apply eq_sort_exp_ty;
-              [ exact HwG2' | exact HiF
-              | apply eq_term_sym; apply eq_ty_subst_id;
-                [ exact HwG2' | exact HiF | exact HwElF ] ] ] ]
-        | apply eq_term_refl; exact HiG
-        | apply El_cong;
-          [ unfold oExtC; apply Ext_cong;
-            [ exact HG' | apply eq_term_refl; exact HiF
-            | apply El_cong;
-              [ exact HG' | apply eq_term_refl; exact Hwr
-              | apply eq_term_refl; exact HwlF | exact HFa ] ]
-          | apply eq_term_refl; apply wf_Rel
-          | apply eq_term_refl; exact HwlG
-          | exact HBa ] ]
-      | apply AppRel_cong;
-        [ exact HG'
-        | apply eq_term_refl; exact Hwr
-        | apply eq_term_refl; exact HwlF
-        | apply eq_term_refl; exact HwlG
-        | exact HFa | exact HBa | exact Hfa | exact Haa ] ].
-  - eapply ceq_exp_eq_r.
-    + eapply ceq_exp_subst_l; [ exact Hg2c | exact HAp2 ].
-    + apply eq_app_rel_subst;
-        [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
-        | exact HwlG | exact HwF2 | exact HwB2 | exact Hwf2 | exact Hwa2 ].
+  eapply ceq_exp_eq_l; [ exact Heq | ].
+  eapply ceq_refl_r.
+  eapply ceq_exp_eq_r.
+  - eapply ceq_exp_subst_l; [ exact Hg2c | exact HAp2 ].
+  - apply eq_app_rel_subst;
+      [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
+      | exact HwlG | exact HwF2 | exact HwB2 | exact Hwf2 | exact Hwa2 ].
 Qed.
 
 (* ================================================================== *)
@@ -3200,6 +3088,20 @@ Lemma by_LamRel_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 lG1 lG2
     Ceq_term (sCode G2' rF2 lF2) F1 F2 ->
     Ceq_term (sCode (oExtC G2' rF2 lF2 F2) oRel lG2) B1 B2 ->
     Ceq_term (sElt (oExtC G2' rF2 lF2 F2) oRel lG2 B2) t1 t2 ->
+    eqt
+      (sExp G2 (iEl oRel lG2)
+         (oTySubst G2 G2' g2 (iEl oRel lG2)
+            (oEl G2' oRel lG2 (oPiRel G2' rF2 lF2 lG2 F2 B2))))
+      (oExpSubst G1 G1' g1 (iEl oRel lG1)
+         (oEl G1' oRel lG1 (oPiRel G1' rF1 lF1 lG1 F1 B1))
+         (oLamRel G1' rF1 lF1 lG1 F1 B1 t1))
+      (oLamRel G2 rF2 lF2 lG2 (oCodeSubst G2 G2' g2 rF2 lF2 F2)
+         (oExpSubst (oExtC G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2))
+            (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
+            (iCode lG2) (oU (oExtC G2' rF2 lF2 F2) oRel lG2) B2)
+         (oExpSubst (oExtC G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2))
+            (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
+            (iEl oRel lG2) (oEl (oExtC G2' rF2 lF2 F2) oRel lG2 B2) t2)) ->
     Ceq_term
       (sExp G2 (iEl oRel lG2)
          (oTySubst G2 G2' g2 (iEl oRel lG2)
@@ -3215,7 +3117,7 @@ Lemma by_LamRel_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 lG1 lG2
             (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
             (iEl oRel lG2) (oEl (oExtC G2' rF2 lF2 F2) oRel lG2 B2) t2)).
 Proof.
-  intros HGc HGc' Hgc Hr Hlf Hlg HFc HBc Htc.
+  intros HGc HGc' Hgc Hr Hlf Hlg HFc HBc Htc Heq.
   pose proof (ceq_refl_r Hgc) as Hg2c.
   pose proof (ceq_refl_r (cong_LamRel HGc' Hr Hlf Hlg HFc HBc Htc)) as HLm2.
   apply Ceq_env_e in HGc as [HG _].
@@ -3240,33 +3142,13 @@ Proof.
       by (eapply eqt_wf_r; exact Hta).
   assert (wft (iEl oRel lG2) sInfo) as HiG
       by (unfold iEl; apply wf_Info; [ apply wf_Rel | apply wf_Iota; exact HwlG ]).
-  eapply ceq_exp_eq_l with
-    (e2 := oExpSubst G2 G2' g2 (iEl oRel lG2)
-             (oEl G2' oRel lG2 (oPiRel G2' rF2 lF2 lG2 F2 B2))
-             (oLamRel G2' rF2 lF2 lG2 F2 B2 t2)).
-  - apply ExpSubst_cong;
-      [ exact HG | exact HG' | exact Hga
-      | apply eq_term_refl; exact HiG
-      | apply El_cong;
-        [ exact HG' | apply eq_term_refl; apply wf_Rel
-        | apply eq_term_refl; exact HwlG
-        | apply PiRel_cong;
-          [ exact HG'
-          | apply eq_term_refl; exact Hwr
-          | apply eq_term_refl; exact HwlF
-          | apply eq_term_refl; exact HwlG
-          | exact HFa | exact HBa ] ]
-      | apply LamRel_cong;
-        [ exact HG'
-        | apply eq_term_refl; exact Hwr
-        | apply eq_term_refl; exact HwlF
-        | apply eq_term_refl; exact HwlG
-        | exact HFa | exact HBa | exact Hta ] ].
-  - eapply ceq_exp_eq_r.
-    + eapply ceq_exp_subst_l; [ exact Hg2c | exact HLm2 ].
-    + apply eq_lam_rel_subst;
-        [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
-        | exact HwlG | exact HwF2 | exact HwB2 | exact Hwt2 ].
+  eapply ceq_exp_eq_l; [ exact Heq | ].
+  eapply ceq_refl_r.
+  eapply ceq_exp_eq_r.
+  - eapply ceq_exp_subst_l; [ exact Hg2c | exact HLm2 ].
+  - apply eq_lam_rel_subst;
+      [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
+      | exact HwlG | exact HwF2 | exact HwB2 | exact Hwt2 ].
 Qed.
 
 (* ---- "Pi_rel beta" ------------------------------------------------ *)
@@ -5120,6 +5002,20 @@ Lemma by_LamIrr_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 F1 F2 B1 B2 t1 t2
     Ceq_term (sCode G2' rF2 lF2) F1 F2 ->
     Ceq_term (sCode (oExtC G2' rF2 lF2 F2) oIrr oL0) B1 B2 ->
     Ceq_term (sElt (oExtC G2' rF2 lF2 F2) oIrr oL0 B2) t1 t2 ->
+    eqt
+      (sExp G2 (iEl oIrr oL0)
+         (oTySubst G2 G2' g2 (iEl oIrr oL0)
+            (oEl G2' oIrr oL0 (oPiIrr G2' rF2 lF2 F2 B2))))
+      (oExpSubst G1 G1' g1 (iEl oIrr oL0)
+         (oEl G1' oIrr oL0 (oPiIrr G1' rF1 lF1 F1 B1))
+         (oLamIrr G1' rF1 lF1 F1 B1 t1))
+      (oLamIrr G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2)
+         (oExpSubst (oExtC G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2))
+            (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
+            (iCode oL0) (oU (oExtC G2' rF2 lF2 F2) oIrr oL0) B2)
+         (oExpSubst (oExtC G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2))
+            (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
+            (iEl oIrr oL0) (oEl (oExtC G2' rF2 lF2 F2) oIrr oL0 B2) t2)) ->
     Ceq_term
       (sExp G2 (iEl oIrr oL0)
          (oTySubst G2 G2' g2 (iEl oIrr oL0)
@@ -5135,7 +5031,7 @@ Lemma by_LamIrr_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 F1 F2 B1 B2 t1 t2
             (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
             (iEl oIrr oL0) (oEl (oExtC G2' rF2 lF2 F2) oIrr oL0 B2) t2)).
 Proof.
-  intros HGc HGc' Hgc Hr Hlf HFc HBc Htc.
+  intros HGc HGc' Hgc Hr Hlf HFc HBc Htc Heq.
   pose proof (ceq_refl_r Hgc) as Hg2c.
   pose proof (ceq_refl_r (cong_LamIrr HGc' Hr Hlf HFc HBc Htc)) as HLm2.
   apply Ceq_env_e in HGc as [HG _].
@@ -5161,35 +5057,13 @@ Proof.
           [ apply wf_Irr | apply wf_Iota; apply wf_L0 ]).
   assert (wft (oExtC G2' rF2 lF2 F2) sEnv) as HwGF
       by (apply wf_ExtC; assumption).
-  eapply ceq_exp_eq_l with
-    (e2 := oExpSubst G2 G2' g2 (iEl oIrr oL0)
-             (oEl G2' oIrr oL0 (oPiIrr G2' rF2 lF2 F2 B2))
-             (oLamIrr G2' rF2 lF2 F2 B2 t2)).
-  - apply ExpSubst_cong;
-      [ exact HG | exact HG' | exact Hga
-      | apply eq_term_refl; exact HiG
-      | apply El_cong;
-        [ exact HG' | apply eq_term_refl; apply wf_Irr
-        | apply eq_term_refl; apply wf_L0
-        | eapply eq_term_conv;
-          [ apply PiIrr_cong;
-            [ exact HG'
-            | apply eq_term_refl; exact Hwr
-            | apply eq_term_refl; exact HwlF
-            | exact HFa
-            | eapply eq_term_conv;
-              [ exact HBa | apply eq_sort_U_irr0; exact HwGF ] ]
-          | apply eq_sort_sym; apply eq_sort_U_irr0; exact HwG2' ] ]
-      | apply LamIrr_cong;
-        [ exact HG'
-        | apply eq_term_refl; exact Hwr
-        | apply eq_term_refl; exact HwlF
-        | exact HFa | exact HBa | exact Hta ] ].
-  - eapply ceq_exp_eq_r.
-    + eapply ceq_exp_subst_l; [ exact Hg2c | exact HLm2 ].
-    + apply eq_lam_irr_subst;
-        [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
-        | exact HwF2 | exact HwB2 | exact Hwt2 ].
+  eapply ceq_exp_eq_l; [ exact Heq | ].
+  eapply ceq_refl_r.
+  eapply ceq_exp_eq_r.
+  - eapply ceq_exp_subst_l; [ exact Hg2c | exact HLm2 ].
+  - apply eq_lam_irr_subst;
+      [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
+      | exact HwF2 | exact HwB2 | exact Hwt2 ].
 Qed.
 
 Lemma by_AppIrr_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2
@@ -5201,6 +5075,22 @@ Lemma by_AppIrr_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2
     Ceq_term (sCode (oExtC G2' rF2 lF2 F2) oIrr oL0) B1 B2 ->
     Ceq_term (sElt G2' oIrr oL0 (oPiIrr G2' rF2 lF2 F2 B2)) f1 f2 ->
     Ceq_term (sElt G2' rF2 lF2 F2) a1 a2 ->
+    eqt
+      (sExp G2 (iEl oIrr oL0)
+         (oTySubst G2 G2' g2 (iEl oIrr oL0)
+            (oTySubst G2' (oExtC G2' rF2 lF2 F2) (oInst G2' rF2 lF2 F2 a2)
+               (iEl oIrr oL0) (oEl (oExtC G2' rF2 lF2 F2) oIrr oL0 B2))))
+      (oExpSubst G1 G1' g1 (iEl oIrr oL0)
+         (oTySubst G1' (oExtC G1' rF1 lF1 F1) (oInst G1' rF1 lF1 F1 a1)
+            (iEl oIrr oL0) (oEl (oExtC G1' rF1 lF1 F1) oIrr oL0 B1))
+         (oAppIrr G1' rF1 lF1 F1 B1 f1 a1))
+      (oAppIrr G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2)
+         (oExpSubst (oExtC G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2))
+            (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
+            (iCode oL0) (oU (oExtC G2' rF2 lF2 F2) oIrr oL0) B2)
+         (oExpSubst G2 G2' g2 (iEl oIrr oL0)
+            (oEl G2' oIrr oL0 (oPiIrr G2' rF2 lF2 F2 B2)) f2)
+         (oExpSubst G2 G2' g2 (iEl rF2 lF2) (oEl G2' rF2 lF2 F2) a2)) ->
     Ceq_term
       (sExp G2 (iEl oIrr oL0)
          (oTySubst G2 G2' g2 (iEl oIrr oL0)
@@ -5218,7 +5108,7 @@ Lemma by_AppIrr_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2
             (oEl G2' oIrr oL0 (oPiIrr G2' rF2 lF2 F2 B2)) f2)
          (oExpSubst G2 G2' g2 (iEl rF2 lF2) (oEl G2' rF2 lF2 F2) a2)).
 Proof.
-  intros HGc HGc' Hgc Hr Hlf HFc HBc Hfc Hac.
+  intros HGc HGc' Hgc Hr Hlf HFc HBc Hfc Hac Heq.
   pose proof (ceq_refl_r Hgc) as Hg2c.
   pose proof (ceq_refl_r (cong_AppIrr HGc' Hr Hlf HFc HBc Hfc Hac)) as HAp2.
   apply Ceq_env_e in HGc as [HG _].
@@ -5250,53 +5140,13 @@ Proof.
       by (apply wf_ExtC; assumption).
   assert (wft (oEl G2' rF2 lF2 F2) (sTy G2' (iEl rF2 lF2))) as HwElF
       by (apply wf_El; assumption).
-  eapply ceq_exp_eq_l with
-    (e2 := oExpSubst G2 G2' g2 (iEl oIrr oL0)
-             (oTySubst G2' (oExtC G2' rF2 lF2 F2) (oInst G2' rF2 lF2 F2 a2)
-                (iEl oIrr oL0) (oEl (oExtC G2' rF2 lF2 F2) oIrr oL0 B2))
-             (oAppIrr G2' rF2 lF2 F2 B2 f2 a2)).
-  - apply ExpSubst_cong;
-      [ exact HG | exact HG' | exact Hga
-      | apply eq_term_refl; exact HiG
-      | apply TySubst_cong;
-        [ exact HG'
-        | unfold oExtC; apply Ext_cong;
-          [ exact HG' | apply eq_term_refl; exact HiF
-          | apply El_cong;
-            [ exact HG' | apply eq_term_refl; exact Hwr
-            | apply eq_term_refl; exact HwlF | exact HFa ] ]
-        | unfold oInst, oExtC; apply Snoc_cong;
-          [ exact HG' | exact HG' | apply eq_term_refl; exact HiF
-          | apply El_cong;
-            [ exact HG' | apply eq_term_refl; exact Hwr
-            | apply eq_term_refl; exact HwlF | exact HFa ]
-          | apply Id_cong; exact HG'
-          | eapply eq_term_conv;
-            [ exact Haa
-            | apply eq_sort_exp_ty;
-              [ exact HwG2' | exact HiF
-              | apply eq_term_sym; apply eq_ty_subst_id;
-                [ exact HwG2' | exact HiF | exact HwElF ] ] ] ]
-        | apply eq_term_refl; exact HiG
-        | apply El_cong;
-          [ unfold oExtC; apply Ext_cong;
-            [ exact HG' | apply eq_term_refl; exact HiF
-            | apply El_cong;
-              [ exact HG' | apply eq_term_refl; exact Hwr
-              | apply eq_term_refl; exact HwlF | exact HFa ] ]
-          | apply eq_term_refl; apply wf_Irr
-          | apply eq_term_refl; apply wf_L0
-          | exact HBa ] ]
-      | apply AppIrr_cong;
-        [ exact HG'
-        | apply eq_term_refl; exact Hwr
-        | apply eq_term_refl; exact HwlF
-        | exact HFa | exact HBa | exact Hfa | exact Haa ] ].
-  - eapply ceq_exp_eq_r.
-    + eapply ceq_exp_subst_l; [ exact Hg2c | exact HAp2 ].
-    + apply eq_app_irr_subst;
-        [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
-        | exact HwF2 | exact HwB2 | exact Hwf2 | exact Hwa2 ].
+  eapply ceq_exp_eq_l; [ exact Heq | ].
+  eapply ceq_refl_r.
+  eapply ceq_exp_eq_r.
+  - eapply ceq_exp_subst_l; [ exact Hg2c | exact HAp2 ].
+  - apply eq_app_irr_subst;
+      [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
+      | exact HwF2 | exact HwB2 | exact Hwf2 | exact Hwa2 ].
 Qed.
 
 (* "Pi_irr beta" is [cong_AppIrr] of [cong_LamIrr], exactly as "Pi_rel
@@ -5401,6 +5251,7 @@ Lemma pi_by_obligation
              e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
 Proof.
   intros c' name e1 e2 t s1 s2 Hin Hname Hargs.
+  pose proof (dtt_eqt_by Hin Hargs) as Heq.
   destruct Hname
     as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]]]];
     rule_pin.
