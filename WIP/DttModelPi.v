@@ -2196,69 +2196,6 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 9.  The dispatchers                                                 *)
-(* ================================================================== *)
-
-(* Both are stated in exactly the shape of the corresponding
-   [CutTModel_ok] field, with the rule name restricted to this fragment.
-   The name is pinned FIRST and the [In] premise computed afterwards, so
-   each case costs one rule rather than a 32-way split -- WIP/
-   DttModelIdx.v's [idx_pin] idiom, verbatim.
-
-   [eapply]/[eassumption] rather than [apply]/[assumption]: several of
-   these rules do not mention every argument in their conclusion sort
-   ([Pi_rel]'s is just [U G rel lG]), and [assumption] is conversion-only
-   -- it will not instantiate the resulting evars. *)
-
-Ltac pi_pin :=
-  match goal with
-  | [ Hin : In _ ott_dtt |- _ ] =>
-      vm_compute in Hin;
-      repeat (destruct Hin as [Hin|Hin]); try discriminate;
-      inversion Hin; subst; clear Hin
-  end;
-  repeat match goal with
-         | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
-         | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
-         end;
-  cbn [ceq_term ceq_sort DttCM] in *.
-
-Lemma pi_cong_obligation
-  : forall c' name args t s1 s2,
-    In (name, term_rule c' args t) ott_dtt ->
-    (name = "Emptyrec" \/ name = "Pi_rel" \/ name = "Pi_irr"
-     \/ name = "app_rel") ->
-    ceq_args (CM := DttCM) c' s1 s2 ->
-    Ceq_term t[/with_names_from c' s2/] (con name s1) (con name s2).
-Proof.
-  intros c' name args t s1 s2 Hin Hname Hargs.
-  destruct Hname as [-> | [-> | [-> | ->]]]; pi_pin.
-  - (* Emptyrec *) eapply cong_Emptyrec; eassumption.
-  - (* Pi_rel *) eapply cong_PiRel; eassumption.
-  - (* Pi_irr *) eapply cong_PiIrr; eassumption.
-  - (* app_rel *) eapply cong_AppRel; eassumption.
-Qed.
-
-Lemma pi_by_obligation
-  : forall c' name e1 e2 t s1 s2,
-    In (name, term_eq_rule c' e1 e2 t) ott_dtt ->
-    (name = "Pi_rel subst" \/ name = "Pi_irr subst"
-     \/ name = "app_rel subst" \/ name = "Emptyrec subst"
-     \/ name = "Pi_rel eta") ->
-    ceq_args (CM := DttCM) c' s1 s2 ->
-    Ceq_term t[/with_names_from c' s2/]
-             e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
-Proof.
-  intros c' name e1 e2 t s1 s2 Hin Hname Hargs.
-  destruct Hname as [-> | [-> | [-> | [-> | ->]]]]; pi_pin.
-  - (* Pi_rel subst *) eapply by_PiRel_subst; eassumption.
-  - (* Pi_irr subst *) eapply by_PiIrr_subst; eassumption.
-  - (* app_rel subst *) eapply by_AppRel_subst; eassumption.
-  - (* Emptyrec subst *) eapply by_Emptyrec_subst; eassumption.
-  - (* Pi_rel eta *) eapply by_PiRel_eta; eassumption.
-Qed.
-
-(* ================================================================== *)
 (* 7.  [lam_rel]                                                       *)
 (* ================================================================== *)
 
@@ -3302,3 +3239,196 @@ Proof.
     | apply eq_term_refl; exact HwElB
     | apply eq_term_refl; exact Hwt1 ].
 Qed.
+(* ================================================================== *)
+(* 8.  The remaining relevant equations                                *)
+(* ================================================================== *)
+
+(* ---- "lam_rel subst" ---------------------------------------------- *)
+
+(* Section 5's recipe once more; like [app_rel], [lam_rel]'s conclusion
+   sort is already the substituted type, so nothing needs converting. *)
+Lemma by_LamRel_subst G1 G2 G1' G2' g1 g2 rF1 rF2 lF1 lF2 lG1 lG2
+                      F1 F2 B1 B2 t1 t2
+  : Ceq_term sEnv G1 G2 -> Ceq_term sEnv G1' G2' ->
+    Ceq_term (sSub G2 G2') g1 g2 ->
+    Ceq_term sRelevance rF1 rF2 -> Ceq_term sLvl lF1 lF2 ->
+    Ceq_term sLvl lG1 lG2 ->
+    Ceq_term (sCode G2' rF2 lF2) F1 F2 ->
+    Ceq_term (sCode (oExtC G2' rF2 lF2 F2) oRel lG2) B1 B2 ->
+    Ceq_term (sElt (oExtC G2' rF2 lF2 F2) oRel lG2 B2) t1 t2 ->
+    Ceq_term
+      (sExp G2 (iEl oRel lG2)
+         (oTySubst G2 G2' g2 (iEl oRel lG2)
+            (oEl G2' oRel lG2 (oPiRel G2' rF2 lF2 lG2 F2 B2))))
+      (oExpSubst G1 G1' g1 (iEl oRel lG1)
+         (oEl G1' oRel lG1 (oPiRel G1' rF1 lF1 lG1 F1 B1))
+         (oLamRel G1' rF1 lF1 lG1 F1 B1 t1))
+      (oLamRel G2 rF2 lF2 lG2 (oCodeSubst G2 G2' g2 rF2 lF2 F2)
+         (oExpSubst (oExtC G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2))
+            (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
+            (iCode lG2) (oU (oExtC G2' rF2 lF2 F2) oRel lG2) B2)
+         (oExpSubst (oExtC G2 rF2 lF2 (oCodeSubst G2 G2' g2 rF2 lF2 F2))
+            (oExtC G2' rF2 lF2 F2) (oLift G2 G2' g2 rF2 lF2 F2)
+            (iEl oRel lG2) (oEl (oExtC G2' rF2 lF2 F2) oRel lG2 B2) t2)).
+Proof.
+  intros HGc HGc' Hgc Hr Hlf Hlg HFc HBc Htc.
+  pose proof (ceq_refl_r Hgc) as Hg2c.
+  pose proof (ceq_refl_r (cong_LamRel HGc' Hr Hlf Hlg HFc HBc Htc)) as HLm2.
+  apply Ceq_env_e in HGc as [HG _].
+  apply Ceq_env_e in HGc' as [HG' _].
+  apply Ceq_sub_e in Hgc as [Hga _].
+  apply Ceq_relevance_e in Hr as [Hrq Hrnf]; subst rF1.
+  apply Ceq_lvl_e in Hlf as [Hlfq Hlfnf]; subst lF1.
+  apply Ceq_lvl_e in Hlg as [Hlgq Hlgnf]; subst lG1.
+  apply Ceq_exp_e in HFc as [HFa _].
+  apply Ceq_exp_e in HBc as [HBa _].
+  apply Ceq_exp_e in Htc as [Hta _].
+  assert (wft rF2 sRelevance) as Hwr by (apply RelNf_wf; exact Hrnf).
+  assert (wft lF2 sLvl) as HwlF by (apply LvlNf_wf; exact Hlfnf).
+  assert (wft lG2 sLvl) as HwlG by (apply LvlNf_wf; exact Hlgnf).
+  assert (wft G2 sEnv) as HwG2 by (eapply eqt_wf_r; exact HG).
+  assert (wft G2' sEnv) as HwG2' by (eapply eqt_wf_r; exact HG').
+  assert (wft g2 (sSub G2 G2')) as Hwg2 by (eapply eqt_wf_r; exact Hga).
+  assert (wft F2 (sCode G2' rF2 lF2)) as HwF2 by (eapply eqt_wf_r; exact HFa).
+  assert (wft B2 (sCode (oExtC G2' rF2 lF2 F2) oRel lG2)) as HwB2
+      by (eapply eqt_wf_r; exact HBa).
+  assert (wft t2 (sElt (oExtC G2' rF2 lF2 F2) oRel lG2 B2)) as Hwt2
+      by (eapply eqt_wf_r; exact Hta).
+  assert (wft (iEl oRel lG2) sInfo) as HiG
+      by (unfold iEl; apply wf_Info; [ apply wf_Rel | apply wf_Iota; exact HwlG ]).
+  eapply ceq_exp_eq_l with
+    (e2 := oExpSubst G2 G2' g2 (iEl oRel lG2)
+             (oEl G2' oRel lG2 (oPiRel G2' rF2 lF2 lG2 F2 B2))
+             (oLamRel G2' rF2 lF2 lG2 F2 B2 t2)).
+  - apply ExpSubst_cong;
+      [ exact HG | exact HG' | exact Hga
+      | apply eq_term_refl; exact HiG
+      | apply El_cong;
+        [ exact HG' | apply eq_term_refl; apply wf_Rel
+        | apply eq_term_refl; exact HwlG
+        | apply PiRel_cong;
+          [ exact HG'
+          | apply eq_term_refl; exact Hwr
+          | apply eq_term_refl; exact HwlF
+          | apply eq_term_refl; exact HwlG
+          | exact HFa | exact HBa ] ]
+      | apply LamRel_cong;
+        [ exact HG'
+        | apply eq_term_refl; exact Hwr
+        | apply eq_term_refl; exact HwlF
+        | apply eq_term_refl; exact HwlG
+        | exact HFa | exact HBa | exact Hta ] ].
+  - eapply ceq_exp_eq_r.
+    + eapply ceq_exp_subst_l; [ exact Hg2c | exact HLm2 ].
+    + apply eq_lam_rel_subst;
+        [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
+        | exact HwlG | exact HwF2 | exact HwB2 | exact Hwt2 ].
+Qed.
+
+(* ---- "Pi_rel beta" ------------------------------------------------ *)
+
+(* Observation (2) of the header: the left-hand side IS an [app_rel] of a
+   [lam_rel], so [cong_AppRel] applied to [cong_LamRel] already has the
+   right left term and the rule only has to move the right one. *)
+Lemma by_PiRel_beta G1 G2 rF1 rF2 lF1 lF2 lG1 lG2 F1 F2 B1 B2 t1 t2 a1 a2
+  : Ceq_term sEnv G1 G2 -> Ceq_term sRelevance rF1 rF2 ->
+    Ceq_term sLvl lF1 lF2 -> Ceq_term sLvl lG1 lG2 ->
+    Ceq_term (sCode G2 rF2 lF2) F1 F2 ->
+    Ceq_term (sCode (oExtC G2 rF2 lF2 F2) oRel lG2) B1 B2 ->
+    Ceq_term (sElt (oExtC G2 rF2 lF2 F2) oRel lG2 B2) t1 t2 ->
+    Ceq_term (sElt G2 rF2 lF2 F2) a1 a2 ->
+    Ceq_term (sAppRelConcl G2 rF2 lF2 lG2 F2 B2 a2)
+      (oAppRel G1 rF1 lF1 lG1 F1 B1 (oLamRel G1 rF1 lF1 lG1 F1 B1 t1) a1)
+      (oExpSubst G2 (oExtC G2 rF2 lF2 F2) (oInst G2 rF2 lF2 F2 a2)
+         (iEl oRel lG2) (oEl (oExtC G2 rF2 lF2 F2) oRel lG2 B2) t2).
+Proof.
+  intros HGc Hr Hlf Hlg HFc HBc Htc Hac.
+  eapply ceq_exp_eq_r;
+    [ apply cong_AppRel;
+      [ exact HGc | exact Hr | exact Hlf | exact Hlg | exact HFc | exact HBc
+      | apply cong_LamRel;
+        [ exact HGc | exact Hr | exact Hlf | exact Hlg | exact HFc | exact HBc
+        | exact Htc ]
+      | exact Hac ] | ].
+  apply Ceq_relevance_e in Hr as [Hrq Hrnf]; subst rF1.
+  apply Ceq_lvl_e in Hlf as [Hlfq Hlfnf]; subst lF1.
+  apply Ceq_lvl_e in Hlg as [Hlgq Hlgnf]; subst lG1.
+  apply Ceq_env_e in HGc as [HG _].
+  apply Ceq_exp_e in HFc as [HFa _].
+  apply Ceq_exp_e in HBc as [HBa _].
+  apply Ceq_exp_e in Htc as [Hta _].
+  apply Ceq_exp_e in Hac as [Haa _].
+  apply eq_Pi_rel_beta;
+    [ eapply eqt_wf_r; exact HG
+    | apply RelNf_wf; exact Hrnf
+    | apply LvlNf_wf; exact Hlfnf
+    | apply LvlNf_wf; exact Hlgnf
+    | eapply eqt_wf_r; exact HFa
+    | eapply eqt_wf_r; exact HBa
+    | eapply eqt_wf_r; exact Hta
+    | eapply eqt_wf_r; exact Haa ].
+Qed.
+
+(* ================================================================== *)
+(* 9.  The dispatchers                                                 *)
+(* ================================================================== *)
+
+(* Both are stated in exactly the shape of the corresponding
+   [CutTModel_ok] field, with the rule name restricted to this fragment.
+   The name is pinned FIRST and the [In] premise computed afterwards, so
+   each case costs one rule rather than a 32-way split -- WIP/
+   DttModelIdx.v's [idx_pin] idiom, verbatim.
+
+   [eapply]/[eassumption] rather than [apply]/[assumption]: several of
+   these rules do not mention every argument in their conclusion sort
+   ([Pi_rel]'s is just [U G rel lG]), and [assumption] is conversion-only
+   -- it will not instantiate the resulting evars. *)
+
+Ltac pi_pin :=
+  match goal with
+  | [ Hin : In _ ott_dtt |- _ ] =>
+      vm_compute in Hin;
+      repeat (destruct Hin as [Hin|Hin]); try discriminate;
+      inversion Hin; subst; clear Hin
+  end;
+  repeat match goal with
+         | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
+         | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
+         end;
+  cbn [ceq_term ceq_sort DttCM] in *.
+
+Lemma pi_cong_obligation
+  : forall c' name args t s1 s2,
+    In (name, term_rule c' args t) ott_dtt ->
+    (name = "Emptyrec" \/ name = "Pi_rel" \/ name = "Pi_irr"
+     \/ name = "app_rel") ->
+    ceq_args (CM := DttCM) c' s1 s2 ->
+    Ceq_term t[/with_names_from c' s2/] (con name s1) (con name s2).
+Proof.
+  intros c' name args t s1 s2 Hin Hname Hargs.
+  destruct Hname as [-> | [-> | [-> | ->]]]; pi_pin.
+  - (* Emptyrec *) eapply cong_Emptyrec; eassumption.
+  - (* Pi_rel *) eapply cong_PiRel; eassumption.
+  - (* Pi_irr *) eapply cong_PiIrr; eassumption.
+  - (* app_rel *) eapply cong_AppRel; eassumption.
+Qed.
+
+Lemma pi_by_obligation
+  : forall c' name e1 e2 t s1 s2,
+    In (name, term_eq_rule c' e1 e2 t) ott_dtt ->
+    (name = "Pi_rel subst" \/ name = "Pi_irr subst"
+     \/ name = "app_rel subst" \/ name = "Emptyrec subst"
+     \/ name = "Pi_rel eta") ->
+    ceq_args (CM := DttCM) c' s1 s2 ->
+    Ceq_term t[/with_names_from c' s2/]
+             e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
+Proof.
+  intros c' name e1 e2 t s1 s2 Hin Hname Hargs.
+  destruct Hname as [-> | [-> | [-> | [-> | ->]]]]; pi_pin.
+  - (* Pi_rel subst *) eapply by_PiRel_subst; eassumption.
+  - (* Pi_irr subst *) eapply by_PiIrr_subst; eassumption.
+  - (* app_rel subst *) eapply by_AppRel_subst; eassumption.
+  - (* Emptyrec subst *) eapply by_Emptyrec_subst; eassumption.
+  - (* Pi_rel eta *) eapply by_PiRel_eta; eassumption.
+Qed.
+
