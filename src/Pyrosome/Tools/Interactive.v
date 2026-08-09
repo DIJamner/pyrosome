@@ -52,20 +52,6 @@ Ltac push_rule_no_compute named_rule :=
 Ltac push_rule named_rule :=
   push_rule' named_rule idtac.
 
-(* Placeholder axiom for rules whose wf-check does not yet terminate (e.g. the
-   e-graph equality saturation blows up).  `push_rule_todo` assembles the rule
-   into the language exactly like `push_rule`, but discharges the final
-   `wf_rule` obligation with `todo` instead of the computational `by_reduction`
-   /`compute_wf_rule` check — so the language still builds and downstream work
-   can proceed.  Admitted rules surface in `Print Assumptions` as `todo`;
-   replace with `push_rule` once the saturation issue is fixed. *)
-Axiom todo : forall {A : Type}, A.
-
-Ltac push_rule_todo named_rule :=
-    eapply wf_lang_snoc with (nr:=named_rule);
-    [solve_fresh | assumption | update_lang_assumption
-    | exact todo].
-
 
 
 Ltac elab_rule' named_rule injective do_compute :=
