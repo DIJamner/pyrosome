@@ -5472,34 +5472,47 @@ Lemma pi_cong_obligation
   : forall c' name args t s1 s2,
     In (name, term_rule c' args t) ott_dtt ->
     (name = "Emptyrec" \/ name = "Pi_rel" \/ name = "Pi_irr"
-     \/ name = "app_rel") ->
+     \/ name = "lam_rel" \/ name = "lam_irr"
+     \/ name = "app_rel" \/ name = "app_irr") ->
     ceq_args (CM := DttCM) c' s1 s2 ->
     Ceq_term t[/with_names_from c' s2/] (con name s1) (con name s2).
 Proof.
   intros c' name args t s1 s2 Hin Hname Hargs.
-  destruct Hname as [-> | [-> | [-> | ->]]]; pi_pin.
+  destruct Hname as [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]; pi_pin.
   - (* Emptyrec *) eapply cong_Emptyrec; eassumption.
-  - (* Pi_rel *) eapply cong_PiRel; eassumption.
-  - (* Pi_irr *) eapply cong_PiIrr; eassumption.
-  - (* app_rel *) eapply cong_AppRel; eassumption.
+  - (* Pi_rel *)   eapply cong_PiRel; eassumption.
+  - (* Pi_irr *)   eapply cong_PiIrr; eassumption.
+  - (* lam_rel *)  eapply cong_LamRel; eassumption.
+  - (* lam_irr *)  eapply cong_LamIrr; eassumption.
+  - (* app_rel *)  eapply cong_AppRel; eassumption.
+  - (* app_irr *)  eapply cong_AppIrr; eassumption.
 Qed.
 
 Lemma pi_by_obligation
   : forall c' name e1 e2 t s1 s2,
     In (name, term_eq_rule c' e1 e2 t) ott_dtt ->
     (name = "Pi_rel subst" \/ name = "Pi_irr subst"
-     \/ name = "app_rel subst" \/ name = "Emptyrec subst"
+     \/ name = "lam_rel subst" \/ name = "lam_irr subst"
+     \/ name = "app_rel subst" \/ name = "app_irr subst"
+     \/ name = "Emptyrec subst"
+     \/ name = "Pi_rel beta" \/ name = "Pi_irr beta"
      \/ name = "Pi_rel eta") ->
     ceq_args (CM := DttCM) c' s1 s2 ->
     Ceq_term t[/with_names_from c' s2/]
              e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
 Proof.
   intros c' name e1 e2 t s1 s2 Hin Hname Hargs.
-  destruct Hname as [-> | [-> | [-> | [-> | ->]]]]; pi_pin.
-  - (* Pi_rel subst *) eapply by_PiRel_subst; eassumption.
-  - (* Pi_irr subst *) eapply by_PiIrr_subst; eassumption.
-  - (* app_rel subst *) eapply by_AppRel_subst; eassumption.
+  destruct Hname
+    as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]]]];
+    pi_pin.
+  - (* Pi_rel subst *)   eapply by_PiRel_subst; eassumption.
+  - (* Pi_irr subst *)   eapply by_PiIrr_subst; eassumption.
+  - (* lam_rel subst *)  eapply by_LamRel_subst; eassumption.
+  - (* lam_irr subst *)  eapply by_LamIrr_subst; eassumption.
+  - (* app_rel subst *)  eapply by_AppRel_subst; eassumption.
+  - (* app_irr subst *)  eapply by_AppIrr_subst; eassumption.
   - (* Emptyrec subst *) eapply by_Emptyrec_subst; eassumption.
-  - (* Pi_rel eta *) eapply by_PiRel_eta; eassumption.
+  - (* Pi_rel beta *)    eapply by_PiRel_beta; eassumption.
+  - (* Pi_irr beta *)    eapply by_PiIrr_beta; eassumption.
+  - (* Pi_rel eta *)     eapply by_PiRel_eta; eassumption.
 Qed.
-
