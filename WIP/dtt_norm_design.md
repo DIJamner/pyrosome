@@ -292,9 +292,25 @@ mention `RTy`, which is what kills the would-be negative occurrence there. Every
 
   Without η the second bullet has no proof — the term is not equal to any λ — which is
   exactly why the old plan had to keep reification untyped and defer η to a later phase.
-* `RTy_fun` (same syntactic type ⇒ same candidate) is an ordinary induction on the two
-  derivations, the six clauses being disjoint by head symbol; `RTy_fun_eq` (§3) then follows
-  from `TyOk_inj` (§4) with no further work.
+* `RTy_fun` is **not** an ordinary induction on the two derivations, as a first pass assumed.
+  Clause disjointness is real (verified: `inversion` discriminates every pair except `rty_var`
+  against a canonical code, which `VarT_head` closes) but it is not enough. The Π clauses name
+  their domain and codomain candidates at a **chosen** representative — `F'` for `F[w]`, `C` for
+  the codomain instance — and record only that it is *provably* equal to the raw instance. Two
+  derivations at the same syntactic type may choose different representatives, so the induction
+  hypothesis, which compares candidates at the *same* type, does not apply until §4's
+  `NfCode_inj`/`TyOk_inj` identify them. `WIP/DttLRBasics.v` therefore exports
+  `RTy_fun_of_inj`, parameterised by exactly those two; once Layer 0.5 lands,
+  `RTy_fun := RTy_fun_of_inj NfCode_inj TyOk_inj` and nothing else changes. `RTy_fun_eq` (§3)
+  then follows.
+
+* **Rocq's generated `RTy_ind` is useless, and every induction over `RTy` must avoid it.** It
+  supplies *no* induction hypothesis in either Π case, because the recursive occurrences sit
+  under `ex`/`and` — a nested position. The replacement, `RTy_strong_ind` in
+  `WIP/DttLRBasics.v`, is hand-written as a `Fixpoint`: the guard checker *does* accept
+  recursion through `forall`/`ex`/`and`. It is an ordinary axiom-free definition. Two usage
+  gotchas: constructor arguments are implicit, so match patterns need `@rty_pi_rel …`, and
+  `Set Implicit Arguments` makes the section hypotheses implicit too.
 
 ---
 
