@@ -3575,6 +3575,494 @@ Proof.
         | apply eq_term_refl; apply wf_L0 ] ].
 Qed.
 
+(* ---- [app_irr] ---------------------------------------------------- *)
+
+(* [cong_AppRel] transposed.  Only three things are not a transcription:
+   [RTy_pi_irr_e]'s candidate reading is a CONJUNCTION (the [HasNf] of (ii)
+   above and the application property), so the application property is its
+   second projection; [PiIrr_cong] wants its codomain equation at
+   [rel (iota L1)] while everything else here is at [iCode L0], which
+   [eq_sort_U_irr0] bridges; and [wf_PiIrr] concludes at [rel (iota L1)],
+   which [wft_U0irr_iota] brings back. *)
+Lemma cong_AppIrr G1 G2 rF1 rF2 lF1 lF2 F1 F2 B1 B2 f1 f2 a1 a2
+  : Ceq_term sEnv G1 G2 -> Ceq_term sRelevance rF1 rF2 ->
+    Ceq_term sLvl lF1 lF2 ->
+    Ceq_term (sCode G2 rF2 lF2) F1 F2 ->
+    Ceq_term (sCode (oExtC G2 rF2 lF2 F2) oIrr oL0) B1 B2 ->
+    Ceq_term (sElt G2 oIrr oL0 (oPiIrr G2 rF2 lF2 F2 B2)) f1 f2 ->
+    Ceq_term (sElt G2 rF2 lF2 F2) a1 a2 ->
+    Ceq_term (sAppIrrConcl G2 rF2 lF2 F2 B2 a2)
+      (oAppIrr G1 rF1 lF1 F1 B1 f1 a1) (oAppIrr G2 rF2 lF2 F2 B2 f2 a2).
+Proof.
+  intros HGc Hr Hlf HFc HBc Hfc Hac.
+  pose proof HFc as HFc0. pose proof HBc as HBc0.
+  apply Ceq_env_e in HGc as [HG _].
+  apply Ceq_relevance_e in Hr as [Hrq Hrnf]; subst rF1.
+  apply Ceq_lvl_e in Hlf as [Hlfq Hlfnf]; subst lF1.
+  apply Ceq_exp_e in HFc as [HFa HFb].
+  apply Ceq_exp_e in HBc as [HBa HBb].
+  apply Ceq_exp_e in Hfc as [Hfa Hfb].
+  apply Ceq_exp_e in Hac as [Haa Hab].
+  assert (wft rF2 sRelevance) as Hwr by (apply RelNf_wf; exact Hrnf).
+  assert (wft lF2 sLvl) as HwlF by (apply LvlNf_wf; exact Hlfnf).
+  assert (wft G2 sEnv) as HwG2 by (eapply eqt_wf_r; exact HG).
+  assert (wft F1 (sCode G2 rF2 lF2)) as HwF1 by (eapply eqt_wf_l; exact HFa).
+  assert (wft F2 (sCode G2 rF2 lF2)) as HwF2 by (eapply eqt_wf_r; exact HFa).
+  assert (wft B2 (sCode (oExtC G2 rF2 lF2 F2) oIrr oL0)) as HwB2
+      by (eapply eqt_wf_r; exact HBa).
+  assert (wft f1 (sElt G2 oIrr oL0 (oPiIrr G2 rF2 lF2 F2 B2))) as Hwf1
+      by (eapply eqt_wf_l; exact Hfa).
+  assert (wft a1 (sElt G2 rF2 lF2 F2)) as Hwa1 by (eapply eqt_wf_l; exact Haa).
+  assert (wft (iEl rF2 lF2) sInfo) as HiF
+      by (unfold iEl; apply wf_Info; [ exact Hwr | apply wf_Iota; exact HwlF ]).
+  assert (wft (iEl oIrr oL0) sInfo) as HiG
+      by (unfold iEl; apply wf_Info;
+          [ apply wf_Irr | apply wf_Iota; apply wf_L0 ]).
+  assert (wft (iCode lF2) sInfo) as HcF
+      by (unfold iCode; apply wf_Info; [ apply wf_Rel | apply wf_Next; exact HwlF ]).
+  assert (wft (iCode oL0) sInfo) as HcG
+      by (unfold iCode; apply wf_Info;
+          [ apply wf_Rel | apply wf_Next; apply wf_L0 ]).
+  assert (wft (oExtC G2 rF2 lF2 F2) sEnv) as HwGF by (apply wf_ExtC; assumption).
+  assert (wft (oEl G2 rF2 lF2 F2) (sTy G2 (iEl rF2 lF2))) as HwElF
+      by (apply wf_El; assumption).
+  assert (wft (oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2)
+            (sTy (oExtC G2 rF2 lF2 F2) (iEl oIrr oL0))) as HwElB
+      by (apply wf_El;
+          [ exact HwGF | apply wf_Irr | apply wf_L0 | exact HwB2 ]).
+  assert (wft (oPiIrr G2 rF2 lF2 F2 B2) (sCode G2 oIrr oL0)) as HwPi
+      by (apply wft_U0irr_iota;
+          [ exact HwG2
+          | apply wf_PiIrr;
+            [ exact HwG2 | exact Hwr | exact HwlF | exact HwF2
+            | apply wft_U0irr_next; [ exact HwGF | exact HwB2 ] ] ]).
+  apply ceq_exp.
+  { apply AppIrr_cong;
+      [ exact HG
+      | apply eq_term_refl; exact Hwr
+      | apply eq_term_refl; exact HwlF
+      | exact HFa | exact HBa | exact Hfa | exact Haa ]. }
+  intros D g HD Hg.
+  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
+  assert (wft g (sSub D G2)) as Hwg by (apply RSubN_wf; exact Hg).
+  destruct (pi_irr_nf Hrnf Hlfnf HFc0 HBc0 HD Hg)
+    as [F0 [B0 [h (HF0 & HB0 & HEok & HRS & HLeq & HF0eq & HB0eq & HB & HPi)]]].
+  assert (NfCode D oIrr oL0 (oPiIrr D rF2 lF2 F0 B0)) as HnfPi
+      by (apply nfcode_pi_irr; assumption).
+  assert (wft F0 (sCode D rF2 lF2)) as HwF0 by (apply NfCode_wf; exact HF0).
+  assert (wft (oExtC D rF2 lF2 F0) sEnv) as HwDF by (apply wf_ExtC; assumption).
+  assert (wft B0 (sCode (oExtC D rF2 lF2 F0) oIrr oL0)) as HwB0
+      by (apply NfCode_wf; exact HB0).
+  pose (fg := oExpSubst D G2 g (iEl oIrr oL0)
+                (oEl G2 oIrr oL0 (oPiIrr G2 rF2 lF2 F2 B2)) f1).
+  pose (ag := oExpSubst D G2 g (iEl rF2 lF2) (oEl G2 rF2 lF2 F2) a1).
+  assert (wft ag (sExp D (iEl rF2 lF2)
+                    (oTySubst D G2 g (iEl rF2 lF2) (oEl G2 rF2 lF2 F2)))) as Hwag
+      by (unfold ag; apply wf_ExpSubst; assumption).
+  assert (eqt (sTy D (iEl rF2 lF2))
+            (oTySubst D G2 g (iEl rF2 lF2) (oEl G2 rF2 lF2 F2))
+            (oEl D rF2 lF2 F0)) as HtyF.
+  { eapply eq_term_trans; [ apply eq_El_subst; assumption | ].
+    apply El_cong;
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; exact Hwr
+      | apply eq_term_refl; exact HwlF
+      | exact HF0eq ]. }
+  assert (wft ag (sElt D rF2 lF2 F0)) as Hwag'
+      by (eapply wf_term_conv;
+          [ exact Hwag
+          | apply eq_sort_exp_ty; [ exact HwD | exact HiF | exact HtyF ] ]).
+  assert (wft ag (sElt D rF2 lF2 (wkCode D G2 g rF2 lF2 F2))) as Hwag''.
+  { eapply wf_term_conv; [ exact Hwag | ].
+    apply eq_sort_exp_ty;
+      [ exact HwD | exact HiF
+      | unfold wkCode; apply eq_El_subst; assumption ]. }
+  assert (eqt (sTy D (iEl oIrr oL0))
+            (oTySubst D G2 g (iEl oIrr oL0)
+               (oEl G2 oIrr oL0 (oPiIrr G2 rF2 lF2 F2 B2)))
+            (oEl D oIrr oL0 (oPiIrr D rF2 lF2 F0 B0))) as HtyPi.
+  { eapply eq_term_trans;
+      [ apply eq_El_subst;
+        [ exact HwD | exact HwG2 | exact Hwg | apply wf_Irr | apply wf_L0
+        | exact HwPi ] | ].
+    apply El_cong;
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; apply wf_Irr
+      | apply eq_term_refl; apply wf_L0
+      | exact HPi ]. }
+  assert (wft fg (sElt D oIrr oL0 (oPiIrr D rF2 lF2 F0 B0))) as Hwfg.
+  { eapply wf_term_conv;
+      [ unfold fg; apply wf_ExpSubst;
+        [ exact HwD | exact HwG2 | exact Hwg | exact HiG
+        | apply wf_El;
+          [ exact HwG2 | apply wf_Irr | apply wf_L0 | exact HwPi ]
+        | exact Hwf1 ]
+      | apply eq_sort_exp_ty; [ exact HwD | exact HiG | exact HtyPi ] ]. }
+  destruct (RTyEx_of_NfCode HnfPi) as [P HP].
+  assert (P fg) as HPf.
+  { eapply RTmN_elim with
+      (i0 := iEl oIrr oL0)
+      (A0 := oEl D oIrr oL0 (oPiIrr D rF2 lF2 F0 B0)) (P := P);
+      [ apply Hfb; assumption
+      | apply eq_term_refl; exact HiG
+      | apply tyok_El; exact HnfPi
+      | exact HtyPi
+      | exact HP ]. }
+  destruct (RTy_pi_irr_e HP)
+    as [Pd [Pc (Hrn & Hlfn & HnF0 & HnB0 & Hdom & Hcod & Hiff)]].
+  destruct (Hdom D (oId D) (wk_id HD) HD) as [F' (HnF' & HeqF' & HRd)].
+  assert (wft F' (sCode D rF2 lF2)) as HwF' by (apply NfCode_wf; exact HnF').
+  assert (eqt (sCode D rF2 lF2) F0 F') as HF0F'.
+  { eapply eq_term_trans; [ | exact HeqF' ].
+    apply eq_term_sym; unfold wkCode; apply eq_exp_subst_id;
+      [ exact HwD | exact HcF | apply wf_U; assumption | exact HwF0 ]. }
+  assert (Pd D (oId D) ag) as HPda.
+  { eapply RTmN_elim with
+      (i0 := iEl rF2 lF2) (A0 := oEl D rF2 lF2 F') (P := Pd D (oId D));
+      [ apply Hab; assumption
+      | apply eq_term_refl; exact HiF
+      | apply tyok_El; exact HnF'
+      | eapply eq_term_trans; [ exact HtyF | ]
+      | exact HRd ].
+    apply El_cong;
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; exact Hwr
+      | apply eq_term_refl; exact HwlF
+      | exact HF0F' ]. }
+  pose proof (proj2 (proj1 (Hiff fg) HPf) D (oId D) ag (wk_id HD) HD HPda)
+    as Hres.
+  destruct (Hcod D (oId D) ag (wk_id HD) HD HPda)
+    as [C (HTyC & HeqC & HRc)].
+  (* ---- the hub type ---- *)
+  assert (eqt (sSub D (oExtC G2 rF2 lF2 F2))
+            (oCmp D G2 (oExtC G2 rF2 lF2 F2) g (oInst G2 rF2 lF2 F2 a1))
+            (oSnoc D G2 (iEl rF2 lF2) (oEl G2 rF2 lF2 F2) g ag)) as Hinst.
+  { unfold oInst, oExtC.
+    eapply eq_term_trans.
+    { apply eq_cmp_snoc;
+        [ exact HwD | exact HwG2 | exact HwG2 | exact Hwg
+        | apply wf_Id; exact HwG2 | exact HiF | exact HwElF
+        | eapply wf_term_conv;
+          [ exact Hwa1
+          | apply eq_sort_exp_ty;
+            [ exact HwG2 | exact HiF
+            | apply eq_term_sym; apply eq_ty_subst_id;
+              [ exact HwG2 | exact HiF | exact HwElF ] ] ] ]. }
+    apply Snoc_cong;
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; exact HwG2
+      | apply eq_term_refl; exact HiF
+      | apply eq_term_refl; exact HwElF
+      | apply eq_id_right; [ exact HwD | exact HwG2 | exact Hwg ]
+      | ].
+    apply ExpSubst_cong
+      with (G1 := D) (G2 := D) (G1' := G2) (G2' := G2) (g1 := g) (g2 := g)
+           (i1 := iEl rF2 lF2) (i2 := iEl rF2 lF2)
+           (A1 := oTySubst G2 G2 (oId G2) (iEl rF2 lF2) (oEl G2 rF2 lF2 F2))
+           (A2 := oEl G2 rF2 lF2 F2) (v1 := a1) (v2 := a1);
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; exact HwG2
+      | apply eq_term_refl; exact Hwg
+      | apply eq_term_refl; exact HiF
+      | apply eq_ty_subst_id; [ exact HwG2 | exact HiF | exact HwElF ]
+      | apply eq_term_refl; exact Hwa1 ]. }
+  assert (eqt (sTy D (iEl oIrr oL0))
+            (oTySubst D G2 g (iEl oIrr oL0)
+               (oTySubst G2 (oExtC G2 rF2 lF2 F2) (oInst G2 rF2 lF2 F2 a1)
+                  (iEl oIrr oL0) (oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2)))
+            (oTySubst D (oExtC G2 rF2 lF2 F2)
+               (oSnoc D G2 (iEl rF2 lF2) (oEl G2 rF2 lF2 F2) g ag)
+               (iEl oIrr oL0) (oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2)))
+    as Hhub1.
+  { eapply eq_term_trans.
+    - apply eq_ty_subst_cmp;
+        [ exact HwD | exact HwG2 | exact HwGF | exact Hwg
+        | apply wf_oInst; assumption
+        | exact HiG | exact HwElB ].
+    - apply TySubst_cong;
+        [ apply eq_term_refl; exact HwD
+        | apply eq_term_refl; exact HwGF
+        | exact Hinst
+        | apply eq_term_refl; exact HiG
+        | apply eq_term_refl; exact HwElB ]. }
+  assert (eqt (sTy D (iEl oIrr oL0))
+            (codAtIrr D D rF2 lF2 F0 B0 (oId D) ag)
+            (oTySubst D (oExtC G2 rF2 lF2 F2)
+               (oSnoc D G2 (iEl rF2 lF2) (oEl G2 rF2 lF2 F2) g ag)
+               (iEl oIrr oL0) (oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2)))
+    as Hhub2.
+  { unfold codAtIrr, instAt.
+    eapply eq_term_trans;
+      [ | apply an_appConcl with (rG := oIrr) (lG := oL0) (G := G2) (w := g)
+            (F := F2) (B := B2) (a := ag) (F' := F0) (B' := B0) (a' := ag);
+          first [ assumption | apply wf_Irr | apply wf_L0
+                | apply eq_term_refl; assumption ] ].
+    apply TySubst_cong;
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; exact HwDF
+      | unfold oInst, oExtC;
+        apply eq_term_refl; apply wf_Snoc;
+        [ exact HwD | exact HwD | exact HiF
+        | apply wf_El; assumption
+        | apply wf_Id; exact HwD
+        | eapply wf_term_conv;
+          [ exact Hwag'
+          | apply eq_sort_exp_ty;
+            [ exact HwD | exact HiF
+            | apply eq_term_sym; apply eq_ty_subst_id;
+              [ exact HwD | exact HiF | apply wf_El; assumption ] ] ] ]
+      | apply eq_term_refl; exact HiG
+      | apply eq_term_refl; apply wf_El;
+        [ exact HwDF | apply wf_Irr | apply wf_L0 | exact HwB0 ] ]. }
+  assert (eqt (sTy D (iEl oIrr oL0))
+            (oTySubst D G2 g (iEl oIrr oL0)
+               (oTySubst G2 (oExtC G2 rF2 lF2 F2) (oInst G2 rF2 lF2 F2 a2)
+                  (iEl oIrr oL0) (oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2)))
+            C) as HtyGoal.
+  { eapply eq_term_trans; [ | eapply eq_term_trans; [ | exact HeqC ] ].
+    2:{ apply eq_term_sym; exact Hhub2. }
+    eapply eq_term_trans; [ | exact Hhub1 ].
+    apply TySubst_cong;
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; exact HwG2
+      | apply eq_term_refl; exact Hwg
+      | apply eq_term_refl; exact HiG
+      | apply TySubst_cong;
+        [ apply eq_term_refl; exact HwG2
+        | apply eq_term_refl; exact HwGF
+        | unfold oInst, oExtC; apply Snoc_cong;
+          [ apply eq_term_refl; exact HwG2
+          | apply eq_term_refl; exact HwG2
+          | apply eq_term_refl; exact HiF
+          | apply eq_term_refl; exact HwElF
+          | apply eq_term_refl; apply wf_Id; exact HwG2
+          | eapply eq_term_conv;
+            [ apply eq_term_sym; exact Haa
+            | apply eq_sort_exp_ty;
+              [ exact HwG2 | exact HiF
+              | apply eq_term_sym; apply eq_ty_subst_id;
+                [ exact HwG2 | exact HiF | exact HwElF ] ] ] ]
+        | apply eq_term_refl; exact HiG
+        | apply eq_term_refl; exact HwElB ] ]. }
+  eapply RTmN_intro with (i0 := iEl oIrr oL0) (A0 := C) (P := Pc D (oId D) ag);
+    [ apply eq_term_refl; exact HiG | exact HTyC | exact HtyGoal | exact HRc | ].
+  eapply (RTy_cand_eq HRc); [ exact Hres | ].
+  assert (eqt (sTy D (iEl oIrr oL0))
+            (oTySubst D (oExtC D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F2))
+               (oInst D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F2) ag)
+               (iEl oIrr oL0)
+               (oEl (oExtC D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F2)) oIrr oL0
+                  (oExpSubst
+                     (oExtC D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F2))
+                     (oExtC G2 rF2 lF2 F2) (oLift D G2 g rF2 lF2 F2)
+                     (iCode oL0) (oU (oExtC G2 rF2 lF2 F2) oIrr oL0) B2)))
+            (oTySubst D (oExtC G2 rF2 lF2 F2)
+               (oSnoc D G2 (iEl rF2 lF2) (oEl G2 rF2 lF2 F2) g ag)
+               (iEl oIrr oL0) (oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2)))
+    as Hhub3.
+  { apply ac_appConcl with (rG := oIrr) (lG := oL0) (a := ag);
+      first [ assumption | apply wf_Irr | apply wf_L0 ]. }
+  (* the [lift] of the identity is the identity *)
+  assert (eqt (sCode (oExtC D rF2 lF2 F0) oIrr oL0)
+            (wkCodCodeIrr D D (oId D) rF2 lF2 F0 B0) B0) as HidB.
+  { assert (eqt (sCode D rF2 lF2)
+              (oCodeSubst D D (oId D) rF2 lF2 F0) F0) as HF0id
+        by (unfold oCodeSubst; apply eq_exp_subst_id;
+            [ exact HwD | exact HcF | apply wf_U; assumption | exact HwF0 ]).
+    assert (eqt (sSub (oExtC D rF2 lF2 F0) (oExtC D rF2 lF2 F0))
+              (oLift D D (oId D) rF2 lF2 F0)
+              (oId (oExtC D rF2 lF2 F0))) as HlidF.
+    { rewrite oLift_oLiftW.
+      eapply eq_term_trans.
+      - apply eq_liftW_cong
+          with (A1 := oEl D rF2 lF2 (oCodeSubst D D (oId D) rF2 lF2 F0))
+               (A2 := oEl D rF2 lF2 F0);
+          [ exact HwD | exact HwD | exact HiF
+          | apply wf_El; assumption
+          | apply wf_El;
+            [ exact HwD | exact Hwr | exact HwlF
+            | eapply eqt_wf_l; exact HF0id ]
+          | apply wf_El; assumption
+          | apply wf_Id; exact HwD
+          | apply eq_El_subst;
+            [ exact HwD | exact HwD | apply wf_Id; exact HwD | exact Hwr
+            | exact HwlF | exact HwF0 ]
+          | apply eq_ty_subst_id;
+            [ exact HwD | exact HiF | apply wf_El; assumption ] ].
+      - apply eq_liftW_id;
+          [ exact HwD | exact HiF | apply wf_El; assumption
+          | apply wf_Id; exact HwD
+          | apply eq_term_refl; apply wf_Id; exact HwD ]. }
+    unfold wkCodCodeIrr, wkCode.
+    eapply eq_term_trans.
+    - eapply eq_term_conv.
+      + apply ExpSubst_cong
+          with (G1 := oExtC D rF2 lF2 (oCodeSubst D D (oId D) rF2 lF2 F0))
+               (G2 := oExtC D rF2 lF2 F0)
+               (G1' := oExtC D rF2 lF2 F0) (G2' := oExtC D rF2 lF2 F0)
+               (g1 := oLift D D (oId D) rF2 lF2 F0)
+               (g2 := oId (oExtC D rF2 lF2 F0))
+               (i1 := iCode oL0) (i2 := iCode oL0)
+               (A1 := oU (oExtC D rF2 lF2 F0) oIrr oL0)
+               (A2 := oU (oExtC D rF2 lF2 F0) oIrr oL0)
+               (v1 := B0) (v2 := B0);
+          [ unfold oExtC; apply Ext_cong;
+            [ apply eq_term_refl; exact HwD
+            | apply eq_term_refl; exact HiF
+            | apply El_cong;
+              [ apply eq_term_refl; exact HwD
+              | apply eq_term_refl; exact Hwr
+              | apply eq_term_refl; exact HwlF
+              | exact HF0id ] ]
+          | apply eq_term_refl; exact HwDF
+          | exact HlidF
+          | apply eq_term_refl; exact HcG
+          | apply eq_term_refl; apply wf_U;
+            [ exact HwDF | apply wf_Irr | apply wf_L0 ]
+          | apply eq_term_refl; exact HwB0 ].
+      + apply eq_sort_exp_ty;
+          [ exact HwDF | exact HcG
+          | apply eq_ty_subst_id;
+            [ exact HwDF | exact HcG
+            | apply wf_U; [ exact HwDF | apply wf_Irr | apply wf_L0 ] ] ].
+    - apply eq_exp_subst_id;
+        [ exact HwDF | exact HcG
+        | apply wf_U; [ exact HwDF | apply wf_Irr | apply wf_L0 ]
+        | exact HwB0 ]. }
+  (* the [Pi_irr] at the substituted arguments *)
+  assert (eqt sEnv (oExtC D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F2))
+            (oExtC D rF2 lF2 F0)) as HEnvFg.
+  { unfold oExtC; apply Ext_cong;
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; exact HiF
+      | apply El_cong;
+        [ apply eq_term_refl; exact HwD
+        | apply eq_term_refl; exact Hwr
+        | apply eq_term_refl; exact HwlF
+        | exact HF0eq ] ]. }
+  assert (wft (oExtC D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F2)) sEnv) as HwDFg
+      by (eapply eqt_wf_l; exact HEnvFg).
+  assert (eqt (sTy D (iEl oIrr oL0))
+            (oEl D oIrr oL0 (oPiIrr D rF2 lF2 F0 B0))
+            (oEl D oIrr oL0
+               (oPiIrr D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F2)
+                  (oExpSubst
+                     (oExtC D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F2))
+                     (oExtC G2 rF2 lF2 F2) (oLift D G2 g rF2 lF2 F2)
+                     (iCode oL0) (oU (oExtC G2 rF2 lF2 F2) oIrr oL0) B2))))
+    as HElPiFg.
+  { apply El_cong;
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; apply wf_Irr
+      | apply eq_term_refl; apply wf_L0
+      | ].
+    eapply eq_term_conv;
+      [ | apply eq_sort_sym; apply eq_sort_U_irr0; exact HwD ].
+    apply PiIrr_cong;
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; exact Hwr
+      | apply eq_term_refl; exact HwlF
+      | apply eq_term_sym; exact HF0eq
+      | eapply eq_term_conv;
+        [ apply eq_term_sym; exact HB
+        | eapply eq_sort_trans;
+          [ apply sExp_cong;
+            [ apply eq_term_sym; exact HEnvFg
+            | apply eq_term_refl; exact HcG
+            | apply U_cong;
+              [ apply eq_term_sym; exact HEnvFg
+              | apply eq_term_refl; apply wf_Irr
+              | apply eq_term_refl; apply wf_L0 ] ]
+          | apply eq_sort_U_irr0; exact HwDFg ] ] ]. }
+  (* the three-step equation *)
+  eapply eq_term_conv.
+  2:{ apply eq_sort_exp_ty; [ exact HwD | exact HiG | ].
+      eapply eq_term_trans; [ apply eq_term_sym; exact Hhub2 | exact HeqC ]. }
+  apply eq_term_sym.
+  eapply eq_term_trans.
+  { eapply eq_term_conv.
+    - apply ExpSubst_cong
+        with (G1 := D) (G2 := D) (G1' := G2) (G2' := G2) (g1 := g) (g2 := g)
+             (i1 := iEl oIrr oL0) (i2 := iEl oIrr oL0)
+             (A1 := oTySubst G2 (oExtC G2 rF2 lF2 F2)
+                      (oInst G2 rF2 lF2 F2 a2) (iEl oIrr oL0)
+                      (oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2))
+             (A2 := oTySubst G2 (oExtC G2 rF2 lF2 F2)
+                      (oInst G2 rF2 lF2 F2 a1) (iEl oIrr oL0)
+                      (oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2))
+             (v1 := oAppIrr G1 rF2 lF2 F1 B1 f1 a1)
+             (v2 := oAppIrr G2 rF2 lF2 F2 B2 f1 a1);
+        [ apply eq_term_refl; exact HwD
+        | apply eq_term_refl; exact HwG2
+        | apply eq_term_refl; exact Hwg
+        | apply eq_term_refl; exact HiG
+        | apply TySubst_cong;
+          [ apply eq_term_refl; exact HwG2
+          | apply eq_term_refl; exact HwGF
+          | unfold oInst, oExtC; apply Snoc_cong;
+            [ apply eq_term_refl; exact HwG2
+            | apply eq_term_refl; exact HwG2
+            | apply eq_term_refl; exact HiF
+            | apply eq_term_refl; exact HwElF
+            | apply eq_term_refl; apply wf_Id; exact HwG2
+            | eapply eq_term_conv;
+              [ apply eq_term_sym; exact Haa
+              | apply eq_sort_exp_ty;
+                [ exact HwG2 | exact HiF
+                | apply eq_term_sym; apply eq_ty_subst_id;
+                  [ exact HwG2 | exact HiF | exact HwElF ] ] ] ]
+          | apply eq_term_refl; exact HiG
+          | apply eq_term_refl; exact HwElB ]
+        | apply AppIrr_cong;
+          [ exact HG
+          | apply eq_term_refl; exact Hwr
+          | apply eq_term_refl; exact HwlF
+          | exact HFa | exact HBa
+          | apply eq_term_refl; exact Hwf1
+          | apply eq_term_refl; exact Hwa1 ] ].
+    - apply eq_sort_exp_ty; [ exact HwD | exact HiG | exact Hhub1 ]. }
+  eapply eq_term_trans.
+  { eapply eq_term_conv;
+      [ apply eq_app_irr_subst;
+        [ exact HwD | exact HwG2 | exact Hwg | exact Hwr | exact HwlF
+        | exact HwF2 | exact HwB2 | exact Hwf1 | exact Hwa1 ]
+      | apply eq_sort_exp_ty; [ exact HwD | exact HiG | exact Hhub1 ] ]. }
+  eapply eq_term_conv.
+  2:{ apply eq_sort_exp_ty; [ exact HwD | exact HiG | exact Hhub3 ]. }
+  apply eq_term_sym.
+  unfold appAtIrr, wkFunIrr.
+  apply AppIrr_cong;
+    [ apply eq_term_refl; exact HwD
+    | apply eq_term_refl; exact Hwr
+    | apply eq_term_refl; exact HwlF
+    | unfold wkCode; eapply eq_term_trans;
+      [ apply eq_exp_subst_id;
+        [ exact HwD | exact HcF | apply wf_U; assumption | exact HwF0 ]
+      | apply eq_term_sym; exact HF0eq ]
+    | eapply eq_term_conv;
+      [ eapply eq_term_trans; [ exact HidB | apply eq_term_sym; exact HB ]
+      | apply sExp_cong;
+        [ apply eq_term_sym; exact HEnvFg
+        | apply eq_term_refl; exact HcG
+        | apply U_cong;
+          [ apply eq_term_sym; exact HEnvFg
+          | apply eq_term_refl; apply wf_Irr
+          | apply eq_term_refl; apply wf_L0 ] ] ]
+    | eapply eq_term_conv;
+      [ apply eq_exp_subst_id;
+        [ exact HwD | exact HiG
+        | apply wf_El;
+          [ exact HwD | apply wf_Irr | apply wf_L0
+          | apply wft_U0irr_iota;
+            [ exact HwD
+            | apply wf_PiIrr;
+              [ exact HwD | exact Hwr | exact HwlF | exact HwF0
+              | apply wft_U0irr_next; [ exact HwDF | exact HwB0 ] ] ] ]
+        | exact Hwfg ]
+      | apply eq_sort_exp_ty; [ exact HwD | exact HiG | exact HElPiFg ] ]
+    | apply eq_term_refl; exact Hwag'' ].
+Qed.
+
 (* ================================================================== *)
 (* 9.  The dispatchers                                                 *)
 (* ================================================================== *)
