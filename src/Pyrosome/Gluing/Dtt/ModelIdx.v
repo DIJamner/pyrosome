@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel.
 Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NfTyping
-  Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.Ceq.
+  Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct.
 Import Core.Notations.
 
 (* =====================================================================
@@ -27,7 +27,9 @@ Import Core.Notations.
 
    No environment, substitution, type or term appears anywhere in this
    fragment, so it is completely independent of Layers 1-3; it is proved
-   here against src/Pyrosome/Gluing/Dtt/Ceq.v's contract alone.
+   here against src/Pyrosome/Gluing/Dtt/Ceq.v's contract alone (the
+   dependency on ModelStruct.v is the shared [rule_pin] tactic and nothing
+   mathematical).
 
    WHAT THE CONTRACT HAS TO SUPPLY, AND WHY IT IS ENOUGH.
 
@@ -190,27 +192,11 @@ Qed.
 
 (* Both are stated in exactly the shape of the corresponding
    [CutTModel_ok] field, with the rule name restricted to the fragment.
-   The name is pinned FIRST and the [In] premise computed afterwards: with
-   [name] concrete, [vm_compute] leaves a disjunction in which every clause
-   but one is refuted by [discriminate], so each case costs one rule rather
-   than a 32-way (resp. 28-way) split.
-
-   The [In]-premise idiom itself, and the [cbn [ceq_term ceq_sort DttCM]]
-   that turns the class projections back into [Ceq_term], are WIP/
-   ModelStruct.v's. *)
-
-Ltac idx_pin :=
-  match goal with
-  | [ Hin : In _ ott_dtt |- _ ] =>
-      vm_compute in Hin;
-      repeat (destruct Hin as [Hin|Hin]); try discriminate;
-      inversion Hin; subst; clear Hin
-  end;
-  repeat match goal with
-         | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
-         | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
-         end;
-  cbn [ceq_term ceq_sort DttCM] in *.
+   The name is pinned FIRST and the rule looked up afterwards, so each case
+   costs ONE rule rather than a 32-way (resp. 32-way) disjunction of all of
+   them -- [rule_pin], src/Pyrosome/Gluing/Dtt/ModelStruct.v, which also
+   reads the argument list off [ceq_args] and turns the class projections
+   back into [Ceq_term]. *)
 
 Lemma idx_cong_obligation
   : forall c' name args t s1 s2,
@@ -222,7 +208,7 @@ Lemma idx_cong_obligation
     Ceq_term t[/with_names_from c' s2/] (con name s1) (con name s2).
 Proof.
   intros c' name args t s1 s2 Hin Hname Hargs.
-  destruct Hname as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]]]; idx_pin.
+  destruct Hname as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]]]; rule_pin.
   - (* rel *) apply cong_rel.
   - (* irr *) apply cong_irr.
   - (* L0 *) apply cong_L0.
@@ -243,7 +229,7 @@ Lemma idx_by_obligation
              e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
 Proof.
   intros c' name e1 e2 t s1 s2 Hin Hname Hargs.
-  destruct Hname as [-> | [-> | ->]]; idx_pin.
+  destruct Hname as [-> | [-> | ->]]; rule_pin.
   - (* next0 *) apply by_next0.
   - (* next1 *) apply by_next1.
   - (* ltl_irr: the two level arguments are rigid, the two [ltl] arguments

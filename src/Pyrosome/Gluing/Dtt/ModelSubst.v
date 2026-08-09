@@ -788,22 +788,9 @@ Qed.
 (* 2.  The congruence dispatcher                                       *)
 (* ================================================================== *)
 
-(* src/Pyrosome/Gluing/Dtt/ModelIdx.v's idiom: the rule NAME is pinned first and the [In]
-   premise computed afterwards, so each case costs one rule rather than a
-   32-way split. *)
-
-Ltac subst_pin :=
-  match goal with
-  | [ Hin : In _ ott_dtt |- _ ] =>
-      vm_compute in Hin;
-      repeat (destruct Hin as [Hin|Hin]); try discriminate;
-      inversion Hin; subst; clear Hin
-  end;
-  repeat match goal with
-         | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
-         | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
-         end;
-  cbn [ceq_term ceq_sort DttCM] in *.
+(* The rule NAME is pinned first and the rule looked up afterwards, so each
+   case costs one rule rather than a 32-way disjunction of all of them --
+   [rule_pin], src/Pyrosome/Gluing/Dtt/ModelStruct.v. *)
 
 Lemma subst_cong_obligation
   : forall c' name args t s1 s2,
@@ -817,7 +804,7 @@ Proof.
   intros c' name args t s1 s2 Hin Hname Hargs.
   destruct Hname
     as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]]]];
-    subst_pin.
+    rule_pin.
   - (* emp *) apply cong_emp.
   - (* ext *) apply cong_ext; assumption.
   - (* id *) apply cong_id; assumption.
@@ -1312,7 +1299,7 @@ Proof.
   destruct Hname
     as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->
        ]]]]]]]]]]]];
-    subst_pin.
+    rule_pin.
   - (* id_left *) eapply by_id_left; eassumption.
   - (* id_right *) eapply by_id_right; eassumption.
   - (* cmp_assoc *) eapply by_cmp_assoc; eassumption.

@@ -34,36 +34,39 @@ Import Core.Notations.
    normalization.
    ===================================================================== *)
 
-(* The [In] premise is a concrete disjunction over a closed 73-element
-   list, so [vm_compute] pins it and the case split enumerates the rules;
-   each case then names its own fragment, and the wrong fragments fail on
-   the name disjunct rather than silently succeeding. *)
+(* [pin_name] (src/Pyrosome/Gluing/Dtt/ModelStruct.v) enumerates the
+   language's 73 NAMES -- a disjunction of string literals, not of rules --
+   so each case has a concrete name and can name its own fragment; the
+   wrong fragments fail on the name disjunct rather than silently
+   succeeding.  The names whose rule is of the OTHER kind (an equation
+   here, a term rule there) are refuted by [pin_lookup], which computes
+   that one rule and discriminates.
+
+   Doing this by [vm_compute]ing the [In] premise instead put all 73
+   fully-evaluated rules in the proof term, twice: 14.7 s for this file
+   against 5.1 s. *)
 Theorem cong_obligation : CongObligation.
 Proof.
   intros c' name args t s1 s2 Hin Hargs.
-  pose proof Hin as Hin'.
-  vm_compute in Hin'.
-  repeat (destruct Hin' as [Hin'|Hin']); try (exfalso; exact Hin');
-    inversion Hin'; subst.
+  pin_name Hin.
   all: first
     [ eapply idx_cong_obligation;   [ exact Hin | tauto | exact Hargs ]
     | eapply base_cong_obligation;  [ exact Hin | tauto | exact Hargs ]
     | eapply subst_cong_obligation; [ exact Hin | tauto | exact Hargs ]
-    | eapply pi_cong_obligation;    [ exact Hin | tauto | exact Hargs ] ].
+    | eapply pi_cong_obligation;    [ exact Hin | tauto | exact Hargs ]
+    | pin_lookup ].
 Qed.
 
 Theorem by_obligation : ByObligation.
 Proof.
   intros c' name e1 e2 t s1 s2 Hin Hargs.
-  pose proof Hin as Hin'.
-  vm_compute in Hin'.
-  repeat (destruct Hin' as [Hin'|Hin']); try (exfalso; exact Hin');
-    inversion Hin'; subst.
+  pin_name Hin.
   all: first
     [ eapply idx_by_obligation;   [ exact Hin | tauto | exact Hargs ]
     | eapply base_by_obligation;  [ exact Hin | tauto | exact Hargs ]
     | eapply subst_by_obligation; [ exact Hin | tauto | exact Hargs ]
-    | eapply pi_by_obligation;    [ exact Hin | tauto | exact Hargs ] ].
+    | eapply pi_by_obligation;    [ exact Hin | tauto | exact Hargs ]
+    | pin_lookup ].
 Qed.
 
 (* ------------------------------------------------------------------ *)

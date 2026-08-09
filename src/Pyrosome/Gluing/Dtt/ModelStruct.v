@@ -44,7 +44,55 @@ Local Notation eqt := (eq_term ott_dtt []).
 Local Notation wft := (wf_term ott_dtt []).
 
 (* ================================================================== *)
-(* 0.  Small glue                                                      *)
+(* 0.  Pinning a rule                                                  *)
+(* ================================================================== *)
+
+(* EVERY [cterm_cong]/[cterm_by]/[csort_cong] case starts by turning an
+   [In (name, rule) ott_dtt] premise into the rule itself.  Doing that by
+   [vm_compute in Hin] expands the membership into a 73-fold disjunction of
+   FULLY EVALUATED rules, and that disjunction lands in the proof term, so
+   [Qed] type-checks it a second time: 0.72 s of tactic plus 1.88 s of
+   [Qed], per case, times the ~68 cases of this layer.
+
+   Look the name up instead.  [ott_dtt_all_fresh] makes
+   [named_list_lookup_err] an equivalence -- that is
+   [ott_dtt_lookup_of_in] (src/Pyrosome/Gluing/Dtt/NfTyping.v) -- so ONE
+   rule is computed and only that rule reaches the proof term.  Measured on
+   ModelIdx.v's congruence dispatcher (9 cases): 0.13 s against 21.5 s.
+
+   These tactics are the ONE copy for the whole layer; ModelIdx.v,
+   ModelBase.v, ModelSubst.v, ModelPi.v and ModelAll.v all use them from
+   here. *)
+Ltac pin_lookup :=
+  match goal with
+  | [ Hin : In _ ott_dtt |- _ ] =>
+      apply ott_dtt_lookup_of_in in Hin; vm_compute in Hin; safe_invert Hin
+  end.
+
+(* The full preamble of a rule case: pin the rule, read the argument list
+   off [ceq_args], and turn the class projections back into
+   [Ceq_term]/[Ceq_sort]. *)
+Ltac rule_pin :=
+  pin_lookup;
+  repeat match goal with
+         | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
+         | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
+         end;
+  cbn [ceq_term ceq_sort DttCM] in *.
+
+(* When the name is NOT known -- the two obligations of section 1/4 below,
+   and ModelAll.v's two assembly proofs -- enumerate the language's NAMES.
+   That disjunction is 73 string literals rather than 73 rules, so it is
+   cheap both to build and to re-check; [pin_lookup] then applies in each
+   branch. *)
+Ltac pin_name Hin :=
+  let Hn := fresh "Hn" in
+  pose proof (pair_fst_in _ _ _ Hin) as Hn;
+  vm_compute in Hn;
+  repeat (destruct Hn as [Hn|Hn]); try (exfalso; exact Hn); subst.
+
+(* ================================================================== *)
+(* 0'.  Small glue                                                     *)
 (* ================================================================== *)
 
 (* A reducible substitution is well typed.  Both [RSub] clauses hand back
@@ -96,9 +144,9 @@ Lemma var_obligation
   : forall n t, In (n, t) (@nil (string * sort)) -> Ceq_term t (var n) (var n).
 Proof. intros n t H; destruct H. Qed.
 
-(* [csort_by]: [ott_dtt] has ZERO [sort_eq_rule]s (69 rules: 32 term,
-   28 term_eq, 9 sort, 0 sort_eq), so the membership premise is refutable
-   on the computed list. *)
+(* [csort_by]: [ott_dtt] has ZERO [sort_eq_rule]s (73 rules: 32 term,
+   32 term_eq, 9 sort, 0 sort_eq), so the membership premise is refutable
+   -- every one of the 73 names looks up to a rule of another kind. *)
 Lemma sort_by_obligation
   : forall c' name t1 t2 s1 s2,
     In (name, sort_eq_rule c' t1 t2) ott_dtt ->
@@ -106,8 +154,7 @@ Lemma sort_by_obligation
     Ceq_sort t1[/with_names_from c' s1/] t2[/with_names_from c' s2/].
 Proof.
   intros c' name t1 t2 s1 s2 Hin Hargs.
-  vm_compute in Hin; repeat (destruct Hin as [Hin|Hin]);
-    first [ discriminate | destruct Hin ].
+  pin_name Hin; pin_lookup.
 Qed.
 
 (* [cterm_conv] is a projection of [Ceq_sort], which IS the bidirectional
@@ -432,14 +479,7 @@ Lemma sort_cong_obligation
     Ceq_sort (scon name s1) (scon name s2).
 Proof.
   intros c' name args s1 s2 Hin Hargs.
-  vm_compute in Hin;
-    repeat (destruct Hin as [Hin|Hin]); try discriminate;
-    inversion Hin; subst; clear Hin;
-    repeat match goal with
-           | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
-           | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
-           end;
-    cbn [ceq_term ceq_sort DttCM] in *.
+  pin_name Hin; rule_pin.
   (* The sorts in [Hargs] are presented as [t[/with_names_from c' s2/]], so
      the clause readings are applied by unification, not by matching. *)
   all: repeat match goal with

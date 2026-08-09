@@ -900,22 +900,9 @@ Qed.
 
 (* Both are stated in exactly the shape of the corresponding
    [CutTModel_ok] field, with the rule name restricted to this fragment.
-   The name is pinned FIRST and the [In] premise computed afterwards, so
-   each case costs one rule rather than a 32-way (resp. 32-way) split --
-   src/Pyrosome/Gluing/Dtt/ModelIdx.v's [idx_pin] idiom, verbatim. *)
-
-Ltac base_pin :=
-  match goal with
-  | [ Hin : In _ ott_dtt |- _ ] =>
-      vm_compute in Hin;
-      repeat (destruct Hin as [Hin|Hin]); try discriminate;
-      inversion Hin; subst; clear Hin
-  end;
-  repeat match goal with
-         | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
-         | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
-         end;
-  cbn [ceq_term ceq_sort DttCM] in *.
+   The name is pinned FIRST and the rule looked up afterwards, so each case
+   costs one rule rather than a 32-way (resp. 32-way) disjunction of all of
+   them -- [rule_pin], src/Pyrosome/Gluing/Dtt/ModelStruct.v. *)
 
 Lemma base_cong_obligation
   : forall c' name args t s1 s2,
@@ -926,7 +913,7 @@ Lemma base_cong_obligation
     Ceq_term t[/with_names_from c' s2/] (con name s1) (con name s2).
 Proof.
   intros c' name args t s1 s2 Hin Hname Hargs.
-  destruct Hname as [-> | [-> | [-> | [-> | [-> | ->]]]]]; base_pin.
+  destruct Hname as [-> | [-> | [-> | [-> | [-> | ->]]]]]; rule_pin.
   - (* U *) apply cong_U; assumption.
   - (* El *) apply cong_El; assumption.
   - (* Nat *) apply cong_Nat; assumption.
@@ -945,7 +932,7 @@ Lemma base_by_obligation
              e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
 Proof.
   intros c' name e1 e2 t s1 s2 Hin Hname Hargs.
-  destruct Hname as [-> | [-> | [-> | [-> | [-> | ->]]]]]; base_pin.
+  destruct Hname as [-> | [-> | [-> | [-> | [-> | ->]]]]]; rule_pin.
   - (* U subst *) eapply by_U_subst; eassumption.
   - (* El subst *) eapply by_El_subst; eassumption.
   - (* Nat subst *) eapply by_Nat_subst; eassumption.

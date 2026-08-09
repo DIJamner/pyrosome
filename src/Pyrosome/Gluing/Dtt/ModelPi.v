@@ -5446,27 +5446,14 @@ Qed.
 
 (* Both are stated in exactly the shape of the corresponding
    [CutTModel_ok] field, with the rule name restricted to this fragment.
-   The name is pinned FIRST and the [In] premise computed afterwards, so
-   each case costs one rule rather than a 32-way split -- WIP/
-   ModelIdx.v's [idx_pin] idiom, verbatim.
+   The name is pinned FIRST and the rule looked up afterwards, so each case
+   costs one rule rather than a 32-way disjunction of all of them --
+   [rule_pin], src/Pyrosome/Gluing/Dtt/ModelStruct.v.
 
    [eapply]/[eassumption] rather than [apply]/[assumption]: several of
    these rules do not mention every argument in their conclusion sort
    ([Pi_rel]'s is just [U G rel lG]), and [assumption] is conversion-only
    -- it will not instantiate the resulting evars. *)
-
-Ltac pi_pin :=
-  match goal with
-  | [ Hin : In _ ott_dtt |- _ ] =>
-      vm_compute in Hin;
-      repeat (destruct Hin as [Hin|Hin]); try discriminate;
-      inversion Hin; subst; clear Hin
-  end;
-  repeat match goal with
-         | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
-         | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
-         end;
-  cbn [ceq_term ceq_sort DttCM] in *.
 
 Lemma pi_cong_obligation
   : forall c' name args t s1 s2,
@@ -5478,7 +5465,7 @@ Lemma pi_cong_obligation
     Ceq_term t[/with_names_from c' s2/] (con name s1) (con name s2).
 Proof.
   intros c' name args t s1 s2 Hin Hname Hargs.
-  destruct Hname as [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]; pi_pin.
+  destruct Hname as [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]; rule_pin.
   - (* Emptyrec *) eapply cong_Emptyrec; eassumption.
   - (* Pi_rel *)   eapply cong_PiRel; eassumption.
   - (* Pi_irr *)   eapply cong_PiIrr; eassumption.
@@ -5504,7 +5491,7 @@ Proof.
   intros c' name e1 e2 t s1 s2 Hin Hname Hargs.
   destruct Hname
     as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]]]];
-    pi_pin.
+    rule_pin.
   - (* Pi_rel subst *)   eapply by_PiRel_subst; eassumption.
   - (* Pi_irr subst *)   eapply by_PiIrr_subst; eassumption.
   - (* lam_rel subst *)  eapply by_LamRel_subst; eassumption.
