@@ -130,6 +130,19 @@ Proof.
     | apply eq_term_sym; exact Heq ].
 Qed.
 
+(* ---- the clause transport, named --------------------------------- *)
+
+(* A [Ceq_term] constrains only its LEFT term semantically; this is the
+   clause for the RIGHT one, which is what every "run the argument's clause
+   at the right-hand argument" step wants.  ([pi_rel_nf] predates it and
+   derives the same two facts inline, by [RTmN_eq]; everything after
+   [cong_LamRel] goes through this.) *)
+Lemma ceq_clause_r G i A e1 e2
+  : Ceq_term (sExp G i A) e1 e2 ->
+    forall D g, EnvOk D -> RSubN D G g ->
+      RTmN D i (oTySubst D G g i A) (oExpSubst D G g i A e2).
+Proof. intro H; exact (proj2 (Ceq_exp_e (ceq_refl_r H))). Qed.
+
 (* ---- reading a normal code off a code argument's clause ---------- *)
 
 (* [RTmN_HasNfCode] (WIP/DttLRElim.v) wants the type already stripped of
@@ -2241,7 +2254,7 @@ Lemma cong_LamRel G1 G2 rF1 rF2 lF1 lF2 lG1 lG2 F1 F2 B1 B2 t1 t2
       (oLamRel G1 rF1 lF1 lG1 F1 B1 t1) (oLamRel G2 rF2 lF2 lG2 F2 B2 t2).
 Proof.
   intros HGc Hr Hlf Hlg HFc HBc Htc.
-  pose proof (proj2 (Ceq_exp_e (ceq_refl_r HFc))) as HFb2.
+  pose proof (ceq_clause_r HFc) as HFb2.
   apply Ceq_env_e in HGc as [HG _].
   apply Ceq_relevance_e in Hr as [Hrq Hrnf]; subst rF1.
   apply Ceq_lvl_e in Hlf as [Hlfq Hlfnf]; subst lF1.
@@ -3407,19 +3420,6 @@ Qed.
        everything [cong_LamRel] does, EXHIBIT a normal form of the lambda:
        an [nfet_lam_irr] over the body's, which [binder_lift]'s reducible
        lift plus [RTy_escape] (through [RTmN_HasNf']) supplies. *)
-
-(* ---- the clause transport, named --------------------------------- *)
-
-(* A [Ceq_term] constrains only its LEFT term semantically; this is the
-   clause for the RIGHT one, which is what every "apply the fragment's own
-   congruence at the reflexive arguments" step wants.  (Used unnamed in
-   [cong_LamRel] and in [pi_rel_nf]'s two preliminary [RTmN_eq]s; named
-   here because the irrelevant cases want it four more times.) *)
-Lemma ceq_clause_r G i A e1 e2
-  : Ceq_term (sExp G i A) e1 e2 ->
-    forall D g, EnvOk D -> RSubN D G g ->
-      RTmN D i (oTySubst D G g i A) (oExpSubst D G g i A e2).
-Proof. intro H; exact (proj2 (Ceq_exp_e (ceq_refl_r H))). Qed.
 
 (* ---- the normal [Pi_irr] code of an instance ---------------------- *)
 
