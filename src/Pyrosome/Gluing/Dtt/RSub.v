@@ -16,7 +16,9 @@ Import Core.Notations.
 
    [RSub D G g] : the substitution [g : sub D G] is reducible.  The
    recursion is on the CODOMAIN environment [G] alone, and the relation is
-   defined AFTER Layer 2, so there is no circularity.
+   defined AFTER Layer 2, so there is no circularity.  Note the index [G]
+   is the environment's SYNTAX: the [ext] clause is pinned to an [oExt],
+   which is what [RSubN] below has to relax.
 
    As everywhere here the clauses are stated up to [eq_term], which makes
    [RSub] simultaneously the CANONICAL-FORM statement for substitutions: a
@@ -32,27 +34,15 @@ Import Core.Notations.
 
 Local Notation eqt := (eq_term ott_dtt []).
 
-(* The match is on the ARGUMENT-LIST SHAPE first and only then on the head
-   symbol (via [eqb], not a literal string pattern): a zero-argument
-   constructor named [emp] gets the empty clause, a three-argument
-   constructor named [ext] gets the extension clause, and every other shape
-   -- including a right-shaped constructor at the wrong name -- falls
-   through to [False] rather than being trivially satisfied.  [G0] stays a
-   structural subterm of [G] regardless of which head symbol is actually
-   there, so the recursion is guarded. *)
-Fixpoint RSub (D G g : term) {struct G} : Prop :=
-  match G with
-  | con n [] =>
-      if eqb n "emp" then eqt (sSub D oEmp) g (oForget D) else False
-  | con n [A; i; G0] =>
-      if eqb n "ext" then
-        exists g0 v,
-          eqt (sSub D (oExt G0 i A)) g (oSnoc D G0 i A g0 v)
-          /\ RSub D G0 g0
-          /\ RTmN D i (oTySubst D G0 g0 i A) v
-      else False
-  | _ => False
-  end.
+Inductive RSub : term -> term -> term -> Prop :=
+| rsub_emp : forall D g,
+    eqt (sSub D oEmp) g (oForget D) ->
+    RSub D oEmp g
+| rsub_ext : forall D G i A g g0 v,
+    eqt (sSub D (oExt G i A)) g (oSnoc D G i A g0 v) ->
+    RSub D G g0 ->
+    RTmN D i (oTySubst D G g0 i A) v ->
+    RSub D (oExt G i A) g.
 
 (* ------------------------------------------------------------------ *)
 (* The intended reading of the two clauses                              *)
@@ -60,11 +50,7 @@ Fixpoint RSub (D G g : term) {struct G} : Prop :=
 
 Lemma RSub_emp_intro D g
   : eqt (sSub D oEmp) g (oForget D) -> RSub D oEmp g.
-Proof. unfold oEmp; cbn [RSub]; intro H; exact H. Qed.
-
-Lemma RSub_emp_elim D g
-  : RSub D oEmp g -> eqt (sSub D oEmp) g (oForget D).
-Proof. unfold oEmp; cbn [RSub]; intro H; exact H. Qed.
+Proof. apply rsub_emp. Qed.
 
 Lemma RSub_ext_intro D G i A g
   : (exists g0 v,
@@ -72,15 +58,7 @@ Lemma RSub_ext_intro D G i A g
         /\ RSub D G g0
         /\ RTmN D i (oTySubst D G g0 i A) v) ->
     RSub D (oExt G i A) g.
-Proof. unfold oExt; cbn [RSub]; intro H; exact H. Qed.
-
-Lemma RSub_ext_elim D G i A g
-  : RSub D (oExt G i A) g ->
-    exists g0 v,
-      eqt (sSub D (oExt G i A)) g (oSnoc D G i A g0 v)
-      /\ RSub D G g0
-      /\ RTmN D i (oTySubst D G g0 i A) v.
-Proof. unfold oExt; cbn [RSub]; intro H; exact H. Qed.
+Proof. intros [g0 [v [Heq [Hg0 Hv]]]]; eapply rsub_ext; eassumption. Qed.
 
 (* Case on which clause a reducible substitution satisfies without
    inspecting [G] beyond that -- this is what lets the rest of the
@@ -94,12 +72,31 @@ Lemma RSub_inv D G g
            /\ RSub D G0 g0
            /\ RTmN D i (oTySubst D G0 g0 i A) v).
 Proof.
-  destruct G as [x | n [| A [| i [| G0 [| ? ?]]]]]; cbn [RSub]; try (intros []).
-  - destruct (eqb_boolspec _ n "emp") as [->|Hne]; [ | intros [] ].
-    intro H; left; split; [ reflexivity | exact H ].
-  - destruct (eqb_boolspec _ n "ext") as [->|Hne]; [ | intros [] ].
-    intros [g0 [v [Heq [Hg0 Hv]]]]; right.
-    exists G0, i, A, g0, v; repeat split; assumption.
+  destruct 1 as [ D g Hf | D G0 i A g g0 v Hs Hg0 Hv ];
+    [ left; split; [ reflexivity | exact Hf ]
+    | right; exists G0, i, A, g0, v; repeat split; assumption ].
+Qed.
+
+Lemma RSub_emp_elim D g
+  : RSub D oEmp g -> eqt (sSub D oEmp) g (oForget D).
+Proof.
+  intro H; apply RSub_inv in H
+    as [[_ Hf] | [G0 [i [A [g0 [v [Habs _]]]]]]];
+    [ exact Hf | unfold oEmp, oExt in Habs; safe_invert Habs ].
+Qed.
+
+Lemma RSub_ext_elim D G i A g
+  : RSub D (oExt G i A) g ->
+    exists g0 v,
+      eqt (sSub D (oExt G i A)) g (oSnoc D G i A g0 v)
+      /\ RSub D G g0
+      /\ RTmN D i (oTySubst D G g0 i A) v.
+Proof.
+  intro H; apply RSub_inv in H
+    as [[Habs _] | [G0 [i0 [A0 [g0 [v [Habs [Hs [Hg0 Hv]]]]]]]]];
+    [ unfold oEmp, oExt in Habs; safe_invert Habs | ].
+  unfold oExt in Habs; safe_invert Habs.
+  exists g0, v; repeat split; assumption.
 Qed.
 
 (* [RSub] is closed under provable equality of the substitution: both
@@ -122,7 +119,7 @@ Qed.
 (* CODOMAIN ENVIRONMENT                                                  *)
 (* ------------------------------------------------------------------ *)
 
-(* [RSub] is a [Fixpoint] on the SYNTAX of [G], so it is not stable under
+(* [RSub] is indexed by the SYNTAX of [G], so it is not stable under
    provable equality of [G] -- and [csort_cong] at the sort [sub G G']
    varies exactly that.  The wrapper below restores stability the same way
    [RTmN]/[RTyN] (src/Pyrosome/Gluing/Dtt/LogRel.v) do for the info and the type: quantify a

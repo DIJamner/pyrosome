@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 
 From coqutil Require Import Datatypes.String.
-From Stdlib Require Import Lists.List Lia.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -25,7 +25,7 @@ Import Core.Notations.
    harmless downstream (see the report at the end of the file):
 
    (1) [RSub_wk] needs [EnvOk G] (normality of the CODOMAIN environment).
-       [RSub] is a [Fixpoint] on the syntax of [G] and its entry clause is
+       [RSub] is indexed by the syntax of [G] and its entry clause is
        [RTmN D i (A[g0]) v], which is VACUOUS when [A[g0]] has no normal
        representative.  Weakening an entry means transporting it along
        [RTy_wk], and that consumes an actual [RTy] derivation -- i.e. a
@@ -77,48 +77,12 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 2.  An induction principle for [RSub]                               *)
+(* 2.  Inversion of [EnvOk] at an [ext]                                *)
 (*                                                                     *)
-(* [RSub] is a [Fixpoint] on the syntax of the codomain environment, so *)
-(* it has no generated eliminator.  The recursion is on the third       *)
-(* argument of an [ext]-shaped [con], hence bounded by the length of    *)
-(* that spine; [envsize] is that length, and the principle below is     *)
-(* strong induction on it.  Every later proof in this file that must    *)
-(* traverse [G] goes through it.                                       *)
+(* ([RSub] is an inductive, so the traversals below use its generated  *)
+(* [RSub_ind] directly.)                                               *)
 (* ================================================================== *)
 
-Fixpoint envsize (G : term) : nat :=
-  match G with
-  | con _ [_; _; G0] => S (envsize G0)
-  | _ => 0
-  end.
-
-Lemma envsize_ext G i A : envsize (oExt G i A) = S (envsize G).
-Proof. reflexivity. Qed.
-
-Lemma RSub_gen_ind (Q : term -> term -> term -> Prop)
-  (Hemp : forall D g, eqt (sSub D oEmp) g (oForget D) -> Q D oEmp g)
-  (Hext : forall D G0 i A g g0 v,
-      eqt (sSub D (oExt G0 i A)) g (oSnoc D G0 i A g0 v) ->
-      RSub D G0 g0 -> Q D G0 g0 ->
-      RTmN D i (oTySubst D G0 g0 i A) v ->
-      Q D (oExt G0 i A) g)
-  : forall D G g, RSub D G g -> Q D G g.
-Proof.
-  assert (forall n D G g, envsize G <= n -> RSub D G g -> Q D G g) as Hn.
-  { induction n as [ | n IH ]; intros D G g Hsz HR;
-      apply RSub_inv in HR
-        as [[-> Hf] | [G0 [i [A [g0 [v [-> [Hs [Hg0 Hv]]]]]]]]].
-    - apply Hemp; exact Hf.
-    - rewrite envsize_ext in Hsz; lia.
-    - apply Hemp; exact Hf.
-    - rewrite envsize_ext in Hsz.
-      eapply Hext; try eassumption.
-      apply IH; [ lia | exact Hg0 ]. }
-  intros D G g HR; exact (Hn (envsize G) D G g (le_n _) HR).
-Qed.
-
-(* Inversion of [EnvOk] at an [ext]. *)
 Lemma EnvOk_inv GG
   : EnvOk GG ->
     GG = oEmp \/ exists G i A, GG = oExt G i A /\ EnvOk G /\ TyOk G i A.
@@ -144,7 +108,7 @@ Qed.
 
 Lemma RSub_CSub : forall D G g, RSub D G g -> EnvOk D -> EnvOk G -> CSub D G g.
 Proof.
-  apply (@RSub_gen_ind
+  apply (@RSub_ind
     (fun D G g => EnvOk D -> EnvOk G -> CSub D G g)).
   - (* emp *)
     intros D g Hf HD _.
@@ -209,7 +173,7 @@ Qed.
 Lemma RSub_wk : forall D G g, RSub D G g -> EnvOk G ->
   forall D' w, Wk D' D w -> EnvOk D' -> RSub D' G (oCmp D' D G w g).
 Proof.
-  apply (@RSub_gen_ind
+  apply (@RSub_ind
     (fun D G g => EnvOk G -> forall D' w, Wk D' D w -> EnvOk D' ->
                     RSub D' G (oCmp D' D G w g))).
   - (* emp *)
