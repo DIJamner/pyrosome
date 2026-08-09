@@ -915,7 +915,49 @@ Qed.
 
 (* The substitution rules lift [g] with [oLift] (whose domain code is the
    UNREDUCED [g[F]]); the induction lifts it with [oLiftW] over the normal
-   [F'].  This moves between the two. *)
+   [F'].  This moves between the two.  Stated for an arbitrary [g] -- the
+   body needs nothing but its [wf_term] -- and specialized to a weakening
+   just below. *)
+Lemma eq_lift_shift' D G g rF lF F F' i A v
+  : wft D sEnv -> wft G sEnv -> wft g (sSub D G) ->
+    NfCode G rF lF F -> NfCode D rF lF F' ->
+    eqt (sCode D rF lF) (oCodeSubst D G g rF lF F) F' ->
+    wft i sInfo -> wft A (sTy (oExtC G rF lF F) i) ->
+    wft v (sExp (oExtC G rF lF F) i A) ->
+    eqt (sExp (oExtC D rF lF F') i
+           (oTySubst (oExtC D rF lF F') (oExtC G rF lF F)
+              (oLiftW D G g (iEl rF lF) (oEl G rF lF F) (oEl D rF lF F'))
+              i A))
+      (oExpSubst (oExtC D rF lF (oCodeSubst D G g rF lF F)) (oExtC G rF lF F)
+         (oLift D G g rF lF F) i A v)
+      (oExpSubst (oExtC D rF lF F') (oExtC G rF lF F)
+         (oLiftW D G g (iEl rF lF) (oEl G rF lF F) (oEl D rF lF F'))
+         i A v).
+Proof.
+  intros HD HG Hg HF HF' HeqF Hi HA Hv.
+  assert (eqt (sTy D (iEl rF lF))
+            (oTySubst D G g (iEl rF lF) (oEl G rF lF F)) (oEl D rF lF F'))
+    as HeqEl.
+  { eapply eq_term_trans; [ apply eq_El_subst; wfx | ].
+    apply El_cong; [ er | er | er | exact HeqF ]. }
+  apply ExpSubst_cong
+    with (G1 := oExtC D rF lF (oCodeSubst D G g rF lF F))
+         (G2 := oExtC D rF lF F')
+         (G1' := oExtC G rF lF F) (G2' := oExtC G rF lF F)
+         (g1 := oLift D G g rF lF F)
+         (g2 := oLiftW D G g (iEl rF lF) (oEl G rF lF F) (oEl D rF lF F'))
+         (i1 := i) (i2 := i) (A1 := A) (A2 := A) (v1 := v) (v2 := v);
+    [ apply Ext_cong; [ er | er | apply El_cong; [ er | er | er | exact HeqF ] ]
+    | er
+    | rewrite oLift_oLiftW;
+      apply eq_liftW_cong
+        with (A1 := oEl D rF lF (oCodeSubst D G g rF lF F))
+             (A2 := oEl D rF lF F');
+      [ wfx | wfx | wfx | wfx | wfx | wfx | wfx
+      | apply eq_El_subst; wfx | exact HeqEl ]
+    | er | er | er ].
+Qed.
+
 Lemma eq_lift_shift D G w rF lF F F' i A v
   : Wk D G w -> EnvOk D -> NfCode G rF lF F -> NfCode D rF lF F' ->
     eqt (sCode D rF lF) (oCodeSubst D G w rF lF F) F' ->
@@ -930,30 +972,7 @@ Lemma eq_lift_shift D G w rF lF F F' i A v
       (oExpSubst (oExtC D rF lF F') (oExtC G rF lF F)
          (oLiftW D G w (iEl rF lF) (oEl G rF lF F) (oEl D rF lF F'))
          i A v).
-Proof.
-  intros HW HD HF HF' HeqF Hi HA Hv.
-  assert (eqt (sTy D (iEl rF lF))
-            (oTySubst D G w (iEl rF lF) (oEl G rF lF F)) (oEl D rF lF F'))
-    as HeqEl.
-  { eapply eq_term_trans; [ apply eq_El_subst; wfx | ].
-    apply El_cong; [ er | er | er | exact HeqF ]. }
-  apply ExpSubst_cong
-    with (G1 := oExtC D rF lF (oCodeSubst D G w rF lF F))
-         (G2 := oExtC D rF lF F')
-         (G1' := oExtC G rF lF F) (G2' := oExtC G rF lF F)
-         (g1 := oLift D G w rF lF F)
-         (g2 := oLiftW D G w (iEl rF lF) (oEl G rF lF F) (oEl D rF lF F'))
-         (i1 := i) (i2 := i) (A1 := A) (A2 := A) (v1 := v) (v2 := v);
-    [ apply Ext_cong; [ er | er | apply El_cong; [ er | er | er | exact HeqF ] ]
-    | er
-    | rewrite oLift_oLiftW;
-      apply eq_liftW_cong
-        with (A1 := oEl D rF lF (oCodeSubst D G w rF lF F))
-             (A2 := oEl D rF lF F');
-      [ wfx | wfx | wfx | wfx | wfx | wfx | wfx
-      | apply eq_El_subst; wfx | exact HeqEl ]
-    | er | er | er ].
-Qed.
+Proof. intros; apply eq_lift_shift'; wfx. Qed.
 
 (* The [Pi] cases of the code computation.  They are needed twice -- to
    RUN the induction below, and to READ ITS RESULT BACK at the [app]
@@ -3023,46 +3042,6 @@ Proof.
       | apply tyok_El; exact HF' | exact HeqEl ]
     | apply envok_ext; [ exact HD | apply tyok_El; exact HF' ]
     | exact HeqEl ].
-Qed.
-
-Lemma eq_lift_shift' D G g rF lF F F' i A v
-  : wft D sEnv -> wft G sEnv -> wft g (sSub D G) ->
-    NfCode G rF lF F -> NfCode D rF lF F' ->
-    eqt (sCode D rF lF) (oCodeSubst D G g rF lF F) F' ->
-    wft i sInfo -> wft A (sTy (oExtC G rF lF F) i) ->
-    wft v (sExp (oExtC G rF lF F) i A) ->
-    eqt (sExp (oExtC D rF lF F') i
-           (oTySubst (oExtC D rF lF F') (oExtC G rF lF F)
-              (oLiftW D G g (iEl rF lF) (oEl G rF lF F) (oEl D rF lF F'))
-              i A))
-      (oExpSubst (oExtC D rF lF (oCodeSubst D G g rF lF F)) (oExtC G rF lF F)
-         (oLift D G g rF lF F) i A v)
-      (oExpSubst (oExtC D rF lF F') (oExtC G rF lF F)
-         (oLiftW D G g (iEl rF lF) (oEl G rF lF F) (oEl D rF lF F'))
-         i A v).
-Proof.
-  intros HD HG Hg HF HF' HeqF Hi HA Hv.
-  assert (eqt (sTy D (iEl rF lF))
-            (oTySubst D G g (iEl rF lF) (oEl G rF lF F)) (oEl D rF lF F'))
-    as HeqEl.
-  { eapply eq_term_trans; [ apply eq_El_subst; wfx | ].
-    apply El_cong; [ er | er | er | exact HeqF ]. }
-  apply ExpSubst_cong
-    with (G1 := oExtC D rF lF (oCodeSubst D G g rF lF F))
-         (G2 := oExtC D rF lF F')
-         (G1' := oExtC G rF lF F) (G2' := oExtC G rF lF F)
-         (g1 := oLift D G g rF lF F)
-         (g2 := oLiftW D G g (iEl rF lF) (oEl G rF lF F) (oEl D rF lF F'))
-         (i1 := i) (i2 := i) (A1 := A) (A2 := A) (v1 := v) (v2 := v);
-    [ apply Ext_cong; [ er | er | apply El_cong; [ er | er | er | exact HeqF ] ]
-    | er
-    | rewrite oLift_oLiftW;
-      apply eq_liftW_cong
-        with (A1 := oEl D rF lF (oCodeSubst D G g rF lF F))
-             (A2 := oEl D rF lF F');
-      [ wfx | wfx | wfx | wfx | wfx | wfx | wfx
-      | apply eq_El_subst; wfx | exact HeqEl ]
-    | er | er | er ].
 Qed.
 
 (* ================================================================== *)
