@@ -222,9 +222,21 @@ Combined Scheme Nf_mutind from
    WEAKEN THE DOMAIN TYPE: [A] lives in [G], so the extended domain is
    [ext D i A'] for [A'] the normal form of [A[w]], and the head variable's
    type [A'[wkn]] agrees with what [snoc] demands ([A[wkn o w]]) only by
-   "ty_subst_cmp".  So [Wk_wf] genuinely needs [wf_term_conv]. *)
+   "ty_subst_cmp".  So [Wk_wf] genuinely needs [wf_term_conv].
+
+   [wk_wkn] is the BARE one-step weakening.  It is derivable up to
+   [eq_term] ([wkn ; id = wkn], and [wk_ext] at [wk_id] gives the left
+   side), but the theory's own "Pi_rel eta" is stated with the bare [wkn],
+   so having it as a clause rather than as an equational detour is what
+   lets Layer 2's escape step at [Pi_rel] apply eta directly.  Note the
+   four clauses still have pairwise-distinct head symbols
+   ([id]/[wkn]/[cmp]/[snoc]), so [Wk_ext_inv] stays a SYNTACTIC
+   case-analysis: no clause is up to [eq_term], which is what keeps this
+   class usable as Layer 2's Kripke quantifier. *)
 Inductive Wk : term -> term -> term -> Prop :=
 | wk_id : forall G, EnvOk G -> Wk G G (oId G)
+| wk_wkn : forall D i A,
+    EnvOk D -> TyOk D i A -> Wk (oExt D i A) D (oWkn D i A)
 | wk_ext : forall D G i A w,
     Wk D G w -> TyOk D i A ->
     Wk (oExt D i A) G (oCmp (oExt D i A) D G (oWkn D i A) w)

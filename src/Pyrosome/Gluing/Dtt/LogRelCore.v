@@ -37,281 +37,7 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 1. Congruence of the Kripke application in the WEAKENING            *)
-(*                                                                     *)
-(* [Wk] never derives a bare [wkn]: the one-step weakening of [Wk] is  *)
-(* [oWk1 = wkn ; id].  "Pi_rel eta", on the other hand, is stated with *)
-(* the bare [wkn].  Bridging the two -- which is what the escape half   *)
-(* of the Pi_rel case needs -- is exactly congruence of [appAtRel] in   *)
-(* its substitution argument, and that is what this section supplies.   *)
-(* ================================================================== *)
-
-Section AppW.
-
-  Context (D G rF lF lG F B w w' e a : term).
-
-  Context
-    (HD : wft D sEnv)
-    (HG : wft G sEnv)
-    (HrF : wft rF sRelevance)
-    (HlF : wft lF sLvl)
-    (HlG : wft lG sLvl)
-    (Hw : wft w (sSub D G))
-    (Hw' : wft w' (sSub D G))
-    (Hww' : eqt (sSub D G) w w')
-    (HF : wft F (sCode G rF lF))
-    (HB : wft B (sCode (oExtC G rF lF F) oRel lG)).
-
-  Lemma aw_iF : wft (iEl rF lF) sInfo.
-  Proof. unfold iEl; apply wf_Info; [ exact HrF | apply wf_Iota; exact HlF ]. Qed.
-
-  Lemma aw_iG : wft (iEl oRel lG) sInfo.
-  Proof.
-    unfold iEl; apply wf_Info; [ apply wf_Rel | apply wf_Iota; exact HlG ].
-  Qed.
-
-  Lemma aw_cF : wft (iCode lF) sInfo.
-  Proof.
-    unfold iCode; apply wf_Info; [ apply wf_Rel | apply wf_Next; exact HlF ].
-  Qed.
-
-  Lemma aw_cG : wft (iCode lG) sInfo.
-  Proof.
-    unfold iCode; apply wf_Info; [ apply wf_Rel | apply wf_Next; exact HlG ].
-  Qed.
-
-  Lemma aw_ElG : wft (oEl G rF lF F) (sTy G (iEl rF lF)).
-  Proof. apply wf_El; [ exact HG | exact HrF | exact HlF | exact HF ]. Qed.
-
-  Lemma aw_GF : wft (oExtC G rF lF F) sEnv.
-  Proof. apply wf_ExtC; [ exact HG | exact HrF | exact HlF | exact HF ]. Qed.
-
-  (* ---- the domain code ---- *)
-
-  Lemma aw_code
-    : eqt (sCode D rF lF)
-        (wkCode D G w rF lF F) (wkCode D G w' rF lF F).
-  Proof.
-    unfold wkCode.
-    eapply eqt_Usub_c with (G' := G) (g := w') (r := rF) (l := lF);
-      [ exact HD | exact HG | exact Hw' | exact HrF | exact HlF | ].
-    apply ExpSubst_cong
-      with (G1 := D) (G2 := D) (G1' := G) (G2' := G) (g1 := w) (g2 := w')
-           (i1 := iCode lF) (i2 := iCode lF)
-           (A1 := oU G rF lF) (A2 := oU G rF lF) (v1 := F) (v2 := F);
-      [ apply eq_term_refl; exact HD
-      | apply eq_term_refl; exact HG
-      | exact Hww'
-      | apply eq_term_refl; apply aw_cF
-      | apply eq_term_refl; apply wf_U; [ exact HG | exact HrF | exact HlF ]
-      | apply eq_term_refl; exact HF ].
-  Qed.
-
-  Lemma aw_Fw : wft (wkCode D G w rF lF F) (sCode D rF lF).
-  Proof.
-    apply ac_Fw;
-      [ exact HD | exact HG | exact HrF | exact HlF | exact Hw | exact HF ].
-  Qed.
-
-  Lemma aw_Fw' : wft (wkCode D G w' rF lF F) (sCode D rF lF).
-  Proof.
-    apply ac_Fw;
-      [ exact HD | exact HG | exact HrF | exact HlF | exact Hw' | exact HF ].
-  Qed.
-
-  Lemma aw_ElD : wft (oEl D rF lF (wkCode D G w rF lF F)) (sTy D (iEl rF lF)).
-  Proof. apply wf_El; [ exact HD | exact HrF | exact HlF | apply aw_Fw ]. Qed.
-
-  Lemma aw_ElD' : wft (oEl D rF lF (wkCode D G w' rF lF F)) (sTy D (iEl rF lF)).
-  Proof. apply wf_El; [ exact HD | exact HrF | exact HlF | apply aw_Fw' ]. Qed.
-
-  Lemma aw_ElDeq
-    : eqt (sTy D (iEl rF lF))
-        (oEl D rF lF (wkCode D G w rF lF F))
-        (oEl D rF lF (wkCode D G w' rF lF F)).
-  Proof.
-    apply El_cong;
-      [ apply eq_term_refl; exact HD
-      | apply eq_term_refl; exact HrF
-      | apply eq_term_refl; exact HlF
-      | apply aw_code ].
-  Qed.
-
-  Lemma aw_DF : wft (oExtC D rF lF (wkCode D G w rF lF F)) sEnv.
-  Proof. apply wf_ExtC; [ exact HD | exact HrF | exact HlF | apply aw_Fw ]. Qed.
-
-  Lemma aw_DF' : wft (oExtC D rF lF (wkCode D G w' rF lF F)) sEnv.
-  Proof. apply wf_ExtC; [ exact HD | exact HrF | exact HlF | apply aw_Fw' ]. Qed.
-
-  Lemma aw_DFeq
-    : eqt sEnv (oExtC D rF lF (wkCode D G w rF lF F))
-               (oExtC D rF lF (wkCode D G w' rF lF F)).
-  Proof.
-    unfold oExtC; apply Ext_cong;
-      [ apply eq_term_refl; exact HD
-      | apply eq_term_refl; apply aw_iF
-      | apply aw_ElDeq ].
-  Qed.
-
-  (* ---- the lifted weakening ---- *)
-
-  Lemma aw_ElsubW
-    : eqt (sTy D (iEl rF lF))
-        (oTySubst D G w (iEl rF lF) (oEl G rF lF F))
-        (oEl D rF lF (wkCode D G w rF lF F)).
-  Proof.
-    apply eq_El_subst;
-      [ exact HD | exact HG | exact Hw | exact HrF | exact HlF | exact HF ].
-  Qed.
-
-  Lemma aw_ElsubW'
-    : eqt (sTy D (iEl rF lF))
-        (oTySubst D G w' (iEl rF lF) (oEl G rF lF F))
-        (oEl D rF lF (wkCode D G w' rF lF F)).
-  Proof.
-    apply eq_El_subst;
-      [ exact HD | exact HG | exact Hw' | exact HrF | exact HlF | exact HF ].
-  Qed.
-
-  Lemma aw_lift
-    : eqt (sSub (oExtC D rF lF (wkCode D G w' rF lF F)) (oExtC G rF lF F))
-        (oLift D G w rF lF F) (oLift D G w' rF lF F).
-  Proof.
-    rewrite !oLift_oLiftW.
-    unfold oLiftW, oExtC.
-    apply Snoc_cong;
-      [ apply Ext_cong;
-        [ apply eq_term_refl; exact HD
-        | apply eq_term_refl; apply aw_iF
-        | apply aw_ElDeq ]
-      | apply eq_term_refl; exact HG
-      | apply eq_term_refl; apply aw_iF
-      | apply eq_term_refl; apply aw_ElG
-      | apply Cmp_cong;
-        [ apply Ext_cong;
-          [ apply eq_term_refl; exact HD
-          | apply eq_term_refl; apply aw_iF
-          | apply aw_ElDeq ]
-        | apply eq_term_refl; exact HD
-        | apply eq_term_refl; exact HG
-        | apply Wkn_cong;
-          [ apply eq_term_refl; exact HD
-          | apply eq_term_refl; apply aw_iF
-          | apply aw_ElDeq ]
-        | exact Hww' ]
-      | ].
-    eapply eq_term_conv.
-    - apply Hd_cong;
-        [ apply eq_term_refl; exact HD
-        | apply eq_term_refl; apply aw_iF
-        | apply aw_ElDeq ].
-    - apply eq_sort_exp_ty;
-        [ apply aw_DF' | apply aw_iF | ].
-      apply eq_wk_lift_ty;
-        [ exact HD | exact HG | apply aw_iF | apply aw_ElG | apply aw_ElD'
-        | exact Hw' | apply aw_ElsubW' ].
-  Qed.
-
-  (* ---- the codomain code ---- *)
-
-  Lemma aw_codcode
-    : eqt (sCode (oExtC D rF lF (wkCode D G w' rF lF F)) oRel lG)
-        (wkCodCodeRel D G w rF lF lG F B) (wkCodCodeRel D G w' rF lF lG F B).
-  Proof.
-    unfold wkCodCodeRel.
-    eapply eqt_Usub_c
-      with (G' := oExtC G rF lF F) (g := oLift D G w' rF lF F)
-           (r := oRel) (l := lG);
-      [ apply aw_DF' | apply aw_GF
-      | apply wf_oLift;
-        [ exact HD | exact HG | exact Hw' | exact HrF | exact HlF | exact HF ]
-      | apply wf_Rel | exact HlG | ].
-    apply ExpSubst_cong
-      with (G1 := oExtC D rF lF (wkCode D G w rF lF F))
-           (G2 := oExtC D rF lF (wkCode D G w' rF lF F))
-           (G1' := oExtC G rF lF F) (G2' := oExtC G rF lF F)
-           (g1 := oLift D G w rF lF F) (g2 := oLift D G w' rF lF F)
-           (i1 := iCode lG) (i2 := iCode lG)
-           (A1 := oU (oExtC G rF lF F) oRel lG)
-           (A2 := oU (oExtC G rF lF F) oRel lG) (v1 := B) (v2 := B);
-      [ apply aw_DFeq
-      | apply eq_term_refl; apply aw_GF
-      | apply aw_lift
-      | apply eq_term_refl; apply aw_cG
-      | apply eq_term_refl; apply wf_U;
-        [ apply aw_GF | apply wf_Rel | exact HlG ]
-      | apply eq_term_refl; exact HB ].
-  Qed.
-
-  (* ---- the weakened function ---- *)
-
-  Context (He : wft e (sElt G oRel lG (oPiRel G rF lF lG F B))).
-
-  Lemma aw_Pi : wft (oPiRel G rF lF lG F B) (sCode G oRel lG).
-  Proof.
-    apply wf_PiRel;
-      [ exact HG | exact HrF | exact HlF | exact HlG | exact HF | exact HB ].
-  Qed.
-
-  Lemma aw_ElPi
-    : wft (oEl G oRel lG (oPiRel G rF lF lG F B)) (sTy G (iEl oRel lG)).
-  Proof. apply wf_El; [ exact HG | apply wf_Rel | exact HlG | apply aw_Pi ]. Qed.
-
-  Lemma aw_fun
-    : eqt (sElt D oRel lG
-             (oPiRel D rF lF lG (wkCode D G w' rF lF F)
-                (wkCodCodeRel D G w' rF lF lG F B)))
-        (wkFunRel D G w rF lF lG F B e) (wkFunRel D G w' rF lF lG F B e).
-  Proof.
-    eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD | apply aw_iG
-          | apply pr_Pi_subst;
-            [ exact HD | exact HG | exact HrF | exact HlF | exact HlG
-            | exact Hw' | exact HF | exact HB ] ] ].
-    unfold wkFunRel; apply ExpSubst_cong
-      with (G1 := D) (G2 := D) (G1' := G) (G2' := G) (g1 := w) (g2 := w')
-           (i1 := iEl oRel lG) (i2 := iEl oRel lG)
-           (A1 := oEl G oRel lG (oPiRel G rF lF lG F B))
-           (A2 := oEl G oRel lG (oPiRel G rF lF lG F B)) (v1 := e) (v2 := e);
-      [ apply eq_term_refl; exact HD
-      | apply eq_term_refl; exact HG
-      | exact Hww'
-      | apply eq_term_refl; apply aw_iG
-      | apply eq_term_refl; apply aw_ElPi
-      | apply eq_term_refl; exact He ].
-  Qed.
-
-  (* ---- the application ---- *)
-
-  Context (Ha : wft a (sElt D rF lF (wkCode D G w' rF lF F))).
-
-  Theorem aw_appAt
-    : eqt (sExp D (iEl oRel lG) (codAtRel D G rF lF lG F B w' a))
-        (appAtRel D G rF lF lG F B w e a)
-        (appAtRel D G rF lF lG F B w' e a).
-  Proof.
-    eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD | apply aw_iG
-          | apply ac_appConcl;
-            [ exact HD | exact HG | exact HrF | exact HlF | apply wf_Rel
-            | exact HlG | exact Hw' | exact HF | exact HB | exact Ha ] ] ].
-    unfold appAtRel; apply AppRel_cong;
-      [ apply eq_term_refl; exact HD
-      | apply eq_term_refl; exact HrF
-      | apply eq_term_refl; exact HlF
-      | apply eq_term_refl; exact HlG
-      | apply aw_code
-      | apply aw_codcode
-      | apply aw_fun
-      | apply eq_term_refl; exact Ha ].
-  Qed.
-
-End AppW.
-
-(* ================================================================== *)
-(* 2. The codomain instance at a NAMED domain/codomain/argument         *)
+(* 1. The codomain instance at a NAMED domain/codomain/argument         *)
 (*                                                                     *)
 (* [neet_app_rel] insists on the SYNTACTIC normal forms [F'], [B'] and  *)
 (* [a'] in the slots where [appAtRel] carries the raw substitution      *)
@@ -460,7 +186,7 @@ Section AppNamed.
 End AppNamed.
 
 (* ================================================================== *)
-(* 3. Naming the weakened Pi type                                      *)
+(* 2. Naming the weakened Pi type                                      *)
 (* ================================================================== *)
 
 Lemma eq_ElPiRel_wk D G rF lF lG F B w F' B'
@@ -527,7 +253,7 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 4. Weakening the codomain code, at the clause's chosen [F']          *)
+(* 3. Weakening the codomain code, at the clause's chosen [F']          *)
 (* ================================================================== *)
 
 Lemma wk_codcode D G w rF lF rG lG F B F'
@@ -557,7 +283,7 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 5. REFLECT at the two Pi clauses: a neutral function applied to a    *)
+(* 4. REFLECT at the two Pi clauses: a neutral function applied to a    *)
 (*    normalizable argument is neutral, at the clause's named codomain. *)
 (* ================================================================== *)
 
@@ -705,21 +431,21 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 6. ESCAPE at [rty_pi_rel]: this is where ETA is cashed in.          *)
+(* 5. ESCAPE at [rty_pi_rel]: this is where ETA is cashed in.          *)
 (*                                                                     *)
-(* [Wk] derives no bare [wkn] -- its one-step weakening is             *)
-(* [oWk1 = wkn ; id] -- while "Pi_rel eta" is stated with the bare     *)
-(* [wkn].  Section 1's [aw_appAt] is the bridge.                        *)
+(* [Wk]'s one-step weakening is the BARE [wkn] ([wk_wkn]), which is    *)
+(* exactly how "Pi_rel eta" is stated, so the eta step below is the     *)
+(* rule read off directly.                                             *)
 (* ================================================================== *)
 
 (* At the one-step weakening and the head variable, the raw codomain
    instance IS the codomain type: [<wkn,hd> = id]. *)
-Lemma eq_codAt_wk1 G rF lF lG F B
+Lemma eq_codAt_wkn G rF lF lG F B
   : wft G sEnv -> wft rF sRelevance -> wft lF sLvl -> wft lG sLvl ->
     wft F (sCode G rF lF) -> wft B (sCode (oExtC G rF lF F) oRel lG) ->
     eqt (sTy (oExtC G rF lF F) (iEl oRel lG))
       (codAtRel (oExtC G rF lF F) G rF lF lG F B
-         (oWk1 G (iEl rF lF) (oEl G rF lF F))
+         (oWkn G (iEl rF lF) (oEl G rF lF F))
          (oHd G (iEl rF lF) (oEl G rF lF F)))
       (oEl (oExtC G rF lF F) oRel lG B).
 Proof.
@@ -738,19 +464,11 @@ Proof.
       by (apply wf_El; [ exact HD | apply wf_Rel | exact HlG | exact HB ]).
   assert (eqt (sSub (oExtC G rF lF F) (oExtC G rF lF F))
             (instAt (oExtC G rF lF F) G rF lF F
-               (oWk1 G (iEl rF lF) (oEl G rF lF F))
+               (oWkn G (iEl rF lF) (oEl G rF lF F))
                (oHd G (iEl rF lF) (oEl G rF lF F)))
-            (oId (oExtC G rF lF F))) as Hsnoc.
-  { unfold instAt, oExtC.
-    eapply eq_term_trans;
-      [ | apply eq_snoc_wkn_hd; [ exact HG | exact HiF | exact HA ] ].
-    apply Snoc_cong;
-      [ apply eq_term_refl; apply wf_Ext; [ exact HG | exact HiF | exact HA ]
-      | apply eq_term_refl; exact HG
-      | apply eq_term_refl; exact HiF
-      | apply eq_term_refl; exact HA
-      | apply eq_wk1; [ exact HG | exact HiF | exact HA ]
-      | apply eq_term_refl; apply wf_Hd; [ exact HG | exact HiF | exact HA ] ]. }
+            (oId (oExtC G rF lF F))) as Hsnoc
+      by (unfold instAt, oExtC;
+          apply eq_snoc_wkn_hd; [ exact HG | exact HiF | exact HA ]).
   unfold codAtRel.
   eapply eq_term_trans;
     [ | apply eq_ty_subst_id; [ exact HD | exact HiG | exact HElB ] ].
@@ -771,83 +489,20 @@ Qed.
 (* THE eta STEP.  [t] is a normal form of [e] applied to the fresh
    variable; [lam t] is then a normal form of [e] ITSELF, and nothing but
    "Pi_rel eta" can supply that. *)
-Lemma eq_eta_wk1 G rF lF lG F B e t
+Lemma eq_eta_wkn G rF lF lG F B e t
   : wft G sEnv -> wft rF sRelevance -> wft lF sLvl -> wft lG sLvl ->
     wft F (sCode G rF lF) -> wft B (sCode (oExtC G rF lF F) oRel lG) ->
     wft e (sElt G oRel lG (oPiRel G rF lF lG F B)) ->
     eqt (sExp (oExtC G rF lF F) (iEl oRel lG)
            (oEl (oExtC G rF lF F) oRel lG B))
       (appAtRel (oExtC G rF lF F) G rF lF lG F B
-         (oWk1 G (iEl rF lF) (oEl G rF lF F)) e
+         (oWkn G (iEl rF lF) (oEl G rF lF F)) e
          (oHd G (iEl rF lF) (oEl G rF lF F))) t ->
     eqt (sElt G oRel lG (oPiRel G rF lF lG F B)) e (oLamRel G rF lF lG F B t).
 Proof.
   intros HG HrF HlF HlG HF HB He Ht.
-  assert (wft (iEl rF lF) sInfo) as HiF
-      by (unfold iEl; apply wf_Info; [ exact HrF | apply wf_Iota; exact HlF ]).
-  assert (wft (oEl G rF lF F) (sTy G (iEl rF lF))) as HA
-      by (apply wf_El; [ exact HG | exact HrF | exact HlF | exact HF ]).
-  assert (wft (oExtC G rF lF F) sEnv) as HD
-      by (apply wf_ExtC; [ exact HG | exact HrF | exact HlF | exact HF ]).
-  assert (wft (oWkn G (iEl rF lF) (oEl G rF lF F))
-            (sSub (oExtC G rF lF F) G)) as Hwkn
-      by (unfold oExtC; apply wf_Wkn; [ exact HG | exact HiF | exact HA ]).
-  assert (wft (oWk1 G (iEl rF lF) (oEl G rF lF F))
-            (sSub (oExtC G rF lF F) G)) as Hwk1.
-  { unfold oWk1, oExtC; apply wf_Cmp;
-      [ apply wf_Ext; [ exact HG | exact HiF | exact HA ] | exact HG | exact HG
-      | apply wf_Wkn; [ exact HG | exact HiF | exact HA ]
-      | apply wf_Id; exact HG ]. }
-  assert (eqt (sSub (oExtC G rF lF F) G)
-            (oWkn G (iEl rF lF) (oEl G rF lF F))
-            (oWk1 G (iEl rF lF) (oEl G rF lF F))) as Hww1
-      by (apply eq_term_sym; unfold oExtC;
-          apply eq_wk1; [ exact HG | exact HiF | exact HA ]).
-  (* the head variable, typed at the weakened domain code *)
-  assert (wft (oHd G (iEl rF lF) (oEl G rF lF F))
-            (sElt (oExtC G rF lF F) rF lF
-               (wkCode (oExtC G rF lF F) G
-                  (oWk1 G (iEl rF lF) (oEl G rF lF F)) rF lF F))) as Hhd.
-  { eapply wf_term_conv;
-      [ unfold oExtC; apply wf_Hd; [ exact HG | exact HiF | exact HA ] | ].
-    unfold sElt; apply eq_sort_exp_ty; [ exact HD | exact HiF | ].
-    eapply eq_term_trans.
-    - apply TySubst_cong
-        with (G1 := oExtC G rF lF F) (G2 := oExtC G rF lF F)
-             (G1' := G) (G2' := G)
-             (g1 := oWkn G (iEl rF lF) (oEl G rF lF F))
-             (g2 := oWk1 G (iEl rF lF) (oEl G rF lF F))
-             (i1 := iEl rF lF) (i2 := iEl rF lF)
-             (A1 := oEl G rF lF F) (A2 := oEl G rF lF F);
-        [ apply eq_term_refl; exact HD
-        | apply eq_term_refl; exact HG
-        | exact Hww1
-        | apply eq_term_refl; exact HiF
-        | apply eq_term_refl; exact HA ].
-    - apply eq_El_subst;
-        [ exact HD | exact HG | exact Hwk1 | exact HrF | exact HlF
-        | exact HF ]. }
-  (* move the application from the bare [wkn] to [oWk1] *)
-  assert (eqt (sExp (oExtC G rF lF F) (iEl oRel lG)
-                 (oEl (oExtC G rF lF F) oRel lG B))
-            (appAtRel (oExtC G rF lF F) G rF lF lG F B
-               (oWkn G (iEl rF lF) (oEl G rF lF F)) e
-               (oHd G (iEl rF lF) (oEl G rF lF F)))
-            t) as Hbody.
-  { eapply eq_term_trans; [ | exact Ht ].
-    eapply eq_term_conv;
-      [ apply aw_appAt with (w := oWkn G (iEl rF lF) (oEl G rF lF F));
-        [ exact HD | exact HG | exact HrF | exact HlF | exact HlG
-        | exact Hwk1 | exact Hww1 | exact HF | exact HB | exact He
-        | exact Hhd ]
-      | ].
-    apply eq_sort_exp_ty;
-      [ exact HD
-      | unfold iEl; apply wf_Info;
-        [ apply wf_Rel | apply wf_Iota; exact HlG ]
-      | apply eq_codAt_wk1;
-        [ exact HG | exact HrF | exact HlF | exact HlG | exact HF
-        | exact HB ] ]. }
+  (* [appAtRel] at the bare [wkn] and the head variable IS the body of
+     "Pi_rel eta"'s left-hand side, so there is nothing to bridge. *)
   eapply eq_term_trans;
     [ apply eq_term_sym; apply eq_Pi_rel_eta;
       [ exact HG | exact HrF | exact HlF | exact HlG | exact HF | exact HB
@@ -860,11 +515,11 @@ Proof.
     | apply eq_term_refl; exact HlG
     | apply eq_term_refl; exact HF
     | apply eq_term_refl; exact HB
-    | exact Hbody ].
+    | exact Ht ].
 Qed.
 
 (* ================================================================== *)
-(* 7. Reading typing off an application / a substitution               *)
+(* 6. Reading typing off an application / a substitution               *)
 (*                                                                     *)
 (* [rty_pi_rel] imposes no typing on the members of [P]; the escape     *)
 (* half needs [e] to be well typed, and recovers it from the codomain   *)
@@ -904,14 +559,14 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* 8. The head variable of the one-step weakening is reducible         *)
+(* 7. The head variable of the one-step weakening is reducible         *)
 (* ================================================================== *)
 
 Lemma esc_hd_var G rF lF F F1
   : EnvOk G -> NfCode G rF lF F ->
     NfCode (oExtC G rF lF F) rF lF F1 ->
     eqt (sCode (oExtC G rF lF F) rF lF)
-      (wkCode (oExtC G rF lF F) G (oWk1 G (iEl rF lF) (oEl G rF lF F))
+      (wkCode (oExtC G rF lF F) G (oWkn G (iEl rF lF) (oEl G rF lF F))
          rF lF F) F1 ->
     VarT (oExtC G rF lF F) (iEl rF lF) (oEl (oExtC G rF lF F) rF lF F1)
          (oHd G (iEl rF lF) (oEl G rF lF F)).
@@ -925,21 +580,10 @@ Proof.
   unfold oExtC; apply vart_hd;
     [ exact HG | exact HTA | apply tyok_El; exact HF1 | ].
   eapply eq_term_trans.
-  - apply TySubst_cong
-      with (G1 := oExtC G rF lF F) (G2 := oExtC G rF lF F) (G1' := G) (G2' := G)
-           (g1 := oWkn G (iEl rF lF) (oEl G rF lF F))
-           (g2 := oWk1 G (iEl rF lF) (oEl G rF lF F))
-           (i1 := iEl rF lF) (i2 := iEl rF lF)
-           (A1 := oEl G rF lF F) (A2 := oEl G rF lF F);
-      [ er | er
-      | apply eq_term_sym; unfold oExtC; apply eq_wk1; wfx
-      | er | er ].
-  - eapply eq_term_trans.
-    + apply eq_El_subst;
-        [ wfx | wfx
-        | apply Wk_wf; apply Wk_wk1; [ exact HG | exact HTA ]
-        | wfx | wfx | wfx ].
-    + apply El_cong; [ er | er | er | exact HeqF1 ].
+  - apply eq_El_subst;
+      [ wfx | wfx | apply Wk_wf; apply wk_wkn; [ exact HG | exact HTA ]
+      | wfx | wfx | wfx ].
+  - apply El_cong; [ er | er | er | exact HeqF1 ].
 Qed.
 
 (* ================================================================== *)
@@ -991,8 +635,8 @@ Proof.
         by (apply tyok_El; exact HF).
     assert (EnvOk (oExtC G rF lF F)) as HDok
         by (unfold oExtC; apply envok_ext; [ exact HGok | exact HTA ]).
-    assert (Wk (oExtC G rF lF F) G (oWk1 G (iEl rF lF) (oEl G rF lF F))) as HW1
-        by (unfold oExtC; apply Wk_wk1; [ exact HGok | exact HTA ]).
+    assert (Wk (oExtC G rF lF F) G (oWkn G (iEl rF lF) (oEl G rF lF F))) as HW1
+        by (unfold oExtC; apply wk_wkn; [ exact HGok | exact HTA ]).
     split.
 
     + (* ESCAPE.  The fresh variable is reducible by the induction
@@ -1005,7 +649,7 @@ Proof.
                 (oEl (oExtC G rF lF F) rF lF F1)
                 (oHd G (iEl rF lF) (oEl G rF lF F))) as Hvar
           by (apply esc_hd_var; assumption).
-      assert (Pd (oExtC G rF lF F) (oWk1 G (iEl rF lF) (oEl G rF lF F))
+      assert (Pd (oExtC G rF lF F) (oWkn G (iEl rF lF) (oEl G rF lF F))
                 (oHd G (iEl rF lF) (oEl G rF lF F))) as Hhd.
       { apply Href1.
         exists (oHd G (iEl rF lF) (oEl G rF lF F)); split;
@@ -1018,13 +662,13 @@ Proof.
           [ exact HTC | apply tyok_El; exact HB
           | eapply eq_term_trans;
             [ apply eq_term_sym; exact HeqC
-            | apply eq_codAt_wk1; wfx ] ]. }
+            | apply eq_codAt_wkn; wfx ] ]. }
       subst C.
       destruct (HescC _ ((proj1 (Hiff e) He) _ _ _ HW1 HDok Hhd))
         as [t (Ht1 & Ht2)].
       exists (oLamRel G rF lF lG F B t); split.
       * apply nfet_lam_rel; assumption.
-      * apply eq_eta_wk1;
+      * apply eq_eta_wkn;
           [ wfx | wfx | wfx | wfx | wfx | wfx
           | eapply appAtRel_wf_e; eapply eqt_wf_l; exact Ht2
           | exact Ht2 ].
@@ -2927,24 +2571,13 @@ Proof.
   assert (EnvOk (oExt D (iEl rF lF) (oEl D rF lF F'))) as HEok
       by (apply envok_ext; assumption).
   destruct (NfCode_wkn HDok HTA' HF') as [F'' [HF'' HeqF'']].
-  destruct (WIS_cmp_Wk (Wk_wk1 HDok HTA') HWIS HEok) as [g'' [Hg'' Hcmp'']].
+  destruct (WIS_cmp_Wk (wk_wkn HDok HTA') HWIS HEok) as [g'' [Hg'' Hcmp'']].
   assert (wft (oWkn D (iEl rF lF) (oEl D rF lF F'))
             (sSub (oExt D (iEl rF lF) (oEl D rF lF F')) D)) as Hwkn by wfx.
-  assert (wft (oWk1 D (iEl rF lF) (oEl D rF lF F'))
-            (sSub (oExt D (iEl rF lF) (oEl D rF lF F')) D)) as Hwk1
-      by (apply Wk_wf; apply Wk_wk1; assumption).
   assert (WIS (oExt D (iEl rF lF) (oEl D rF lF F')) G
             (oCmp (oExt D (iEl rF lF) (oEl D rF lF F')) D G
-               (oWkn D (iEl rF lF) (oEl D rF lF F')) g)) as Hcw.
-  { eapply wis_conv; [ exact Hg'' | wfx | ].
-    eapply eq_term_trans; [ | exact Hcmp'' ].
-    apply Cmp_cong
-      with (X1 := oExt D (iEl rF lF) (oEl D rF lF F'))
-           (Y1 := oExt D (iEl rF lF) (oEl D rF lF F'))
-           (X2 := D) (Y2 := D) (X3 := G) (Y3 := G)
-           (f1 := oWkn D (iEl rF lF) (oEl D rF lF F'))
-           (f2 := oWk1 D (iEl rF lF) (oEl D rF lF F')) (g1 := g) (g2 := g);
-      [ er | er | er | apply eq_term_sym; apply eq_wk1; wfx | er ]. }
+               (oWkn D (iEl rF lF) (oEl D rF lF F')) g)) as Hcw
+      by (eapply wis_conv; [ exact Hg'' | wfx | exact Hcmp'' ]).
   unfold oLiftW, oExtC.
   apply wis_snoc with (F' := F'');
     [ exact Hcw | exact HEok | exact HF | exact HF'' | | ].

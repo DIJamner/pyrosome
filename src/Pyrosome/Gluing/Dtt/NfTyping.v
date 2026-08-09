@@ -591,12 +591,13 @@ Definition NfET_wf := proj2 (proj2 (proj2 (proj2 (proj2 Nf_wf)))).
 
 Lemma Wk_dom D G w : Wk D G w -> EnvOk D.
 Proof.
-  induction 1; [ assumption | | ]; apply envok_ext; assumption.
+  induction 1; [ assumption | | | ]; apply envok_ext; assumption.
 Qed.
 
 Lemma Wk_cod D G w : Wk D G w -> EnvOk G.
 Proof.
-  induction 1; [ assumption | assumption | apply envok_ext; assumption ].
+  induction 1;
+    [ assumption | assumption | assumption | apply envok_ext; assumption ].
 Qed.
 
 (* The equation the [wk_lift] conversion needs:
@@ -635,6 +636,13 @@ Proof.
   induction 1.
   - (* wk_id *)
     apply wf_Id; apply EnvOk_wf; assumption.
+  - (* wk_wkn *)
+    match goal with
+    | [ HT : TyOk _ _ _ |- _ ] => pose proof (TyOk_wf HT) as HAw
+    end.
+    apply wf_Wkn;
+      [ eapply wft_ty_env; exact HAw | eapply wft_ty_info; exact HAw
+      | exact HAw ].
   - (* wk_ext *)
     match goal with
     | [ HT : TyOk _ _ _ |- _ ] =>

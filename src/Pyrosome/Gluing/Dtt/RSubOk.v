@@ -295,23 +295,9 @@ Lemma RSub_wkn D G g i A'
     RSub (oExt D i A') G (oCmp (oExt D i A') D G (oWkn D i A') g).
 Proof.
   intros HR HG HD HA'.
-  assert (wft D sEnv) as HDw by (apply EnvOk_wf; exact HD).
-  assert (wft A' (sTy D i)) as HA'w by (apply TyOk_wf; exact HA').
-  assert (wft i sInfo) as Hiw by (eapply wft_ty_info; exact HA'w).
-  assert (wft g (sSub D G)) as Hgw by (apply RSub_wf; exact HR).
-  assert (wft G sEnv) as HGw by (eapply wft_sub_cod; exact Hgw).
-  assert (EnvOk (oExt D i A')) as HE by (apply envok_ext; assumption).
-  assert (wft (oExt D i A') sEnv) as HEw by (apply wf_Ext; assumption).
-  assert (RSub (oExt D i A') G
-            (oCmp (oExt D i A') D G (oWk1 D i A') g)) as Hstep
-    by (eapply RSub_wk;
-        [ exact HR | exact HG | apply Wk_wk1; assumption | exact HE ]).
-  eapply RSub_eq; [ exact Hstep | ].
-  apply Cmp_cong
-    with (X1 := oExt D i A') (Y1 := oExt D i A') (X2 := D) (Y2 := D)
-         (X3 := G) (Y3 := G)
-         (f1 := oWk1 D i A') (f2 := oWkn D i A') (g1 := g) (g2 := g);
-    [ er | er | er | apply eq_wk1; assumption | er ].
+  eapply RSub_wk;
+    [ exact HR | exact HG | apply wk_wkn; assumption
+    | apply envok_ext; assumption ].
 Qed.
 
 (* ================================================================== *)
@@ -496,23 +482,8 @@ Lemma RSubN_wkn D G g i A'
     RSubN (oExt D i A') G (oCmp (oExt D i A') D G (oWkn D i A') g).
 Proof.
   intros HN HD HA'.
-  assert (wft g (sSub D G)) as Hgw by (apply RSubN_wf; exact HN).
-  assert (wft D sEnv) as HDw by (apply EnvOk_wf; exact HD).
-  assert (wft G sEnv) as HGw by (eapply wft_sub_cod; exact Hgw).
-  assert (wft A' (sTy D i)) as HA'w by (apply TyOk_wf; exact HA').
-  assert (wft i sInfo) as Hiw by (eapply wft_ty_info; exact HA'w).
-  assert (EnvOk (oExt D i A')) as HE by (apply envok_ext; assumption).
-  assert (wft (oExt D i A') sEnv) as HEw by (apply wf_Ext; assumption).
-  assert (RSubN (oExt D i A') G
-            (oCmp (oExt D i A') D G (oWk1 D i A') g)) as Hstep
-    by (eapply RSubN_wk;
-        [ exact HN | apply Wk_wk1; assumption | exact HE ]).
-  eapply RSubN_eq; [ exact Hstep | ].
-  apply Cmp_cong
-    with (X1 := oExt D i A') (Y1 := oExt D i A') (X2 := D) (Y2 := D)
-         (X3 := G) (Y3 := G)
-         (f1 := oWk1 D i A') (f2 := oWkn D i A') (g1 := g) (g2 := g);
-    [ er | er | er | apply eq_wk1; assumption | er ].
+  eapply RSubN_wk;
+    [ exact HN | apply wk_wkn; assumption | apply envok_ext; assumption ].
 Qed.
 
 Lemma RSubN_proj D G i A g

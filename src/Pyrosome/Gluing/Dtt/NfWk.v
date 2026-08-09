@@ -336,6 +336,7 @@ Lemma Wk_ext_inv' E Gt wt
   : Wk E Gt wt ->
     forall G0 i0 A0, E = oExt G0 i0 A0 ->
     (Gt = oExt G0 i0 A0 /\ wt = oId (oExt G0 i0 A0))
+    \/ (Gt = G0 /\ TyOk G0 i0 A0 /\ wt = oWkn G0 i0 A0)
     \/ (exists w2, Wk G0 Gt w2 /\ TyOk G0 i0 A0
                    /\ wt = oCmp (oExt G0 i0 A0) G0 Gt (oWkn G0 i0 A0) w2)
     \/ (exists G1 A1 w2,
@@ -344,18 +345,23 @@ Lemma Wk_ext_inv' E Gt wt
            /\ eqt (sTy G0 i0) (oTySubst G0 G1 w2 i0 A1) A0
            /\ wt = oLiftW G0 G1 w2 i0 A1 A0).
 Proof.
-  destruct 1 as [ G HG | D G i A w HW HA | D G i A A' w HW HA HA' Heq ];
+  destruct 1 as [ G HG | D i A HD HA | D G i A w HW HA
+                | D G i A A' w HW HA HA' Heq ];
     intros G0 i0 A0 HE.
   - left; split; [ exact HE | rewrite HE; reflexivity ].
   - unfold oExt in HE; safe_invert HE.
-    right; left; exists w; repeat split; assumption.
+    right; left; repeat split; assumption.
   - unfold oExt in HE; safe_invert HE.
-    right; right; exists G, A, w; unfold oLiftW; repeat split; assumption.
+    right; right; left; exists w; repeat split; assumption.
+  - unfold oExt in HE; safe_invert HE.
+    right; right; right; exists G, A, w; unfold oLiftW; repeat split;
+      assumption.
 Qed.
 
 Lemma Wk_ext_inv G0 i0 A0 Gt wt
   : Wk (oExt G0 i0 A0) Gt wt ->
     (Gt = oExt G0 i0 A0 /\ wt = oId (oExt G0 i0 A0))
+    \/ (Gt = G0 /\ TyOk G0 i0 A0 /\ wt = oWkn G0 i0 A0)
     \/ (exists w2, Wk G0 Gt w2 /\ TyOk G0 i0 A0
                    /\ wt = oCmp (oExt G0 i0 A0) G0 Gt (oWkn G0 i0 A0) w2)
     \/ (exists G1 A1 w2,
@@ -376,12 +382,16 @@ Proof.
   intros HW'; revert G w.
   induction HW' as
     [ Gi HGi
+    | Di ii Ai HDi HAi
     | Di Gi ii Ai wi HWi IH HAi
     | Di Gi ii Ai Ai' wi HWi IH HAi HAi' Heqi ];
     intros Gt wt Hwt HD'.
   - (* wk_id *)
     exists wt; split; [ assumption | ].
     apply eq_id_left; wfx.
+  - (* wk_wkn *)
+    exists (oCmp (oExt Di ii Ai) Di Gt (oWkn Di ii Ai) wt).
+    split; [ apply wk_ext; assumption | er ].
   - (* wk_ext *)
     destruct (IH Gt wt Hwt (Wk_dom HWi)) as [w0 [Hw0 Heq0]].
     exists (oCmp (oExt Di ii Ai) Di Gt (oWkn Di ii Ai) w0).
@@ -399,13 +409,19 @@ Proof.
               (oHd Di ii Ai'))
       with (oLiftW Di Gi wi ii Ai Ai').
     apply Wk_ext_inv in Hwt.
-    destruct Hwt as [ [HGt Hwt] | [ [w2 [HW2 [HA2 Hwt]]]
-                                  | [G1 [A1 [w2 [HGt [HW2 [HA1 [HA2 [Heq2 Hwt]]]]]]]] ] ];
+    destruct Hwt as [ [HGt Hwt]
+                    | [ [HGt [HA2 Hwt]]
+                    | [ [w2 [HW2 [HA2 Hwt]]]
+                      | [G1 [A1 [w2 [HGt [HW2 [HA1 [HA2 [Heq2 Hwt]]]]]]]] ] ] ];
       subst.
     + (* inner wk_id *)
       exists (oLiftW Di Gi wi ii Ai Ai'); split;
         [ apply wk_lift'; assumption | ].
       apply eq_id_right; wfx.
+    + (* inner wk_wkn: [lift(w) ; wkn = wkn ; w] *)
+      exists (oCmp (oExt Di ii Ai') Di Gi (oWkn Di ii Ai') wi).
+      split; [ apply wk_ext; assumption | ].
+      apply eq_liftW_wkn; [ wfx | wfx | wfx | wfx | wfx | wfx | exact Heqi ].
     + (* inner wk_ext *)
       destruct (IH Gt w2 HW2 HDi) as [w12 [Hw12 Heq12]].
       exists (oCmp (oExt Di ii Ai') Di Gt (oWkn Di ii Ai') w12).
@@ -1166,6 +1182,7 @@ Lemma vart_hd_wk_gen D GG w
 Proof.
   induction 1 as
     [ G0 HG0
+    | D0 j C HD0 HC
     | D0 GG0 j C w0 HW0 IH HC
     | D1 G1 i1 A1 A1' w1 HW1 IH1 HA1 HA1' Heq1 ];
     intros G i A A' HGG HG HA HA' Heq Hpkg;
@@ -1179,6 +1196,23 @@ Proof.
       | apply eq_ty_subst_id; wfx
       | exact HVhd
       | apply eq_exp_subst_id; wfx ].
+  - (* wk_wkn: the variable just takes one more [wkn] step *)
+    subst D0.
+    assert (Wk (oExt (oExt G i A) j C) (oExt G i A)
+              (oWkn (oExt G i A) j C)) as HWfull
+        by (apply wk_wkn; assumption).
+    destruct (Hpkg _ _ HWfull) as [A'' [HTA'' HeqA'']].
+    exists A'', (oExpSubst (oExt (oExt G i A) j C) (oExt G i A)
+                   (oWkn (oExt G i A) j C) i A' (oHd G i A)).
+    repeat split;
+      [ exact HTA''
+      | exact HeqA''
+      | apply vart_wkn; [ exact HVhd | exact HC | exact HTA'' | exact HeqA'' ]
+      | ].
+    apply eq_term_refl.
+    eapply wf_term_conv;
+      [ | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqA'' ] ].
+    apply wf_ExpSubst; wfx.
   - (* wk_ext *)
     subst GG0.
     assert (Wk (oExt D0 j C) (oExt G i A)
@@ -1396,6 +1430,7 @@ Lemma vart_wkn_wk_gen D GG w
 Proof.
   induction 1 as
     [ G0 HG0
+    | D0 k C HD0 HC
     | D0 GG0 k C w0 HW0 IH HC
     | D1 G1 i1 A1 A1' w1 HW1 IH1 HA1 HA1' Heq1 ];
     intros G i A x j B A' HGG Hx HB HA' Heq Hvpkg Htpkg;
@@ -1410,6 +1445,24 @@ Proof.
       | apply eq_ty_subst_id; wfx
       | exact HVw
       | apply eq_exp_subst_id; wfx ].
+  - (* wk_wkn: one more [wkn] step *)
+    subst D0.
+    assert (Wk (oExt (oExt G j B) k C) (oExt G j B)
+              (oWkn (oExt G j B) k C)) as HWfull
+        by (apply wk_wkn; assumption).
+    destruct (Htpkg _ _ HWfull) as [A'' [HTA'' HeqA'']].
+    exists A'', (oExpSubst (oExt (oExt G j B) k C) (oExt G j B)
+                   (oWkn (oExt G j B) k C) i A'
+                   (oExpSubst (oExt G j B) G (oWkn G j B) i A x)).
+    repeat split;
+      [ exact HTA''
+      | exact HeqA''
+      | apply vart_wkn; [ exact HVw | exact HC | exact HTA'' | exact HeqA'' ]
+      | ].
+    apply eq_term_refl.
+    eapply wf_term_conv;
+      [ | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqA'' ] ].
+    apply wf_ExpSubst; wfx.
   - (* wk_ext *)
     subst GG0.
     assert (Wk (oExt D0 k C) (oExt G j B)
@@ -2474,21 +2527,9 @@ Qed.
 (* consumer, here or downstream, ever needs.                             *)
 (* ================================================================== *)
 
-Definition oWk1 (D i A' : term) : term :=
-  oCmp (oExt D i A') D D (oWkn D i A') (oId D).
-
-Lemma Wk_wk1 D i A' : EnvOk D -> TyOk D i A' -> Wk (oExt D i A') D (oWk1 D i A').
-Proof. intros; unfold oWk1; apply wk_ext; [ apply wk_id | ]; assumption. Qed.
-
-Lemma eq_wk1 D i A'
-  : wft D sEnv -> wft i sInfo -> wft A' (sTy D i) ->
-    eqt (sSub (oExt D i A') D) (oWk1 D i A') (oWkn D i A').
-Proof.
-  intros; unfold oWk1; apply eq_id_right;
-    [ apply wf_Ext; assumption | assumption | apply wf_Wkn; assumption ].
-Qed.
-
-(* one-step weakening of a normal type / normal code *)
+(* one-step weakening of a normal type / normal code.  [wk_wkn] IS the
+   bare one-step weakening, so these are [TyOk_wk]/[NfCode_wk] read off
+   at it, with nothing to bridge. *)
 Lemma TyOk_wkn D i A' j C
   : EnvOk D -> TyOk D i A' -> TyOk D j C ->
     exists C', TyOk (oExt D i A') j C'
@@ -2497,14 +2538,7 @@ Lemma TyOk_wkn D i A' j C
 Proof.
   intros HD HA' HC.
   assert (EnvOk (oExt D i A')) as HE by (apply envok_ext; assumption).
-  destruct (TyOk_wk HC (Wk_wk1 HD HA') HE) as [C' [HC' Heq]].
-  exists C'; split; [ exact HC' | ].
-  eapply eq_term_trans; [ | exact Heq ].
-  apply TySubst_cong
-    with (G1 := oExt D i A') (G2 := oExt D i A') (G1' := D) (G2' := D)
-         (g1 := oWkn D i A') (g2 := oWk1 D i A') (i1 := j) (i2 := j)
-         (A1 := C) (A2 := C);
-    [ er | er | apply eq_term_sym; apply eq_wk1; wfx | er | er ].
+  exact (TyOk_wk HC (wk_wkn HD HA') HE).
 Qed.
 
 Lemma NfCode_wkn D i A' r l c
@@ -2516,17 +2550,7 @@ Lemma NfCode_wkn D i A' r l c
 Proof.
   intros HD HA' Hc.
   assert (EnvOk (oExt D i A')) as HE by (apply envok_ext; assumption).
-  destruct (NfCode_wk Hc (Wk_wk1 HD HA') HE) as [c' [Hc' Heq]].
-  exists c'; split; [ exact Hc' | ].
-  eapply eq_term_trans; [ | exact Heq ].
-  eapply eqt_Usub_c with (G' := D) (g := oWk1 D i A') (r := r) (l := l);
-    [ wfx | wfx | apply Wk_wf; apply Wk_wk1; assumption | wfx | wfx | ].
-  apply ExpSubst_cong
-    with (G1 := oExt D i A') (G2 := oExt D i A') (G1' := D) (G2' := D)
-         (g1 := oWkn D i A') (g2 := oWk1 D i A')
-         (i1 := iCode l) (i2 := iCode l)
-         (A1 := oU D r l) (A2 := oU D r l) (v1 := c) (v2 := c);
-    [ er | er | apply eq_term_sym; apply eq_wk1; wfx | er | er | er ].
+  exact (NfCode_wk Hc (wk_wkn HD HA') HE).
 Qed.
 
 (* ---- the class ---- *)
