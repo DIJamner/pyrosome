@@ -17,11 +17,12 @@ Everything else — the layer decomposition, the `CutTModel` route, "state every
 ## 1. The target language
 
 ```
-ott_dtt := ott_pi ++ ott_nat ++ ott_base ++ subst_ott ++ ott_info      (69 rules)
+ott_dtt := ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base
+             ++ subst_ott ++ ott_info                                  (73 rules)
 ```
 
-Census (computed, `named_map summ ott_dtt`): **32** `term_rule`, **28** `term_eq_rule`,
-**9** `sort_rule`, **0** `sort_eq_rule`.
+Census (computed, `named_map summ ott_dtt`): **32** `term_rule`, **32** `term_eq_rule`,
+**9** `sort_rule`, **0** `sort_eq_rule`. `ott_subst_commute` is §9a's fix.
 
 Sorts: `env`, `sub G G'`, `ty G i`, `exp G i A`, `tyinfo`, `relevance`, `lvl`, `tlvl`,
 `ltl a b`. Types are terms of the sort `ty`; `exp` is indexed by such a term. There are no
@@ -473,8 +474,9 @@ one line each, `csort_by` is vacuous (no `sort_eq_rule`s), and all the work is i
 semantic conjunct constrains only `e1`; the fact for `e2` is recovered from the equation, as
 in `Gluing/Stlc/ModelCong.v`.
 
-Obligation count: `cterm_cong` 32, `cterm_by` 28, `csort_cong` 9, `csort_by` 0, structural 6
-— **75** (STLC was 45).
+Obligation count: `cterm_cong` 32, `cterm_by` 32, `csort_cong` 9, `csort_by` 0, structural 6
+— **79** (STLC was 45). **28 are proved** and axiom-free: the 6 structural, the 9 `csort_cong`
+(`csort_by` being vacuous), and the index fragment's 9 congruences + 3 equations.
 
 ---
 
@@ -510,9 +512,20 @@ is "subsumed by proof irrelevance" — true in the full theory with `Lang/OTT/Pr
 single rule equates any two inhabitants of a proof-irrelevant type, but `ProofIrr` is out of scope
 here, so for `ott_dtt` the rules are genuinely absent.
 
-Fixed by `src/Pyrosome/Lang/OTT/SubstCommute.v`, a separate extension rather than an edit to
-`Pi.v`/`Nat.v` — that leaves every already-compiled language (`Sigma`, `Id`, `Cast`, `ProofIrr`,
-`Computations`) untouched and avoids re-elaborating them. Upstreaming is a later decision.
+**Fixed.** `src/Pyrosome/Lang/OTT/SubstCommute.v` supplies all four, proved and axiom-free, as a
+separate extension rather than an edit to `Pi.v`/`Nat.v` — that leaves every already-compiled
+language (`Sigma`, `Id`, `Cast`, `ProofIrr`, `Computations`) untouched. Upstreaming is a later
+decision. Two things learned writing them:
+
+* **The elaborator normalizes the declared conclusion sort.** Either spelling of an `app` rule's
+  sort passes `compute_wf_rule`, and both come out stored as `ty_subst g (ty_subst ⟨id,a⟩ (El B))`.
+* **A spelling divergence that matters more than the `next0` one.** `elab_rule` builds `under' g`
+  over `ext G [rF,ι lF] (ty_subst g (El F))`, but *every* other binder commutation in the family —
+  `Pi_rel subst`, `Pi_irr subst`, `lam_rel subst`, `Sig subst` — uses
+  `ext G [rF,ι lF] (El G rF lF g[F])`. Equal by `El subst`, not the same term; left as elaborated,
+  `g[app_rel …]` would reduce to a differently spelled context than `g[lam_rel …]` does, which is
+  exactly the wart that breaks a syntactic normal-form argument. Both `app` rules are hand-written
+  to the family's form.
 
 ## 9b. The index-spelling mismatch, and why it is not an authoring bug
 
