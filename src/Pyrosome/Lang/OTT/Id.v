@@ -80,7 +80,8 @@ Definition id_injectivity :=
   [("Id", ["u"; "t"; "B"; "A"; "l"; "G"]);
    ("Idrefl", ["t"; "A"; "l"; "G"]);
    ("transp", ["s"; "e"; "u"; "t"; "P"; "A"; "l"; "G"]);
-   ("Idsym", ["e"; "u"; "t"; "B"; "A"; "l"; "G"])].
+   ("Idsym", ["e"; "u"; "t"; "B"; "A"; "l"; "G"]);
+   ("Idcong", ["e"; "u"; "t"; "b"; "B"; "lB"; "A"; "l"; "G"])].
 
 Derive ott_id
        in (wf_lang_ext (ott_nat ++ ott_base ++ subst_ott ++ ott_info) ott_id)
@@ -188,6 +189,39 @@ Proof.
         : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
           (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
                 (#"Id" ["G" := "G"] ["l" := "l"] "B" "A" "u" "t"))
+    ]}%prerule
+    (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* Idcong: congruence (aka `ap`).  Generalizes Idrefl from a CLOSED term to a
+     term b with one extra variable — b : El B in the extended context
+     ext G (El A), where the codomain code B may itself depend on the variable.
+     Given endpoints t,u : El A and a proof e : Id A A t u, produce a proof that
+     the two instantiations are (heterogeneously) equal:
+        Id (B[t]) (B[u]) (b[t]) (b[u]).
+     Idrefl A t is the degenerate case b := hd, B := A weakened (both ignore the
+     endpoints), whose congruence proof at t = u is Id A A t t.  As with
+     Idsym/transp this is a posited term former, coherent by proof irrelevance
+     (it lives in SProp); the substituted codomains make the equality
+     heterogeneous, which is exactly why Id was generalized. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl", "lB" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "B" : #"exp" (#"ext" "G" (#"El" "A")) (#"info" #"rel" (#"next" "lB"))
+                       (#"U" ["G" := #"ext" "G" (#"El" "A")] #"rel" "lB"),
+          "b" : #"exp" (#"ext" "G" (#"El" "A")) (#"info" #"rel" (#"iota" "lB")) (#"El" "B"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+      -----------------------------------------------
+      #"Idcong" "A" "B" "b" "t" "u" "e"
+        : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+          (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                (#"Id" ["G" := "G"] ["l" := "lB"]
+                      (#"exp_subst" (#"snoc" #"id" "t") "B")
+                      (#"exp_subst" (#"snoc" #"id" "u") "B")
+                      (#"exp_subst" (#"snoc" #"id" "t") "b")
+                      (#"exp_subst" (#"snoc" #"id" "u") "b")))
     ]}%prerule
     (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
