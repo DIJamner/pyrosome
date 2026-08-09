@@ -244,46 +244,53 @@ parameterised by `NfCode_inj`/`TyOk_inj`. It is declined because the existential
 compose, via the seam above, and switching would invalidate several thousand verified lines.
 Worth revisiting only if a later layer hits the same wall a third time.
 
-### 4b. Status, and the one step that remains
+### 4b. Status: **Layer 0.5 is closed**
 
-Both halves are built and axiom-free:
+All three exports are proved and axiom-free, in `WIP/DttInj.v`:
+`NfCode_inj`, `TyOk_inj`, `EnvOk_inj` — provably-equal normal objects are *syntactically* equal —
+plus `WknInj_holds`, which discharges the seam of §4a so `WIP/DttErase.v`'s own theorems are
+available downstream too.
 
-* `WIP/DttErase.v` — the domain, the erasure, totality, functionality, and injectivity of the
-  erasure (each injectivity theorem taking `WknInj`).
-* `WIP/DttRigid.v` + `WIP/DttRigidOk.v` — the rigid model, **all ten `CutTModel_ok` obligations**,
-  and `rigid_sound : eq_term ott_dtt [] t e1 e2 -> rceq_term t e1 e2`, with the readings
-  `rigid_env`/`rigid_ty`/`rigid_sub`/`rigid_code`. §2's claim survived contact with every one of
-  the 28 equation obligations: everything at an `El`-sort, **including both β rules and η**, is
-  discharged by `exact I`.
+The pieces: `WIP/DttErase.v` (domain, erasure, totality, functionality, erasure-injectivity),
+`WIP/DttRigid.v` (the rigid model and **all ten** `CutTModel_ok` obligations), `WIP/DttRigidOk.v`
+(`RigCM_ok` and `rigid_sound`, with the readings `rigid_env`/`rigid_ty`/`rigid_sub`/`rigid_code`).
+§2's claim survived contact with every one of the 28 equation obligations: everything at an
+`El`-sort, **including both β rules and η**, is discharged by `exact I`.
 
-What remains is only the composition, and it has one wrinkle worth writing down because a naive
-attempt loops. `WknInj` at `ext G j B` is discharged by the model (both `wkn`-instances go to
-`rshift` of their erasures, `rshift` is injective) **plus `TyOk_inj` at `G`** — but `DttErase.v`
-states `WknInj` globally, so feeding it back is circular as stated. The fix is to run **one strong
-induction on `length E`**, proving the environment, type, code and variable injectivity statements
-simultaneously against the *model's own* relations `IEnv`/`ITy`/`ICode`, since the only place a
-shorter environment is needed is the `vart_wkn` case:
+**The induction on environment length that this section used to prescribe is not needed, and does
+not work.** It was the wrong idea twice over: the code component's Π case recurses into a *longer*
+environment, and the variable component there needs the type component back at the original
+length — the dependency is `T(m) → C(m) → V(m+1) → T(m)`, which no measure on environment length
+repairs.
+
+What actually closes it is an observation about *which* instance of the seam is ever needed:
+
+> The only `WknInj` instance the code-level argument uses is the one where the named type is a
+> **universe** — a code variable's type is `oU G r l` and nothing else. And at a universe the
+> statement is **unconditional**.
 
 ```coq
-Theorem rigid_inj : forall n E, length E < n ->
-  (forall G1 G2,     IEnv G1 E -> IEnv G2 E -> EnvOk G1 -> EnvOk G2 -> G1 = G2)
-  /\ (forall G i1 A1 i2 A2 T, IEnv G E -> TyOk G i1 A1 -> TyOk G i2 A2 ->
-        ITy E A1 T -> ITy E A2 T -> i1 = i2 /\ A1 = A2)
-  /\ (forall G r l c1 c2 n0, IEnv G E -> NfCode G r l c1 -> NfCode G r l c2 ->
-        ICode E c1 n0 -> ICode E c2 n0 -> c1 = c2)
-  /\ (variables, likewise).
+Lemma WknU_shape G j B i A r l :
+  TyOk G i A ->
+  eqt (sTy (oExt G j B) i) (oTySubst (oExt G j B) G (oWkn G j B) i A) (oU (oExt G j B) r l) ->
+  A = oU G r l.
 ```
 
-`NfCode_inj`/`TyOk_inj`/`EnvOk_inj` then follow by combining `rigid_code`/`rigid_ty`/`rigid_env`
-with the interpretation's totality on normal forms. `WIP/DttErase.v`'s own theorems become
-available too, since `WknInj` is a corollary — but nothing else needs them.
+— proved with no recursion at all: `rigid_ty`, then invert the interpretation
+(`ITy_subst_inv`/`ISub_wkn_inv`), then `tsub rshift T0 = rt_U br bl ⇒ T0 = rt_U br bl`, with `r`
+and `l` pinned by `ErRel_inj`/`ErLvl_inj`. So the development is **linear**, with only the two
+ordinary inductions inherited from `DttErase.v` (on the de Bruijn index, and on the `rcode`).
 
-Why the induction is needed at all, concretely: `vart_wkn`'s *term* mentions the named normal type
-of the **inner** variable, so two normal codes at the same de Bruijn index in the same environment
-are distinct syntax unless that naming is unique — which is `TyOk_inj` one environment down.
+The one substantial new induction is the seam itself, `Nf_ErI`: a single `Nf_mutind` producing,
+for each normal object, an erasure that is *simultaneously* an `Er…` and an `I…` derivation, at
+the same `renv` and with the same image. Running both systems in one induction is what keeps their
+indices in step — proving them separately and matching afterwards would need the very agreement
+being proved.
 
-**Kill-switch.** If `NfCode_inj` is not proved by the end of Layer 0.5, stop and re-plan —
-every later layer consumes it, and there is no second route to it.
+So "only `vart_wkn` needs a fact about the shorter environment" held up, but degenerately: the
+fact it needs is the *unconditional* universe case, not injectivity one level down.
+
+**Kill-switch: passed.** `NfCode_inj` is proved. Every later layer may consume it.
 
 ---
 
