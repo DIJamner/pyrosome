@@ -1384,3 +1384,648 @@ Proof.
   - (* irr *) apply rceq_rel_i; exists false; split; constructor.
   - (* rel *) apply rceq_rel_i; exists true; split; constructor.
 Qed.
+
+(* ---- [cterm_by]: the 28 equations ----
+
+   7 of them live at an [El]-sort and are [exact I]: both beta rules, eta,
+   [lam_rel subst], [zero subst], [suc subst] and [ltl_irr].  That is the
+   whole content of design section 2 -- no equation of the theory can
+   rewrite a code -- and it survived contact with the obligations
+   unchanged.  The remaining 21 are the sigma laws, the four [X subst]
+   commutations, and the two [tlvl] equations.  *)
+
+(* The lifting of a substitution under a binder, as the object theory
+   spells it ([DttSyntax.oLift]), interprets as [rc_nat .: (shift o s)] --
+   the head slot is an [El] slot, so its junk value is invisible to
+   [subeq], which is exactly why it may differ from [up]'s [rc_var 0]. *)
+(* The substituted domain code that [oLift] (and the [Pi] commutations)
+   name; it is exactly [oLift]'s own [Fg]. *)
+Definition oCodeSub (G G' g rF lF F : term) : term :=
+  oExpSubst G G' g (iCode lF) (oU G' rF lF) F.
+
+Lemma ISub_oLift Y1 Y2 g rF lF F E E2 s br bl nF
+  : IEnv Y1 E -> IEnv Y2 E2 -> ISub E E2 g s ->
+    ErRel rF br -> ErLvl lF bl -> ICode E2 F nF -> ICode E (oCodeSub Y1 Y2 g rF lF F) (csub s nF) ->
+    ISub (rt_El br bl (csub s nF) :: E) (rt_El br bl nF :: E2)
+      (oLift Y1 Y2 g rF lF F) (rsnoc rc_nat (rcmp rshift s)).
+Proof.
+  intros HE HE2 Hs Hr Hl HF HFg.
+  assert (ITy E (oEl Y1 rF lF (oCodeSub Y1 Y2 g rF lF F))
+            (rt_El br bl (csub s nF))) as HTy
+      by (econstructor; eassumption).
+  assert (IEnv (oExtC Y1 rF lF (oCodeSub Y1 Y2 g rF lF F))
+            (rt_El br bl (csub s nF) :: E)) as HEF
+      by (unfold oExtC; econstructor; eassumption).
+  unfold oLift.
+  eapply isub_snoc_El.
+  - exact HEF.
+  - exact HE2.
+  - econstructor; [ exact HEF | exact HE | exact HE2 | | exact Hs ].
+    econstructor; [ exact HE | exact HTy ].
+  - econstructor; eassumption.
+Qed.
+
+Lemma subeq_lift E2 s1 s2 br bl nF
+  : subeq E2 s1 s2 ->
+    subeq (rt_El br bl nF :: E2) (up s1) (rsnoc rc_nat (rcmp rshift s2)).
+Proof.
+  intros H [|k] Hk; [ cbn in Hk; discriminate | ].
+  unfold up, rsnoc, rcmp; rewrite csub_rshift, (H k Hk); reflexivity.
+Qed.
+
+Lemma by_id_left X1 Y1 X2 Y2 g1 g2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_sub Y1 Y2 g1 g2 ->
+    Req_sub Y1 Y2 (oCmp X1 X1 X2 (oId X1) g1) g2.
+Proof.
+  intros H1 H2 [E [E' [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]].
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  eapply Req_sub_mk with (E := E) (E' := E') (s1 := rcmp rid s1) (s2 := s2).
+  - exact K1.
+  - exact K2.
+  - econstructor;
+      [ exact HX1 | exact HX1 | exact HX2 | constructor; exact HX1 | exact K3 ].
+  - exact K4.
+  - intros k Hk; unfold rcmp; rewrite csub_id; apply K5; exact Hk.
+Qed.
+
+Lemma by_id_right X1 Y1 X2 Y2 g1 g2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_sub Y1 Y2 g1 g2 ->
+    Req_sub Y1 Y2 (oCmp X1 X2 X2 g1 (oId X2)) g2.
+Proof.
+  intros H1 H2 [E [E' [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]].
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  eapply Req_sub_mk with (E := E) (E' := E') (s1 := rcmp s1 rid) (s2 := s2).
+  - exact K1.
+  - exact K2.
+  - econstructor;
+      [ exact HX1 | exact HX2 | exact HX2 | exact K3 | constructor; exact HX2 ].
+  - exact K4.
+  - intros k Hk; unfold rcmp, rid; cbn; apply K5; exact Hk.
+Qed.
+
+Lemma subeq_cmp E2 E3 sf1 sf2 sg1 sg2
+  : swf E2 E3 sg2 -> subeq E2 sf1 sf2 -> subeq E3 sg1 sg2 ->
+    subeq E3 (rcmp sf1 sg1) (rcmp sf2 sg2).
+Proof.
+  intros Hw Hf Hg k Hk; unfold rcmp.
+  rewrite (Hg k Hk).
+  eapply csub_ext_wf; [ apply Hw; exact Hk | exact Hf ].
+Qed.
+
+Lemma by_cmp_assoc X1 Y1 X2 Y2 X3 Y3 X4 Y4 f1 f2 g1 g2 h1 h2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_env X3 Y3 -> Req_env X4 Y4 ->
+    Req_sub Y1 Y2 f1 f2 -> Req_sub Y2 Y3 g1 g2 -> Req_sub Y3 Y4 h1 h2 ->
+    Req_sub Y1 Y4 (oCmp X1 X2 X4 f1 (oCmp X2 X3 X4 g1 h1))
+                  (oCmp Y1 Y3 Y4 (oCmp Y1 Y2 Y3 f2 g2) h2).
+Proof.
+  intros H1 H2 H3 H4
+    [E1 [E2 [sf1 [sf2 [K1 [K2 [K3 [K4 K5]]]]]]]]
+    [E2a [E3 [sg1 [sg2 [L1 [L2 [L3 [L4 L5]]]]]]]]
+    [E3a [E4 [sh1 [sh2 [M1 [M2 [M3 [M4 M5]]]]]]]].
+  pose proof (IEnv_fun L1 K2) as Ha; subst E2a.
+  pose proof (IEnv_fun M1 L2) as Hb; subst E3a.
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  pose proof (Req_env_transfer (Req_env_sym H3) L2) as HX3.
+  pose proof (Req_env_transfer (Req_env_sym H4) M2) as HX4.
+  eapply Req_sub_mk with (E := E1) (E' := E4)
+                         (s1 := rcmp sf1 (rcmp sg1 sh1))
+                         (s2 := rcmp (rcmp sf2 sg2) sh2).
+  - exact K1.
+  - exact M2.
+  - econstructor; [ exact HX1 | exact HX2 | exact HX4 | exact K3 | ].
+    econstructor; [ exact HX2 | exact HX3 | exact HX4 | exact L3 | exact M3 ].
+  - econstructor; [ exact K1 | exact L2 | exact M2 | | exact M4 ].
+    econstructor; [ exact K1 | exact K2 | exact L2 | exact K4 | exact L4 ].
+  - intros k Hk.
+    change (rcmp sf1 (rcmp sg1 sh1) k) with (csub sf1 (csub sg1 (sh1 k))).
+    rewrite csub_comp.
+    change (rcmp (rcmp sf2 sg2) sh2 k) with (csub (rcmp sf2 sg2) (sh2 k)).
+    rewrite (M5 k Hk).
+    eapply csub_ext_wf; [ eapply (ISub_swf M4); exact Hk | ].
+    eapply subeq_cmp; [ eapply ISub_swf; exact L4 | exact K5 | exact L5 ].
+Qed.
+
+Lemma by_cmp_forget X1 Y1 X2 Y2 f1 f2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_sub Y1 Y2 f1 f2 ->
+    Req_sub Y1 oEmp (oCmp X1 X2 oEmp f1 (oForget X2)) (oForget Y1).
+Proof.
+  intros H1 H2 [E [E' [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]].
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  eapply Req_sub_mk with (E := E) (E' := @nil rty)
+                         (s1 := rcmp s1 rforget) (s2 := rforget).
+  - exact K1.
+  - constructor.
+  - econstructor;
+      [ exact HX1 | exact HX2 | constructor | exact K3 | constructor; exact HX2 ].
+  - constructor; exact K1.
+  - intros k Hk; cbn in Hk; unfold isUat in Hk;
+      destruct k; cbn in Hk; discriminate.
+Qed.
+
+Lemma by_id_emp_forget : Req_sub oEmp oEmp (oId oEmp) (oForget oEmp).
+Proof.
+  eapply Req_sub_mk with (E := @nil rty) (E' := @nil rty)
+                         (s1 := rid) (s2 := rforget).
+  - constructor.
+  - constructor.
+  - constructor; constructor.
+  - constructor; constructor.
+  - intros k Hk; unfold isUat in Hk; destruct k; cbn in Hk; discriminate.
+Qed.
+
+Lemma by_wkn_snoc X1 Y1 X2 Y2 i1 A1 A2 g1 g2 v1 v2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_ty Y2 A1 A2 -> Req_sub Y1 Y2 g1 g2 ->
+    (USkel A2 = true -> Req_code Y1 v1 v2) ->
+    Req_sub Y1 Y2
+      (oCmp X1 (oExt X2 i1 A1) X2 (oSnoc X1 X2 i1 A1 g1 v1) (oWkn X2 i1 A1)) g2.
+Proof.
+  intros H1 H2 [E2 [T [HE2 [HA1 HA2]]]]
+    [E [E2a [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]] Hv.
+  pose proof (IEnv_fun K2 HE2) as Ha; subst E2a.
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) HE2) as HX2.
+  assert (IEnv (oExt X2 i1 A1) (T :: E2)) as HXE
+      by (econstructor; [ exact HX2 | exact HA1 ]).
+  destruct T as [ br bl | br bl nc ].
+  - destruct (Hv (ITy_USkel HA2)) as [Ec [n [M1 [M2 M3]]]].
+    pose proof (IEnv_fun M1 K1) as Hb; subst Ec.
+    eapply Req_sub_mk with (E := E) (E' := E2)
+                           (s1 := rcmp (rsnoc n s1) rshift) (s2 := s2).
+    + exact K1.
+    + exact HE2.
+    + econstructor; [ exact HX1 | exact HXE | exact HX2 | | ].
+      * eapply isub_snoc_U;
+          [ exact HX1 | exact HX2 | exact K3 | exact HA1 | exact M2 ].
+      * econstructor; [ exact HX2 | exact HA1 ].
+    + exact K4.
+    + intros k Hk; unfold rcmp, rshift, rsnoc; cbn; apply K5; exact Hk.
+  - eapply Req_sub_mk with (E := E) (E' := E2)
+                           (s1 := rcmp (rsnoc rc_nat s1) rshift) (s2 := s2).
+    + exact K1.
+    + exact HE2.
+    + econstructor; [ exact HX1 | exact HXE | exact HX2 | | ].
+      * eapply isub_snoc_El;
+          [ exact HX1 | exact HX2 | exact K3 | exact HA1 ].
+      * econstructor; [ exact HX2 | exact HA1 ].
+    + exact K4.
+    + intros k Hk; unfold rcmp, rshift, rsnoc; cbn; apply K5; exact Hk.
+Qed.
+
+Lemma by_snoc_hd X1 Y1 X2 Y2 i1 A1 A2 g1 g2 v1 v2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_ty Y2 A1 A2 -> Req_sub Y1 Y2 g1 g2 ->
+    Req_code Y1 v1 v2 -> USkel A2 = true ->
+    Req_code Y1
+      (oExpSubst X1 (oExt X2 i1 A1) (oSnoc X1 X2 i1 A1 g1 v1) i1
+         (oTySubst (oExt X2 i1 A1) X2 (oWkn X2 i1 A1) i1 A1) (oHd X2 i1 A1))
+      v2.
+Proof.
+  intros H1 H2 [E2 [T [HE2 [HA1 HA2]]]]
+    [E [E2a [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]] [Ec [n [M1 [M2 M3]]]] Hu.
+  pose proof (IEnv_fun K2 HE2) as Ha; subst E2a.
+  pose proof (IEnv_fun M1 K1) as Hb; subst Ec.
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) HE2) as HX2.
+  rewrite (ITy_USkel HA2) in Hu.
+  destruct T as [ br bl | br bl nc ]; [ | discriminate ].
+  assert (IEnv (oExt X2 i1 A1) (rt_U br bl :: E2)) as HXE
+      by (econstructor; [ exact HX2 | exact HA1 ]).
+  eapply Req_code_mk with (E := E) (n := n).
+  - exact K1.
+  - change n with (csub (rsnoc n s1) (rc_var 0)).
+    econstructor; [ exact HX1 | exact HXE | | ].
+    + eapply isub_snoc_U;
+        [ exact HX1 | exact HX2 | exact K3 | exact HA1 | exact M2 ].
+    + econstructor; [ exact HX2 | exact HA1 ].
+  - exact M3.
+Qed.
+
+Lemma by_cmp_snoc X1 Y1 X2 Y2 X3 Y3 i1 i2 A1 A2 f1 f2 g1 g2 v1 v2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_env X3 Y3 ->
+    Req_ty Y3 A1 A2 -> Req_sub Y1 Y2 f1 f2 -> Req_sub Y2 Y3 g1 g2 ->
+    (USkel A2 = true -> Req_code Y2 v1 v2) ->
+    Req_sub Y1 (oExt Y3 i2 A2)
+      (oCmp X1 X2 (oExt X3 i1 A1) f1 (oSnoc X2 X3 i1 A1 g1 v1))
+      (oSnoc Y1 Y3 i2 A2 (oCmp Y1 Y2 Y3 f2 g2)
+         (oExpSubst Y1 Y2 f2 i2 (oTySubst Y2 Y3 g2 i2 A2) v2)).
+Proof.
+  intros H1 H2 H3 [E3 [T [HE3 [HA1 HA2]]]]
+    [E1 [E2 [sf1 [sf2 [K1 [K2 [K3 [K4 K5]]]]]]]]
+    [E2a [E3a [sg1 [sg2 [L1 [L2 [L3 [L4 L5]]]]]]]] Hv.
+  pose proof (IEnv_fun L1 K2) as Ha; subst E2a.
+  pose proof (IEnv_fun L2 HE3) as Hb; subst E3a.
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  pose proof (Req_env_transfer (Req_env_sym H3) HE3) as HX3.
+  destruct T as [ br bl | br bl nc ].
+  - destruct (Hv (ITy_USkel HA2)) as [Ec [n [M1 [M2 M3]]]].
+    pose proof (IEnv_fun M1 K2) as Hc; subst Ec.
+    eapply Req_sub_mk with (E := E1) (E' := rt_U br bl :: E3)
+                           (s1 := rcmp sf1 (rsnoc n sg1))
+                           (s2 := rsnoc (csub sf2 n) (rcmp sf2 sg2)).
+    + exact K1.
+    + econstructor; [ exact HE3 | exact HA2 ].
+    + econstructor; [ exact HX1 | exact HX2 | | exact K3 | ].
+      * econstructor; [ exact HX3 | exact HA1 ].
+      * eapply isub_snoc_U;
+          [ exact HX2 | exact HX3 | exact L3 | exact HA1 | exact M2 ].
+    + eapply isub_snoc_U.
+      * exact K1.
+      * exact HE3.
+      * econstructor; [ exact K1 | exact K2 | exact HE3 | exact K4 | exact L4 ].
+      * exact HA2.
+      * econstructor; [ exact K1 | exact K2 | exact K4 | exact M3 ].
+    + intros [|k] Hk.
+      * unfold rcmp, rsnoc; cbn.
+        eapply csub_ext_wf; [ eapply ICode_cwf; exact M2 | exact K5 ].
+      * unfold rcmp, rsnoc; cbn.
+        rewrite (L5 k Hk).
+        eapply csub_ext_wf; [ eapply (ISub_swf L4); exact Hk | exact K5 ].
+  - eapply Req_sub_mk with (E := E1) (E' := rt_El br bl nc :: E3)
+                           (s1 := rcmp sf1 (rsnoc rc_nat sg1))
+                           (s2 := rsnoc rc_nat (rcmp sf2 sg2)).
+    + exact K1.
+    + econstructor; [ exact HE3 | exact HA2 ].
+    + econstructor; [ exact HX1 | exact HX2 | | exact K3 | ].
+      * econstructor; [ exact HX3 | exact HA1 ].
+      * eapply isub_snoc_El; [ exact HX2 | exact HX3 | exact L3 | exact HA1 ].
+    + eapply isub_snoc_El.
+      * exact K1.
+      * exact HE3.
+      * econstructor; [ exact K1 | exact K2 | exact HE3 | exact K4 | exact L4 ].
+      * exact HA2.
+    + intros [|k] Hk; [ cbn in Hk; discriminate | ].
+      unfold rcmp, rsnoc; cbn.
+      rewrite (L5 k Hk).
+      eapply csub_ext_wf; [ eapply (ISub_swf L4); exact Hk | exact K5 ].
+Qed.
+
+Lemma by_snoc_wkn_hd X1 Y1 i1 A1 i2 A2
+  : Req_env X1 Y1 -> Req_ty Y1 A1 A2 ->
+    Req_sub (oExt Y1 i2 A2) (oExt Y1 i2 A2)
+      (oSnoc (oExt X1 i1 A1) X1 i1 A1 (oWkn X1 i1 A1) (oHd X1 i1 A1))
+      (oId (oExt Y1 i2 A2)).
+Proof.
+  intros H1 [E [T [HE [HA1 HA2]]]].
+  pose proof (Req_env_transfer (Req_env_sym H1) HE) as HX1.
+  assert (IEnv (oExt X1 i1 A1) (T :: E)) as HXE
+      by (econstructor; [ exact HX1 | exact HA1 ]).
+  assert (IEnv (oExt Y1 i2 A2) (T :: E)) as HYE
+      by (econstructor; [ exact HE | exact HA2 ]).
+  destruct T as [ br bl | br bl nc ].
+  - eapply Req_sub_mk with (E := rt_U br bl :: E) (E' := rt_U br bl :: E)
+                           (s1 := rsnoc (rc_var 0) rshift) (s2 := rid).
+    + exact HYE.
+    + exact HYE.
+    + eapply isub_snoc_U.
+      * exact HXE.
+      * exact HX1.
+      * econstructor; [ exact HX1 | exact HA1 ].
+      * exact HA1.
+      * econstructor; [ exact HX1 | exact HA1 ].
+    + constructor; exact HYE.
+    + intros [|k] Hk; reflexivity.
+  - eapply Req_sub_mk with (E := rt_El br bl nc :: E) (E' := rt_El br bl nc :: E)
+                           (s1 := rsnoc rc_nat rshift) (s2 := rid).
+    + exact HYE.
+    + exact HYE.
+    + eapply isub_snoc_El.
+      * exact HXE.
+      * exact HX1.
+      * econstructor; [ exact HX1 | exact HA1 ].
+      * exact HA1.
+    + constructor; exact HYE.
+    + intros [|k] Hk; [ cbn in Hk; discriminate | reflexivity ].
+Qed.
+
+Lemma by_ty_subst_id X1 Y1 i1 A1 A2
+  : Req_env X1 Y1 -> Req_ty Y1 A1 A2 ->
+    Req_ty Y1 (oTySubst X1 X1 (oId X1) i1 A1) A2.
+Proof.
+  intros H1 [E [T [HE [HA1 HA2]]]].
+  pose proof (Req_env_transfer (Req_env_sym H1) HE) as HX1.
+  eapply Req_ty_mk with (E := E) (T := T).
+  - exact HE.
+  - rewrite <- (tsub_id T) at 1.
+    econstructor; [ exact HX1 | exact HX1 | constructor; exact HX1 | exact HA1 ].
+  - exact HA2.
+Qed.
+
+Lemma by_exp_subst_id X1 Y1 i1 A1 v1 v2
+  : Req_env X1 Y1 -> Req_code Y1 v1 v2 ->
+    Req_code Y1 (oExpSubst X1 X1 (oId X1) i1 A1 v1) v2.
+Proof.
+  intros H1 [E [n [HE [Hv1 Hv2]]]].
+  pose proof (Req_env_transfer (Req_env_sym H1) HE) as HX1.
+  eapply Req_code_mk with (E := E) (n := n).
+  - exact HE.
+  - rewrite <- (csub_id n) at 1.
+    econstructor; [ exact HX1 | exact HX1 | constructor; exact HX1 | exact Hv1 ].
+  - exact Hv2.
+Qed.
+
+Lemma by_ty_subst_cmp X1 Y1 X2 Y2 X3 Y3 f1 f2 g1 g2 i1 i2 A1 A2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_env X3 Y3 ->
+    Req_sub Y1 Y2 f1 f2 -> Req_sub Y2 Y3 g1 g2 -> Req_ty Y3 A1 A2 ->
+    Req_ty Y1 (oTySubst X1 X2 f1 i1 (oTySubst X2 X3 g1 i1 A1))
+              (oTySubst Y1 Y3 (oCmp Y1 Y2 Y3 f2 g2) i2 A2).
+Proof.
+  intros H1 H2 H3
+    [E1 [E2 [sf1 [sf2 [K1 [K2 [K3 [K4 K5]]]]]]]]
+    [E2a [E3 [sg1 [sg2 [L1 [L2 [L3 [L4 L5]]]]]]]]
+    [E3a [T [HE3 [HA1 HA2]]]].
+  pose proof (IEnv_fun L1 K2) as Ha; subst E2a.
+  pose proof (IEnv_fun L2 HE3) as Hb; subst E3a.
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  pose proof (Req_env_transfer (Req_env_sym H3) HE3) as HX3.
+  assert (tsub sf1 (tsub sg1 T) = tsub (rcmp sf2 sg2) T) as Heq.
+  { assert (tsub sg1 T = tsub sg2 T) as Hg
+        by (eapply tsub_ext_wf; [ eapply ITy_twf; exact HA1 | exact L5 ]).
+    rewrite Hg.
+    assert (tsub sf1 (tsub sg2 T) = tsub sf2 (tsub sg2 T)) as Hf.
+    { eapply tsub_ext_wf; [ | exact K5 ].
+      eapply twf_tsub; [ eapply ISub_swf; exact L4 | eapply ITy_twf; exact HA2 ]. }
+    rewrite Hf; apply tsub_comp. }
+  eapply Req_ty_mk with (E := E1) (T := tsub (rcmp sf2 sg2) T).
+  - exact K1.
+  - rewrite <- Heq.
+    econstructor; [ exact HX1 | exact HX2 | exact K3 | ].
+    econstructor; [ exact HX2 | exact HX3 | exact L3 | exact HA1 ].
+  - econstructor; [ exact K1 | exact HE3 | | exact HA2 ].
+    econstructor; [ exact K1 | exact K2 | exact HE3 | exact K4 | exact L4 ].
+Qed.
+
+Lemma by_exp_subst_cmp X1 Y1 X2 Y2 X3 Y3 f1 f2 g1 g2 i1 i2 A1 A3 A4 v1 v2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_env X3 Y3 ->
+    Req_sub Y1 Y2 f1 f2 -> Req_sub Y2 Y3 g1 g2 -> Req_code Y3 v1 v2 ->
+    Req_code Y1
+      (oExpSubst X1 X2 f1 i1 A1 (oExpSubst X2 X3 g1 i1 A3 v1))
+      (oExpSubst Y1 Y3 (oCmp Y1 Y2 Y3 f2 g2) i2 A4 v2).
+Proof.
+  intros H1 H2 H3
+    [E1 [E2 [sf1 [sf2 [K1 [K2 [K3 [K4 K5]]]]]]]]
+    [E2a [E3 [sg1 [sg2 [L1 [L2 [L3 [L4 L5]]]]]]]]
+    [E3a [n [HE3 [Hv1 Hv2]]]].
+  pose proof (IEnv_fun L1 K2) as Ha; subst E2a.
+  pose proof (IEnv_fun L2 HE3) as Hb; subst E3a.
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  pose proof (Req_env_transfer (Req_env_sym H3) HE3) as HX3.
+  assert (csub sf1 (csub sg1 n) = csub (rcmp sf2 sg2) n) as Heq.
+  { assert (csub sg1 n = csub sg2 n) as Hg
+        by (eapply csub_ext_wf; [ eapply ICode_cwf; exact Hv1 | exact L5 ]).
+    rewrite Hg.
+    assert (csub sf1 (csub sg2 n) = csub sf2 (csub sg2 n)) as Hf.
+    { eapply csub_ext_wf; [ | exact K5 ].
+      eapply cwf_csub; [ eapply ISub_swf; exact L4 | eapply ICode_cwf; exact Hv2 ]. }
+    rewrite Hf; apply csub_comp. }
+  eapply Req_code_mk with (E := E1) (n := csub (rcmp sf2 sg2) n).
+  - exact K1.
+  - rewrite <- Heq.
+    econstructor; [ exact HX1 | exact HX2 | exact K3 | ].
+    econstructor; [ exact HX2 | exact HX3 | exact L3 | exact Hv1 ].
+  - econstructor; [ exact K1 | exact HE3 | | exact Hv2 ].
+    econstructor; [ exact K1 | exact K2 | exact HE3 | exact K4 | exact L4 ].
+Qed.
+
+Lemma by_U_subst X1 Y1 X2 Y2 g1 g2 i1 r1 r2 l1 l2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_sub Y1 Y2 g1 g2 ->
+    (exists b, ErRel r1 b /\ ErRel r2 b) ->
+    (exists b, ErLvl l1 b /\ ErLvl l2 b) ->
+    Req_ty Y1 (oTySubst X1 X2 g1 i1 (oU X2 r1 l1)) (oU Y1 r2 l2).
+Proof.
+  intros H1 H2 [E [E2 [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]]
+    [br [Hr1 Hr2]] [bl [Hl1 Hl2]].
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  eapply Req_ty_mk with (E := E) (T := rt_U br bl).
+  - exact K1.
+  - change (rt_U br bl) with (tsub s1 (rt_U br bl)).
+    econstructor; [ exact HX1 | exact HX2 | exact K3 | ].
+    econstructor; [ exact HX2 | exact Hr1 | exact Hl1 ].
+  - econstructor; [ exact K1 | exact Hr2 | exact Hl2 ].
+Qed.
+
+Lemma by_El_subst X1 Y1 X2 Y2 g1 g2 i1 i3 r1 r2 l1 l2 c1 c2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_sub Y1 Y2 g1 g2 ->
+    (exists b, ErRel r1 b /\ ErRel r2 b) ->
+    (exists b, ErLvl l1 b /\ ErLvl l2 b) ->
+    Req_code Y2 c1 c2 ->
+    Req_ty Y1 (oTySubst X1 X2 g1 i1 (oEl X2 r1 l1 c1))
+              (oEl Y1 r2 l2 (oExpSubst Y1 Y2 g2 i3 (oU Y2 r2 l2) c2)).
+Proof.
+  intros H1 H2 [E [E2 [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]]
+    [br [Hr1 Hr2]] [bl [Hl1 Hl2]] [E2a [n [HE2 [Hc1 Hc2]]]].
+  pose proof (IEnv_fun HE2 K2) as Ha; subst E2a.
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  assert (csub s1 n = csub s2 n) as Heq
+      by (eapply csub_ext_wf; [ eapply ICode_cwf; exact Hc1 | exact K5 ]).
+  eapply Req_ty_mk with (E := E) (T := rt_El br bl (csub s2 n)).
+  - exact K1.
+  - rewrite <- Heq.
+    change (rt_El br bl (csub s1 n)) with (tsub s1 (rt_El br bl n)).
+    econstructor; [ exact HX1 | exact HX2 | exact K3 | ].
+    econstructor; [ exact HX2 | exact Hr1 | exact Hl1 | exact Hc1 ].
+  - econstructor; [ exact K1 | exact Hr2 | exact Hl2 | ].
+    econstructor; [ exact K1 | exact K2 | exact K4 | exact Hc2 ].
+Qed.
+
+Lemma by_Nat_subst X1 Y1 X2 Y2 g1 g2 i1 A1
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_sub Y1 Y2 g1 g2 ->
+    Req_code Y1 (oExpSubst X1 X2 g1 i1 A1 (oNat X2)) (oNat Y1).
+Proof.
+  intros H1 H2 [E [E2 [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]].
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  eapply Req_code_mk with (E := E) (n := rc_nat).
+  - exact K1.
+  - change rc_nat with (csub s1 rc_nat).
+    econstructor; [ exact HX1 | exact HX2 | exact K3 | ].
+    econstructor; exact HX2.
+  - econstructor; exact K1.
+Qed.
+
+Lemma by_Empty_subst X1 Y1 X2 Y2 g1 g2 i1 A1
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_sub Y1 Y2 g1 g2 ->
+    Req_code Y1 (oExpSubst X1 X2 g1 i1 A1 (oEmpty X2)) (oEmpty Y1).
+Proof.
+  intros H1 H2 [E [E2 [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]].
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  eapply Req_code_mk with (E := E) (n := rc_empty).
+  - exact K1.
+  - change rc_empty with (csub s1 rc_empty).
+    econstructor; [ exact HX1 | exact HX2 | exact K3 | ].
+    econstructor; exact HX2.
+  - econstructor; exact K1.
+Qed.
+
+(* The two [Pi] commutations.  These are the only obligations in which the
+   theory's own lifting ([oLift]) has to be matched against [csub]'s [up]:
+   they differ exactly at the head slot, which is an [El] slot, hence
+   invisible to [subeq]. *)
+Lemma by_Pi_irr_subst X1 Y1 X2 Y2 g1 g2 rF1 rF2 lF1 lF2 F1 F2 B1 B2 i1 A1 i3 A3
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_sub Y1 Y2 g1 g2 ->
+    (exists b, ErRel rF1 b /\ ErRel rF2 b) ->
+    (exists b, ErLvl lF1 b /\ ErLvl lF2 b) ->
+    Req_code Y2 F1 F2 -> Req_code (oExtC Y2 rF2 lF2 F2) B1 B2 ->
+    Req_code Y1
+      (oExpSubst X1 X2 g1 i1 A1 (oPiIrr X2 rF1 lF1 F1 B1))
+      (oPiIrr Y1 rF2 lF2 (oCodeSub Y1 Y2 g2 rF2 lF2 F2)
+         (oExpSubst (oExtC Y1 rF2 lF2 (oCodeSub Y1 Y2 g2 rF2 lF2 F2))
+            (oExtC Y2 rF2 lF2 F2) (oLift Y1 Y2 g2 rF2 lF2 F2) i3 A3 B2)).
+Proof.
+  intros H1 H2 [E [E2 [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]]
+    [br [Hr1 Hr2]] [bl [Hl1 Hl2]] [E2a [nF [HE2 [HF1 HF2]]]]
+    [EB [nB [HEB [HB1 HB2]]]].
+  pose proof (IEnv_fun HE2 K2) as Ha; subst E2a.
+  assert (IEnv (oExtC Y2 rF2 lF2 F2) (rt_El br bl nF :: E2)) as HX
+      by (eapply IEnv_extC; [ exact K2 | exact Hr2 | exact Hl2 | exact HF2 ]).
+  pose proof (IEnv_fun HEB HX) as Hb; subst EB.
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  assert (ICode E (oCodeSub Y1 Y2 g2 rF2 lF2 F2) (csub s2 nF)) as HFg
+      by (unfold oCodeSub; econstructor;
+          [ exact K1 | exact K2 | exact K4 | exact HF2 ]).
+  pose proof (ISub_oLift K1 K2 K4 Hr2 Hl2 HF2 HFg) as HL.
+  assert (IEnv (oExtC Y1 rF2 lF2 (oCodeSub Y1 Y2 g2 rF2 lF2 F2))
+            (rt_El br bl (csub s2 nF) :: E)) as HEF
+      by (eapply IEnv_extC; [ exact K1 | exact Hr2 | exact Hl2 | exact HFg ]).
+  assert (csub (up s1) nB = csub (rsnoc rc_nat (rcmp rshift s2)) nB) as HeqB
+      by (eapply csub_ext_wf;
+          [ eapply ICode_cwf; exact HB1 | apply subeq_lift; exact K5 ]).
+  assert (csub s1 nF = csub s2 nF) as HeqF
+      by (eapply csub_ext_wf; [ eapply ICode_cwf; exact HF1 | exact K5 ]).
+  eapply Req_code_mk with (E := E)
+    (n := rc_pi false br bl (csub s2 nF)
+            (csub (rsnoc rc_nat (rcmp rshift s2)) nB)).
+  - exact K1.
+  - rewrite <- HeqB, <- HeqF.
+    change (rc_pi false br bl (csub s1 nF) (csub (up s1) nB))
+      with (csub s1 (rc_pi false br bl nF nB)).
+    econstructor; [ exact HX1 | exact HX2 | exact K3 | ].
+    econstructor;
+      [ exact HX2 | exact Hr1 | exact Hl1 | exact HF1 | exact HB1 ].
+  - econstructor; [ exact K1 | exact Hr2 | exact Hl2 | exact HFg | ].
+    econstructor; [ exact HEF | exact HX | exact HL | exact HB2 ].
+Qed.
+
+Lemma by_Pi_rel_subst X1 Y1 X2 Y2 g1 g2 rF1 rF2 lF1 lF2 lG1 lG2
+    F1 F2 B1 B2 i1 A1 i3 A3
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_sub Y1 Y2 g1 g2 ->
+    (exists b, ErRel rF1 b /\ ErRel rF2 b) ->
+    (exists b, ErLvl lF1 b /\ ErLvl lF2 b) ->
+    Req_code Y2 F1 F2 -> Req_code (oExtC Y2 rF2 lF2 F2) B1 B2 ->
+    Req_code Y1
+      (oExpSubst X1 X2 g1 i1 A1 (oPiRel X2 rF1 lF1 lG1 F1 B1))
+      (oPiRel Y1 rF2 lF2 lG2 (oCodeSub Y1 Y2 g2 rF2 lF2 F2)
+         (oExpSubst (oExtC Y1 rF2 lF2 (oCodeSub Y1 Y2 g2 rF2 lF2 F2))
+            (oExtC Y2 rF2 lF2 F2) (oLift Y1 Y2 g2 rF2 lF2 F2) i3 A3 B2)).
+Proof.
+  intros H1 H2 [E [E2 [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]]
+    [br [Hr1 Hr2]] [bl [Hl1 Hl2]] [E2a [nF [HE2 [HF1 HF2]]]]
+    [EB [nB [HEB [HB1 HB2]]]].
+  pose proof (IEnv_fun HE2 K2) as Ha; subst E2a.
+  assert (IEnv (oExtC Y2 rF2 lF2 F2) (rt_El br bl nF :: E2)) as HX
+      by (eapply IEnv_extC; [ exact K2 | exact Hr2 | exact Hl2 | exact HF2 ]).
+  pose proof (IEnv_fun HEB HX) as Hb; subst EB.
+  pose proof (Req_env_transfer (Req_env_sym H1) K1) as HX1.
+  pose proof (Req_env_transfer (Req_env_sym H2) K2) as HX2.
+  assert (ICode E (oCodeSub Y1 Y2 g2 rF2 lF2 F2) (csub s2 nF)) as HFg
+      by (unfold oCodeSub; econstructor;
+          [ exact K1 | exact K2 | exact K4 | exact HF2 ]).
+  pose proof (ISub_oLift K1 K2 K4 Hr2 Hl2 HF2 HFg) as HL.
+  assert (IEnv (oExtC Y1 rF2 lF2 (oCodeSub Y1 Y2 g2 rF2 lF2 F2))
+            (rt_El br bl (csub s2 nF) :: E)) as HEF
+      by (eapply IEnv_extC; [ exact K1 | exact Hr2 | exact Hl2 | exact HFg ]).
+  assert (csub (up s1) nB = csub (rsnoc rc_nat (rcmp rshift s2)) nB) as HeqB
+      by (eapply csub_ext_wf;
+          [ eapply ICode_cwf; exact HB1 | apply subeq_lift; exact K5 ]).
+  assert (csub s1 nF = csub s2 nF) as HeqF
+      by (eapply csub_ext_wf; [ eapply ICode_cwf; exact HF1 | exact K5 ]).
+  eapply Req_code_mk with (E := E)
+    (n := rc_pi true br bl (csub s2 nF)
+            (csub (rsnoc rc_nat (rcmp rshift s2)) nB)).
+  - exact K1.
+  - rewrite <- HeqB, <- HeqF.
+    change (rc_pi true br bl (csub s1 nF) (csub (up s1) nB))
+      with (csub s1 (rc_pi true br bl nF nB)).
+    econstructor; [ exact HX1 | exact HX2 | exact K3 | ].
+    econstructor;
+      [ exact HX2 | exact Hr1 | exact Hl1 | exact HF1 | exact HB1 ].
+  - econstructor; [ exact K1 | exact Hr2 | exact Hl2 | exact HFg | ].
+    econstructor; [ exact HEF | exact HX | exact HL | exact HB2 ].
+Qed.
+
+Ltac use_any :=
+  solve [ apply rceq_env_e; eassumption
+        | apply rceq_sub_e; eassumption
+        | eapply rceq_ty_e; eassumption
+        | apply rceq_rel_e; eassumption
+        | apply rceq_lvl_e; eassumption
+        | eapply rceq_exp_e'; [ eassumption | reflexivity ] ].
+
+Lemma by_obligation
+  : forall c' name e1 e2 t s1 s2,
+    In (name, term_eq_rule c' e1 e2 t) ott_dtt ->
+    ceq_args (CM := RigCM) c' s1 s2 ->
+    rceq_term t[/with_names_from c' s2/]
+      e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
+Proof.
+  intros c' name e1 e2 t s1 s2 Hin Hargs.
+  decomp; try exact I.
+  - (* Pi_irr subst *)
+    apply rceq_exp_i; intros _; eapply by_Pi_irr_subst; use_any.
+  - (* Pi_rel subst *)
+    apply rceq_exp_i; intros _; eapply by_Pi_rel_subst; use_any.
+  - (* Empty subst *)
+    apply rceq_exp_i; intros _; eapply by_Empty_subst; use_any.
+  - (* Nat subst *)
+    apply rceq_exp_i; intros _; eapply by_Nat_subst; use_any.
+  - (* El subst *)
+    apply rceq_ty_i; eapply by_El_subst; use_any.
+  - (* U subst *)
+    apply rceq_ty_i; eapply by_U_subst; use_any.
+  - (* snoc_wkn_hd *)
+    apply rceq_sub_i; eapply by_snoc_wkn_hd; use_any.
+  - (* cmp_snoc *)
+    apply rceq_sub_i; eapply by_cmp_snoc;
+      solve [ use_any
+            | (intro Hu; eapply rceq_exp_e'; [ eassumption | exact Hu ]) ].
+  - (* snoc_hd *)
+    apply rceq_exp_i; intro Hu; eapply by_snoc_hd;
+      solve [ use_any
+            | eapply rceq_exp_e'; [ eassumption | exact Hu ]
+            | exact Hu ].
+  - (* wkn_snoc *)
+    apply rceq_sub_i; eapply by_wkn_snoc;
+      solve [ use_any
+            | (intro Hu; eapply rceq_exp_e'; [ eassumption | exact Hu ]) ].
+  - (* id_emp_forget *)
+    apply rceq_sub_i; eapply by_id_emp_forget.
+  - (* cmp_forget *)
+    apply rceq_sub_i; eapply by_cmp_forget; use_any.
+  - (* exp_subst_cmp *)
+    apply rceq_exp_i; intro Hu; eapply by_exp_subst_cmp;
+      solve [ use_any | eapply rceq_exp_e'; [ eassumption | exact Hu ] ].
+  - (* exp_subst_id *)
+    apply rceq_exp_i; intro Hu; eapply by_exp_subst_id;
+      solve [ use_any | eapply rceq_exp_e'; [ eassumption | exact Hu ] ].
+  - (* ty_subst_cmp *)
+    apply rceq_ty_i; eapply by_ty_subst_cmp; use_any.
+  - (* ty_subst_id *)
+    apply rceq_ty_i; eapply by_ty_subst_id; use_any.
+  - (* cmp_assoc *)
+    apply rceq_sub_i; eapply by_cmp_assoc; use_any.
+  - (* id_left *)
+    apply rceq_sub_i; eapply by_id_left; use_any.
+  - (* id_right *)
+    apply rceq_sub_i; eapply by_id_right; use_any.
+  - (* next1 *) apply rceq_tlvl_i; reflexivity.
+  - (* next0 *) apply rceq_tlvl_i; reflexivity.
+Qed.
