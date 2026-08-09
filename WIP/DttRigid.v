@@ -691,3 +691,696 @@ Lemma rceq_exp_eq G i A e1 e2
   : rceq_term (sExp G i A) e1 e2
     = (if USkel A then Req_code G e1 e2 else True).
 Proof. reflexivity. Qed.
+
+(* =====================================================================
+   7.  The structural obligations of [CutTModel_ok].
+
+   [cterm_conv], [csort_trans], [csort_sym] are immediate because
+   [rceq_sort] IS the bidirectional transfer of [rceq_term]; [csort_by] is
+   vacuous ([ott_dtt] has no sort equations); [cterm_var] is vacuous (the
+   meta-context is empty, openness being object-level).
+   ===================================================================== *)
+
+Lemma Req_env_sym G1 G2 : Req_env G1 G2 -> Req_env G2 G1.
+Proof. intros [E [H1 H2]]; exists E; split; assumption. Qed.
+
+Lemma Req_env_trans G1 G12 G2
+  : Req_env G1 G12 -> Req_env G12 G2 -> Req_env G1 G2.
+Proof.
+  intros [E [H1 H2]] [E' [H3 H4]].
+  pose proof (IEnv_fun H2 H3) as Heq; subst.
+  eexists; split; eassumption.
+Qed.
+
+Lemma Req_ty_sym G A1 A2 : Req_ty G A1 A2 -> Req_ty G A2 A1.
+Proof. intros [E [T [H1 [H2 H3]]]]; exists E, T; repeat split; assumption. Qed.
+
+Lemma Req_ty_trans G A1 A12 A2
+  : Req_ty G A1 A12 -> Req_ty G A12 A2 -> Req_ty G A1 A2.
+Proof.
+  intros [E [T [H1 [H2 H3]]]] [E' [T' [H4 [H5 H6]]]].
+  destruct (ITy_fun H3 H5) as [? ?]; subst.
+  exists E', T'; repeat split; assumption.
+Qed.
+
+Lemma Req_code_sym G e1 e2 : Req_code G e1 e2 -> Req_code G e2 e1.
+Proof. intros [E [n [H1 [H2 H3]]]]; exists E, n; repeat split; assumption. Qed.
+
+Lemma Req_code_trans G e1 e12 e2
+  : Req_code G e1 e12 -> Req_code G e12 e2 -> Req_code G e1 e2.
+Proof.
+  intros [E [n [H1 [H2 H3]]]] [E' [n' [H4 [H5 H6]]]].
+  destruct (ICode_fun H3 H5) as [? ?]; subst.
+  exists E', n'; repeat split; assumption.
+Qed.
+
+Lemma Req_sub_sym G G' g1 g2 : Req_sub G G' g1 g2 -> Req_sub G G' g2 g1.
+Proof.
+  intros [E [E' [s1 [s2 [H1 [H2 [H3 [H4 H5]]]]]]]].
+  exists E, E', s2, s1; repeat split; try assumption.
+  intros k Hk; symmetry; apply H5; assumption.
+Qed.
+
+Lemma Req_sub_trans G G' g1 g12 g2
+  : Req_sub G G' g1 g12 -> Req_sub G G' g12 g2 -> Req_sub G G' g1 g2.
+Proof.
+  intros [E [E' [s1 [s12 [H1 [H2 [H3 [H4 H5]]]]]]]].
+  intros [Ea [Eb [s12' [s2 [K1 [K2 [K3 [K4 K5]]]]]]]].
+  destruct (ISub_fun H4 K3) as [? [? ?]]; subst.
+  exists Ea, Eb, s1, s2; repeat split; try assumption.
+  intros k Hk; rewrite H5 by assumption; apply K5; assumption.
+Qed.
+
+(* The case analysis every sort-generic obligation needs: the four
+   argument-list shapes [rceq_term] distinguishes, and then the name
+   tests. *)
+Ltac rcases t :=
+  let nm := fresh "nm" in
+  let l := fresh "l" in
+  destruct t as [nm l];
+  destruct l as [ | ?x [ | ?y [ | ?z [ | ?w ?l ] ] ] ];
+  cbn [rceq_term];
+  repeat match goal with
+    | [ |- context [ if eqb nm ?s then _ else _ ] ] => destruct (eqb nm s)
+    end.
+
+Lemma term_sym_obligation t e1 e2 : rceq_term t e1 e2 -> rceq_term t e2 e1.
+Proof.
+  rcases t; intro H;
+    try exact I;
+    try (destruct H as [b [H1 H2]]; exists b; split; assumption);
+    try (symmetry; exact H);
+    try (apply Req_env_sym; exact H);
+    try (apply Req_sub_sym; exact H);
+    try (apply Req_ty_sym; exact H).
+  (* exp *)
+  all: try (destruct (USkel x); [ apply Req_code_sym; exact H | exact I ]).
+Qed.
+
+Lemma term_trans_obligation t e1 e12 e2
+  : rceq_term t e1 e12 -> rceq_term t e12 e2 -> rceq_term t e1 e2.
+Proof.
+  rcases t; intros H K;
+    try exact I;
+    try (destruct H as [b [H1 H2]]; destruct K as [b' [K1 K2]];
+         pose proof (ErRel_fun H2 K1) as ?; subst; exists b';
+         split; assumption);
+    try (destruct H as [b [H1 H2]]; destruct K as [b' [K1 K2]];
+         pose proof (ErLvl_fun H2 K1) as ?; subst; exists b';
+         split; assumption);
+    try (etransitivity; eassumption);
+    try (eapply Req_env_trans; eassumption);
+    try (eapply Req_sub_trans; eassumption);
+    try (eapply Req_ty_trans; eassumption).
+  all: try (destruct (USkel x); [ eapply Req_code_trans; eassumption | exact I ]).
+Qed.
+
+Lemma term_conv_obligation t1 t2 e1 e2
+  : rceq_sort t1 t2 -> rceq_term t1 e1 e2 -> rceq_term t2 e1 e2.
+Proof. intros Ht H; apply Ht; exact H. Qed.
+
+Lemma sort_trans_obligation t1 t12 t2
+  : rceq_sort t1 t12 -> rceq_sort t12 t2 -> rceq_sort t1 t2.
+Proof.
+  intros H K e1 e2; split; intro X.
+  - apply K; apply H; exact X.
+  - apply H; apply K; exact X.
+Qed.
+
+Lemma sort_sym_obligation t1 t2 : rceq_sort t1 t2 -> rceq_sort t2 t1.
+Proof. intros H e1 e2; split; intro X; apply H; exact X. Qed.
+
+Lemma var_obligation
+  : forall n t, In (n, t) (@nil (string * sort)) -> rceq_term t (var n) (var n).
+Proof. intros n t H; destruct H. Qed.
+
+(* =====================================================================
+   8.  The rule obligations.
+
+   [ott_dtt] is a closed 69-element list, so [In] is a concrete
+   disjunction; [vm_compute] pins it before destructing, exactly as
+   Gluing/Stlc/ModelCong.v does (left unreduced each rule instance is
+   prohibitively slow).
+   ===================================================================== *)
+
+Ltac nrm :=
+  repeat match goal with
+    | [ H : rceq_term ?t ?a ?b |- _ ] =>
+        let t' := eval vm_compute in t in
+        let a' := eval vm_compute in a in
+        let b' := eval vm_compute in b in
+        tryif (constr_eq t t'; constr_eq a a'; constr_eq b b')
+        then fail
+        else change_no_check (rceq_term t' a' b') in H
+    | [ |- rceq_term ?t ?a ?b ] =>
+        let t' := eval vm_compute in t in
+        let a' := eval vm_compute in a in
+        let b' := eval vm_compute in b in
+        tryif (constr_eq t t'; constr_eq a a'; constr_eq b b')
+        then fail
+        else change_no_check (rceq_term t' a' b')
+    end.
+
+Ltac decomp :=
+  match goal with
+  | [ Hin : In _ ott_dtt |- _ ] =>
+      vm_compute in Hin;
+      repeat (destruct Hin as [Hin|Hin]); try discriminate;
+      inversion Hin; subst; clear Hin
+  end;
+  repeat match goal with
+    | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
+    | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
+    end;
+  cbn [ceq_term ceq_sort RigCM] in *; nrm.
+
+(* [csort_by] is vacuous: [ott_dtt] has no sort equations at all. *)
+Lemma sort_by_obligation
+  : forall c' name t1 t2 s1 s2,
+    In (name, sort_eq_rule c' t1 t2) ott_dtt ->
+    ceq_args (CM := RigCM) c' s1 s2 ->
+    rceq_sort t1[/with_names_from c' s1/] t2[/with_names_from c' s2/].
+Proof.
+  intros c' name t1 t2 s1 s2 Hin Hargs.
+  vm_compute in Hin; repeat (destruct Hin as [Hin|Hin]);
+    first [ discriminate | destruct Hin ].
+Qed.
+
+(* ---- introduction / elimination for each clause (all by conversion) ---- *)
+
+Lemma rceq_rel_i r1 r2 : (exists b, ErRel r1 b /\ ErRel r2 b) -> rceq_term sRelevance r1 r2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_rel_e r1 r2 : rceq_term sRelevance r1 r2 -> exists b, ErRel r1 b /\ ErRel r2 b.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_lvl_i l1 l2 : (exists b, ErLvl l1 b /\ ErLvl l2 b) -> rceq_term sLvl l1 l2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_lvl_e l1 l2 : rceq_term sLvl l1 l2 -> exists b, ErLvl l1 b /\ ErLvl l2 b.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_tlvl_i n1 n2 : ntlvl n1 = ntlvl n2 -> rceq_term sTlvl n1 n2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_tlvl_e n1 n2 : rceq_term sTlvl n1 n2 -> ntlvl n1 = ntlvl n2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_info_i i1 i2 : ninfo i1 = ninfo i2 -> rceq_term sInfo i1 i2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_info_e i1 i2 : rceq_term sInfo i1 i2 -> ninfo i1 = ninfo i2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_env_i G1 G2 : Req_env G1 G2 -> rceq_term sEnv G1 G2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_env_e G1 G2 : rceq_term sEnv G1 G2 -> Req_env G1 G2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_sub_i G G' g1 g2 : Req_sub G G' g1 g2 -> rceq_term (sSub G G') g1 g2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_sub_e G G' g1 g2 : rceq_term (sSub G G') g1 g2 -> Req_sub G G' g1 g2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_ty_i G i A1 A2 : Req_ty G A1 A2 -> rceq_term (sTy G i) A1 A2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_ty_e G i A1 A2 : rceq_term (sTy G i) A1 A2 -> Req_ty G A1 A2.
+Proof. exact (fun x => x). Qed.
+
+Lemma rceq_exp_i G i A e1 e2
+  : (USkel A = true -> Req_code G e1 e2) -> rceq_term (sExp G i A) e1 e2.
+Proof.
+  intro H; change (if USkel A then Req_code G e1 e2 else True).
+  destruct (USkel A) eqn:Hu; [ apply H; reflexivity | exact I ].
+Qed.
+
+Lemma rceq_exp_e G i A e1 e2
+  : USkel A = true -> rceq_term (sExp G i A) e1 e2 -> Req_code G e1 e2.
+Proof.
+  intros Hu H; change (if USkel A then Req_code G e1 e2 else True) in H.
+  rewrite Hu in H; exact H.
+Qed.
+
+Lemma rceq_code_i G r l e1 e2 : Req_code G e1 e2 -> rceq_term (sCode G r l) e1 e2.
+Proof. exact (fun x => x). Qed.
+Lemma rceq_code_e G r l e1 e2 : rceq_term (sCode G r l) e1 e2 -> Req_code G e1 e2.
+Proof. exact (fun x => x). Qed.
+
+(* ---- transfer along a provable equality of environments ---- *)
+
+Lemma Req_env_transfer G1 G2 : Req_env G1 G2 -> forall E, IEnv G1 E -> IEnv G2 E.
+Proof.
+  intros [E0 [H1 H2]] E H; pose proof (IEnv_fun H H1) as ?; subst; assumption.
+Qed.
+
+Lemma Req_code_transfer G1 G2 e1 e2
+  : Req_env G1 G2 -> Req_code G1 e1 e2 -> Req_code G2 e1 e2.
+Proof.
+  intros HG [E [n [H1 [H2 H3]]]]; exists E, n; repeat split; try assumption.
+  eapply Req_env_transfer; eassumption.
+Qed.
+
+Lemma Req_ty_transfer G1 G2 A1 A2
+  : Req_env G1 G2 -> Req_ty G1 A1 A2 -> Req_ty G2 A1 A2.
+Proof.
+  intros HG [E [T [H1 [H2 H3]]]]; exists E, T; repeat split; try assumption.
+  eapply Req_env_transfer; eassumption.
+Qed.
+
+Lemma Req_sub_transfer G1 G2 G1' G2' g1 g2
+  : Req_env G1 G2 -> Req_env G1' G2' -> Req_sub G1 G1' g1 g2 -> Req_sub G2 G2' g1 g2.
+Proof.
+  intros HG HG' [E [E' [s1 [s2 [H1 [H2 [H3 [H4 H5]]]]]]]].
+  exists E, E', s1, s2; repeat split; try assumption;
+    eapply Req_env_transfer; eassumption.
+Qed.
+
+(* ---- [csort_cong]: the 9 sort rules ---- *)
+
+Lemma sort_cong_refl t : rceq_sort t t.
+Proof. intros e1 e2; split; exact (fun x => x). Qed.
+
+Lemma sort_cong_ltl a1 a2 b1 b2 : rceq_sort (sLtl a1 b1) (sLtl a2 b2).
+Proof. intros e1 e2; split; intros _; exact I. Qed.
+
+Lemma sort_cong_ty G1 G2 i1 i2
+  : Req_env G1 G2 -> rceq_sort (sTy G1 i1) (sTy G2 i2).
+Proof.
+  intros HG u v; split; intro H; apply rceq_ty_i;
+    eapply Req_ty_transfer; try (apply rceq_ty_e in H; exact H).
+  - exact HG.
+  - apply Req_env_sym; exact HG.
+Qed.
+
+Lemma sort_cong_sub G1 G2 G1' G2'
+  : Req_env G1 G2 -> Req_env G1' G2' -> rceq_sort (sSub G1 G1') (sSub G2 G2').
+Proof.
+  intros HG HG' u v; split; intro H; apply rceq_sub_i;
+    eapply Req_sub_transfer; try (apply rceq_sub_e in H; exact H).
+  - exact HG.
+  - exact HG'.
+  - apply Req_env_sym; exact HG.
+  - apply Req_env_sym; exact HG'.
+Qed.
+
+Lemma sort_cong_exp G1 G2 i1 i2 A1 A2
+  : Req_env G1 G2 -> Req_ty G2 A1 A2 ->
+    rceq_sort (sExp G1 i1 A1) (sExp G2 i2 A2).
+Proof.
+  intros HG HA u v.
+  destruct HA as [E [T [HE [H1 H2]]]].
+  pose proof (ITy_USkel H1) as Hu1; pose proof (ITy_USkel H2) as Hu2.
+  split; intro H; apply rceq_exp_i; intro Hs.
+  - eapply Req_code_transfer; [ exact HG | ].
+    eapply rceq_exp_e; [ | exact H ]; rewrite Hu1, <- Hu2; exact Hs.
+  - eapply Req_code_transfer; [ apply Req_env_sym; exact HG | ].
+    eapply rceq_exp_e; [ | exact H ]; rewrite Hu2, <- Hu1; exact Hs.
+Qed.
+
+Lemma sort_cong_obligation
+  : forall c' name args s1 s2,
+    In (name, sort_rule c' args) ott_dtt ->
+    ceq_args (CM := RigCM) c' s1 s2 ->
+    rceq_sort (scon name s1) (scon name s2).
+Proof.
+  intros c' name args s1 s2 Hin Hargs.
+  decomp.
+  - (* exp *)
+    apply sort_cong_exp;
+      [ apply rceq_env_e; assumption | eapply rceq_ty_e; eassumption ].
+  - (* ty *) apply sort_cong_ty; apply rceq_env_e; assumption.
+  - (* sub *) apply sort_cong_sub; apply rceq_env_e; assumption.
+  - (* env *) apply sort_cong_refl.
+  - (* tyinfo *) apply sort_cong_refl.
+  - (* tlvl *) apply sort_cong_refl.
+  - (* ltl *) apply sort_cong_ltl.
+  - (* lvl *) apply sort_cong_refl.
+  - (* relevance *) apply sort_cong_refl.
+Qed.
+
+(* ---- smart constructors for the four [Req_*] relations ---- *)
+
+Lemma Req_env_mk G1 G2 E : IEnv G1 E -> IEnv G2 E -> Req_env G1 G2.
+Proof. intros; exists E; split; assumption. Qed.
+
+Lemma Req_ty_mk G A1 A2 E T
+  : IEnv G E -> ITy E A1 T -> ITy E A2 T -> Req_ty G A1 A2.
+Proof. intros; exists E, T; repeat split; assumption. Qed.
+
+Lemma Req_code_mk G e1 e2 E n
+  : IEnv G E -> ICode E e1 n -> ICode E e2 n -> Req_code G e1 e2.
+Proof. intros; exists E, n; repeat split; assumption. Qed.
+
+Lemma Req_sub_mk G G' g1 g2 E E' s1 s2
+  : IEnv G E -> IEnv G' E' -> ISub E E' g1 s1 -> ISub E E' g2 s2 ->
+    subeq E' s1 s2 -> Req_sub G G' g1 g2.
+Proof. intros; exists E, E', s1, s2; repeat split; assumption. Qed.
+
+(* ---- [cterm_cong]: the 32 term rules ----
+
+   Only the 24 whose conclusion sort is not an [El] carry content; the
+   other 8 ([zero], [suc], [Emptyrec], [lam_rel], [lam_irr], [app_rel],
+   [app_irr], [L0<L1]) are [exact I].  *)
+
+Lemma cong_emp : Req_env oEmp oEmp.
+Proof. eapply Req_env_mk with (E := @nil rty); constructor. Qed.
+
+Lemma cong_ext G1 G2 i1 i2 A1 A2
+  : Req_env G1 G2 -> Req_ty G2 A1 A2 -> Req_env (oExt G1 i1 A1) (oExt G2 i2 A2).
+Proof.
+  intros HG [E [T [HE [H1 H2]]]].
+  eapply Req_env_mk with (E := T :: E); econstructor; try eassumption.
+  eapply Req_env_transfer; [ apply Req_env_sym; exact HG | exact HE ].
+Qed.
+
+Lemma cong_id G1 G2 : Req_env G1 G2 -> Req_sub G2 G2 (oId G1) (oId G2).
+Proof.
+  intros [E [H1 H2]].
+  eapply Req_sub_mk with (E := E) (E' := E) (s1 := rid) (s2 := rid).
+  - exact H2.
+  - exact H2.
+  - constructor; exact H1.
+  - constructor; exact H2.
+  - intros k Hk; reflexivity.
+Qed.
+
+Lemma cong_forget G1 G2
+  : Req_env G1 G2 -> Req_sub G2 oEmp (oForget G1) (oForget G2).
+Proof.
+  intros [E [H1 H2]].
+  eapply Req_sub_mk with (E := E) (E' := @nil rty)
+                         (s1 := rforget) (s2 := rforget).
+  - exact H2.
+  - constructor.
+  - constructor; exact H1.
+  - constructor; exact H2.
+  - intros k Hk; reflexivity.
+Qed.
+
+Lemma cong_cmp X1 Y1 X2 Y2 X3 Y3 f1 f2 g1 g2
+  : Req_env X1 Y1 -> Req_env X2 Y2 -> Req_env X3 Y3 ->
+    Req_sub Y1 Y2 f1 f2 -> Req_sub Y2 Y3 g1 g2 ->
+    Req_sub Y1 Y3 (oCmp X1 X2 X3 f1 g1) (oCmp Y1 Y2 Y3 f2 g2).
+Proof.
+  intros H1 H2 H3
+    [E1 [E2 [sf1 [sf2 [K1 [K2 [K3 [K4 K5]]]]]]]]
+    [E2' [E3 [sg1 [sg2 [L1 [L2 [L3 [L4 L5]]]]]]]].
+  pose proof (IEnv_fun L1 K2) as HE; subst E2'.
+  eapply Req_sub_mk with (E := E1) (E' := E3)
+                         (s1 := rcmp sf1 sg1) (s2 := rcmp sf2 sg2).
+  - exact K1.
+  - exact L2.
+  - econstructor;
+      [ eapply Req_env_transfer; [ apply Req_env_sym; exact H1 | exact K1 ]
+      | eapply Req_env_transfer; [ apply Req_env_sym; exact H2 | exact K2 ]
+      | eapply Req_env_transfer; [ apply Req_env_sym; exact H3 | exact L2 ]
+      | exact K3 | exact L3 ].
+  - econstructor; [ exact K1 | exact K2 | exact L2 | exact K4 | exact L4 ].
+  - intros k Hk; unfold rcmp.
+    rewrite (L5 k Hk).
+    eapply csub_ext_wf; [ | exact K5 ].
+    eapply (ISub_swf L4); exact Hk.
+Qed.
+
+Lemma cong_wkn G1 G2 i1 i2 A1 A2
+  : Req_env G1 G2 -> Req_ty G2 A1 A2 ->
+    Req_sub (oExt G2 i2 A2) G2 (oWkn G1 i1 A1) (oWkn G2 i2 A2).
+Proof.
+  intros HG [E [T [HE [H1 H2]]]].
+  eapply Req_sub_mk with (E := T :: E) (E' := E) (s1 := rshift) (s2 := rshift).
+  - econstructor; [ exact HE | exact H2 ].
+  - exact HE.
+  - econstructor;
+      [ eapply Req_env_transfer; [ apply Req_env_sym; exact HG | exact HE ]
+      | exact H1 ].
+  - econstructor; [ exact HE | exact H2 ].
+  - intros k Hk; reflexivity.
+Qed.
+
+Lemma cong_snoc G1 G2 G1' G2' i1 i2 A1 A2 g1 g2 v1 v2
+  : Req_env G1 G2 -> Req_env G1' G2' -> Req_ty G2' A1 A2 ->
+    Req_sub G2 G2' g1 g2 ->
+    (USkel A2 = true -> Req_code G2 v1 v2) ->
+    Req_sub G2 (oExt G2' i2 A2)
+      (oSnoc G1 G1' i1 A1 g1 v1) (oSnoc G2 G2' i2 A2 g2 v2).
+Proof.
+  intros HG HG' [E' [T [HE' [HA1 HA2]]]]
+    [Ea [Eb [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]] Hv.
+  pose proof (IEnv_fun K2 HE') as HEb; subst Eb.
+  pose proof (Req_env_transfer (Req_env_sym HG) K1) as HG1.
+  pose proof (Req_env_transfer (Req_env_sym HG') HE') as HG1'.
+  destruct T as [ br bl | br bl nc ].
+  - (* universe slot: the value is a code *)
+    destruct (Hv (ITy_USkel HA2)) as [Ec [n [M1 [M2 M3]]]].
+    pose proof (IEnv_fun M1 K1) as HEc; subst Ec.
+    eapply Req_sub_mk with (E := Ea) (E' := rt_U br bl :: E')
+                           (s1 := rsnoc n s1) (s2 := rsnoc n s2).
+    + exact K1.
+    + econstructor; [ exact HE' | exact HA2 ].
+    + eapply isub_snoc_U;
+        [ exact HG1 | exact HG1' | exact K3 | exact HA1 | exact M2 ].
+    + eapply isub_snoc_U;
+        [ exact K1 | exact HE' | exact K4 | exact HA2 | exact M3 ].
+    + intros [|k] Hk; [ reflexivity | apply K5; exact Hk ].
+  - (* non-universe slot: both sides carry the same junk *)
+    eapply Req_sub_mk with (E := Ea) (E' := rt_El br bl nc :: E')
+                           (s1 := rsnoc rc_nat s1) (s2 := rsnoc rc_nat s2).
+    + exact K1.
+    + econstructor; [ exact HE' | exact HA2 ].
+    + eapply isub_snoc_El; [ exact HG1 | exact HG1' | exact K3 | exact HA1 ].
+    + eapply isub_snoc_El; [ exact K1 | exact HE' | exact K4 | exact HA2 ].
+    + intros [|k] Hk; [ reflexivity | apply K5; exact Hk ].
+Qed.
+
+Lemma cong_hd G1 G2 i1 i2 A1 A2
+  : Req_env G1 G2 -> Req_ty G2 A1 A2 -> USkel A2 = true ->
+    Req_code (oExt G2 i2 A2) (oHd G1 i1 A1) (oHd G2 i2 A2).
+Proof.
+  intros HG [E [T [HE [H1 H2]]]] Hu.
+  rewrite (ITy_USkel H2) in Hu.
+  destruct T as [ br bl | br bl nc ]; [ | discriminate ].
+  eapply Req_code_mk with (E := rt_U br bl :: E) (n := rc_var 0).
+  - econstructor; [ exact HE | exact H2 ].
+  - econstructor;
+      [ eapply Req_env_transfer; [ apply Req_env_sym; exact HG | exact HE ]
+      | exact H1 ].
+  - econstructor; [ exact HE | exact H2 ].
+Qed.
+
+Lemma cong_ty_subst G1 G2 G1' G2' g1 g2 i1 i2 A1 A2
+  : Req_env G1 G2 -> Req_env G1' G2' -> Req_sub G2 G2' g1 g2 ->
+    Req_ty G2' A1 A2 ->
+    Req_ty G2 (oTySubst G1 G1' g1 i1 A1) (oTySubst G2 G2' g2 i2 A2).
+Proof.
+  intros HG HG' [Ea [Eb [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]]
+    [E' [T [HE' [H1 H2]]]].
+  pose proof (IEnv_fun K2 HE') as HEb; subst Eb.
+  assert (tsub s1 T = tsub s2 T) as Hts
+      by (eapply tsub_ext_wf; [ eapply ITy_twf; exact H1 | exact K5 ]).
+  eapply Req_ty_mk with (E := Ea) (T := tsub s2 T).
+  - exact K1.
+  - rewrite <- Hts.
+    econstructor;
+      [ eapply Req_env_transfer; [ apply Req_env_sym; exact HG | exact K1 ]
+      | eapply Req_env_transfer; [ apply Req_env_sym; exact HG' | exact HE' ]
+      | exact K3 | exact H1 ].
+  - econstructor; [ exact K1 | exact HE' | exact K4 | exact H2 ].
+Qed.
+
+Lemma cong_exp_subst G1 G2 G1' G2' g1 g2 i1 i2 A1 A2 v1 v2
+  : Req_env G1 G2 -> Req_env G1' G2' -> Req_sub G2 G2' g1 g2 ->
+    Req_code G2' v1 v2 ->
+    Req_code G2 (oExpSubst G1 G1' g1 i1 A1 v1) (oExpSubst G2 G2' g2 i2 A2 v2).
+Proof.
+  intros HG HG' [Ea [Eb [s1 [s2 [K1 [K2 [K3 [K4 K5]]]]]]]] [Ec [n [M1 [M2 M3]]]].
+  pose proof (IEnv_fun M1 K2) as HEc; subst Ec.
+  assert (csub s1 n = csub s2 n) as Hcs
+      by (eapply csub_ext_wf; [ eapply ICode_cwf; exact M2 | exact K5 ]).
+  eapply Req_code_mk with (E := Ea) (n := csub s2 n).
+  - exact K1.
+  - rewrite <- Hcs.
+    econstructor;
+      [ eapply Req_env_transfer; [ apply Req_env_sym; exact HG | exact K1 ]
+      | eapply Req_env_transfer; [ apply Req_env_sym; exact HG' | exact K2 ]
+      | exact K3 | exact M2 ].
+  - econstructor; [ exact K1 | exact K2 | exact K4 | exact M3 ].
+Qed.
+
+Lemma cong_U G1 G2 r1 r2 l1 l2
+  : Req_env G1 G2 -> (exists b, ErRel r1 b /\ ErRel r2 b) ->
+    (exists b, ErLvl l1 b /\ ErLvl l2 b) ->
+    Req_ty G2 (oU G1 r1 l1) (oU G2 r2 l2).
+Proof.
+  intros [E [HE1 HE2]] [br [Hr1 Hr2]] [bl [Hl1 Hl2]].
+  eapply Req_ty_mk with (E := E) (T := rt_U br bl).
+  - exact HE2.
+  - econstructor; [ exact HE1 | exact Hr1 | exact Hl1 ].
+  - econstructor; [ exact HE2 | exact Hr2 | exact Hl2 ].
+Qed.
+
+Lemma cong_El G1 G2 r1 r2 l1 l2 c1 c2
+  : Req_env G1 G2 -> (exists b, ErRel r1 b /\ ErRel r2 b) ->
+    (exists b, ErLvl l1 b /\ ErLvl l2 b) -> Req_code G2 c1 c2 ->
+    Req_ty G2 (oEl G1 r1 l1 c1) (oEl G2 r2 l2 c2).
+Proof.
+  intros HG [br [Hr1 Hr2]] [bl [Hl1 Hl2]] [E [n [HE [Hc1 Hc2]]]].
+  eapply Req_ty_mk with (E := E) (T := rt_El br bl n).
+  - exact HE.
+  - econstructor;
+      [ eapply Req_env_transfer; [ apply Req_env_sym; exact HG | exact HE ]
+      | exact Hr1 | exact Hl1 | exact Hc1 ].
+  - econstructor; [ exact HE | exact Hr2 | exact Hl2 | exact Hc2 ].
+Qed.
+
+Lemma cong_Nat G1 G2 : Req_env G1 G2 -> Req_code G2 (oNat G1) (oNat G2).
+Proof.
+  intros [E [H1 H2]]; eapply Req_code_mk with (E := E) (n := rc_nat);
+    [ exact H2 | econstructor; exact H1 | econstructor; exact H2 ].
+Qed.
+
+Lemma cong_Empty G1 G2 : Req_env G1 G2 -> Req_code G2 (oEmpty G1) (oEmpty G2).
+Proof.
+  intros [E [H1 H2]]; eapply Req_code_mk with (E := E) (n := rc_empty);
+    [ exact H2 | econstructor; exact H1 | econstructor; exact H2 ].
+Qed.
+
+Lemma cong_Pi_rel G1 G2 rF1 rF2 lF1 lF2 lG1 lG2 F1 F2 B1 B2
+  : Req_env G1 G2 -> (exists b, ErRel rF1 b /\ ErRel rF2 b) ->
+    (exists b, ErLvl lF1 b /\ ErLvl lF2 b) ->
+    Req_code G2 F1 F2 -> Req_code (oExtC G2 rF2 lF2 F2) B1 B2 ->
+    Req_code G2 (oPiRel G1 rF1 lF1 lG1 F1 B1) (oPiRel G2 rF2 lF2 lG2 F2 B2).
+Proof.
+  intros HG [br [Hr1 Hr2]] [bl [Hl1 Hl2]] [E [nF [HE [HF1 HF2]]]]
+    [E2 [nB [HE2 [HB1 HB2]]]].
+  assert (IEnv (oExtC G2 rF2 lF2 F2) (rt_El br bl nF :: E)) as HX
+      by (eapply IEnv_extC; eassumption).
+  pose proof (IEnv_fun HE2 HX) as HE2eq; subst E2.
+  eapply Req_code_mk with (E := E) (n := rc_pi true br bl nF nB).
+  - exact HE.
+  - econstructor;
+      [ eapply Req_env_transfer; [ apply Req_env_sym; exact HG | exact HE ]
+      | exact Hr1 | exact Hl1 | exact HF1 | exact HB1 ].
+  - econstructor; [ exact HE | exact Hr2 | exact Hl2 | exact HF2 | exact HB2 ].
+Qed.
+
+Lemma cong_Pi_irr G1 G2 rF1 rF2 lF1 lF2 F1 F2 B1 B2
+  : Req_env G1 G2 -> (exists b, ErRel rF1 b /\ ErRel rF2 b) ->
+    (exists b, ErLvl lF1 b /\ ErLvl lF2 b) ->
+    Req_code G2 F1 F2 -> Req_code (oExtC G2 rF2 lF2 F2) B1 B2 ->
+    Req_code G2 (oPiIrr G1 rF1 lF1 F1 B1) (oPiIrr G2 rF2 lF2 F2 B2).
+Proof.
+  intros HG [br [Hr1 Hr2]] [bl [Hl1 Hl2]] [E [nF [HE [HF1 HF2]]]]
+    [E2 [nB [HE2 [HB1 HB2]]]].
+  assert (IEnv (oExtC G2 rF2 lF2 F2) (rt_El br bl nF :: E)) as HX
+      by (eapply IEnv_extC; eassumption).
+  pose proof (IEnv_fun HE2 HX) as HE2eq; subst E2.
+  eapply Req_code_mk with (E := E) (n := rc_pi false br bl nF nB).
+  - exact HE.
+  - econstructor;
+      [ eapply Req_env_transfer; [ apply Req_env_sym; exact HG | exact HE ]
+      | exact Hr1 | exact Hl1 | exact HF1 | exact HB1 ].
+  - econstructor; [ exact HE | exact Hr2 | exact Hl2 | exact HF2 | exact HB2 ].
+Qed.
+
+Lemma cong_info r1 r2 n1 n2
+  : (exists b, ErRel r1 b /\ ErRel r2 b) -> ntlvl n1 = ntlvl n2 ->
+    ninfo (oInfo r1 n1) = ninfo (oInfo r2 n2).
+Proof.
+  intros [b [H1 H2]] Hn.
+  pose proof (ErRel_inj H1 H2) as Hrr; subst.
+  rewrite !ninfo_oInfo, Hn; reflexivity.
+Qed.
+
+Lemma cong_next l1 l2
+  : (exists b, ErLvl l1 b /\ ErLvl l2 b) -> ntlvl (oNext l1) = ntlvl (oNext l2).
+Proof.
+  intros [b [H1 H2]]; pose proof (ErLvl_inj H1 H2) as Hll; subst; reflexivity.
+Qed.
+
+Lemma cong_iota l1 l2
+  : (exists b, ErLvl l1 b /\ ErLvl l2 b) -> ntlvl (oIota l1) = ntlvl (oIota l2).
+Proof.
+  intros [b [H1 H2]]; pose proof (ErLvl_inj H1 H2) as Hll; subst; reflexivity.
+Qed.
+
+Lemma rceq_exp_e' G i A e1 e2
+  : rceq_term (sExp G i A) e1 e2 -> USkel A = true -> Req_code G e1 e2.
+Proof.
+  intros H Hu; change (if USkel A then Req_code G e1 e2 else True) in H.
+  rewrite Hu in H; exact H.
+Qed.
+
+Lemma cong_obligation
+  : forall c' name args t s1 s2,
+    In (name, term_rule c' args t) ott_dtt ->
+    ceq_args (CM := RigCM) c' s1 s2 ->
+    rceq_term t[/with_names_from c' s2/] (con name s1) (con name s2).
+Proof.
+  intros c' name args t s1 s2 Hin Hargs.
+  decomp; try exact I.
+  - (* Pi_irr *)
+    apply rceq_exp_i; intros _; apply cong_Pi_irr;
+      solve [ apply rceq_env_e; eassumption
+            | apply rceq_rel_e; eassumption
+            | apply rceq_lvl_e; eassumption
+            | eapply rceq_exp_e'; [ eassumption | reflexivity ] ].
+  - (* Pi_rel *)
+    apply rceq_exp_i; intros _; apply cong_Pi_rel;
+      solve [ apply rceq_env_e; eassumption
+            | apply rceq_rel_e; eassumption
+            | apply rceq_lvl_e; eassumption
+            | eapply rceq_exp_e'; [ eassumption | reflexivity ] ].
+  - (* Empty *)
+    apply rceq_exp_i; intros _; apply cong_Empty; apply rceq_env_e; eassumption.
+  - (* Nat *)
+    apply rceq_exp_i; intros _; apply cong_Nat; apply rceq_env_e; eassumption.
+  - (* El *)
+    apply rceq_ty_i; apply cong_El;
+      solve [ apply rceq_env_e; eassumption
+            | apply rceq_rel_e; eassumption
+            | apply rceq_lvl_e; eassumption
+            | eapply rceq_exp_e'; [ eassumption | reflexivity ] ].
+  - (* U *)
+    apply rceq_ty_i; apply cong_U;
+      solve [ apply rceq_env_e; eassumption
+            | apply rceq_rel_e; eassumption
+            | apply rceq_lvl_e; eassumption ].
+  - (* hd *)
+    apply rceq_exp_i; intro Hu; apply cong_hd;
+      solve [ apply rceq_env_e; eassumption
+            | eapply rceq_ty_e; eassumption
+            | exact Hu ].
+  - (* wkn *)
+    apply rceq_sub_i; apply cong_wkn;
+      solve [ apply rceq_env_e; eassumption
+            | eapply rceq_ty_e; eassumption ].
+  - (* snoc *)
+    apply rceq_sub_i; apply cong_snoc;
+      solve [ apply rceq_env_e; eassumption
+            | eapply rceq_ty_e; eassumption
+            | apply rceq_sub_e; eassumption
+            | (intro Hu; eapply rceq_exp_e'; [ eassumption | exact Hu ]) ].
+  - (* ext *)
+    apply rceq_env_i; apply cong_ext;
+      solve [ apply rceq_env_e; eassumption | eapply rceq_ty_e; eassumption ].
+  - (* forget *)
+    apply rceq_sub_i; apply cong_forget; apply rceq_env_e; eassumption.
+  - (* emp *) apply rceq_env_i; apply cong_emp.
+  - (* exp_subst *)
+    apply rceq_exp_i; intro Hu; apply cong_exp_subst;
+      solve [ apply rceq_env_e; eassumption
+            | apply rceq_sub_e; eassumption
+            | eapply rceq_exp_e'; [ eassumption | exact Hu ] ].
+  - (* ty_subst *)
+    apply rceq_ty_i; apply cong_ty_subst;
+      solve [ apply rceq_env_e; eassumption
+            | apply rceq_sub_e; eassumption
+            | eapply rceq_ty_e; eassumption ].
+  - (* cmp *)
+    apply rceq_sub_i; apply cong_cmp;
+      solve [ apply rceq_env_e; eassumption | apply rceq_sub_e; eassumption ].
+  - (* id *)
+    apply rceq_sub_i; apply cong_id; apply rceq_env_e; eassumption.
+  - (* info *)
+    apply rceq_info_i; apply cong_info;
+      solve [ apply rceq_rel_e; eassumption | apply rceq_tlvl_e; eassumption ].
+  - (* next *)
+    apply rceq_tlvl_i; apply cong_next; apply rceq_lvl_e; eassumption.
+  - (* inf *) apply rceq_tlvl_i; reflexivity.
+  - (* iota *)
+    apply rceq_tlvl_i; apply cong_iota; apply rceq_lvl_e; eassumption.
+  - (* L1 *) apply rceq_lvl_i; exists true; split; constructor.
+  - (* L0 *) apply rceq_lvl_i; exists false; split; constructor.
+  - (* irr *) apply rceq_rel_i; exists false; split; constructor.
+  - (* rel *) apply rceq_rel_i; exists true; split; constructor.
+Qed.
