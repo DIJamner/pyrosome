@@ -3395,6 +3395,187 @@ Proof.
 Qed.
 
 (* ================================================================== *)
+(* 9.  The irrelevant binder fragment                                  *)
+(* ================================================================== *)
+
+(* [Pi_irr] differs from [Pi_rel] in exactly two ways, and both are paid
+   for here rather than anywhere else.
+
+   (i) THE INFO SPELLING.  The former "Pi_irr" stores its codomain code at
+       [rel (iota L1)] while "lam_irr"/"app_irr" -- and hence
+       [DttLR.wkCodCodeIrr] and [nfcode_pi_irr] -- store it at [iCode L0].
+       [DttLRCand.eq_expsubst_info] moves an [exp_subst] of an
+       irrelevant-L0 code between the two, and [pi_irr_nf] below uses it
+       twice: once on the [Pi_irr] itself and once on its codomain.
+
+   (ii) [rty_pi_irr] CARRIES AN EXTRA [HasNf] CONJUNCT, which [rty_pi_rel]
+       does without because of eta.  So [cong_LamIrr] must, on top of
+       everything [cong_LamRel] does, EXHIBIT a normal form of the lambda:
+       an [nfet_lam_irr] over the body's, which [binder_lift]'s reducible
+       lift plus [RTy_escape] (through [RTmN_HasNf']) supplies. *)
+
+(* ---- the clause transport, named --------------------------------- *)
+
+(* A [Ceq_term] constrains only its LEFT term semantically; this is the
+   clause for the RIGHT one, which is what every "apply the fragment's own
+   congruence at the reflexive arguments" step wants.  (Used unnamed in
+   [cong_LamRel] and in [pi_rel_nf]'s two preliminary [RTmN_eq]s; named
+   here because the irrelevant cases want it four more times.) *)
+Lemma ceq_clause_r G i A e1 e2
+  : Ceq_term (sExp G i A) e1 e2 ->
+    forall D g, EnvOk D -> RSubN D G g ->
+      RTmN D i (oTySubst D G g i A) (oExpSubst D G g i A e2).
+Proof. intro H; exact (proj2 (Ceq_exp_e (ceq_refl_r H))). Qed.
+
+(* ---- the normal [Pi_irr] code of an instance ---------------------- *)
+
+(* The [Pi_irr] analogue of [pi_rel_nf], and it exports more: the two
+   [lam_irr]-specific steps (the extra [HasNf] conjunct, and reading the
+   body's normal form back) need the reducible lift [h] and its equation
+   with [oLift] as well. *)
+Lemma pi_irr_nf G rF lF F1 F2 B1 B2 D g
+  : RelNf rF -> LvlNf lF ->
+    Ceq_term (sCode G rF lF) F1 F2 ->
+    Ceq_term (sCode (oExtC G rF lF F2) oIrr oL0) B1 B2 ->
+    EnvOk D -> RSubN D G g ->
+    exists F0 B0 h,
+      NfCode D rF lF F0
+      /\ NfCode (oExtC D rF lF F0) oIrr oL0 B0
+      /\ EnvOk (oExtC D rF lF F0)
+      /\ RSubN (oExtC D rF lF F0) (oExtC G rF lF F2) h
+      /\ eqt (sSub (oExtC D rF lF F0) (oExtC G rF lF F2))
+             (oLift D G g rF lF F2) h
+      /\ eqt (sCode D rF lF) (oExpSubst D G g (iCode lF) (oU G rF lF) F2) F0
+      /\ eqt (sCode (oExtC D rF lF F0) oIrr oL0)
+             (oExpSubst (oExtC D rF lF F0) (oExtC G rF lF F2) h (iCode oL0)
+                (oU (oExtC G rF lF F2) oIrr oL0) B2) B0
+      /\ eqt (sCode (oExtC D rF lF F0) oIrr oL0)
+             (oExpSubst (oExtC D rF lF (oCodeSubst D G g rF lF F2))
+                (oExtC G rF lF F2) (oLift D G g rF lF F2)
+                (iCode oL0) (oU (oExtC G rF lF F2) oIrr oL0) B2) B0
+      /\ eqt (sCode D oIrr oL0)
+             (oExpSubst D G g (iCode oL0) (oU G oIrr oL0)
+                (oPiIrr G rF lF F2 B2))
+             (oPiIrr D rF lF F0 B0).
+Proof.
+  intros HrF HlF HFc HBc HD Hg.
+  pose proof (ceq_clause_r HFc) as HFb2.
+  pose proof (ceq_clause_r HBc) as HBb2.
+  apply Ceq_exp_e in HFc as [HFa _].
+  apply Ceq_exp_e in HBc as [HBa _].
+  assert (wft rF sRelevance) as HrFw by (apply RelNf_wf; exact HrF).
+  assert (wft lF sLvl) as HlFw by (apply LvlNf_wf; exact HlF).
+  assert (wft F2 (sCode G rF lF)) as HwF2 by (eapply eqt_wf_r; exact HFa).
+  assert (wft G sEnv) as HGw by (eapply wft_exp_env; exact HwF2).
+  assert (wft B2 (sCode (oExtC G rF lF F2) oIrr oL0)) as HwB2
+      by (eapply eqt_wf_r; exact HBa).
+  assert (wft (iEl rF lF) sInfo) as HiF
+      by (unfold iEl; apply wf_Info; [ exact HrFw | apply wf_Iota; exact HlFw ]).
+  assert (wft (iCode oL0) sInfo) as HcG
+      by (unfold iCode; apply wf_Info; [ apply wf_Rel | apply wf_Next; apply wf_L0 ]).
+  assert (wft (oExtC G rF lF F2) sEnv) as HwGF by (apply wf_ExtC; assumption).
+  assert (wft D sEnv) as HDw by (apply EnvOk_wf; exact HD).
+  assert (wft g (sSub D G)) as Hgw by (apply RSubN_wf; exact Hg).
+  destruct (binder_lift HrF HlF HwF2 HFb2 HD Hg)
+    as [F0 [h (HF0 & HF0eq & HEok & HRS & HLeq)]].
+  assert (wft (oExtC D rF lF F0) sEnv) as HwDF by (apply EnvOk_wf; exact HEok).
+  assert (wft h (sSub (oExtC D rF lF F0) (oExtC G rF lF F2))) as Hwh
+      by (apply RSubN_wf; exact HRS).
+  destruct (ceq_code_nf relnf_irr lvlnf_L0 HEok HRS
+              (HBb2 (oExtC D rF lF F0) h HEok HRS)) as [B0 [HB0 HB0eq]].
+  assert (wft F0 (sCode D rF lF)) as HwF0 by (apply NfCode_wf; exact HF0).
+  assert (wft B0 (sCode (oExtC D rF lF F0) oIrr oL0)) as HwB0
+      by (apply NfCode_wf; exact HB0).
+  assert (wft (oCodeSubst D G g rF lF F2) (sCode D rF lF)) as HwFg
+      by (eapply eqt_wf_l; exact HF0eq).
+  assert (wft (oExtC D rF lF (oCodeSubst D G g rF lF F2)) sEnv) as HwDFg
+      by (apply wf_ExtC; assumption).
+  assert (eqt sEnv (oExtC D rF lF (oCodeSubst D G g rF lF F2))
+            (oExtC D rF lF F0)) as HEnvFg.
+  { unfold oExtC; apply Ext_cong;
+      [ apply eq_term_refl; exact HDw
+      | apply eq_term_refl; exact HiF
+      | apply El_cong;
+        [ apply eq_term_refl; exact HDw
+        | apply eq_term_refl; exact HrFw
+        | apply eq_term_refl; exact HlFw
+        | exact HF0eq ] ]. }
+  (* the [oLift] spelling of the codomain instance *)
+  assert (eqt (sCode (oExtC D rF lF F0) oIrr oL0)
+            (oExpSubst (oExtC D rF lF (oCodeSubst D G g rF lF F2))
+               (oExtC G rF lF F2) (oLift D G g rF lF F2)
+               (iCode oL0) (oU (oExtC G rF lF F2) oIrr oL0) B2)
+            (oExpSubst (oExtC D rF lF F0) (oExtC G rF lF F2) h
+               (iCode oL0) (oU (oExtC G rF lF F2) oIrr oL0) B2)) as HstepB.
+  { eapply eq_term_conv.
+    - apply ExpSubst_cong
+        with (G1 := oExtC D rF lF (oCodeSubst D G g rF lF F2))
+             (G2 := oExtC D rF lF F0)
+             (G1' := oExtC G rF lF F2) (G2' := oExtC G rF lF F2)
+             (g1 := oLift D G g rF lF F2) (g2 := h)
+             (i1 := iCode oL0) (i2 := iCode oL0)
+             (A1 := oU (oExtC G rF lF F2) oIrr oL0)
+             (A2 := oU (oExtC G rF lF F2) oIrr oL0)
+             (v1 := B2) (v2 := B2);
+        [ exact HEnvFg
+        | apply eq_term_refl; exact HwGF
+        | exact HLeq
+        | apply eq_term_refl; exact HcG
+        | apply eq_term_refl; apply wf_U;
+          [ exact HwGF | apply wf_Irr | apply wf_L0 ]
+        | apply eq_term_refl; exact HwB2 ].
+    - apply eq_sort_exp_ty;
+        [ exact HwDF | exact HcG
+        | apply eq_U_subst;
+          [ exact HwDF | exact HwGF | exact Hwh | apply wf_Irr
+          | apply wf_L0 ] ]. }
+  assert (eqt (sCode (oExtC D rF lF F0) oIrr oL0)
+            (oExpSubst (oExtC D rF lF (oCodeSubst D G g rF lF F2))
+               (oExtC G rF lF F2) (oLift D G g rF lF F2)
+               (iCode oL0) (oU (oExtC G rF lF F2) oIrr oL0) B2) B0) as HB
+      by (eapply eq_term_trans; [ exact HstepB | exact HB0eq ]).
+  exists F0, B0, h; repeat split;
+    [ exact HF0 | exact HB0 | exact HEok | exact HRS | exact HLeq
+    | exact HF0eq | exact HB0eq | exact HB | ].
+  (* ---- the [Pi_irr] code itself, across the two info spellings ---- *)
+  eapply eq_term_trans.
+  { apply eq_expsubst_info;
+      [ exact HDw | exact HGw | exact Hgw
+      | apply wft_U0irr_iota;
+        [ exact HGw | apply wf_PiIrr;
+          [ exact HGw | exact HrFw | exact HlFw | exact HwF2
+          | apply wft_U0irr_next; [ exact HwGF | exact HwB2 ] ] ] ]. }
+  eapply eq_term_conv;
+    [ | apply eq_sort_sym; apply eq_sort_U_irr0; exact HDw ].
+  eapply eq_term_trans.
+  { apply eq_Pi_irr_subst;
+      [ exact HDw | exact HGw | exact Hgw | exact HrFw | exact HlFw
+      | exact HwF2
+      | apply wft_U0irr_next; [ exact HwGF | exact HwB2 ] ]. }
+  apply PiIrr_cong;
+    [ apply eq_term_refl; exact HDw
+    | apply eq_term_refl; exact HrFw
+    | apply eq_term_refl; exact HlFw
+    | exact HF0eq
+    | ].
+  (* the codomain, moved from [iota L1] to [iCode L0] and then to [B0] *)
+  eapply eq_term_conv;
+    [ | apply eq_sort_U_irr0; exact HwDF ].
+  eapply eq_term_trans; [ | exact HB ].
+  apply eq_term_sym.
+  eapply eq_term_conv.
+  - apply eq_expsubst_info;
+      [ exact HwDFg | exact HwGF
+      | apply wf_oLift; assumption
+      | exact HwB2 ].
+  - apply sExp_cong;
+      [ exact HEnvFg | apply eq_term_refl; exact HcG
+      | apply U_cong;
+        [ exact HEnvFg | apply eq_term_refl; apply wf_Irr
+        | apply eq_term_refl; apply wf_L0 ] ].
+Qed.
+
+(* ================================================================== *)
 (* 9.  The dispatchers                                                 *)
 (* ================================================================== *)
 
