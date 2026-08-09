@@ -19,37 +19,30 @@ Import Core.Notations.
      TyOk_inj   : normal types are determined by provable equality
      EnvOk_inj  : normal environments are determined by provable equality
 
-   src/Pyrosome/Gluing/Dtt/Erase.v proves the syntactic half of this modulo the hypothesis
-   [WknInj]; src/Pyrosome/Gluing/Dtt/Rigid.v + src/Pyrosome/Gluing/Dtt/RigidOk.v supply the semantic half
-   ([rigid_env]/[rigid_ty]/[rigid_code]).  What is left is the
-   composition, and the composition looks circular: [WknInj] at
-   [ext G j B] is discharged by the model PLUS type-injectivity at [G],
-   but [Erase.v] states [WknInj] globally.
+   src/Pyrosome/Gluing/Dtt/Erase.v proves the syntactic half (a de Bruijn
+   erasure of the normal forms, total and functional);
+   src/Pyrosome/Gluing/Dtt/Rigid.v + src/Pyrosome/Gluing/Dtt/RigidOk.v
+   supply the semantic half ([rigid_env]/[rigid_ty]/[rigid_code]).  What
+   is left is the composition, and the only thing in it that is not
+   routine is the variable case: [VarT] NAMES the normal representative of
+   a weakened type and pins it only by an [eq_term] premise, so the
+   index-[k+1] variable term CONTAINS the named representative of the
+   index-[k] one, and injectivity on variables is uniqueness of that
+   naming.
 
-   The design document (section 4b) proposes to break the circle with one
-   strong induction on [length E], proving the environment, type, code and
-   variable statements simultaneously.  That is NOT what is done here, and
-   the reason is worth recording, because the induction as proposed does
-   not in fact go through: the code statement's [Pi] case recurses into a
-   LONGER environment (one more binder), so it cannot be justified by an
-   induction hypothesis at a shorter one; and the variable statement at
-   that longer environment then needs the type statement back at the
-   original length.  A measure exists that repairs this (lexicographic in
-   the size of the erasure and the de Bruijn index), but it is not needed,
-   because of
+   That is settled by
 
-     THE UNIVERSE OBSERVATION.  The only [WknInj] instance the code-level
-     argument ever needs is the one where the named type is a UNIVERSE --
-     a code variable's type is [oU G r l] and nothing else.  And at a
-     universe the statement is UNCONDITIONAL: a normal type whose rigid
-     interpretation is [rt_U br bl] is syntactically [oU G r l] with [r]
-     and [l] determined by [br] and [bl].  There is no recursion at all.
+     THE UNIVERSE OBSERVATION.  The named type a code variable carries is
+     always a UNIVERSE -- a code variable's type is [oU G r l] and nothing
+     else.  And at a universe, uniqueness of the naming is
+     UNCONDITIONAL: a normal type over [G] whose weakening is provably
+     equal to [oU (ext G j B) r l] is syntactically [oU G r l], with the
+     SAME [r] and [l].  There is no recursion at all.
 
    So the file is linear:
 
      1-2. Inversions for the interpretation relations of Rigid.v.
-     3.   [WknU_shape] -- the universe-restricted [WknInj], with the
-          conclusion strengthened to name the type: unconditional.
+     3.   [WknU_shape] -- the universe case of the naming, unconditional.
      4.   [Nf_EnvOk] -- every normal-form judgement carries [EnvOk].
      5.   [Nf_ErI] -- one mutual induction producing, for a normal object,
           an erasure that is SIMULTANEOUSLY an [Er...] and an [I...]
@@ -58,9 +51,9 @@ Import Core.Notations.
           single induction is what keeps their [renv] indices in step.
           The variable clause is where [WknU_shape] is spent.
      6.   [VarTU_erase_inj] / [NfCode_erase_inj_u] / [TyOk_erase_inj_u] /
-          [EnvOk_erase_inj_u] -- Erase.v section 8, with [WknInj]
-          replaced by [WknU_shape] and therefore hypothesis-free.
-     7.   [WknInj_holds], and then the three exported theorems.
+          [EnvOk_erase_inj_u] -- injectivity of the erasure on normal
+          forms.
+     7.   The three exported theorems.
 
    Zero axioms, zero admits.
    ===================================================================== *)
@@ -120,15 +113,15 @@ Proof.
 Qed.
 
 (* =====================================================================
-   3. [WknU_shape]: the universe-restricted [WknInj].
+   3. [WknU_shape]: uniqueness of the naming, at a universe.
 
    Given a normal type [A] over [G] whose weakening to [ext G j B] is
    provably equal to the universe [oU (ext G j B) r l], [A] is [oU G r l]
    -- the SAME [r] and [l].  Unconditional: no induction, no appeal to
    type injectivity at any environment.
 
-   This is the single fact that the design's [WknInj] wall reduces to,
-   because the only variables a CODE can contain are universe-typed.
+   This is the whole of what the variable case needs, because the only
+   variables a CODE can contain are universe-typed.
    ===================================================================== *)
 
 Lemma WknU_shape G j B i A r l
@@ -290,13 +283,11 @@ Definition TyOk_ErI := proj1 (proj2 Nf_ErI).
 Definition NfCode_ErI := proj1 (proj2 (proj2 Nf_ErI)).
 
 (* =====================================================================
-   6. Erase.v's section 8, hypothesis-free.
+   6. Injectivity of the erasure.
 
-   The proofs are Erase.v's, with the [WknInj] application in the
-   variable case replaced by [WknU_shape].  The variable statement has to
-   be specialized to a universe-typed variable to make that replacement
-   legal -- which costs nothing, since that is the only instance the code
-   theorem uses.
+   The variable statement is specialized to a universe-typed variable, so
+   that the variable case can spend [WknU_shape] -- which costs nothing,
+   since that is the only instance the code theorem uses.
    ===================================================================== *)
 
 Theorem VarTU_erase_inj :
@@ -466,37 +457,4 @@ Proof.
   pose proof (IEnv_fun HIa HI1) as ?; subst E1.
   pose proof (IEnv_fun HIb HI2) as ?; subst E2.
   eapply EnvOk_erase_inj_u; eassumption.
-Qed.
-
-(* =====================================================================
-   8. [WknInj] as a corollary.
-
-   With the three theorems in hand, Erase.v's own hypothesis is
-   discharged, so its injectivity theorems ([VarT_erase_inj] at an
-   ARBITRARY named type, [EnvOk_erase_inj], ...) become available.  Note
-   the direction of the dependency: nothing above uses this.
-   ===================================================================== *)
-
-Theorem WknInj_holds : WknInj.
-Proof.
-  intros G j B i1 A1 i2 A2 A' Ht1 Ht2 Heq1 Heq2.
-  destruct (rigid_ty Heq1) as [Ex [Tx [HEx [Hs1 Hu1]]]].
-  destruct (rigid_ty Heq2) as [Ey [Ty [HEy [Hs2 Hu2]]]].
-  destruct (ITy_fun Hu1 Hu2) as [? ?]; subst Ey Ty.
-  apply ITy_subst_inv in Hs1.
-  destruct Hs1 as [E1 [s1 [T1 [_ [HG1 [Hw1 [HT1 HTx1]]]]]]].
-  apply ITy_subst_inv in Hs2.
-  destruct Hs2 as [E2 [s2 [T2 [_ [HG2 [Hw2 [HT2 HTx2]]]]]]].
-  apply ISub_wkn_inv in Hw1; destruct Hw1 as [Ta [_ [_ [_ ->]]]].
-  apply ISub_wkn_inv in Hw2; destruct Hw2 as [Tb [_ [_ [_ ->]]]].
-  pose proof (IEnv_fun HG1 HG2) as ?; subst E2.
-  rewrite HTx1 in HTx2.
-  pose proof (tsub_shift_inj _ _ HTx2) as Hteq; subst T2.
-  destruct (EnvOk_ErI (TyOk_EnvOk Ht1)) as [E0 [HEr0 HI0]].
-  pose proof (IEnv_fun HI0 HG1) as ?; subst E0.
-  destruct (TyOk_ErI Ht1 HEr0 HI0) as [Ta1 [HTa1r HTa1i]].
-  destruct (TyOk_ErI Ht2 HEr0 HI0) as [Ta2 [HTa2r HTa2i]].
-  destruct (ITy_fun HTa1i HT1) as [_ ?]; subst Ta1.
-  destruct (ITy_fun HTa2i HT2) as [_ ?]; subst Ta2.
-  destruct (TyOk_erase_inj_u Ht1 Ht2 HTa1r HTa2r) as [_ ?]; assumption.
 Qed.

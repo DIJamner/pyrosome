@@ -48,21 +48,18 @@ Import Core.Notations.
      4. [Er_fun]: erasure is functional -- a normal object has at most
         one erasure.  UNCONDITIONAL.
 
-     5. [EnvOk_erase_inj] / [TyOk_erase_inj] / [NfCode_erase_inj]:
-        erasure is INJECTIVE on normal forms -- two normal objects over
-        the same environment with the same erasure are syntactically
-        identical.  These take one explicit hypothesis, [WknInj].
+   Injectivity is NOT here: it is proved in src/Pyrosome/Gluing/Dtt/Inj.v,
+   over the rigid model's own interpretation relations.
 
-   TWO DELIBERATE DESIGN POINTS.  Both are forced by the same fact, and
-   the first is a deviation from the datatype sketched in the task, so
-   read them before consuming this file.
+   ONE DELIBERATE DESIGN POINT, a deviation from the datatype sketched in
+   the task, so read it before consuming this file.
 
    (A) [rc_pi] RECORDS THE DOMAIN'S RELEVANCE AND LEVEL.
 
        [oPiRel G rF lF lG F B] carries [rF] and [lF] as SUBTERMS, so
        injectivity has to recover them from the erasure.  They cannot be
        recovered from the erased domain [nF]: when [F] is a variable, its
-       relevance and level are those of its NAMED type (see (B)), which
+       relevance and level are those of its NAMED type, which
        erasure does not see and which the environment pins down only up
        to provable equality.  So [rc_pi] carries them:
 
@@ -72,58 +69,18 @@ Import Core.Notations.
        This costs nothing semantically -- [rt_El brF blF nF] is exactly
        the entry the binder pushes onto the environment, so the two bits
        are already present in [renv] -- and it is what lets the [Pi]
-       clauses of [NfCode_erase_inj] go through with NO assumption about
-       variables at all.  The Pi's own level [lG] is NOT recorded: it is
-       the level index of the judgement, which the statement fixes.
+       clauses of the injectivity argument go through with NO assumption
+       about variables at all.  The Pi's own level [lG] is NOT recorded:
+       it is the level index of the judgement, which the statement fixes.
 
-   (B) ONE HYPOTHESIS, [WknInj], AND WHY IT IS UNAVOIDABLE HERE.
+   WHAT [ErVar E G i A x k] DOES NOT SAY: nothing whatsoever about [A],
+   the NAMED normal representative of the variable's type.  [VarT]
+   (NormalForms.v) pins that representative only by an [eq_term] premise,
+   which is a fact about the equational theory and therefore the business
+   of the rigid model, not of this file.
 
-       [VarT] (NormalForms.v) NAMES the normal representative of a weakened
-       type:
-
-         vart_wkn : VarT G i A x -> ... -> TyOk (oExt G j B) i A' ->
-                    eqt (sTy (oExt G j B) i)
-                        (oTySubst (oExt G j B) G (oWkn G j B) i A) A' ->
-                    VarT (oExt G j B) i A'
-                         (oExpSubst (oExt G j B) G (oWkn G j B) i A x)
-
-       and the resulting TERM CONTAINS [A], the named representative of
-       the variable one level down.  So injectivity of erasure on
-       variables needs: two normal types over [G] whose weakenings name
-       the same representative are equal.  That is a fact about
-       [eq_term], i.e. the business of the OTHER half of code rigidity
-       (the rigid model); purely syntactically it is not available -- as
-       far as this file can see, two derivations of [VarT G i A' x] may
-       name different [A']s, and then two different terms have the same
-       erasure.  It is taken here as
-
-         WknInj : forall G j B i1 A1 i2 A2 A', ... -> A1 = A2
-
-       Note where the types live: [A1] and [A2] range over the SHORTER
-       environment [G], not over [oExt G j B].  That is deliberate, and
-       it is the difference between a usable hypothesis and a circular
-       one.  Discharging [WknInj] from the rigid model reads: the model
-       sends both weakenings to the [shift] of the respective erasures,
-       so naming the same representative gives equal shifted erasures,
-       hence equal erasures ([shift] is injective), hence -- by
-       [TyOk_erase_inj] AT [G] -- equal types.  The recursion descends
-       one [ext] at a time, so the composition
-
-           rigid model + this file  =  TyOk_inj / NfCode_inj
-
-       is well founded on the length of the environment.
-
-       (An earlier version of this file assumed instead that the named
-       representative over [oExt G j B] is unique.  That also proves
-       everything below, but it is an instance of [TyOk_inj] AT THE SAME
-       environment, so composing it with the rigid model is circular.
-       [WknInj] is the fixed version.  The cleanest fix of all would be
-       upstream: if [VarT]/[NeET] named the COMPUTED normal
-       representative instead of an arbitrary provably-equal one, no
-       hypothesis would be needed at all.)
-
-   Nothing below reasons ABOUT [eq_term]: [WknInj] is only ever applied,
-   and no model is built.  There is no [Axiom] and no [Admitted].
+   Nothing below reasons ABOUT [eq_term], and no model is built.  There is
+   no [Axiom] and no [Admitted].
    ===================================================================== *)
 
 Local Notation eqt := (eq_term ott_dtt []).
@@ -642,178 +599,3 @@ Definition TyOk_erase_total := proj1 (proj2 Nf_erase_total).
 Definition NfCode_erase_total := proj1 (proj2 (proj2 Nf_erase_total)).
 Definition VarT_erase_total := proj1 (proj2 (proj2 (proj2 Nf_erase_total))).
 
-(* =====================================================================
-   7. The semantic input.
-
-   [WknInj]: WEAKENING IS INJECTIVE on normal types, up to the naming
-   [VarT] performs.  Both [A1] and [A2] live in [G]; only the named
-   representative [A'] lives in [oExt G j B].  See (B) in the header:
-   this direction is what makes the composition with the rigid model
-   recurse on strictly shorter environments.
-
-   The two infos are kept separate ([i1] for [A1], [i2] for [A2]) because
-   the [eq_term] premises [VarT] supplies live at the two DIFFERENT sorts
-   [sTy _ i1] and [sTy _ i2].  The equality [i1 = i2] is not assumed: it
-   is recovered syntactically by [TyOk_info_det].
-   ===================================================================== *)
-
-Definition WknInj : Prop :=
-  forall G j B i1 A1 i2 A2 A',
-    TyOk G i1 A1 -> TyOk G i2 A2 ->
-    eqt (sTy (oExt G j B) i1)
-        (oTySubst (oExt G j B) G (oWkn G j B) i1 A1) A' ->
-    eqt (sTy (oExt G j B) i2)
-        (oTySubst (oExt G j B) G (oWkn G j B) i2 A2) A' ->
-    A1 = A2.
-
-(* =====================================================================
-   8. Injectivity.
-
-   Order: variables first (induction on the de Bruijn INDEX), then codes
-   (induction on the erased code), then types and environments, one case
-   analysis each.
-   ===================================================================== *)
-
-(* Variables, at a FIXED type [A].  That is the only form the code-level
-   theorem needs -- a code variable's type is the universe [oU G r l],
-   whose [r] and [l] the statement of [NfCode_erase_inj] fixes -- and it
-   is the form whose [WknInj] use lands on the shorter environment.
-
-   Index 0 is UNCONDITIONAL: the [oHd G i A] of a normal environment is
-   determined by that environment's own syntax.  Index k+1 is where the
-   assumption is spent: the term contains the named type of the variable
-   one level down, and only [WknInj] can identify it. *)
-Theorem VarT_erase_inj (Hwk : WknInj) :
-  forall k E G i1 i2 A x1 x2,
-    VarT G i1 A x1 -> VarT G i2 A x2 ->
-    ErVar E G i1 A x1 k -> ErVar E G i2 A x2 k ->
-    i1 = i2 /\ x1 = x2.
-Proof.
-  induction k; intros E G i1 i2 A x1 x2 Hv1 Hv2 He1 He2.
-  - apply ErVar_0_inv in He1.
-    destruct He1 as [G0 [i0 [A0 [T [E0 [_ [HGx [Hi1 Hx1]]]]]]]]; subst.
-    apply ErVar_0_inv in He2.
-    destruct He2 as [G0' [i0' [A0' [T' [E0' [_ [HGx' [Hi2 Hx2]]]]]]]].
-    inversion HGx'; subst.
-    split; reflexivity.
-  - apply ErVar_S_inv in He1.
-    destruct He1 as [G0 [j [B [A1' [y1 [TB [E0 [HEa [HGx [Hx1 Hi1]]]]]]]]]]; subst.
-    apply ErVar_S_inv in He2.
-    destruct He2 as [G0' [j' [B' [A2' [y2 [TB' [E0' [HEb [HGx' [Hx2 Hi2]]]]]]]]]].
-    inversion HGx'; inversion HEb; subst.
-    apply VarT_wkn_inv in Hv1; destruct Hv1 as [_ [_ [Hin1 [Ht1 Heq1]]]].
-    apply VarT_wkn_inv in Hv2; destruct Hv2 as [_ [_ [Hin2 [Ht2 Heq2]]]].
-    pose proof (VarT_TyOk Hin1) as HT1.
-    pose proof (VarT_TyOk Hin2) as HT2.
-    assert (A1' = A2') as HAeq by (eapply Hwk; eassumption); subst.
-    destruct (IHk _ _ _ _ _ _ _ Hin1 Hin2 Hi1 Hi2) as [Hii Hyy]; subst.
-    split; reflexivity.
-Qed.
-
-(* Codes.  The [Pi] clauses need NO assumption: the domain's relevance
-   and level are recovered from the erasure by [ErRel_inj]/[ErLvl_inj]
-   (design point (A) in the header), after which the two extended
-   environments are literally the same [renv] and the induction
-   hypotheses apply. *)
-Theorem NfCode_erase_inj (Hwk : WknInj) :
-  forall n E G r l c1 c2,
-    NfCode G r l c1 -> NfCode G r l c2 ->
-    ErCode E G r l c1 n -> ErCode E G r l c2 n ->
-    c1 = c2.
-Proof.
-  induction n as [ k | | | b brF blF nF IHF nB IHB ];
-    intros E G r l c1 c2 Hc1 Hc2 He1 He2.
-  - (* rc_var: both codes are variables of the SAME type [oU G r l] *)
-    apply ErCode_var_inv in He1; apply ErCode_var_inv in He2.
-    pose proof (NfCode_of_var Hc1 He1) as Hv1.
-    pose proof (NfCode_of_var Hc2 He2) as Hv2.
-    destruct (VarT_erase_inj Hwk Hv1 Hv2 He1 He2) as [_ ?]; assumption.
-  - (* rc_nat *)
-    apply ErCode_nat_inv in He1; destruct He1 as [_ [_ ->]].
-    apply ErCode_nat_inv in He2; destruct He2 as [_ [_ ->]].
-    reflexivity.
-  - (* rc_empty *)
-    apply ErCode_empty_inv in He1; destruct He1 as [_ [_ ->]].
-    apply ErCode_empty_inv in He2; destruct He2 as [_ [_ ->]].
-    reflexivity.
-  - destruct b.
-    + (* Pi_rel *)
-      apply ErCode_pi_true_inv in He1.
-      destruct He1 as [rF1 [lF1 [F1 [B1 [Hr1 [Hc1e [HrF1 [HlF1 [HF1 HB1]]]]]]]]].
-      apply ErCode_pi_true_inv in He2.
-      destruct He2 as [rF2 [lF2 [F2 [B2 [Hr2 [Hc2e [HrF2 [HlF2 [HF2 HB2]]]]]]]]].
-      subst.
-      pose proof (ErRel_inj HrF1 HrF2) as ?; subst.
-      pose proof (ErLvl_inj HlF1 HlF2) as ?; subst.
-      apply NfCode_pi_rel_inv in Hc1; destruct Hc1 as [_ [_ [HNF1 HNB1]]].
-      apply NfCode_pi_rel_inv in Hc2; destruct Hc2 as [_ [_ [HNF2 HNB2]]].
-      pose proof (IHF _ _ _ _ _ _ HNF1 HNF2 HF1 HF2) as ?; subst.
-      pose proof (IHB _ _ _ _ _ _ HNB1 HNB2 HB1 HB2) as ?; subst.
-      reflexivity.
-    + (* Pi_irr *)
-      apply ErCode_pi_false_inv in He1.
-      destruct He1 as [rF1 [lF1 [F1 [B1 [Hr1 [Hl1 [Hc1e [HrF1 [HlF1 [HF1 HB1]]]]]]]]]].
-      apply ErCode_pi_false_inv in He2.
-      destruct He2 as [rF2 [lF2 [F2 [B2 [Hr2 [Hl2 [Hc2e [HrF2 [HlF2 [HF2 HB2]]]]]]]]]].
-      subst.
-      pose proof (ErRel_inj HrF1 HrF2) as ?; subst.
-      pose proof (ErLvl_inj HlF1 HlF2) as ?; subst.
-      apply NfCode_pi_irr_inv in Hc1; destruct Hc1 as [_ [_ [HNF1 HNB1]]].
-      apply NfCode_pi_irr_inv in Hc2; destruct Hc2 as [_ [_ [HNF2 HNB2]]].
-      pose proof (IHF _ _ _ _ _ _ HNF1 HNF2 HF1 HF2) as ?; subst.
-      pose proof (IHB _ _ _ _ _ _ HNB1 HNB2 HB1 HB2) as ?; subst.
-      reflexivity.
-Qed.
-
-(* Types.  The generalized form also concludes that the two info indices
-   agree, which [EnvOk_erase_inj] needs. *)
-Theorem TyOk_erase_inj_gen (Hwk : WknInj) E G i1 A1 i2 A2 T
-  : TyOk G i1 A1 -> TyOk G i2 A2 ->
-    ErTy E G i1 A1 T -> ErTy E G i2 A2 T ->
-    i1 = i2 /\ A1 = A2.
-Proof.
-  intros Ht1 Ht2 He1 He2.
-  destruct T as [ br bl | br bl n ].
-  - (* rt_U: only the two bits survive, and both erasures are injective *)
-    apply ErTy_U_inv in He1; destruct He1 as [r1 [l1 [-> [-> [Hr1 Hl1]]]]].
-    apply ErTy_U_inv in He2; destruct He2 as [r2 [l2 [-> [-> [Hr2 Hl2]]]]].
-    pose proof (ErRel_inj Hr1 Hr2) as ?; subst.
-    pose proof (ErLvl_inj Hl1 Hl2) as ?; subst.
-    split; reflexivity.
-  - (* rt_El: the code is determined by [NfCode_erase_inj] *)
-    apply ErTy_El_inv in He1;
-      destruct He1 as [r1 [l1 [cc1 [-> [-> [Hr1 [Hl1 Hc1]]]]]]].
-    apply ErTy_El_inv in He2;
-      destruct He2 as [r2 [l2 [cc2 [-> [-> [Hr2 [Hl2 Hc2]]]]]]].
-    pose proof (ErRel_inj Hr1 Hr2) as ?; subst.
-    pose proof (ErLvl_inj Hl1 Hl2) as ?; subst.
-    apply TyOk_El_inv in Ht1; destruct Ht1 as [_ HN1].
-    apply TyOk_El_inv in Ht2; destruct Ht2 as [_ HN2].
-    pose proof (NfCode_erase_inj Hwk HN1 HN2 Hc1 Hc2) as ?; subst.
-    split; reflexivity.
-Qed.
-
-Theorem TyOk_erase_inj (Hwk : WknInj) E G i A1 A2 T
-  : TyOk G i A1 -> TyOk G i A2 ->
-    ErTy E G i A1 T -> ErTy E G i A2 T ->
-    A1 = A2.
-Proof.
-  intros H1 H2 H3 H4.
-  destruct (TyOk_erase_inj_gen Hwk H1 H2 H3 H4) as [_ ?]; assumption.
-Qed.
-
-Theorem EnvOk_erase_inj (Hwk : WknInj) :
-  forall E G1 G2, EnvOk G1 -> EnvOk G2 -> ErEnv G1 E -> ErEnv G2 E -> G1 = G2.
-Proof.
-  induction E as [ | T E IHE ]; intros G1 G2 H1 H2 He1 He2.
-  - apply ErEnv_nil_inv in He1; apply ErEnv_nil_inv in He2; subst; reflexivity.
-  - apply ErEnv_cons_inv in He1;
-      destruct He1 as [Ga [ia [Aa [-> [HEa HTa]]]]].
-    apply ErEnv_cons_inv in He2;
-      destruct He2 as [Gb [ib [Ab [-> [HEb HTb]]]]].
-    apply EnvOk_ext_inv in H1; destruct H1 as [HOa HTya].
-    apply EnvOk_ext_inv in H2; destruct H2 as [HOb HTyb].
-    pose proof (IHE _ _ HOa HOb HEa HEb) as ?; subst.
-    destruct (TyOk_erase_inj_gen Hwk HTya HTyb HTa HTb) as [? ?]; subst.
-    reflexivity.
-Qed.

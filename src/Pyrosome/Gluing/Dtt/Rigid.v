@@ -46,10 +46,8 @@ Import Core.Notations.
    [ext], [hd]) as well as [U]/[El]/[Nat]/[Empty]/[Pi_rel]/[Pi_irr].
 
    Nothing here is stated in terms of [ErCode]/[ErTy]/[ErEnv]: injectivity
-   is proved directly against the model's own relations (section 9), which
-   is what makes the recursion in the variable case go through without the
-   [WknInj] assumption.  [WknInj] is then DERIVED (section 10), so
-   src/Pyrosome/Gluing/Dtt/Erase.v's injectivity theorems become available too.
+   is proved directly against the model's own relations, in
+   src/Pyrosome/Gluing/Dtt/Inj.v.
    ===================================================================== *)
 
 Local Notation eqt := (eq_term ott_dtt []).
@@ -181,39 +179,6 @@ Proof. destruct T; cbn; [ reflexivity | rewrite csub_id; reflexivity ]. Qed.
 
 Lemma tsub_comp s t T : tsub s (tsub t T) = tsub (rcmp s t) T.
 Proof. destruct T; cbn; [ reflexivity | rewrite csub_comp; reflexivity ]. Qed.
-
-(* [cren] with an injective renaming is injective; the only instance
-   needed is [S], for the weakening/shift step of [WknInj]. *)
-Lemma cren_inj c1 : forall c2 f,
-    (forall k1 k2, f k1 = f k2 -> k1 = k2) -> cren f c1 = cren f c2 -> c1 = c2.
-Proof.
-  induction c1 as [ k | | | b br bl F IHF B IHB ];
-    intros [ k2 | | | b2 br2 bl2 F2 B2 ] f Hf Heq; cbn in Heq;
-    try discriminate; try reflexivity.
-  - assert (f k = f k2) as Hk by (injection Heq; auto).
-    apply Hf in Hk; subst; reflexivity.
-  - assert (b = b2 /\ br = br2 /\ bl = bl2
-            /\ cren f F = cren f F2
-            /\ cren (upren f) B = cren (upren f) B2) as
-      [-> [-> [-> [HF HB]]]]
-        by (injection Heq; intros; repeat split; assumption).
-    f_equal; [ eapply IHF; eassumption | ].
-    eapply IHB; [ | exact HB ].
-    intros [|k1] [|k3]; cbn; try discriminate; try reflexivity.
-    intro Hq; assert (f k1 = f k3) as Hk by (injection Hq; auto).
-    apply Hf in Hk; subst; reflexivity.
-Qed.
-
-Lemma tsub_shift_inj T1 T2 : tsub rshift T1 = tsub rshift T2 -> T1 = T2.
-Proof.
-  destruct T1 as [ br bl | br bl n1 ]; destruct T2 as [ br2 bl2 | br2 bl2 n2 ];
-    cbn; intro H; try discriminate; try assumption.
-  assert (br = br2 /\ bl = bl2 /\ csub rshift n1 = csub rshift n2) as
-    [-> [-> Hn]] by (injection H; intros; repeat split; assumption).
-  rewrite !csub_rshift in Hn.
-  f_equal; eapply cren_inj; [ | exact Hn ].
-  intros k1 k2 Hk; injection Hk; auto.
-Qed.
 
 (* =====================================================================
    2.  "Universe-like" types.
