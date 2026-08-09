@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Tools.ComputeWf Tools.Matches
   Tools.EGraph.ComputeWf.
 From Pyrosome.Lang Require Import Subst.
-From Pyrosome.Lang.OTT Require Import Base Nat Pi.
+From Pyrosome.Lang.OTT Require Import Base Nat Pi SubstCommute.
 Import Core.Notations.
 
 (* =====================================================================
@@ -20,14 +20,25 @@ Import Core.Notations.
 
    TARGET LANGUAGE.  [ott_dtt] is
 
-       ott_pi ++ ott_nat ++ ott_base ++ subst_ott ++ ott_info      (69 rules)
+       ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base
+         ++ subst_ott ++ ott_info                                  (73 rules)
 
    i.e. Lang/OTT's Tarski-universe core (U/El, two levels, relevance
    tags), the parameterized substitution calculus, Nat/zero/suc/Empty/
    Emptyrec, and dependent Pi (relevant + irrelevant) with beta, ETA, and
    the substitution commutations.
 
-   Census: 32 term_rule, 28 term_eq_rule, 9 sort_rule, 0 sort_eq_rule.
+   Census: 32 term_rule, 32 term_eq_rule, 9 sort_rule, 0 sort_eq_rule.
+
+   [ott_subst_commute] (src/Pyrosome/Lang/OTT/SubstCommute.v) supplies the
+   four substitution commutations Lang/OTT/Pi.v and Lang/OTT/Nat.v never
+   had -- "app_rel subst", "app_irr subst", "lam_irr subst" and
+   "Emptyrec subst".  Without them those terms are STUCK under an explicit
+   substitution, normal forms are not stable under weakening, and the
+   normalization statement is false.  Upstream, "lam_irr subst" and
+   "app_irr subst" are subsumed by Lang/OTT/ProofIrr.v, which is out of
+   scope here; "app_rel subst" is derivable from eta and beta but is much
+   cheaper as a rule.
    The last figure is the single most consequential fact about this
    language: it has NO sort equations at all.  Sorts are indexed by TERMS
    ([ty G i], [exp G i A]) and all "type equality" of the object theory is
@@ -64,7 +75,7 @@ Notation lang := (@Rule.lang string).
 (* ------------------------------------------------------------------ *)
 
 Definition ott_dtt : lang := Eval vm_compute in
-  (ott_pi ++ ott_nat ++ ott_base ++ subst_ott ++ ott_info).
+  (ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base ++ subst_ott ++ ott_info).
 
 Lemma ott_dtt_wf : wf_lang ott_dtt.
 Proof. compute_wf_lang. Qed.
