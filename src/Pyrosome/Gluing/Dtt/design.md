@@ -451,12 +451,12 @@ at `tyinfo` relates them, since it only demands equal `ninfo`s. So `ty G (iCode 
 `ty G (iEl rel L1)` are provably equal sorts whose sets of normal representatives are
 **disjoint**, and a transfer between them forces the closed universe `U irr L0` to be provably
 equal to the `El` of a closed relevant `Pi` code. The **environment** index has a milder form of
-the same disease: `RSub` is a `Fixpoint` on the *syntax* of `G`, so pushing it through an
+the same disease: `RSub` is indexed by the *syntax* of `G`, so pushing it through an
 environment equation asks, in the `ext` case, for reducibility of the entry at the other info —
 i.e. for the normalization theorem itself.
 
 With all three quantified, both directions of every transfer are transitivity alone, and nothing
-in Layers 1–3 has to move: `TyOk` keeps its pinned infos, `RSub` keeps its structural recursion,
+in Layers 1–3 has to move: `TyOk` keeps its pinned infos, `RSub` keeps its syntactic index,
 and the aliasing is absorbed by the wrappers.
 
 `Ceq_sort` stays as in the old plan:
