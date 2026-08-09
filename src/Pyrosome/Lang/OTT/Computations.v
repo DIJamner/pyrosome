@@ -79,14 +79,24 @@ Proof.
     ]}%prerule
     (pi_injectivity ++ id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
-  (* NOTE: the cross-former conversions Id-Π (Typed.agda:231-240), cast-Π
-     (:300-312) and Id-U-ΠΠ (:251-261) are DEFERRED.  Id-Π was attempted here
-     (LHS Id (Pi_rel A B) t u; RHS Pi_irr with codomain Id B of the pointwise
-     applications wk1 t · v0 / wk1 u · v0): the e-graph pipeline does not finish
-     in practical time (killed at 500s) — the same compute_wf_rule/infer_rule
-     wall hit by transp, on deeply-nested binder + substitution + application
-     terms.  cast-Π and Id-U-ΠΠ are strictly harder and additionally need Idsym
-     (built from the deferred transp).  These need a faster wf/inference path. *)
+  (* Id-Π — the same-head STRUCTURAL rule for two Π codes (funext,
+     Typed.agda:231-240) — remains DEFERRED.  The intended reduction is the
+     heterogeneous function extensionality
+       Id (Π F1 B1) (Π F2 B2) f g
+         ↝ Π(a1:F1) Π(a2:F2) (Id F1 F2 a1 a2) ⇒ Id (B1[a1]) (B2[a2]) (f·a1) (g·a2)
+     as a triple-nested Pi_irr.  Two obstacles, both real:
+       (1) SEMANTIC.  Id requires its two type arguments at a COMMON level and
+           relevance rel (see the Id former).  So the inner Id F1 F2 a1 a2 only
+           typechecks when the domains F1,F2 share level/relevance; the general
+           case (distinct domains) must instead cast a1 across F1~F2, which needs
+           Idsym/transp — themselves deferred (see Id.v).
+       (2) COST.  Even the restricted same-shape-domain form OOMs: it is the
+           deeply-nested binder + substitution + application term whose e-graph
+           wf/inference pass does not finish in practical time (killed >500s),
+           the same wall hit by transp.
+     The head-CLASH rules above (Id-Nat-Pi / Id-Pi-Nat) are the tractable part of
+     the Π fragment and are done.  cast-Π (:300-312) and the universe-level
+     Id-U-ΠΠ (:251-261, see IdUniv.v) are strictly harder for the same reasons. *)
 
   apply wf_lang_nil.
 Unshelve.
