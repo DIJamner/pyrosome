@@ -158,15 +158,15 @@ Qed.
 (* this development.                                                    *)
 (* ------------------------------------------------------------------ *)
 
-(* Same environment, same info, provably equal types. *)
+(* Same environment, same info, provably equal types.  NO side conditions:
+   the environment and the info are recovered by inverting the sort the
+   type equation itself lives at. *)
 Lemma eq_sort_exp_ty G i A1 A2
-  : wft G sEnv -> wft i sInfo -> eqt (sTy G i) A1 A2 ->
-    eq_sort ott_dtt [] (sExp G i A1) (sExp G i A2).
+  : eqt (sTy G i) A1 A2 -> eq_sort ott_dtt [] (sExp G i A1) (sExp G i A2).
 Proof.
-  intros HG Hi HA; apply sExp_cong;
-    [ apply eq_term_refl; exact HG
-    | apply eq_term_refl; exact Hi
-    | exact HA ].
+  intro HA.
+  destruct (wf_sort_ty_inv (eqt_wf_sort HA)) as [HG Hi].
+  apply sExp_cong; [ apply eq_term_refl | apply eq_term_refl | ]; assumption.
 Qed.
 
 (* ------------------------------------------------------------------ *)
@@ -444,10 +444,7 @@ Proof.
     assert (wft i sInfo) as Hi by (eapply wft_ty_info; exact IHA).
     eapply wf_term_conv;
       [ apply wf_Hd; [ exact IHG | exact Hi | exact IHA ] | ].
-    apply eq_sort_exp_ty;
-      [ apply wf_Ext; [ exact IHG | exact Hi | exact IHA ]
-      | exact Hi
-      | exact Heq ].
+    apply eq_sort_exp_ty; exact Heq.
   - (* vart_wkn.
        CONVERSION (B): [x[wkn]] is typed at [A[wkn]]; the clause supplies
        the normal representative [A'] and the equation. *)
@@ -467,7 +464,7 @@ Proof.
         | exact HAw
         | exact IHx ]
       | ].
-    apply eq_sort_exp_ty; [ exact HEw | exact Hi | exact Heq ].
+    apply eq_sort_exp_ty; exact Heq.
 
   (* ---- NeET ---- *)
   - (* neet_var *)
@@ -485,7 +482,7 @@ Proof.
         [ exact HGw | exact HrFw | exact HlFw | exact HlGw
         | exact HFw | exact HBw | exact IHf | exact IHa ]
       | ].
-    apply eq_sort_exp_ty; [ exact HGw | exact Hi | exact Heq ].
+    apply eq_sort_exp_ty; exact Heq.
   - (* neet_app_irr.
        TWO CONVERSIONS:
        (A) the codomain [B] recovered from the type of the head comes back
@@ -507,7 +504,7 @@ Proof.
         | apply wft_U0irr_iota; [ exact HXw | exact HBw ]
         | exact IHf | exact IHa ]
       | ].
-    apply eq_sort_exp_ty; [ exact HGw | exact Hi | exact Heq ].
+    apply eq_sort_exp_ty; exact Heq.
   - (* neet_emptyrec *)
     intros G rA lA A e HA IHA He IHe.
     apply wf_Emptyrec;
@@ -652,11 +649,9 @@ Proof.
       | ].
     eapply wf_term_conv;
       [ apply wf_Hd; [ exact HDw | exact Hi | exact HA'w ] | ].
-    apply eq_sort_exp_ty;
-      [ exact HEw | exact Hi
-      | apply eq_wk_lift_ty;
+    apply eq_sort_exp_ty; apply eq_wk_lift_ty;
         [ exact HDw | exact HGw | exact Hi | exact HAw | exact HA'w
-        | exact IHWk | assumption ] ].
+        | exact IHWk | assumption ].
 Qed.
 
 (* ------------------------------------------------------------------ *)

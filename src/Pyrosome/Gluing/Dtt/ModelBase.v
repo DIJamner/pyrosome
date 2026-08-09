@@ -96,10 +96,7 @@ Proof.
       | apply eq_term_refl; eapply wf_term_conv;
         [ apply wf_Nat; exact HG'
         | apply eq_sort_U0; [ exact HG' | apply wf_Rel ] ] ].
-  - apply eq_sort_exp_ty;
-      [ exact HG
-      | apply wf_Info; [ apply wf_Rel | apply wf_Iota; apply wf_L1 ]
-      | exact HU' ].
+  - apply eq_sort_exp_ty; exact HU'.
 Qed.
 
 (* The [Nat] type under a substitution.  Used by every [zero]/[suc] case:
@@ -251,8 +248,7 @@ Proof.
         | apply eq_term_refl; wfa
         | apply eq_term_refl; apply wf_U; auto using wf_Rel, wf_L0
         | apply Nat_cong; exact HG ].
-    + apply eq_sort_exp_ty;
-        [ exact HwD | wfa | apply eq_U_subst; auto using wf_Rel, wf_L0 ].
+    + apply eq_sort_exp_ty; apply eq_U_subst; auto using wf_Rel, wf_L0.
 Qed.
 
 (* ---- zero ------------------------------------------------------- *)
@@ -293,7 +289,7 @@ Proof.
         | apply eq_term_refl; apply wf_El;
           auto using wf_Rel, wf_L0, wf_Nat
         | apply Zero_cong; exact HG ].
-    + apply eq_sort_exp_ty; [ exact HwD | wfa | exact Hty ].
+    + apply eq_sort_exp_ty; exact Hty.
 Qed.
 
 (* ---- suc -------------------------------------------------------- *)
@@ -352,7 +348,7 @@ Proof.
           auto using wf_Rel, wf_L0, wf_Nat
         | apply Suc_cong;
           [ exact HG | apply eq_term_refl; exact Hwn1 ] ].
-    + apply eq_sort_exp_ty; [ exact HwD | wfa | exact Hty ].
+    + apply eq_sort_exp_ty; exact Hty.
 Qed.
 
 (* ---- Empty ------------------------------------------------------ *)
@@ -396,9 +392,7 @@ Proof.
         | eapply eq_term_conv;
           [ apply Empty_cong; exact HG
           | apply eq_sort_sym; apply eq_sort_U_irr0; exact HwG2 ] ].
-    + apply eq_sort_exp_ty;
-        [ exact HwD | wfa
-        | apply eq_U_subst; auto using wf_Irr, wf_L0 ].
+    + apply eq_sort_exp_ty; apply eq_U_subst; auto using wf_Irr, wf_L0.
 Qed.
 
 (* ================================================================== *)
@@ -691,8 +685,7 @@ Proof.
           [ exact HwD | exact HwG2 | exact HwG2' | exact Hwg | exact Hwg1
           | wfa | exact HwA'
           | apply wf_Suc; auto using wf_Nat ].
-    + apply eq_sort_exp_ty;
-        [ exact HwD | wfa | ].
+    + apply eq_sort_exp_ty.
       eapply eq_term_trans; [ | exact HtyD ].
       apply eq_ty_subst_cmp;
         [ exact HwD | exact HwG2 | exact HwG2' | exact Hwg | exact Hwg1

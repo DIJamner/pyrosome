@@ -150,8 +150,7 @@ Section AppNamed.
       | apply eq_term_refl; apply wf_Id; exact HD
       | ].
     eapply eq_term_conv; [ apply eq_term_sym; exact Heqa | ].
-    unfold sElt; apply eq_sort_exp_ty;
-      [ exact HD | apply an_iF | ].
+    unfold sElt; apply eq_sort_exp_ty.
     eapply eq_term_trans; [ apply an_Elqe | ].
     apply eq_term_sym; apply eq_ty_subst_id;
       [ exact HD | apply an_iF | apply an_ElFw ].
@@ -333,7 +332,7 @@ Proof.
   - eapply neet_app_rel;
       [ exact Hn' | exact Ha1 | exact HTC | exact HeqCn ].
   - eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqCn ] ].
+      [ | apply eq_sort_exp_ty; exact HeqCn ].
     apply AppRel_cong;
       [ apply eq_term_refl; wfx
       | apply eq_term_refl; wfx
@@ -357,7 +356,7 @@ Proof.
           | apply eq_term_refl; wfx
           | apply eq_term_refl; wfx
           | exact Heqn ]
-        | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqA2 ] ]
+        | apply eq_sort_exp_ty; exact HeqA2 ]
       | exact Heqa1 ].
 Qed.
 
@@ -404,7 +403,7 @@ Proof.
   - eapply neet_app_irr;
       [ exact Hn' | exact Ha1 | exact HTC | exact HeqCn ].
   - eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqCn ] ].
+      [ | apply eq_sort_exp_ty; exact HeqCn ].
     apply AppIrr_cong;
       [ apply eq_term_refl; wfx
       | apply eq_term_refl; wfx
@@ -426,7 +425,7 @@ Proof.
           | apply eq_term_refl; wfx
           | apply eq_term_refl; wfx
           | exact Heqn ]
-        | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqA2 ] ]
+        | apply eq_sort_exp_ty; exact HeqA2 ]
       | exact Heqa1 ].
 Qed.
 
@@ -804,7 +803,7 @@ Proof.
     | exact Hsub
     | ].
   eapply eq_term_conv;
-    [ | apply eq_sort_exp_ty; [ exact HD2 | exact Hi | exact Hty ] ].
+    [ | apply eq_sort_exp_ty; exact Hty ].
   eapply eq_term_trans;
     [ | apply eq_snoc_hd;
         [ exact HD2 | exact HD | exact Hw2 | exact Hi | exact HA'
@@ -827,7 +826,7 @@ Proof.
         [ exact HD | exact HG | exact Hi | exact HA | exact HA' | exact Hw
         | exact HeqT ]
       | apply eq_term_refl; apply wf_Hd; assumption ].
-  - apply eq_sort_exp_ty; [ exact HD2 | exact Hi | ].
+  - apply eq_sort_exp_ty.
     eapply eq_term_trans;
       [ apply eq_ty_subst_cmp with (G2 := oExt D i A');
         [ exact HD2 | exact HED | exact HD | exact Hsn | exact HWD | exact Hi
@@ -1088,7 +1087,7 @@ Section WkStepC.
     unfold wkCode.
     eapply eq_term_trans.
     { eapply eq_term_conv;
-        [ | apply eq_sort_exp_ty; [ exact HD2 | apply wsc_cF | apply wsc_S1F ] ].
+        [ | apply eq_sort_exp_ty; apply wsc_S1F ].
       eapply eq_term_trans.
       - apply ExpSubst_cong
           with (G1 := D2) (G2 := D2) (G1' := D) (G2' := D)
@@ -1111,10 +1110,8 @@ Section WkStepC.
           [ exact HD2 | exact HD | exact HG | exact Hw2 | exact Hw
           | apply wsc_cF | apply wsc_UG | exact HF ]. }
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD2 | apply wsc_cF
-          | apply eq_U_subst;
-            [ exact HD2 | exact HG | exact Hw'' | exact HrF | exact HlF ] ] ].
+      [ | apply eq_sort_exp_ty; apply eq_U_subst;
+            [ exact HD2 | exact HG | exact Hw'' | exact HrF | exact HlF ] ].
     apply ExpSubst_cong
       with (G1 := D2) (G2 := D2) (G1' := G) (G2' := G)
            (g1 := oCmp D2 D G w2 w) (g2 := w'')
@@ -1232,7 +1229,7 @@ Section WkStepC.
     assert (wft a (sExp D2 (iEl rF lF) (oTySubst D2 G w'' (iEl rF lF) A)))
       as Ha''.
     { eapply wf_term_conv; [ exact Ha | ].
-      apply eq_sort_exp_ty; [ exact HD2 | apply wsc_iF | apply wsc_Aty ]. }
+      apply eq_sort_exp_ty; apply wsc_Aty. }
     assert (wft (instAt D2 D rF lF F' w2 a) (sSub D2 DF)) as Hs.
     { unfold instAt, oExtC; apply wf_Snoc;
         [ exact HD2 | exact HD | apply wsc_iF | apply wsc_A' | exact Hw2
@@ -1391,8 +1388,7 @@ Section WkStepC.
                      (iCode lG) (oU GF rG lG) B).
     - eapply eq_term_conv; [ | apply wsc_sortE ].
       eapply eq_term_conv;
-        [ | apply eq_sort_exp_ty;
-            [ apply wsc_E1 | apply wsc_cG | apply wsc_S1B ] ].
+        [ | apply eq_sort_exp_ty; apply wsc_S1B ].
       eapply eq_term_trans.
       + apply ExpSubst_cong
           with (G1 := E1) (G2 := E1) (G1' := DF) (G2' := DF)
@@ -1534,17 +1530,14 @@ Section WkPiRel.
         [ exact HD | exact HG | exact Hw | apply wpr_iG | apply wpr_ElPiG
         | exact He ]. }
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD2 | apply wpr_iG
-          | apply pr_Pi_subst;
+      [ | apply eq_sort_exp_ty; apply pr_Pi_subst;
             [ exact HD2 | exact HG | exact HrF | exact HlF | exact HlG
-            | exact Hw'' | exact HF | exact HB ] ] ].
+            | exact Hw'' | exact HF | exact HB ] ].
     eapply eq_term_trans
       with (e12 := oExpSubst D2 G (oCmp D2 D G w2 w) (iEl oRel lG)
                      (oEl G oRel lG (oPiRel G rF lF lG F B)) e).
     - eapply eq_term_conv;
-        [ | apply eq_sort_exp_ty;
-            [ exact HD2 | apply wpr_iG | apply wpr_Pity ] ].
+        [ | apply eq_sort_exp_ty; apply wpr_Pity ].
       eapply eq_term_trans.
       + unfold wkFunRel at 1.
         apply ExpSubst_cong
@@ -1589,7 +1582,7 @@ Section WkPiRel.
   Proof.
     intro Ha.
     eapply wf_term_conv; [ exact Ha | ].
-    unfold sElt; apply eq_sort_exp_ty; [ exact HD2 | apply wpr_iF | ].
+    unfold sElt; apply eq_sort_exp_ty.
     eapply eq_term_trans.
     - apply wsc_Aty with (w := w);
         [ exact HG | exact HD | exact HD2 | exact HrF | exact HlF | exact HF
@@ -1622,12 +1615,10 @@ Section WkPiRel.
   Proof.
     intros He Ha.
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD2 | apply wpr_iG
-          | apply ac_appConcl;
+      [ | apply eq_sort_exp_ty; apply ac_appConcl;
             [ exact HD2 | exact HG | exact HrF | exact HlF | apply wf_Rel
             | exact HlG | exact Hw'' | exact HF | exact HB
-            | apply wpr_a''; exact Ha ] ] ].
+            | apply wpr_a''; exact Ha ] ].
     unfold appAtRel; apply AppRel_cong;
       [ apply eq_term_refl; exact HD2
       | apply eq_term_refl; exact HrF
@@ -1748,17 +1739,14 @@ Section WkPiIrr.
         [ exact HD | exact HG | exact Hw | apply wpi_iG | apply wpi_ElPiG
         | exact He ]. }
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD2 | apply wpi_iG
-          | apply pi_Pi_subst;
+      [ | apply eq_sort_exp_ty; apply pi_Pi_subst;
             [ exact HD2 | exact HG | exact HrF | exact HlF
-            | exact Hw'' | exact HF | exact HB ] ] ].
+            | exact Hw'' | exact HF | exact HB ] ].
     eapply eq_term_trans
       with (e12 := oExpSubst D2 G (oCmp D2 D G w2 w) (iEl oIrr oL0)
                      (oEl G oIrr oL0 (oPiIrr G rF lF F B)) e).
     - eapply eq_term_conv;
-        [ | apply eq_sort_exp_ty;
-            [ exact HD2 | apply wpi_iG | apply wpi_Pity ] ].
+        [ | apply eq_sort_exp_ty; apply wpi_Pity ].
       eapply eq_term_trans.
       + unfold wkFunIrr at 1.
         apply ExpSubst_cong
@@ -1803,7 +1791,7 @@ Section WkPiIrr.
   Proof.
     intro Ha.
     eapply wf_term_conv; [ exact Ha | ].
-    unfold sElt; apply eq_sort_exp_ty; [ exact HD2 | apply wpi_iF | ].
+    unfold sElt; apply eq_sort_exp_ty.
     eapply eq_term_trans.
     - apply wsc_Aty with (w := w);
         [ exact HG | exact HD | exact HD2 | exact HrF | exact HlF | exact HF
@@ -1836,12 +1824,10 @@ Section WkPiIrr.
   Proof.
     intros He Ha.
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD2 | apply wpi_iG
-          | apply ac_appConcl;
+      [ | apply eq_sort_exp_ty; apply ac_appConcl;
             [ exact HD2 | exact HG | exact HrF | exact HlF | apply wf_Irr
             | apply wf_L0 | exact Hw'' | exact HF | exact HB
-            | apply wpi_a''; exact Ha ] ] ].
+            | apply wpi_a''; exact Ha ] ].
     unfold appAtIrr; apply AppIrr_cong;
       [ apply eq_term_refl; exact HD2
       | apply eq_term_refl; exact HrF
@@ -2025,7 +2011,7 @@ Proof.
                (A1 := oEl G oRel oL0 (oNat G)) (A2 := oEl G oRel oL0 (oNat G))
                (v1 := e) (v2 := n);
         [ er | er | er | er | er | exact Heq ]
-      | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqA2 ] ].
+      | apply eq_sort_exp_ty; exact HeqA2 ].
 
   (* ---- Empty ---- *)
   - intros G P HG Hiff D w HW HD.
@@ -2057,7 +2043,7 @@ Proof.
                (A1 := oEl G oIrr oL0 (oEmpty G))
                (A2 := oEl G oIrr oL0 (oEmpty G)) (v1 := e) (v2 := n);
         [ er | er | er | er | er | exact Heq ]
-      | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqA2 ] ].
+      | apply eq_sort_exp_ty; exact HeqA2 ].
 
   (* ---- a type named by a variable ---- *)
   - intros G r l c P Hx Hiff D w HW HD.
@@ -2093,7 +2079,7 @@ Proof.
                (i1 := iEl r l) (i2 := iEl r l)
                (A1 := oEl G r l c) (A2 := oEl G r l c) (v1 := e) (v2 := n);
         [ er | er | er | er | er | exact Heq ]
-      | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqA3 ] ].
+      | apply eq_sort_exp_ty; exact HeqA3 ].
 
   (* ---- Pi_rel ---- *)
   - intros G rF lF lG F B P Pd Pc HrF HlF HlG HF HB Hd Hc Hiff D w HW HD.
@@ -2130,7 +2116,7 @@ Proof.
         [ wfx | wfx | wfx | wfx | apply wf_Rel | wfx | wfx | wfx
         | apply Wk_wf; exact HU2 | exact Hu | ].
       eapply wf_term_conv; [ exact Haw2 | ].
-      unfold sElt; apply eq_sort_exp_ty; [ wfx | wfx | ].
+      unfold sElt; apply eq_sort_exp_ty.
       apply eq_term_sym; apply eq_El_subst;
         [ wfx | wfx | apply Wk_wf; exact HU2 | wfx | wfx | wfx ]. }
     exists (oEl D oRel lG (oPiRel D rF lF lG F1 B1)),
@@ -2182,7 +2168,7 @@ Proof.
         assert (wft a (sExp D2 (iEl rF lF)
                   (oTySubst D2 D w2 (iEl rF lF) (oEl D rF lF F1)))) as Haw2.
         { eapply wf_term_conv; [ exact Haw | ].
-          unfold sElt; apply eq_sort_exp_ty; [ wfx | wfx | ].
+          unfold sElt; apply eq_sort_exp_ty.
           apply eq_term_sym.
           eapply eq_term_trans;
             [ apply eq_El_subst;
@@ -2226,7 +2212,7 @@ Proof.
       assert (wft a (sExp D2 (iEl rF lF)
                 (oTySubst D2 D w2 (iEl rF lF) (oEl D rF lF F1)))) as Haw2.
       { eapply wf_term_conv; [ exact Haw | ].
-        unfold sElt; apply eq_sort_exp_ty; [ wfx | wfx | ].
+        unfold sElt; apply eq_sort_exp_ty.
         apply eq_term_sym.
         eapply eq_term_trans;
           [ apply eq_El_subst;
@@ -2244,7 +2230,7 @@ Proof.
           | apply Wk_wf; exact HW2 | apply Wk_wf; exact HU | exact Hu
           | wfx | exact HeqF1 | exact HeqB1W | exact HeqB1L
           | exact Hew | exact Haw2 ]
-        | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqC ] ]. }
+        | apply eq_sort_exp_ty; exact HeqC ]. }
 
   (* ---- Pi_irr ---- *)
   - intros G rF lF F B P Pd Pc HrF HlF HF HB Hd Hc Hiff D w HW HD.
@@ -2287,7 +2273,7 @@ Proof.
         [ wfx | wfx | wfx | wfx | apply wf_Irr | apply wf_L0 | wfx | wfx
         | apply Wk_wf; exact HU2 | exact Hu | ].
       eapply wf_term_conv; [ exact Haw2 | ].
-      unfold sElt; apply eq_sort_exp_ty; [ wfx | wfx | ].
+      unfold sElt; apply eq_sort_exp_ty.
       apply eq_term_sym; apply eq_El_subst;
         [ wfx | wfx | apply Wk_wf; exact HU2 | wfx | wfx | wfx ]. }
     exists (oEl D oIrr oL0 (oPiIrr D rF lF F1 B1)),
@@ -2336,7 +2322,7 @@ Proof.
         assert (wft a (sExp D2 (iEl rF lF)
                   (oTySubst D2 D w2 (iEl rF lF) (oEl D rF lF F1)))) as Haw2.
         { eapply wf_term_conv; [ exact Haw | ].
-          unfold sElt; apply eq_sort_exp_ty; [ wfx | wfx | ].
+          unfold sElt; apply eq_sort_exp_ty.
           apply eq_term_sym.
           eapply eq_term_trans;
             [ apply eq_El_subst;
@@ -2389,7 +2375,7 @@ Proof.
                    (A2 := oEl G oIrr oL0 (oPiIrr G rF lF F B))
                    (v1 := e) (v2 := n);
             [ er | er | er | er | er | exact Heqn ]
-          | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqA2 ] ]. }
+          | apply eq_sort_exp_ty; exact HeqA2 ]. }
       (* the applications travel *)
       { intros D2 w2 a HW2 HD2 Hpd u HU Hu.
         assert (Pd D2 u a) as Hpda by (apply Hpd; assumption).
@@ -2402,7 +2388,7 @@ Proof.
         assert (wft a (sExp D2 (iEl rF lF)
                   (oTySubst D2 D w2 (iEl rF lF) (oEl D rF lF F1)))) as Haw2.
         { eapply wf_term_conv; [ exact Haw | ].
-          unfold sElt; apply eq_sort_exp_ty; [ wfx | wfx | ].
+          unfold sElt; apply eq_sort_exp_ty.
           apply eq_term_sym.
           eapply eq_term_trans;
             [ apply eq_El_subst;
@@ -2420,7 +2406,7 @@ Proof.
             | apply Wk_wf; exact HW2 | apply Wk_wf; exact HU | exact Hu
             | wfx | exact HeqF1 | exact HeqB1W | exact HeqB1L
             | exact Hew | exact Haw2 ]
-          | apply eq_sort_exp_ty; [ wfx | wfx | exact HeqC ] ]. } }
+          | apply eq_sort_exp_ty; exact HeqC ]. } }
 Qed.
 
 (* ================================================================== *)
@@ -2521,7 +2507,7 @@ Proof.
     { eapply wf_term_conv;
         [ apply wf_ExpSubst;
           [ wfx | wfx | exact Hw2w | wfx | wfx | exact Hv ] | ].
-      unfold sElt; apply eq_sort_exp_ty; [ wfx | wfx | ].
+      unfold sElt; apply eq_sort_exp_ty.
       eapply eq_term_trans; [ apply eq_El_subst; wfx | ].
       apply El_cong; [ er | er | er | exact HeqF'' ]. }
     exists (oSnoc D2 G (iEl rF lF) (oEl G rF lF F) g'
@@ -2535,15 +2521,13 @@ Proof.
           (f := w2) (g := g) (i := iEl rF lF) (A := oEl G rF lF F) (v := v);
           [ wfx | wfx | wfx | exact Hw2w | exact Hgw | wfx | wfx | ].
         eapply wf_term_conv; [ exact Hv | ].
-        unfold sElt; apply eq_sort_exp_ty;
-          [ wfx | wfx | apply eq_term_sym; exact HeqEl ]. }
+        unfold sElt; apply eq_sort_exp_ty; apply eq_term_sym; exact HeqEl. }
       unfold oExtC; apply Snoc_cong;
         [ er | er | er | er | exact Hcmp | ].
       eapply eq_term_conv;
-        [ | apply eq_sort_exp_ty; [ wfx | wfx |
-            apply wsc_Aty with (w := g);
+        [ | apply eq_sort_exp_ty; apply wsc_Aty with (w := g);
               [ wfx | wfx | wfx | wfx | wfx | wfx | exact Hgw | exact Hw2w
-              | exact Hcmp | exact HeqF ] ] ].
+              | exact Hcmp | exact HeqF ] ].
       apply ExpSubst_cong
         with (G1 := D2) (G2 := D2) (G1' := D) (G2' := D)
              (g1 := w2) (g2 := w2)
@@ -2583,7 +2567,7 @@ Proof.
       [ wfx | wfx | wfx | wfx | wfx | wfx | exact Hgw | exact Hwkn
       | wfx | apply eq_term_refl; wfx | exact HeqF ].
   - eapply wf_term_conv; [ apply wf_Hd; wfx | ].
-    unfold sElt; apply eq_sort_exp_ty; [ wfx | wfx | ].
+    unfold sElt; apply eq_sort_exp_ty.
     eapply eq_term_trans; [ apply eq_El_subst; wfx | ].
     apply El_cong; [ er | er | er | exact HeqF'' ].
 Qed.
@@ -2654,8 +2638,7 @@ Proof.
     assert (wft v (sExp D (iEl rF lF)
               (oTySubst D G g (iEl rF lF) (oEl G rF lF F)))) as Hvg.
     { eapply wf_term_conv; [ exact Hv | ].
-      unfold sElt; apply eq_sort_exp_ty;
-        [ wfx | wfx | apply eq_term_sym; exact HeqEl ]. }
+      unfold sElt; apply eq_sort_exp_ty; apply eq_term_sym; exact HeqEl. }
     assert (wft (oSnoc D G (iEl rF lF) (oEl G rF lF F) g v)
               (sSub D (oExt G (iEl rF lF) (oEl G rF lF F)))) as Hsg
         by (apply wf_Snoc; [ wfx | wfx | wfx | wfx | exact Hgw | exact Hvg ]).
@@ -2695,7 +2678,7 @@ Proof.
         - apply eq_U_subst; [ wfx | wfx | exact Hsg | wfx | wfx ]. }
       eapply eq_term_trans.
       { eapply eq_term_conv;
-          [ | apply eq_sort_exp_ty; [ wfx | wfx | exact HS1 ] ].
+          [ | apply eq_sort_exp_ty; exact HS1 ].
         eapply eq_term_trans.
         - apply ExpSubst_cong
             with (G1 := D) (G2 := D)
@@ -2957,7 +2940,7 @@ Proof.
       assert (wft a (sExp D2 (iEl rF lF)
                 (oTySubst D2 D w2 (iEl rF lF) (oEl D rF lF F1)))) as Haw2.
       { eapply wf_term_conv; [ exact Haw | ].
-        unfold sElt; apply eq_sort_exp_ty; [ wfx | wfx | ].
+        unfold sElt; apply eq_sort_exp_ty.
         apply eq_term_sym.
         eapply eq_term_trans; [ apply eq_El_subst; wfx | ].
         apply El_cong; [ er | er | er | exact HeqF2 ]. }
@@ -3062,7 +3045,7 @@ Proof.
       assert (wft a (sExp D2 (iEl rF lF)
                 (oTySubst D2 D w2 (iEl rF lF) (oEl D rF lF F1)))) as Haw2.
       { eapply wf_term_conv; [ exact Haw | ].
-        unfold sElt; apply eq_sort_exp_ty; [ wfx | wfx | ].
+        unfold sElt; apply eq_sort_exp_ty.
         apply eq_term_sym.
         eapply eq_term_trans; [ apply eq_El_subst; wfx | ].
         apply El_cong; [ er | er | er | exact HeqF2 ]. }
@@ -3132,9 +3115,7 @@ Proof.
   eapply eq_term_conv;
     [ apply eq_exp_subst_id;
       [ apply EnvOk_wf; exact HG | wfx | wfx | apply NfCode_wf; exact Hc ]
-    | apply eq_sort_exp_ty;
-      [ apply EnvOk_wf; exact HG | wfx
-      | apply eq_term_refl; wfx ] ].
+    | apply eq_sort_exp_ty; apply eq_term_refl; wfx ].
 Qed.
 
 Theorem RTyEx_of_TyOk G i A : TyOk G i A -> exists P, RTy G i A P.

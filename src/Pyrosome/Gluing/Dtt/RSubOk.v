@@ -232,7 +232,7 @@ Proof.
           [ er | er | er | er
           | apply eq_term_sym; exact HeqAn
           | apply eq_term_refl; exact Hvw ]
-        | apply eq_sort_exp_ty; [ exact HD'w | exact Hiw | exact HeqW' ] ]. }
+        | apply eq_sort_exp_ty; exact HeqW' ]. }
     (* assemble *)
     apply RSub_ext_intro.
     exists (oCmp D' D G0 w g0),

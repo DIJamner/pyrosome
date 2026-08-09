@@ -175,7 +175,7 @@ Section AppConcl.
         [ exact HD | exact HG | exact Hw | apply ac_cF
         | apply wf_U; [ exact HG | exact HrF | exact HlF ]
         | exact HF ].
-    - apply eq_sort_exp_ty; [ exact HD | apply ac_cF | ].
+    - apply eq_sort_exp_ty.
       apply eq_U_subst;
         [ exact HD | exact HG | exact Hw | exact HrF | exact HlF ].
   Qed.
@@ -235,7 +235,7 @@ Section AppConcl.
                  (oTySubst DF G cw (iEl rF lF) (oEl G rF lF F))).
   Proof.
     eapply wf_term_conv; [ apply ac_hdD | ].
-    apply eq_sort_exp_ty; [ apply ac_DF | apply ac_iEl | apply ac_lift_ty ].
+    apply eq_sort_exp_ty; apply ac_lift_ty.
   Qed.
 
   Lemma ac_lift : wft (oLift D G w rF lF F) (sSub DF GF).
@@ -255,7 +255,7 @@ Section AppConcl.
                (oTySubst D D (oId D) (iEl rF lF) (oEl D rF lF Fw))).
   Proof.
     eapply wf_term_conv; [ exact Ha | ].
-    apply eq_sort_exp_ty; [ exact HD | apply ac_iEl | ].
+    apply eq_sort_exp_ty.
     apply eq_term_sym, eq_ty_subst_id;
       [ exact HD | apply ac_iEl | apply ac_ElD ].
   Qed.
@@ -272,7 +272,7 @@ Section AppConcl.
                (oTySubst D G w (iEl rF lF) (oEl G rF lF F))).
   Proof.
     eapply wf_term_conv; [ exact Ha | ].
-    apply eq_sort_exp_ty; [ exact HD | apply ac_iEl | ].
+    apply eq_sort_exp_ty.
     apply eq_term_sym, ac_El_w.
   Qed.
 
@@ -336,8 +336,7 @@ Section AppConcl.
         a.
   Proof.
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD | apply ac_iEl | apply eq_term_sym; apply ac_El_w ] ].
+      [ | apply eq_sort_exp_ty; apply eq_term_sym; apply ac_El_w ].
     eapply eq_term_trans.
     { eapply eq_term_conv.
       - apply ExpSubst_cong
@@ -349,13 +348,12 @@ Section AppConcl.
           | apply eq_term_refl; apply ac_iEl
           | apply eq_term_sym; apply ac_lift_ty
           | apply eq_term_refl; apply ac_hdD ].
-      - apply eq_sort_exp_ty;
-          [ exact HD | apply ac_iEl | apply ac_inst_ty ]. }
+      - apply eq_sort_exp_ty; apply ac_inst_ty. }
     eapply eq_term_conv.
     - unfold oInst, oExtC; apply eq_snoc_hd;
         [ exact HD | exact HD | apply wf_Id; exact HD | apply ac_iEl
         | apply ac_ElD | apply ac_a_id ].
-    - apply eq_sort_exp_ty; [ exact HD | apply ac_iEl | ].
+    - apply eq_sort_exp_ty.
       apply eq_ty_subst_id; [ exact HD | apply ac_iEl | apply ac_ElD ].
   Qed.
 
@@ -396,7 +394,7 @@ Section AppConcl.
   Lemma ac_Bw : wft Bw (sCode DF rG lG).
   Proof.
     eapply wf_term_conv; [ apply ac_Bw_raw | ].
-    apply eq_sort_exp_ty; [ apply ac_DF | apply ac_cG | ].
+    apply eq_sort_exp_ty.
     apply eq_U_subst;
       [ apply ac_DF | apply ac_GF | apply ac_lift | exact HrG | exact HlG ].
   Qed.
@@ -441,8 +439,7 @@ Section AppConcl.
   Proof.
     eapply eq_term_trans.
     { eapply eq_term_conv;
-        [ | apply eq_sort_exp_ty;
-            [ exact HD | apply ac_cG | apply ac_S1_ty ] ].
+        [ | apply eq_sort_exp_ty; apply ac_S1_ty ].
       eapply eq_term_trans.
       - apply ExpSubst_cong
           with (A2 := oTySubst DF GF (oLift D G w rF lF F) (iCode lG)
@@ -462,8 +459,7 @@ Section AppConcl.
           | apply wf_U; [ apply ac_GF | exact HrG | exact HlG ]
           | exact HB ]. }
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD | apply ac_cG | apply ac_S2_ty ] ].
+      [ | apply eq_sort_exp_ty; apply ac_S2_ty ].
     apply ExpSubst_cong with (g2 := instW) (A2 := oU GF rG lG) (v2 := B);
       [ apply eq_term_refl; exact HD
       | apply eq_term_refl; apply ac_GF
@@ -522,7 +518,7 @@ Proof.
   unfold instAt in Hs; apply wft_Snoc_args in Hs.
   destruct Hs as [_ [_ [_ [_ [_ Hv]]]]].
   eapply wf_term_conv; [ exact Hv | ].
-  apply eq_sort_exp_ty; [ exact HD | exact HiF | ].
+  apply eq_sort_exp_ty.
   apply eq_El_subst;
     [ exact HD | exact HG | exact Hw | exact HrF | exact HlF | exact HF ].
 Qed.
@@ -590,11 +586,7 @@ Section PiRel.
   Proof.
     intro Heq.
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD
-          | unfold iEl; apply wf_Info;
-            [ apply wf_Rel | apply wf_Iota; exact HlG ]
-          | apply pr_Pi_subst ] ].
+      [ | apply eq_sort_exp_ty; apply pr_Pi_subst ].
     unfold wkFunRel; apply ExpSubst_cong;
       [ apply eq_term_refl; exact HD
       | apply eq_term_refl; exact HG
@@ -613,13 +605,9 @@ Section PiRel.
   Proof.
     intro Heq.
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD
-          | unfold iEl; apply wf_Info;
-            [ apply wf_Rel | apply wf_Iota; exact HlG ]
-          | apply ac_appConcl;
+      [ | apply eq_sort_exp_ty; apply ac_appConcl;
             [ exact HD | exact HG | exact HrF | exact HlF | apply wf_Rel
-            | exact HlG | exact Hw | exact HF | exact HB | exact Ha ] ] ].
+            | exact HlG | exact Hw | exact HF | exact HB | exact Ha ] ].
     unfold appAtRel; apply AppRel_cong;
       [ apply eq_term_refl; exact HD
       | apply eq_term_refl; exact HrF
@@ -799,8 +787,7 @@ Section PiIrr.
   Proof.
     intro Heq.
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD | apply pi_iInfo | apply pi_Pi_subst ] ].
+      [ | apply eq_sort_exp_ty; apply pi_Pi_subst ].
     unfold wkFunIrr; apply ExpSubst_cong;
       [ apply eq_term_refl; exact HD
       | apply eq_term_refl; exact HG
@@ -818,11 +805,9 @@ Section PiIrr.
   Proof.
     intro Heq.
     eapply eq_term_conv;
-      [ | apply eq_sort_exp_ty;
-          [ exact HD | apply pi_iInfo
-          | apply ac_appConcl;
+      [ | apply eq_sort_exp_ty; apply ac_appConcl;
             [ exact HD | exact HG | exact HrF | exact HlF | apply wf_Irr
-            | apply wf_L0 | exact Hw | exact HF | exact HB | exact Ha ] ] ].
+            | apply wf_L0 | exact Hw | exact HF | exact HB | exact Ha ] ].
     unfold appAtIrr; apply AppIrr_cong;
       [ apply eq_term_refl; exact HD
       | apply eq_term_refl; exact HrF
@@ -881,11 +866,7 @@ Proof.
         [ exact HDw | exact HGw | apply RelNf_wf; exact HrF
         | apply LvlNf_wf; exact HlF | apply LvlNf_wf; exact HlG
         | exact Hww | exact HFw | exact HBw | exact Haw | exact Heq ].
-    + apply eq_sort_exp_ty;
-        [ exact HDw
-        | unfold iEl; apply wf_Info;
-          [ apply wf_Rel | apply wf_Iota; apply LvlNf_wf; exact HlG ]
-        | exact Heqc ].
+    + apply eq_sort_exp_ty; exact Heqc.
 
   (* ---- Pi_irr ---- *)
   - intros G rF lF F B P Pd Pc HrF HlF HF HB Hd Hc Hiff.
@@ -911,11 +892,7 @@ Proof.
         [ exact HDw | exact HGw | apply RelNf_wf; exact HrF
         | apply LvlNf_wf; exact HlF
         | exact Hww | exact HFw | exact HBw | exact Haw | exact Heq ].
-    + apply eq_sort_exp_ty;
-        [ exact HDw
-        | unfold iEl; apply wf_Info;
-          [ apply wf_Irr | apply wf_Iota; apply wf_L0 ]
-        | exact Heqc ].
+    + apply eq_sort_exp_ty; exact Heqc.
 Qed.
 
 (* ================================================================== *)
