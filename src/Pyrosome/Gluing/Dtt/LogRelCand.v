@@ -78,7 +78,8 @@ Import Core.Notations.
    EXPORTS: [ac_appConcl] (the substitution bridge), [codAt_wf_a],
    [eq_expsubst_info], [pr_appAt]/[pi_appAt] (the two application
    congruences at the clause's codomain sort), [RTy_cand_eq], and the now
-   unconditional [RTm_eq]/[RTmN_eq].
+   unconditional [RTm_eq]/[RTmN_eq] (LogRelBasics.v's conditional
+   [RTm_eq_of]/[RTmN_eq_of] discharged at [RTy_CandEqOk]).
    ===================================================================== *)
 
 Notation term := (@Term.term string).
@@ -925,11 +926,11 @@ Definition RTy_CandEqOk : CandEqOk := @RTy_cand_eq.
 
 Lemma RTm_eq G i A e e'
   : RTm G i A e -> eqt (sExp G i A) e e' -> RTm G i A e'.
-Proof. apply (LogRelBasics.RTm_eq RTy_CandEqOk). Qed.
+Proof. apply (LogRelBasics.RTm_eq_of RTy_CandEqOk). Qed.
 
 Lemma RTmN_eq G i A e e'
   : RTmN G i A e -> eqt (sExp G i A) e e' -> RTmN G i A e'.
-Proof. apply (LogRelBasics.RTmN_eq RTy_CandEqOk). Qed.
+Proof. apply (LogRelBasics.RTmN_eq_of RTy_CandEqOk). Qed.
 
 (* The introduction direction of [RTm] and full functionality still need
    Layer 0.5 ([NfCodeInj]/[TyOkInj]); nothing here changes that. *)

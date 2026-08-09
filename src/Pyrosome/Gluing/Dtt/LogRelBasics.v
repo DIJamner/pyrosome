@@ -662,7 +662,7 @@ Qed.
 
 Definition CandEqOk : Prop := forall G i A P, RTy G i A P -> CandEq G i A P.
 
-Lemma RTm_eq (Hce : CandEqOk) G i A e e'
+Lemma RTm_eq_of (Hce : CandEqOk) G i A e e'
   : RTm G i A e -> eqt (sExp G i A) e e' -> RTm G i A e'.
 Proof. intros He Heq P HP; exact (Hce _ _ _ _ HP e e' (He P HP) Heq). Qed.
 
@@ -671,11 +671,11 @@ Proof. intros He Heq P HP; exact (Hce _ _ _ _ HP e e' (He P HP) Heq). Qed.
    rather than [sExp_cong_ty].  Its [sEnv] premise is recovered by
    inverting the sort of the type equation, exactly as [sExp_cong_ty]
    does. *)
-Lemma RTmN_eq (Hce : CandEqOk) G i A e e'
+Lemma RTmN_eq_of (Hce : CandEqOk) G i A e e'
   : RTmN G i A e -> eqt (sExp G i A) e e' -> RTmN G i A e'.
 Proof.
   intros He Heq i0 A0 Hi HT HA0.
-  eapply (RTm_eq Hce); [ apply He; assumption | ].
+  eapply (RTm_eq_of Hce); [ apply He; assumption | ].
   eapply eq_term_conv; [ exact Heq | ].
   destruct (wf_sort_ty_inv (eqt_wf_sort HA0)) as [HG _].
   apply sExp_cong; [ apply eq_term_refl; exact HG | exact Hi | exact HA0 ].
