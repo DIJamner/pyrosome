@@ -45,9 +45,16 @@ Import Core.Notations.
    ([ty_subst], [exp_subst], [id], [wkn], [cmp], [snoc], [forget], [emp],
    [ext], [hd]) as well as [U]/[El]/[Nat]/[Empty]/[Pi_rel]/[Pi_irr].
 
-   Nothing here is stated in terms of [ErCode]/[ErTy]/[ErEnv]: injectivity
-   is proved directly against the model's own relations, in
-   src/Pyrosome/Gluing/Dtt/Inj.v.
+   Injectivity is NOT here.  It is stated and proved directly over these
+   four relations, in src/Pyrosome/Gluing/Dtt/Inj.v; this file stops at
+   the ten [CutTModel_ok] obligations, which
+   src/Pyrosome/Gluing/Dtt/RigidOk.v assembles into [rigid_sound] and its
+   four sort-specific readings.
+
+   Sections: 0 the domain; 1 rigid substitutions and their sigma laws;
+   2 "universe-like" types ([USkel]); 3 scoping ([cwf]/[twf]/[swf] and
+   [subeq]); 4 the interpretation relations; 5 their functionality; 6 the
+   model itself; 7 the structural obligations; 8 the rule obligations.
    ===================================================================== *)
 
 Local Notation eqt := (eq_term ott_dtt []).

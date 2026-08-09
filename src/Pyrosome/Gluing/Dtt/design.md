@@ -204,71 +204,61 @@ Effort estimate: a first-order normalization proof for explicit substitutions ov
 term algebra. Comparable to `Gluing/Stlc/RSub.v` + half of `NormalForms.v`, i.e. ~600–1200
 lines, with no logical relation.
 
-### 4a. The split, and why it is not circular
+### 4a. How Layer 0.5 is put together
 
-Layer 0.5 splits in two, and the seam between them is the one thing to get right.
+**Status: closed.** All three exports are proved and axiom-free.
 
-* **`Dtt/Erase.v` (done)** — pure syntax, no model, no `eq_term` reasoning. It gives a de Bruijn
-  domain (`rcode`/`rty`/`renv`), erasure relations for `EnvOk`/`TyOk`/`NfCode`/`VarT`, totality
-  and functionality of the erasure on normal forms, and **injectivity of the erasure**:
-  same environment + same erasure ⇒ syntactically equal.
-* **`Dtt/Rigid.v`** — the rigid model, which supplies the semantic input: provably-equal things
-  have equal erasures.
+Three files:
 
-The seam is an explicit hypothesis of the first half:
+* **`Dtt/Rigid.v`** — the rigid model. A first-order de Bruijn domain (`rcode`/`rty`/`renv`,
+  §0) plus rigid substitutions `rsub := nat -> rcode`; four mutually inductive
+  *interpretation* relations `IEnv`/`ITy`/`ICode`/`ISub` over **arbitrary** syntax of the
+  four σ-sorts; and **all ten** `CutTModel_ok` obligations.
+* **`Dtt/RigidOk.v`** — `RigCM_ok` and `rigid_sound`, with the four readings
+  `rigid_env`/`rigid_ty`/`rigid_sub`/`rigid_code`.
+* **`Dtt/Inj.v`** — the three exports.
 
-```coq
-Definition WknInj : Prop := forall G j B i1 A1 i2 A2 A',
-  TyOk G i1 A1 -> TyOk G i2 A2 ->
-  eqt (sTy (oExt G j B) i1) (oTySubst (oExt G j B) G (oWkn G j B) i1 A1) A' ->
-  eqt (sTy (oExt G j B) i2) (oTySubst (oExt G j B) G (oWkn G j B) i2 A2) A' -> A1 = A2.
-```
-
-**Its quantification is the whole point.** `A1` and `A2` live in the *shorter* `G`; only `A'`
-lives in `oExt G j B`. The naive statement — "the normal representative named over
-`oExt G j B` is unique" — is an instance of `TyOk_inj` at the *same* environment, and composing
-that with the rigid model would be circular. As stated, the model discharges it by sending both
-`wkn`-instances to `rshift` of the respective erasures; `rshift` is injective, so the erasures
-agree, and `TyOk_erase_inj` **at `G`** finishes. The recursion is on environment length and is
-well founded.
-
-Why the hypothesis exists at all: **normal environments do not determine each slot's type
-syntactically.** `VarT` names the normal representative of a weakened type and pins it only by an
-`eq_term` premise, and the index-`k+1` variable term *contains* the named representative of the
-index-`k` one. So erasure-injectivity on variables is exactly uniqueness of that naming.
-
-**The alternative, considered and declined.** All of this disappears if Layer 1's `VarT`/`NeET`
-(and `RTy`'s Π clause) named the *computed* normal representative rather than an arbitrary
-provably-equal one — §2 says the substitution action on normal forms is a total function, so it
-is available. That would also make `RTy_fun` (§7) an ordinary induction instead of one
-parameterised by `NfCode_inj`/`TyOk_inj`. It is declined because the existential form *does*
-compose, via the seam above, and switching would invalidate several thousand verified lines.
-Worth revisiting only if a later layer hits the same wall a third time.
-
-### 4b. Status: **Layer 0.5 is closed**
-
-All three exports are proved and axiom-free, in `WIP/DttInj.v`:
-`NfCode_inj`, `TyOk_inj`, `EnvOk_inj` — provably-equal normal objects are *syntactically* equal —
-plus `WknInj_holds`, which discharges the seam of §4a so `WIP/DttErase.v`'s own theorems are
-available downstream too.
-
-The pieces: `WIP/DttErase.v` (domain, erasure, totality, functionality, erasure-injectivity),
-`WIP/DttRigid.v` (the rigid model and **all ten** `CutTModel_ok` obligations), `WIP/DttRigidOk.v`
-(`RigCM_ok` and `rigid_sound`, with the readings `rigid_env`/`rigid_ty`/`rigid_sub`/`rigid_code`).
 §2's claim survived contact with every one of the 28 equation obligations: everything at an
 `El`-sort, **including both β rules and η**, is discharged by `exact I`.
 
-**The induction on environment length that this section used to prescribe is not needed, and does
-not work.** It was the wrong idea twice over: the code component's Π case recurses into a *longer*
-environment, and the variable component there needs the type component back at the original
-length — the dependency is `T(m) → C(m) → V(m+1) → T(m)`, which no measure on environment length
-repairs.
+**The composition is trivial, and that is the point.** The readings hand back a *common*
+interpretation of the two sides, at a common index:
 
-What actually closes it is an observation about *which* instance of the seam is ever needed:
+```coq
+Definition Req_code G e1 e2 := exists E n, IEnv G E /\ ICode E e1 n /\ ICode E e2 n.
+```
 
-> The only `WknInj` instance the code-level argument uses is the one where the named type is a
-> **universe** — a code variable's type is `oU G r l` and nothing else. And at a universe the
-> statement is **unconditional**.
+So injectivity is stated over `I*` — *two normal objects with the same interpretation at the
+same `renv` are syntactically equal* — and each export is then two lines: destruct the
+reading, apply the `I*` statement. There is nothing to construct. No totality lemma, no
+functionality lemma, no alignment of indices between two systems: the model has already chosen
+the `renv`, and both sides are already interpreted at it.
+
+(An earlier version of this layer carried a *second*, purely syntactic erasure of the same
+objects — `Dtt/Erase.v`'s `ErEnv`/`ErTy`/`ErCode`/`ErVar` — proved injectivity over that, and
+then needed a mutual induction, `Nf_ErI`, whose only job was to manufacture `Er*` derivations
+at the `renv` the model had already picked. Deleting the second system deletes that problem
+rather than moving it. What survives of `Erase.v` is the domain and the two index erasures
+`ErRel`/`ErLvl`, now `Rigid.v` §0.)
+
+### 4b. The variable case, and the universe observation
+
+The one place the argument is not routine is variables. **Normal environments do not determine
+each slot's type syntactically.** `VarT` *names* the normal representative of a weakened type
+and pins it only by an `eq_term` premise, and the index-`k+1` variable term *contains* the
+named representative of the index-`k` one. So injectivity on variables is exactly uniqueness of
+that naming — and stated in general it is a fact about `eq_term`, not a syntactic one.
+
+The design once proposed to break the resulting circularity with a strong induction on
+environment length, proving the environment, type, code and variable statements simultaneously.
+**That does not work, and is not needed.** It does not work because the code statement's Π case
+recurses into a *longer* environment, and the variable statement there needs the type statement
+back at the original length: the dependency is `T(m) → C(m) → V(m+1) → T(m)`, which no measure on
+environment length repairs. It is not needed because of
+
+> **THE UNIVERSE OBSERVATION.** The named type a *code* variable carries is always a
+> **universe** — a code variable's type is `oU G r l` and nothing else. And at a universe,
+> uniqueness of the naming is **unconditional**.
 
 ```coq
 Lemma WknU_shape G j B i A r l :
@@ -279,17 +269,26 @@ Lemma WknU_shape G j B i A r l :
 
 — proved with no recursion at all: `rigid_ty`, then invert the interpretation
 (`ITy_subst_inv`/`ISub_wkn_inv`), then `tsub rshift T0 = rt_U br bl ⇒ T0 = rt_U br bl`, with `r`
-and `l` pinned by `ErRel_inj`/`ErLvl_inj`. So the development is **linear**, with only the two
-ordinary inductions inherited from `DttErase.v` (on the de Bruijn index, and on the `rcode`).
+and `l` pinned by `ErRel_inj`/`ErLvl_inj`. So `Inj.v` is **linear**: two ordinary inductions
+(on the de Bruijn index, `VarTU_I_inj`; on the `rcode`, `NfCode_I_inj`) and two case analyses
+(`TyOk_I_inj`, `EnvOk_I_inj`).
 
-The one substantial new induction is the seam itself, `Nf_ErI`: a single `Nf_mutind` producing,
-for each normal object, an erasure that is *simultaneously* an `Er…` and an `I…` derivation, at
-the same `renv` and with the same image. Running both systems in one induction is what keeps their
-indices in step — proving them separately and matching afterwards would need the very agreement
-being proved.
+The only friction the `I*` formulation costs is that `ICode`'s `icode_subst` clause produces
+`csub s n`, which is not a constructor pattern, so the shape of a variable's interpretation
+takes a small induction (`VarT_ICode_var`) rather than an inversion. That, plus seven
+one-line `I*` inversions, is the whole of it.
 
-So "only `vart_wkn` needs a fact about the shorter environment" held up, but degenerately: the
-fact it needs is the *unconditional* universe case, not injectivity one level down.
+*(Historical note: the hypothesis this section used to be organised around, `WknInj` — weakening
+is injective on normal types up to the naming, with `A1`/`A2` in the shorter environment — was
+proved and then found to be used nowhere. It is deleted.)*
+
+**The alternative, considered and declined.** All of this disappears if Layer 1's `VarT`/`NeET`
+(and `RTy`'s Π clause) named the *computed* normal representative rather than an arbitrary
+provably-equal one — §2 says the substitution action on normal forms is a total function, so it
+is available. That would also make `RTy_fun` (§7) an ordinary induction instead of one
+parameterised by `NfCode_inj`/`TyOk_inj`. It is declined because the existential form *does*
+compose, and switching would invalidate several thousand verified lines. Worth revisiting only
+if a later layer hits the same wall a third time.
 
 **Kill-switch: passed.** `NfCode_inj` is proved. Every later layer may consume it.
 
@@ -302,7 +301,7 @@ fact it needs is the *unconditional* universe case, not injectivity one level do
 | 0 | `Dtt/Syntax.v` | `ott_dtt`, `wf_lang ott_dtt` (axiom-free), sort/term abbreviations, index normalizers `ntlvl`/`ninfo` |
 | 0.25 | `Dtt/Eqns.v` | the toolkit: `wf_*` and `*_cong` for all 32 formers, all 28 equations as `eq_term` lemmas in *dependent* form (the type rewritten alongside the term) |
 | 1 | `Dtt/NormalForms.v` | the mutual block `EnvOk`/`TyOk`/`NfCode`/`VarT`/`NeET`/`NfET`; `Wk`; typing, weakening, and **code substitution** lemmas |
-| 0.5 | `Dtt/Rigid.v` | the rigid model and `NfCode_inj`/`TyOk_inj`/`EnvOk_inj` (§4). Depends on Layer 1 only for the *statements* |
+| 0.5 | `Dtt/Rigid.v`, `Dtt/RigidOk.v`, `Dtt/Inj.v` | the rigid model and `NfCode_inj`/`TyOk_inj`/`EnvOk_inj` (§4). Depends on Layer 1 only for the *statements* |
 | 2 | `Dtt/LogRel.v` | `RTy` (candidate relation), `RTm`, escape/reflect, `RTy_fun`, `RTy_fun_eq`, weakening, the Π interface |
 | 3 | `Dtt/RSub.v` | `RSub`; elimination, `RSub_id`, `RSub_wk`, `RSub_lift`, `RSub_proj` |
 | 4a | `Dtt/Ceq.v` | `Ceq_term` (9 sort clauses), `Ceq_sort`, `DttCM : CutTModel` |
