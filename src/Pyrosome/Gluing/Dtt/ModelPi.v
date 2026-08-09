@@ -8,10 +8,10 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttNfWf
-  WIP.DttNfWk WIP.DttInj WIP.DttLR WIP.DttLRBasics WIP.DttLRCand
-  WIP.DttLRCore WIP.DttLRFun WIP.DttLRElim WIP.DttRSub WIP.DttRSubOk
-  WIP.DttCeq WIP.DttModelStruct.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
+  Pyrosome.Gluing.Dtt.NfWk Pyrosome.Gluing.Dtt.Inj Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand
+  Pyrosome.Gluing.Dtt.LogRelCore Pyrosome.Gluing.Dtt.LogRelFun Pyrosome.Gluing.Dtt.LogRelElim Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.RSubOk
+  Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct.
 Import Core.Notations.
 
 (* =====================================================================
@@ -58,10 +58,10 @@ Import Core.Notations.
    (section 9 pays for both):
 
      - the codomain code's info.  "Pi_irr" states it at [rel (iota L1)]
-       while "lam_irr"/"app_irr" -- and hence [DttLR.wkCodCodeIrr] and
+       while "lam_irr"/"app_irr" -- and hence [LogRel.wkCodCodeIrr] and
        [nfcode_pi_irr] -- state it at [iCode L0], so [pi_irr_nf] moves an
        [exp_subst] between the two spellings twice
-       ([DttLRCand.eq_expsubst_info]), and "Pi_irr beta" has to move its
+       ([LogRelCand.eq_expsubst_info]), and "Pi_irr beta" has to move its
        codomain argument's CLAUSE across as well ([ceq_exp_transfer]);
      - [rty_pi_irr]'s candidate carries an extra [HasNf] conjunct, which
        [rty_pi_rel] does without because of eta.  So [cong_LamIrr] must
@@ -93,7 +93,7 @@ Local Notation wft := (wf_term ott_dtt []).
 
 (* [Ceq_term]'s semantic conjunct constrains only the LEFT term, so a
    reflexive instance at the RIGHT one is one use of symmetry and one of
-   transitivity.  (Both are WIP/DttModelStruct.v's.) *)
+   transitivity.  (Both are src/Pyrosome/Gluing/Dtt/ModelStruct.v's.) *)
 
 Lemma ceq_refl_l t e1 e2 : Ceq_term t e1 e2 -> Ceq_term t e1 e1.
 Proof. intro H; exact (term_trans_obligation H (term_sym_obligation H)). Qed.
@@ -145,7 +145,7 @@ Proof. intro H; exact (proj2 (Ceq_exp_e (ceq_refl_r H))). Qed.
 
 (* ---- reading a normal code off a code argument's clause ---------- *)
 
-(* [RTmN_HasNfCode] (WIP/DttLRElim.v) wants the type already stripped of
+(* [RTmN_HasNfCode] (src/Pyrosome/Gluing/Dtt/LogRelElim.v) wants the type already stripped of
    the substitution; this is the composite with "U subst", which is the
    form every code argument of this fragment is handed. *)
 Lemma ceq_code_nf G r l c D g
@@ -349,7 +349,7 @@ Qed.
 (* ================================================================== *)
 
 (* [Pi_irr]'s codomain code sits at info [rel (iota L1)] rather than at
-   [iCode L0] (trap (A) of WIP/DttNfWf.v), so the code reading has to
+   [iCode L0] (trap (A) of src/Pyrosome/Gluing/Dtt/NfTyping.v), so the code reading has to
    tolerate an arbitrary provably-equal info. *)
 Lemma ceq_code_nf' G r l c D g i
   : RelNf r -> LvlNf l -> EnvOk D -> RSubN D G g ->
@@ -381,7 +381,7 @@ Proof.
   - apply RTy_U_i; assumption.
 Qed.
 
-(* [eq_liftW_cong] (WIP/DttNfWk.v) varies only the lifted type's normal
+(* [eq_liftW_cong] (src/Pyrosome/Gluing/Dtt/NfWk.v) varies only the lifted type's normal
    representative; going under a binder here has to vary the CODOMAIN
    ENVIRONMENT as well, because the binder's domain code is normalised at
    the reducible substitution's witness environment, not at the one the
@@ -1621,7 +1621,7 @@ Qed.
      <g, g[a]> [ El (extC G rF lF F) rel lG B ],
 
    and Layer 2 supplies two of the three bridges already
-   ([DttLRCore.an_appConcl] and [DttLRCand.ac_appConcl]); only the first,
+   ([LogRelCore.an_appConcl] and [LogRelCand.ac_appConcl]); only the first,
    which is "cmp_snoc + id_right + ty_subst_id", is new here. *)
 Lemma cong_AppRel G1 G2 rF1 rF2 lF1 lF2 lG1 lG2 F1 F2 B1 B2 f1 f2 a1 a2
   : Ceq_term sEnv G1 G2 -> Ceq_term sRelevance rF1 rF2 ->
@@ -3410,8 +3410,8 @@ Qed.
 
    (i) THE INFO SPELLING.  The former "Pi_irr" stores its codomain code at
        [rel (iota L1)] while "lam_irr"/"app_irr" -- and hence
-       [DttLR.wkCodCodeIrr] and [nfcode_pi_irr] -- store it at [iCode L0].
-       [DttLRCand.eq_expsubst_info] moves an [exp_subst] of an
+       [LogRel.wkCodCodeIrr] and [nfcode_pi_irr] -- store it at [iCode L0].
+       [LogRelCand.eq_expsubst_info] moves an [exp_subst] of an
        irrelevant-L0 code between the two, and [pi_irr_nf] below uses it
        twice: once on the [Pi_irr] itself and once on its codomain.
 
@@ -5448,7 +5448,7 @@ Qed.
    [CutTModel_ok] field, with the rule name restricted to this fragment.
    The name is pinned FIRST and the [In] premise computed afterwards, so
    each case costs one rule rather than a 32-way split -- WIP/
-   DttModelIdx.v's [idx_pin] idiom, verbatim.
+   ModelIdx.v's [idx_pin] idiom, verbatim.
 
    [eapply]/[eassumption] rather than [apply]/[assumption]: several of
    these rules do not mention every argument in their conclusion sort

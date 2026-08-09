@@ -7,22 +7,22 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttNfWf
-  WIP.DttLR WIP.DttLRBasics.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
+  Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics.
 Import Core.Notations.
 
 (* =====================================================================
    DTT NORMALIZATION, LAYER 2b: candidates are closed under provable
    equality of the subject.
 
-   This finishes the one item WIP/DttLRBasics.v left open:
+   This finishes the one item src/Pyrosome/Gluing/Dtt/LogRelBasics.v left open:
 
      [RTy_cand_eq : forall G i A P, RTy G i A P -> CandEq G i A P]
 
    i.e. [RTy G i A P -> P e -> eq_term ott_dtt [] (sExp G i A) e e' -> P e'].
-   The four LEAF clauses are already done in DttLRBasics.v (they are one
+   The four LEAF clauses are already done in LogRelBasics.v (they are one
    use of transitivity each); ALL of the work here is the two Pi clauses,
-   and it goes by DttLRBasics.v's hand-written [RTy_strong_ind] -- Rocq's
+   and it goes by LogRelBasics.v's hand-written [RTy_strong_ind] -- Rocq's
    generated [RTy_ind] has no induction hypothesis in the Pi cases.
 
    THE SHAPE OF THE Pi ARGUMENT.  At [rty_pi_rel],
@@ -63,14 +63,14 @@ Import Core.Notations.
    members of [Pd], so a priori [a] could be arbitrary syntax; but whenever
    [Pd D w a] holds the codomain premise fires and its equation mentions
    [a] as a subterm of [codAt*], which forces it well formed.
-   [codAt_wf_a] extracts exactly that, using DttNfWf.v's [con]-argument
+   [codAt_wf_a] extracts exactly that, using NfTyping.v's [con]-argument
    inversion.  No Layer-1 weakening metatheory and no extra hypothesis on
    [Pd] is used anywhere in this file.
 
    THE ONE EXTRA WRINKLE AT [Pi_irr].  The former "Pi_irr" stores its
    codomain code at info [rel (iota L1)] while "lam_irr"/"app_irr" -- and
-   hence [DttLR.wkCodCodeIrr] -- store it at [iCode L0] (trap (A) of
-   WIP/DttNfWf.v).  So the relevant clause gets [eq_Pi_rel_subst] for free
+   hence [LogRel.wkCodCodeIrr] -- store it at [iCode L0] (trap (A) of
+   src/Pyrosome/Gluing/Dtt/NfTyping.v).  So the relevant clause gets [eq_Pi_rel_subst] for free
    whereas the irrelevant one has to move an [exp_subst] between the two
    spellings twice; [eq_expsubst_info] is that move, and it is the only
    thing the two Pi cases do not share.
@@ -640,7 +640,7 @@ End PiRel.
 (* ================================================================== *)
 
 (* The [Pi_irr] former stores its codomain code at info [rel (iota L1)]
-   while [lam_irr]/[app_irr] -- and hence [DttLR.wkCodCodeIrr] -- store it
+   while [lam_irr]/[app_irr] -- and hence [LogRel.wkCodCodeIrr] -- store it
    at [iCode L0].  This moves an [exp_subst] of an irrelevant-L0 code
    between the two spellings. *)
 Lemma eq_expsubst_info D G g v
@@ -925,11 +925,11 @@ Definition RTy_CandEqOk : CandEqOk := @RTy_cand_eq.
 
 Lemma RTm_eq G i A e e'
   : RTm G i A e -> eqt (sExp G i A) e e' -> RTm G i A e'.
-Proof. apply (DttLRBasics.RTm_eq RTy_CandEqOk). Qed.
+Proof. apply (LogRelBasics.RTm_eq RTy_CandEqOk). Qed.
 
 Lemma RTmN_eq G i A e e'
   : RTmN G i A e -> eqt (sExp G i A) e e' -> RTmN G i A e'.
-Proof. apply (DttLRBasics.RTmN_eq RTy_CandEqOk). Qed.
+Proof. apply (LogRelBasics.RTmN_eq RTy_CandEqOk). Qed.
 
 (* The introduction direction of [RTm] and full functionality still need
    Layer 0.5 ([NfCodeInj]/[TyOkInj]); nothing here changes that. *)

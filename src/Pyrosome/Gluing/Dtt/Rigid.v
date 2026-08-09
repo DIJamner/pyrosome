@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
-Require Import WIP.DttSyntax WIP.DttNf WIP.DttErase.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.Erase.
 Import Core.Notations.
 
 (* =====================================================================
@@ -26,7 +26,7 @@ Import Core.Notations.
    at [El]-sorts and are discharged by [exact I].  The obligations that
    carry content are exactly the sigma ones.
 
-   The semantic domain is the de Bruijn domain of WIP/DttErase.v
+   The semantic domain is the de Bruijn domain of src/Pyrosome/Gluing/Dtt/Erase.v
    ([rcode]/[rty]/[renv]) plus rigid substitutions
 
      rsub := nat -> rcode
@@ -49,7 +49,7 @@ Import Core.Notations.
    is proved directly against the model's own relations (section 9), which
    is what makes the recursion in the variable case go through without the
    [WknInj] assumption.  [WknInj] is then DERIVED (section 10), so
-   WIP/DttErase.v's injectivity theorems become available too.
+   src/Pyrosome/Gluing/Dtt/Erase.v's injectivity theorems become available too.
    ===================================================================== *)
 
 Local Notation eqt := (eq_term ott_dtt []).
@@ -1395,7 +1395,7 @@ Qed.
    commutations, and the two [tlvl] equations.  *)
 
 (* The lifting of a substitution under a binder, as the object theory
-   spells it ([DttSyntax.oLift]), interprets as [rc_nat .: (shift o s)] --
+   spells it ([Syntax.oLift]), interprets as [rc_nat .: (shift o s)] --
    the head slot is an [El] slot, so its junk value is invisible to
    [subeq], which is exactly why it may differ from [up]'s [rc_var 0]. *)
 (* The substituted domain code that [oLift] (and the [Pi] commutations)

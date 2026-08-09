@@ -7,15 +7,15 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttNfWf
-  WIP.DttLR WIP.DttLRBasics WIP.DttLRCand WIP.DttErase WIP.DttRigid
-  WIP.DttRigidOk WIP.DttInj.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
+  Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand Pyrosome.Gluing.Dtt.Erase Pyrosome.Gluing.Dtt.Rigid
+  Pyrosome.Gluing.Dtt.RigidOk Pyrosome.Gluing.Dtt.Inj.
 Import Core.Notations.
 
 (* =====================================================================
    CASHING IN LAYER 0.5.
 
-   WIP/DttLRBasics.v proves functionality of [RTy] only in the form
+   src/Pyrosome/Gluing/Dtt/LogRelBasics.v proves functionality of [RTy] only in the form
    [RTy_fun_of_inj], parameterised by the two rigidity statements, because
    the Pi clauses name their domain and codomain candidates at a CHOSEN
    representative and record only that it is PROVABLY equal to the raw
@@ -23,7 +23,7 @@ Import Core.Notations.
    different representatives, and the induction hypothesis (which compares
    candidates at the same type) does not apply until those are identified.
 
-   WIP/DttInj.v now identifies them.  This file discharges the parameters
+   src/Pyrosome/Gluing/Dtt/Inj.v now identifies them.  This file discharges the parameters
    and exports the unconditional forms, which is what every later layer
    consumes.
    ===================================================================== *)
@@ -41,7 +41,7 @@ Proof. apply RTy_fun_of_inj; [ exact @NfCode_inj | exact @TyOk_inj ]. Qed.
 Theorem RTm_intro G i A P e : RTy G i A P -> P e -> RTm G i A e.
 Proof. apply (RTm_intro_of_inj (@NfCode_inj) (@TyOk_inj)). Qed.
 
-(* [RTm_elim] is already unconditional (WIP/DttLRBasics.v); with
+(* [RTm_elim] is already unconditional (src/Pyrosome/Gluing/Dtt/LogRelBasics.v); with
    [RTm_intro] the universal and existential readings of [RTm] finally
    coincide. *)
 Lemma RTm_iff G i A P e
@@ -74,7 +74,7 @@ Qed.
    the info); building it from one representative is exactly what rigidity
    buys, and is the form every congruence case will use. *)
 
-(* First, the info-agnostic form of [TyOk_inj].  WIP/DttInj.v states it at
+(* First, the info-agnostic form of [TyOk_inj].  src/Pyrosome/Gluing/Dtt/Inj.v states it at
    a fixed info because that is what its own composition needed, but the
    proof does not use the info at all -- [rceq_term] at a [ty] sort is
    [Req_ty G A1 A2], which does not mention it -- and the erasure pins the

@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttNf.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms.
 Import Core.Notations.
 
 (* =====================================================================
@@ -218,7 +218,7 @@ Definition RTm (G i A e : term) : Prop :=
    THE INFO INDEX MUST BE QUANTIFIED TOO, and this is not cosmetic.  The
    first version of these definitions held [i] fixed, and the resulting
    [Ceq_sort] transfer for the sort [ty G i] is REFUTABLE modulo
-   consistency -- a fact WIP/DttModelStruct.v proves rather than merely
+   consistency -- a fact src/Pyrosome/Gluing/Dtt/ModelStruct.v proves rather than merely
    asserts.  The reason: [TyOk]'s info index is syntactic BY DESIGN (a
    universe is pinned at [iCode l], an [El] at [iEl r l]), but "next0"
    makes [iCode L0] and [iEl rel L1] provably equal, and [Ceq_term] at

@@ -8,8 +8,8 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNfWf
-  WIP.DttLRBasics WIP.DttCeq.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NfTyping
+  Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.Ceq.
 Import Core.Notations.
 
 (* =====================================================================
@@ -27,7 +27,7 @@ Import Core.Notations.
 
    No environment, substitution, type or term appears anywhere in this
    fragment, so it is completely independent of Layers 1-3; it is proved
-   here against WIP/DttCeq.v's contract alone.
+   here against src/Pyrosome/Gluing/Dtt/Ceq.v's contract alone.
 
    WHAT THE CONTRACT HAS TO SUPPLY, AND WHY IT IS ENOUGH.
 
@@ -50,7 +50,7 @@ Import Core.Notations.
      two [ninfo]s agree, and the [TlvlNf] is what feeds [infonf].  Nothing
      else about the tlvl argument is used.
    - as a CONCLUSION ([cong_iota]/[cong_next], [by_next0]/[by_next1]): the
-     normalizer's one-step-rewrite definition (WIP/DttSyntax.v) reduces
+     normalizer's one-step-rewrite definition (src/Pyrosome/Gluing/Dtt/Syntax.v) reduces
      each goal to [ntlvl_iota]/[ntlvl_next0]/[ntlvl_next1] plus a [LvlNf]
      case split -- packaged already as [ntlvl_TlvlNf_iota] and
      [ntlvl_TlvlNf_next].
@@ -197,7 +197,7 @@ Qed.
 
    The [In]-premise idiom itself, and the [cbn [ceq_term ceq_sort DttCM]]
    that turns the class projections back into [Ceq_term], are WIP/
-   DttModelStruct.v's. *)
+   ModelStruct.v's. *)
 
 Ltac idx_pin :=
   match goal with

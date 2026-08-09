@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Ltac.
 From Pyrosome Require Import Theory.Core Tools.Matches.
-Require Import WIP.DttSyntax.
+Require Import Pyrosome.Gluing.Dtt.Syntax.
 Import Core.Notations.
 
 (* =====================================================================
@@ -18,7 +18,7 @@ Import Core.Notations.
 
    Each of the language's 28 equations is repackaged here as a directly
    usable lemma: the equation instance is stated with explicit term
-   arguments in the abbreviation vocabulary of WIP/DttSyntax.v ([oCmp],
+   arguments in the abbreviation vocabulary of src/Pyrosome/Gluing/Dtt/Syntax.v ([oCmp],
    [oSnoc], [oExpSubst], [sTy], [sExp], ...), and carries exactly the
    well-formedness hypotheses the instantiation needs -- one [wf_term] per
    variable of the rule's context, at that variable's sort, already
@@ -30,7 +30,7 @@ Import Core.Notations.
    against the goal, the substitution that turns the rule's LHS/RHS into
    the goal's; all that is left is to discharge the resulting
    well-formedness side conditions.  Because that unification goes through
-   [vm_compute], the abbreviations of DttSyntax.v (which are transparent
+   [vm_compute], the abbreviations of Syntax.v (which are transparent
    [Definition]s) are transparent to it: we never have to unfold by hand.
 
    ------------------------------------------------------------------
@@ -362,7 +362,7 @@ Proof. intros; estep "Empty subst". Qed.
    This shape occurs three times in every binder commutation (once as the
    new domain code, once inside [oExtC] for the new context, and once
    inside [oLift]), so it gets a name.  It is exactly the [Fg] of
-   [DttSyntax.oLift]. *)
+   [Syntax.oLift]. *)
 Definition oCodeSubst (G G' g rF lF F : term) : term :=
   oExpSubst G G' g (iCode lF) (oU G' rF lF) F.
 

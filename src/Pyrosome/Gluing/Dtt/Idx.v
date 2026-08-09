@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils Ltac.
 From Pyrosome Require Import Theory.Core Tools.Matches.
 From Pyrosome.Tools.EGraph Require Import Automation ComputeWf.
-Require Import WIP.DttSyntax.
+Require Import Pyrosome.Gluing.Dtt.Syntax.
 Import Core.Notations.
 
 (* =====================================================================
@@ -55,7 +55,7 @@ Import Core.Notations.
    does in well under a second and axiom-free.  [egraph_eq] below is the
    tactic; the concrete conversion lemmas built on it -- [eq_info_next0],
    [eq_sort_ty_cong], [eq_sort_exp_cong], [eq_sort_exp_ty],
-   [wft_U0irr_next], [wft_U0irr_iota] -- live in WIP/DttNfWf.v, next to the
+   [wft_U0irr_next], [wft_U0irr_iota] -- live in src/Pyrosome/Gluing/Dtt/NfTyping.v, next to the
    typing lemmas that consume them.
    ===================================================================== *)
 

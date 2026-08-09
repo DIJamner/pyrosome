@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttNf WIP.DttErase WIP.DttRigid WIP.DttRigidOk.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.Erase Pyrosome.Gluing.Dtt.Rigid Pyrosome.Gluing.Dtt.RigidOk.
 Import Core.Notations.
 
 (* =====================================================================
@@ -19,12 +19,12 @@ Import Core.Notations.
      TyOk_inj   : normal types are determined by provable equality
      EnvOk_inj  : normal environments are determined by provable equality
 
-   WIP/DttErase.v proves the syntactic half of this modulo the hypothesis
-   [WknInj]; WIP/DttRigid.v + WIP/DttRigidOk.v supply the semantic half
+   src/Pyrosome/Gluing/Dtt/Erase.v proves the syntactic half of this modulo the hypothesis
+   [WknInj]; src/Pyrosome/Gluing/Dtt/Rigid.v + src/Pyrosome/Gluing/Dtt/RigidOk.v supply the semantic half
    ([rigid_env]/[rigid_ty]/[rigid_code]).  What is left is the
    composition, and the composition looks circular: [WknInj] at
    [ext G j B] is discharged by the model PLUS type-injectivity at [G],
-   but [DttErase.v] states [WknInj] globally.
+   but [Erase.v] states [WknInj] globally.
 
    The design document (section 4b) proposes to break the circle with one
    strong induction on [length E], proving the environment, type, code and
@@ -47,18 +47,18 @@ Import Core.Notations.
 
    So the file is linear:
 
-     1-2. Inversions for the interpretation relations of DttRigid.v.
+     1-2. Inversions for the interpretation relations of Rigid.v.
      3.   [WknU_shape] -- the universe-restricted [WknInj], with the
           conclusion strengthened to name the type: unconditional.
      4.   [Nf_EnvOk] -- every normal-form judgement carries [EnvOk].
      5.   [Nf_ErI] -- one mutual induction producing, for a normal object,
           an erasure that is SIMULTANEOUSLY an [Er...] and an [I...]
-          derivation.  This is the seam between DttErase.v's syntactic
-          relations and DttRigid.v's semantic ones; running both in a
+          derivation.  This is the seam between Erase.v's syntactic
+          relations and Rigid.v's semantic ones; running both in a
           single induction is what keeps their [renv] indices in step.
           The variable clause is where [WknU_shape] is spent.
      6.   [VarTU_erase_inj] / [NfCode_erase_inj_u] / [TyOk_erase_inj_u] /
-          [EnvOk_erase_inj_u] -- DttErase.v section 8, with [WknInj]
+          [EnvOk_erase_inj_u] -- Erase.v section 8, with [WknInj]
           replaced by [WknU_shape] and therefore hypothesis-free.
      7.   [WknInj_holds], and then the three exported theorems.
 
@@ -177,8 +177,8 @@ Definition VarT_EnvOk := proj1 (proj2 (proj2 (proj2 Nf_EnvOk))).
 (* =====================================================================
    5. The seam: erasure and interpretation, in one induction.
 
-   For a normal object over a normal environment, DttErase.v's syntactic
-   erasure and DttRigid.v's semantic interpretation are produced together,
+   For a normal object over a normal environment, Erase.v's syntactic
+   erasure and Rigid.v's semantic interpretation are produced together,
    at the SAME [renv] and with the SAME image.  Doing both in one
    induction is what keeps the two systems' environment indices in step;
    proving them separately and matching afterwards would need exactly the
@@ -290,9 +290,9 @@ Definition TyOk_ErI := proj1 (proj2 Nf_ErI).
 Definition NfCode_ErI := proj1 (proj2 (proj2 Nf_ErI)).
 
 (* =====================================================================
-   6. DttErase.v's section 8, hypothesis-free.
+   6. Erase.v's section 8, hypothesis-free.
 
-   The proofs are DttErase.v's, with the [WknInj] application in the
+   The proofs are Erase.v's, with the [WknInj] application in the
    variable case replaced by [WknU_shape].  The variable statement has to
    be specialized to a universe-typed variable to make that replacement
    legal -- which costs nothing, since that is the only instance the code
@@ -424,7 +424,7 @@ Qed.
    Each is: read the equation through the rigid model to get a COMMON
    interpretation; produce the erasure of each normal form together with
    its interpretation (section 5); identify the two by functionality of
-   the interpretation (DttRigid.v section 5); conclude by section 6.
+   the interpretation (Rigid.v section 5); conclude by section 6.
    ===================================================================== *)
 
 Theorem NfCode_inj G r l c1 c2 :
@@ -471,7 +471,7 @@ Qed.
 (* =====================================================================
    8. [WknInj] as a corollary.
 
-   With the three theorems in hand, DttErase.v's own hypothesis is
+   With the three theorems in hand, Erase.v's own hypothesis is
    discharged, so its injectivity theorems ([VarT_erase_inj] at an
    ARBITRARY named type, [EnvOk_erase_inj], ...) become available.  Note
    the direction of the dependency: nothing above uses this.

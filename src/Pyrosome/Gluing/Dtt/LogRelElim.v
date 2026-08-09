@@ -7,14 +7,14 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttNf WIP.DttNfWf WIP.DttLR
-  WIP.DttLRBasics WIP.DttLRFun WIP.DttLRCore.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping Pyrosome.Gluing.Dtt.LogRel
+  Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelFun Pyrosome.Gluing.Dtt.LogRelCore.
 Import Core.Notations.
 
 (* =====================================================================
    THE MISSING HALF OF THE [RTmN] INTERFACE.
 
-   WIP/DttLRFun.v supplies [RTmN_intro]: build the
+   src/Pyrosome/Gluing/Dtt/LogRelFun.v supplies [RTmN_intro]: build the
    forall-over-all-representatives relation from ONE representative, which
    is what rigidity bought.  Writing the Layer-4b congruences showed the
    other half is wanted just as often -- every congruence with a

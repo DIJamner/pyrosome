@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax.
+Require Import Pyrosome.Gluing.Dtt.Syntax.
 Import Core.Notations.
 
 (* =====================================================================

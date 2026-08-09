@@ -7,14 +7,14 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms.
 Import Core.Notations.
 
 (* =====================================================================
    DTT NORMALIZATION, LAYER 1: TYPING OF THE NORMAL FORMS.
 
    The analogue of the "typing of the (typed) canonical forms" section of
-   Gluing/Stlc/NormalForms.v, for the six-way mutual block of WIP/DttNf.v.
+   Gluing/Stlc/NormalForms.v, for the six-way mutual block of src/Pyrosome/Gluing/Dtt/NormalForms.v.
 
    Contents:
      * a [wf_term] inversion principle for a [con] (peeling conversions),
@@ -36,7 +36,7 @@ Import Core.Notations.
    (A) THE "next0" SPELLING MISMATCH.  [ott_dtt] proves
        [next L0 = iota L1] ([eq_next0]) but the elaborator did not pick a
        representative: [Nat] is a code at [info rel (next L0)] while
-       [Empty] and [Pi_irr] conclude at [info rel (iota L1)].  [DttNf.v]
+       [Empty] and [Pi_irr] conclude at [info rel (iota L1)].  [NormalForms.v]
        pins every canonical form to the [iCode]/[next] spelling, so the
        [Empty]/[Pi_irr] rules have to be converted across.  Bridge:
        [eq_next0], lifted to [eq_sort] by [eq_sort_U_irr0] (which is
@@ -45,7 +45,7 @@ Import Core.Notations.
        premise, once on the conclusion), [neet_app_irr] (on the codomain
        recovered from the type of the head).
 
-   (B) THE NAMED NORMAL TYPE OF A VARIABLE / NEUTRAL.  [DttNf.v]'s
+   (B) THE NAMED NORMAL TYPE OF A VARIABLE / NEUTRAL.  [NormalForms.v]'s
        [vart_hd], [vart_wkn], [neet_app_rel], [neet_app_irr] each carry a
        normal representative of a substituted type together with the
        [eq_term] identifying them; the rule of [ott_dtt] concludes at the
@@ -236,7 +236,7 @@ Proof.
     | apply eq_term_refl; apply wf_U_irr0'; exact HG ].
 Qed.
 
-(* Move an irrelevant-L0 code from the [iCode] spelling (which [DttNf.v]
+(* Move an irrelevant-L0 code from the [iCode] spelling (which [NormalForms.v]
    uses) to the [iota L1] spelling (which the rules "Empty", "Pi_irr" use)
    and back. *)
 Lemma wft_U0irr_next G e
@@ -404,7 +404,7 @@ Proof.
     intros G HG IHG; apply wf_Nat; exact IHG.
   - (* nfcode_empty.
        CONVERSION (A): "Empty" concludes at [info rel (iota L1)] but
-       [DttNf.v] pins the code to [sCode G irr L0 = info rel (next L0)].
+       [NormalForms.v] pins the code to [sCode G irr L0 = info rel (next L0)].
        Bridge: [eq_next0], via [eq_sort_U_irr0]. *)
     intros G HG IHG.
     apply wft_U0irr_iota; [ exact IHG | apply wf_Empty; exact IHG ].
@@ -419,10 +419,10 @@ Proof.
       | exact IHB ].
   - (* nfcode_pi_irr.
        TWO CONVERSIONS (A), both bridged by [eq_next0]:
-       - the codomain premise: [DttNf.v] gives [B] at [iCode L0] but the
+       - the codomain premise: [NormalForms.v] gives [B] at [iCode L0] but the
          rule "Pi_irr" demands it at [info rel (iota L1)];
        - the conclusion: "Pi_irr" concludes at [info rel (iota L1)] but
-         [DttNf.v] wants [sCode G irr L0]. *)
+         [NormalForms.v] wants [sCode G irr L0]. *)
     intros G rF lF F B HrF HlF HF IHF HB IHB.
     assert (wft G sEnv) as HGw by (eapply wft_exp_env; exact IHF).
     assert (wft (oExtC G rF lF F) sEnv) as HXw
@@ -541,7 +541,7 @@ Proof.
       | apply LvlNf_wf; exact HlG
       | exact IHF | exact IHB | exact IHt ].
   - (* nfet_lam_irr.  No conversion: "lam_irr" already demands its codomain
-       at [sCode _ irr L0], the spelling [DttNf.v] uses. *)
+       at [sCode _ irr L0], the spelling [NormalForms.v] uses. *)
     intros G rF lF F B t HrF HlF HF IHF HB IHB Ht IHt.
     apply wf_LamIrr;
       [ eapply wft_exp_env; exact IHF

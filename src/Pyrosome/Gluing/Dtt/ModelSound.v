@@ -8,15 +8,15 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
-Require Import WIP.DttSyntax WIP.DttNf WIP.DttLR WIP.DttRSub WIP.DttCeq
-  WIP.DttModelStruct.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq
+  Pyrosome.Gluing.Dtt.ModelStruct.
 Import Core.Notations.
 
 (* =====================================================================
    DTT NORMALIZATION, LAYER 4c: the top-level theorems.
 
    Everything here is stated against the two obligation families that are
-   still open ([CongObligation] and [ByObligation], WIP/DttModelStruct.v),
+   still open ([CongObligation] and [ByObligation], src/Pyrosome/Gluing/Dtt/ModelStruct.v),
    so that the ENDGAME IS PINNED DOWN AND MACHINE-CHECKED before those
    land: this file proves that the normalization statement follows from
    exactly those two and nothing else.  The other eight [CutTModel_ok]

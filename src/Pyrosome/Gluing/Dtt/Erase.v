@@ -7,14 +7,14 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttNf.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms.
 Import Core.Notations.
 
 (* =====================================================================
    DTT NORMALIZATION, LAYER 0.5a: ERASURE, the syntactic half of code
    rigidity.
 
-   THE STRUCTURAL FACT (design section 2, visible in [DttNf.v]'s
+   THE STRUCTURAL FACT (design section 2, visible in [NormalForms.v]'s
    [NfCode]): no eliminator of [ott_dtt] has a universe as its result
    type -- [app_rel], [app_irr] and [Emptyrec] all land in an [El] -- so
    the only NEUTRAL codes are variables and normal codes form the FREE
@@ -78,7 +78,7 @@ Import Core.Notations.
 
    (B) ONE HYPOTHESIS, [WknInj], AND WHY IT IS UNAVOIDABLE HERE.
 
-       [VarT] (DttNf.v) NAMES the normal representative of a weakened
+       [VarT] (NormalForms.v) NAMES the normal representative of a weakened
        type:
 
          vart_wkn : VarT G i A x -> ... -> TyOk (oExt G j B) i A' ->

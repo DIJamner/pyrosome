@@ -11,7 +11,7 @@ From Pyrosome Require Import Theory.Core Tools.ComputeWf Tools.Matches
 From Pyrosome Require Import Elab.Elab.
 From Pyrosome.Lang Require Import Subst.
 From Pyrosome.Lang.OTT Require Import Base Nat Pi.
-Require Import WIP.DttSyntax.
+Require Import Pyrosome.Gluing.Dtt.Syntax.
 Import Core.Notations.
 
 (* =====================================================================
@@ -30,7 +30,7 @@ Import Core.Notations.
 
    (1) ARGUMENT ORDER.  A rule's context is stored MOST-RECENT-FIRST and
        [con]'s argument list follows that order, so e.g. [snoc]'s con list
-       is [v;g;A;i;G';G].  The [o*] abbreviations in DttSyntax.v already
+       is [v;g;A;i;G';G].  The [o*] abbreviations in Syntax.v already
        absorb this; the hypotheses below are listed in DEPENDENCY order
        (oldest context entry first), which is the reverse.
 
@@ -327,7 +327,7 @@ Lemma wf_LamIrr G rF lF F B t
 Proof. intros; wf_by "lam_irr". Qed.
 
 (* [app_rel]'s conclusion sort is a [ty_subst] of an [El] along the
-   instantiating substitution [<id, a>]; [sAppRelConcl] (DttSyntax.v) is
+   instantiating substitution [<id, a>]; [sAppRelConcl] (Syntax.v) is
    that sort verbatim.  It is NOT beta-reduced -- no [ty_subst] is pushed
    in -- so downstream reasoning must go through the substitution
    commutations. *)

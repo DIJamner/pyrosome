@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
-Require Import WIP.DttSyntax WIP.DttNf WIP.DttLR WIP.DttRSub.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.RSub.
 Import Core.Notations.
 
 (* =====================================================================
@@ -61,12 +61,12 @@ Import Core.Notations.
        makes that a singleton.
 
    (iv) EVERY index of a semantic conjunct is quantified up to [eq_term],
-       not held fixed: the environment via [RSubN] (WIP/DttRSub.v), the
-       info and the type via [RTmN]/[RTyN] (WIP/DttLR.v).  This is forced,
+       not held fixed: the environment via [RSubN] (src/Pyrosome/Gluing/Dtt/RSub.v), the
+       info and the type via [RTmN]/[RTyN] (src/Pyrosome/Gluing/Dtt/LogRel.v).  This is forced,
        not stylistic.  [csort_cong] varies all three, and with any of them
        held fixed the corresponding [Ceq_sort] transfer is unprovable --
        for the info it is REFUTABLE modulo consistency, which
-       WIP/DttModelStruct.v proves: `next0` makes [ty G (iCode L0)] and
+       src/Pyrosome/Gluing/Dtt/ModelStruct.v proves: `next0` makes [ty G (iCode L0)] and
        [ty G (iEl rel L1)] provably equal sorts whose sets of normal
        representatives are disjoint (because [TyOk] pins each former's
        info), so a transfer between them would force the closed universe

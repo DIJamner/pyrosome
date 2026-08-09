@@ -8,9 +8,9 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
-Require Import WIP.DttSyntax WIP.DttNf WIP.DttLR WIP.DttRSub WIP.DttCeq
-  WIP.DttModelStruct WIP.DttModelIdx WIP.DttModelBase WIP.DttModelSubst
-  WIP.DttModelPi.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq
+  Pyrosome.Gluing.Dtt.ModelStruct Pyrosome.Gluing.Dtt.ModelIdx Pyrosome.Gluing.Dtt.ModelBase Pyrosome.Gluing.Dtt.ModelSubst
+  Pyrosome.Gluing.Dtt.ModelPi.
 Import Core.Notations.
 
 (* =====================================================================
@@ -20,10 +20,10 @@ Import Core.Notations.
    dispatcher in the right field shape but restricted to its own rule
    names:
 
-     WIP/DttModelIdx.v    the index formers        9 cong,  3 eq
-     WIP/DttModelBase.v   universe and base types  6 cong,  6 eq
-     WIP/DttModelSubst.v  the substitution calculus 10 cong, 13 eq
-     WIP/DttModelPi.v     the binders               7 cong, 10 eq
+     src/Pyrosome/Gluing/Dtt/ModelIdx.v    the index formers        9 cong,  3 eq
+     src/Pyrosome/Gluing/Dtt/ModelBase.v   universe and base types  6 cong,  6 eq
+     src/Pyrosome/Gluing/Dtt/ModelSubst.v  the substitution calculus 10 cong, 13 eq
+     src/Pyrosome/Gluing/Dtt/ModelPi.v     the binders               7 cong, 10 eq
                                                   ---------------
                                                    32 cong, 32 eq
 

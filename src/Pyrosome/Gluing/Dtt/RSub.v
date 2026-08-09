@@ -7,8 +7,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttNfWf
-  WIP.DttLR WIP.DttLRBasics.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
+  Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics.
 Import Core.Notations.
 
 (* =====================================================================
@@ -125,7 +125,7 @@ Qed.
 (* [RSub] is a [Fixpoint] on the SYNTAX of [G], so it is not stable under
    provable equality of [G] -- and [csort_cong] at the sort [sub G G']
    varies exactly that.  The wrapper below restores stability the same way
-   [RTmN]/[RTyN] (WIP/DttLR.v) do for the info and the type: quantify a
+   [RTmN]/[RTyN] (src/Pyrosome/Gluing/Dtt/LogRel.v) do for the info and the type: quantify a
    normal representative and identify it up to [eq_term].  Both directions
    of the [Ceq_sort] transfer are then transitivity alone.
 

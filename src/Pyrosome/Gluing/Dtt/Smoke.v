@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms.
 Import Core.Notations.
 
 (* =====================================================================
@@ -24,7 +24,7 @@ Import Core.Notations.
    Everything below is a pure inductive construction -- no object-theory
    reasoning -- except the two facts that need a [wkn]-instance of the type
    ([hd] and its neutral), which are what actually exercise the "named
-   normal representative" design of [DttNf.v].
+   normal representative" design of [NormalForms.v].
    ===================================================================== *)
 
 Local Notation eqt := (eq_term ott_dtt []).
@@ -105,10 +105,10 @@ Qed.
 
 (* [hd] has type [Nat[wkn]], which is NOT a normal type; its normal
    representative is [Nat G1], and the two are identified by "Nat subst".
-   That is the smallest instance of the mechanism [DttNf.v]'s
+   That is the smallest instance of the mechanism [NormalForms.v]'s
    [vart_hd]/[neet_app_rel] clauses are built around.
 
-   Building it needs the [next0] bookkeeping described in DttEqns.v's
+   Building it needs the [next0] bookkeeping described in Eqns.v's
    header, in BOTH positions at once: "Nat subst" is stated at
    [info rel (iota L1)] while [sCode G r l] is [info rel (next l)], and the
    info also occurs INSIDE the [exp_subst] argument list -- so the chain is

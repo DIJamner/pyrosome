@@ -7,16 +7,16 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttNfWf
-  WIP.DttNfWk WIP.DttInj WIP.DttLR WIP.DttLRBasics WIP.DttLRCand WIP.DttLRFun
-  WIP.DttLRCore WIP.DttRSub WIP.DttCeq WIP.DttModelStruct WIP.DttNormalization.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
+  Pyrosome.Gluing.Dtt.NfWk Pyrosome.Gluing.Dtt.Inj Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand Pyrosome.Gluing.Dtt.LogRelFun
+  Pyrosome.Gluing.Dtt.LogRelCore Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct Pyrosome.Gluing.Dtt.ModelSound.
 Import Core.Notations.
 
 (* =====================================================================
    DTT NORMALIZATION, LAYER 3 (continued): the reducible-substitution
    toolkit.
 
-   WIP/DttRSub.v defines [RSub]/[RSubN] and their intro/elim interface.
+   src/Pyrosome/Gluing/Dtt/RSub.v defines [RSub]/[RSubN] and their intro/elim interface.
    This file supplies the four closure properties every later layer needs
    -- identity, weakening, projection, lifting -- and cashes them in for
    the normalization statement for closed terms.
@@ -36,7 +36,7 @@ Import Core.Notations.
        representative environment already, so the [RSubN] forms are
        unaffected.
 
-   (2) [RSub_lift] is stated at [oLiftW] (WIP/DttNfWk.v), the lift of a
+   (2) [RSub_lift] is stated at [oLiftW] (src/Pyrosome/Gluing/Dtt/NfWk.v), the lift of a
        substitution over an ARBITRARY normal type together with a named
        normal representative [A'] of [A[g]] -- exactly the shape of
        [Wk_liftC]/[CSub_lift].  [RSub_liftC] then packages it at the
@@ -52,7 +52,7 @@ Local Notation wft := (wf_term ott_dtt []).
 (* ================================================================== *)
 (* 1.  Well-typedness of a reducible substitution                      *)
 (*                                                                     *)
-(* Restated here rather than imported (WIP/DttModelStruct.v proves the  *)
+(* Restated here rather than imported (src/Pyrosome/Gluing/Dtt/ModelStruct.v proves the  *)
 (* same two lemmas for its own use, and this file must not depend on    *)
 (* the model layer for them).                                          *)
 (* ================================================================== *)
@@ -137,7 +137,7 @@ Qed.
 (* ================================================================== *)
 (* 3.  A reducible substitution is a canonical substitution            *)
 (*                                                                     *)
-(* [CSub] (WIP/DttNfWk.v) is the syntactic class over which normal      *)
+(* [CSub] (src/Pyrosome/Gluing/Dtt/NfWk.v) is the syntactic class over which normal      *)
 (* types and normal codes are closed under substitution.  Reducibility  *)
 (* implies it: escape turns each [RTmN] entry into a well-typed term,   *)
 (* and at a UNIVERSE-typed slot the candidate IS [HasNfCode], which is  *)
@@ -459,7 +459,7 @@ Qed.
 (* ================================================================== *)
 (* 9.  The [RSubN] forms                                               *)
 (*                                                                     *)
-(* WIP/DttCeq.v's [sub]/[ty]/[exp] clauses are stated with [RSubN], so  *)
+(* src/Pyrosome/Gluing/Dtt/Ceq.v's [sub]/[ty]/[exp] clauses are stated with [RSubN], so  *)
 (* these are what the model obligations will actually consume.  Each is *)
 (* the [RSub] form plus one use of Layer 0.5's [EnvOk_inj], which is    *)
 (* what identifies the representative environment [RSubN] quantifies    *)
@@ -572,9 +572,9 @@ Qed.
 (* 10.  The payoff: normalization for closed terms                     *)
 (*                                                                     *)
 (* Reading the model's content back at the IDENTITY substitution.  The  *)
-(* two obligation families of WIP/DttModelStruct.v are still open, so   *)
+(* two obligation families of src/Pyrosome/Gluing/Dtt/ModelStruct.v are still open, so   *)
 (* the statement stays parameterised by them exactly as                *)
-(* WIP/DttNormalization.v is; discharging them makes this theorem       *)
+(* src/Pyrosome/Gluing/Dtt/ModelSound.v is; discharging them makes this theorem       *)
 (* unconditional by [exact].                                           *)
 (* ================================================================== *)
 

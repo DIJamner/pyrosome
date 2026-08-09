@@ -7,15 +7,15 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttLR.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.LogRel.
 Import Core.Notations.
 
 (* =====================================================================
    DTT NORMALIZATION, LAYER 2a: the elementary interface to [RTy].
 
    Everything here is what can be said about the candidate relation of
-   WIP/DttLR.v WITHOUT any weakening/substitution metatheory (Layer 1's
-   [Wk_wf]/[NfCode_wk]/[NfCode_subst], WIP/DttNfWf.v) and without Layer
+   src/Pyrosome/Gluing/Dtt/LogRel.v WITHOUT any weakening/substitution metatheory (Layer 1's
+   [Wk_wf]/[NfCode_wk]/[NfCode_subst], src/Pyrosome/Gluing/Dtt/NfTyping.v) and without Layer
    0.5's rigidity ([NfCode_inj]/[TyOk_inj]).  Concretely:
 
      * the six clauses are pairwise disjoint BY HEAD SYMBOL, so each has
@@ -667,7 +667,7 @@ Lemma RTm_eq (Hce : CandEqOk) G i A e e'
 Proof. intros He Heq P HP; exact (Hce _ _ _ _ HP e e' (He P HP) Heq). Qed.
 
 (* The info index is quantified as well as the type (see [RTmN]'s comment
-   in WIP/DttLR.v), so the sort conversion here varies BOTH -- [sExp_cong]
+   in src/Pyrosome/Gluing/Dtt/LogRel.v), so the sort conversion here varies BOTH -- [sExp_cong]
    rather than [sExp_cong_ty].  Its [sEnv] premise is recovered by
    inverting the sort of the type equation, exactly as [sExp_cong_ty]
    does. *)
@@ -704,7 +704,7 @@ Proof.
 Qed.
 
 (* Closure of [RTyN]/[RTmN] under equality of the INFO index -- the whole
-   point of quantifying it (see [RTmN] in WIP/DttLR.v).  Both directions,
+   point of quantifying it (see [RTmN] in src/Pyrosome/Gluing/Dtt/LogRel.v).  Both directions,
    and both by transitivity alone. *)
 Lemma RTyN_eq_info G i i' A
   : RTyN G i A -> eqt sInfo i i' -> RTyN G i' A.

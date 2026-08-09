@@ -8,9 +8,9 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttNfWf
-  WIP.DttLR WIP.DttLRBasics WIP.DttLRCand WIP.DttLRFun WIP.DttInj
-  WIP.DttRSub WIP.DttCeq WIP.DttModelStruct WIP.DttRSubOk.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
+  Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand Pyrosome.Gluing.Dtt.LogRelFun Pyrosome.Gluing.Dtt.Inj
+  Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct Pyrosome.Gluing.Dtt.RSubOk.
 Import Core.Notations.
 
 (* =====================================================================
@@ -27,7 +27,7 @@ Import Core.Notations.
        ty_subst_id  ty_subst_cmp  exp_subst_id  exp_subst_cmp
        wkn_snoc  snoc_hd  cmp_snoc  snoc_wkn_hd
 
-   Everything goes through WIP/DttCeq.v's constructors and clause lemmas
+   Everything goes through src/Pyrosome/Gluing/Dtt/Ceq.v's constructors and clause lemmas
    and the Layer 2/3 interfaces; [Ceq_term] is inverted by hand nowhere.
 
    THE TWO SHAPES OF PROOF.
@@ -788,7 +788,7 @@ Qed.
 (* 2.  The congruence dispatcher                                       *)
 (* ================================================================== *)
 
-(* WIP/DttModelIdx.v's idiom: the rule NAME is pinned first and the [In]
+(* src/Pyrosome/Gluing/Dtt/ModelIdx.v's idiom: the rule NAME is pinned first and the [In]
    premise computed afterwards, so each case costs one rule rather than a
    32-way split. *)
 

@@ -8,9 +8,9 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttNfWf
-  WIP.DttLR WIP.DttLRBasics WIP.DttLRCand WIP.DttLRCore WIP.DttLRFun
-  WIP.DttRSub WIP.DttCeq WIP.DttModelStruct.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
+  Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand Pyrosome.Gluing.Dtt.LogRelCore Pyrosome.Gluing.Dtt.LogRelFun
+  Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct.
 Import Core.Notations.
 
 (* =====================================================================
@@ -31,14 +31,14 @@ Import Core.Notations.
    instance.  So each case is
 
      (1) push the substitution in, with the matching [eq_X_subst] of
-         WIP/DttEqns.v;
+         src/Pyrosome/Gluing/Dtt/Eqns.v;
      (2) exhibit the normal representative and its candidate;
-     (3) close with [RTmN_intro] (WIP/DttLRFun.v), which builds the
+     (3) close with [RTmN_intro] (src/Pyrosome/Gluing/Dtt/LogRelFun.v), which builds the
          forall-over-all-representatives relation from a SINGLE
          representative -- that is exactly what Layer 0.5's rigidity
          bought -- or, at a [ty] sort, with [RTyN]'s existential directly.
 
-   TWO SPELLING TRAPS, both documented in WIP/DttEqns.v's header, and both
+   TWO SPELLING TRAPS, both documented in src/Pyrosome/Gluing/Dtt/Eqns.v's header, and both
    paid for here rather than anywhere else:
 
      - the term rule "Nat" concludes at info [rel (next L0)] (= [iCode L0])
@@ -68,7 +68,7 @@ Local Notation wft := (wf_term ott_dtt []).
 (* [Ceq_term]'s semantic conjunct constrains only the LEFT term, so a
    reflexive instance at the RIGHT one is not immediate -- it is one use
    of symmetry (which recovers the missing half from the equation) and one
-   of transitivity.  Both are WIP/DttModelStruct.v's, already proved. *)
+   of transitivity.  Both are src/Pyrosome/Gluing/Dtt/ModelStruct.v's, already proved. *)
 
 Lemma ceq_refl_l t e1 e2 : Ceq_term t e1 e2 -> Ceq_term t e1 e1.
 Proof.
@@ -101,7 +101,7 @@ Qed.
 
 (* Replacing the LEFT term costs one transport of the semantic conjunct,
    through the side-condition-free closure lemmas [RTyN_eq]/[RTmN_eq] and
-   the matching congruence of WIP/DttEqns.v -- exactly as
+   the matching congruence of src/Pyrosome/Gluing/Dtt/Eqns.v -- exactly as
    [term_sym_obligation] does. *)
 
 Lemma ceq_ty_eq_l G i A1 A2 A3
@@ -578,7 +578,7 @@ Qed.
 (* ---- "Nat subst" ------------------------------------------------- *)
 
 (* The conclusion is at info [rel (iota L1)] while [cong_Nat] concludes at
-   [iCode L0]; [ceq_exp_transfer] (WIP/DttModelStruct.v) moves the
+   [iCode L0]; [ceq_exp_transfer] (src/Pyrosome/Gluing/Dtt/ModelStruct.v) moves the
    reflexive instance across. *)
 Lemma by_Nat_subst G1 G2 G1' G2' g1 g2
   : Ceq_term sEnv G1 G2 -> Ceq_term sEnv G1' G2' ->
@@ -902,7 +902,7 @@ Qed.
    [CutTModel_ok] field, with the rule name restricted to this fragment.
    The name is pinned FIRST and the [In] premise computed afterwards, so
    each case costs one rule rather than a 32-way (resp. 32-way) split --
-   WIP/DttModelIdx.v's [idx_pin] idiom, verbatim. *)
+   src/Pyrosome/Gluing/Dtt/ModelIdx.v's [idx_pin] idiom, verbatim. *)
 
 Ltac base_pin :=
   match goal with

@@ -8,8 +8,8 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttNfWf
-  WIP.DttLR WIP.DttLRBasics WIP.DttLRCand WIP.DttRSub WIP.DttCeq.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
+  Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq.
 Import Core.Notations.
 
 (* =====================================================================
@@ -20,7 +20,7 @@ Import Core.Notations.
    standalone top-level lemma so the record can be assembled elsewhere;
    [cterm_cong] and [cterm_by] are developed independently.
 
-   Everything goes through WIP/DttCeq.v's constructors and clause lemmas
+   Everything goes through src/Pyrosome/Gluing/Dtt/Ceq.v's constructors and clause lemmas
    ([ceq_relevance] .. [ceq_exp], [Ceq_relevance_e] .. [Ceq_exp_e]);
    [Ceq_term] is inverted by hand nowhere.
 
@@ -37,7 +37,7 @@ Import Core.Notations.
    consistency.  With [RTmN]/[RTyN] quantifying [i] and [RSubN] quantifying
    [G], each transfer direction is now a use of transitivity
    ([RTyN_eq_info] / [RTmN_eq_info] / [RSubN_env]) composed with the
-   type/subject closure lemmas and one congruence from WIP/DttEqns.v.
+   type/subject closure lemmas and one congruence from src/Pyrosome/Gluing/Dtt/Eqns.v.
    ===================================================================== *)
 
 Local Notation eqt := (eq_term ott_dtt []).
@@ -91,7 +91,7 @@ Qed.
 
 (* [cterm_var]: the ambient meta-context is empty (openness is
    object-level: object variables are [hd] and its [wkn]-shifts, see
-   [VarT] in WIP/DttNf.v), so there are no meta-variables to relate. *)
+   [VarT] in src/Pyrosome/Gluing/Dtt/NormalForms.v), so there are no meta-variables to relate. *)
 Lemma var_obligation
   : forall n t, In (n, t) (@nil (string * sort)) -> Ceq_term t (var n) (var n).
 Proof. intros n t H; destruct H. Qed.
@@ -175,7 +175,7 @@ Qed.
    equation.  Exactly as in Gluing/Stlc/ModelCong.v's [term_sym_obligation]
    this goes through the side-condition-free closure lemmas
    [RSub_eq] / [RTyN_eq] / [RTmN_eq] together with the matching congruence
-   of WIP/DttEqns.v ([Cmp_cong] / [TySubst_cong] / [ExpSubst_cong]).  Note
+   of src/Pyrosome/Gluing/Dtt/Eqns.v ([Cmp_cong] / [TySubst_cong] / [ExpSubst_cong]).  Note
    that all three congruences vary ONLY the last argument here, so their
    conclusion sort is literally the sort the closure lemma wants. *)
 Lemma term_sym_obligation
@@ -294,10 +294,10 @@ Qed.
 
 (* THE [ty] CASE, AND THE BUG THAT IS NOT THERE ANY MORE.
    [RTyN D i X] asks for a normal representative [A0] with [TyOk D i0 A0]
-   for SOME [i0] provably equal to [i].  An earlier version of WIP/DttLR.v
+   for SOME [i0] provably equal to [i].  An earlier version of src/Pyrosome/Gluing/Dtt/LogRel.v
    held [i0 := i] fixed, and this transfer was then REFUTABLE modulo
    consistency, not merely unproved.  The reason: [TyOk]'s info index is
-   syntactic BY DESIGN (WIP/DttNf.v's header) -- a universe is pinned at
+   syntactic BY DESIGN (src/Pyrosome/Gluing/Dtt/NormalForms.v's header) -- a universe is pinned at
    [iCode l = info rel (next l)], an [El] at [iEl r l = info r (iota l)] --
    whereas "next0" makes [iCode L0] and [iEl rel L1] provably equal infos,
    and [Ceq_term] at [tyinfo] relates them (it only demands equal

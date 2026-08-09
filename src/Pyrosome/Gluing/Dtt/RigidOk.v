@@ -8,13 +8,13 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
-Require Import WIP.DttSyntax WIP.DttNf WIP.DttErase WIP.DttRigid.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.Erase Pyrosome.Gluing.Dtt.Rigid.
 Import Core.Notations.
 
 (* =====================================================================
    LAYER 0.5b, PART 2: the rigid model is a model, and what that buys.
 
-   WIP/DttRigid.v discharges all ten [CutTModel_ok] obligations for
+   src/Pyrosome/Gluing/Dtt/Rigid.v discharges all ten [CutTModel_ok] obligations for
    [RigCM] separately.  This file assembles them and runs the fundamental
    theorem (Gluing/CutModelSound.v), yielding the ONE fact the rigidity
    argument needs from the semantic side:

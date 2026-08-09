@@ -7,8 +7,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttNfWf
-  WIP.DttNfWk WIP.DttInj WIP.DttLR WIP.DttLRBasics WIP.DttLRCand WIP.DttLRFun.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
+  Pyrosome.Gluing.Dtt.NfWk Pyrosome.Gluing.Dtt.Inj Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand Pyrosome.Gluing.Dtt.LogRelFun.
 Import Core.Notations.
 
 (* =====================================================================
@@ -315,7 +315,7 @@ End AppW.
 (*                                                                     *)
 (* [neet_app_rel] insists on the SYNTACTIC normal forms [F'], [B'] and  *)
 (* [a'] in the slots where [appAtRel] carries the raw substitution      *)
-(* instances.  This transports [DttLRCand.ac_appConcl] across that      *)
+(* instances.  This transports [LogRelCand.ac_appConcl] across that      *)
 (* renaming; it is stated generically in the outer relevance/level, so  *)
 (* the one lemma serves both Pi clauses.                                *)
 (* ================================================================== *)
@@ -868,7 +868,7 @@ Qed.
 (*                                                                     *)
 (* [rty_pi_rel] imposes no typing on the members of [P]; the escape     *)
 (* half needs [e] to be well typed, and recovers it from the codomain   *)
-(* premise's own equation, exactly as [DttLRCand.codAt_wf_a] recovers   *)
+(* premise's own equation, exactly as [LogRelCand.codAt_wf_a] recovers   *)
 (* the Kripke argument's.                                              *)
 (* ================================================================== *)
 
@@ -945,7 +945,7 @@ Qed.
 (* ================================================================== *)
 (* A. ESCAPE AND REFLECT                                               *)
 (*                                                                     *)
-(* One induction, on DttLRBasics.v's hand-written [RTy_strong_ind]      *)
+(* One induction, on LogRelBasics.v's hand-written [RTy_strong_ind]      *)
 (* (Rocq's generated [RTy_ind] gives no induction hypothesis in either  *)
 (* Pi case).  The two halves have to run together: reflect at a Pi      *)
 (* needs escape at the DOMAIN (to normalize the argument of the         *)
@@ -1080,7 +1080,7 @@ Proof. intro H; exact (proj2 (RTy_escape_reflect H)). Qed.
 (* B0. Two sigma-identities about composing weakenings under a binder   *)
 (* ================================================================== *)
 
-(* [<w2,a> ; lift(w)  =  <w2;w, a>].  ([DttNfWk.eq_inst_lift] is the
+(* [<w2,a> ; lift(w)  =  <w2;w, a>].  ([NfWk.eq_inst_lift] is the
    special case [w2 = id].) *)
 Lemma eq_snoc_liftW D2 D G w2 w i A A' a
   : wft D2 sEnv -> wft D sEnv -> wft G sEnv -> wft i sInfo ->
@@ -1280,7 +1280,7 @@ Proof.
 Qed.
 
 (* A [sub] sort congruence (the [ty]/[exp] analogues are in
-   WIP/DttNfWf.v). *)
+   src/Pyrosome/Gluing/Dtt/NfTyping.v). *)
 Lemma eq_sort_sub_cong G1 G2 G1' G2'
   : eqt sEnv G1 G2 -> eqt sEnv G1' G2' ->
     eq_sort ott_dtt [] (sSub G1 G1') (sSub G2 G2').

@@ -7,8 +7,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import WIP.DttSyntax WIP.DttWf WIP.DttEqns WIP.DttNf WIP.DttInj
-  WIP.DttNfWf.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.Inj
+  Pyrosome.Gluing.Dtt.NfTyping.
 Import Core.Notations.
 
 (* =====================================================================
@@ -28,7 +28,7 @@ Import Core.Notations.
      * [eq_app_rel_subst] [eq_app_irr_subst] [eq_lam_irr_subst]
        [eq_Emptyrec_subst]         the four commutations of
                                    [Lang/OTT/SubstCommute.v], repackaged
-                                   in DttSyntax.v's vocabulary.
+                                   in Syntax.v's vocabulary.
 
    THREE DESIGN POINTS, EACH FORCED.
 
@@ -60,7 +60,7 @@ Import Core.Notations.
        [oU D r l] syntactically.  The head and the level are syntactic (a
        [TyOk] at info [iCode l] can only be a [U _ _ l], since
        [oIota l0 <> oNext l]); THE RELEVANCE IS NOT.  [U_pull] / [U_push]
-       are where [WIP/DttInj.TyOk_inj] is cashed in.  So the design doc's
+       are where [WIP/Inj.TyOk_inj] is cashed in.  So the design doc's
        "R2 dissolves ... provable in Layer 1 with no reducibility at all"
        is right about the reducibility but wrong about the layering:
        [NfCode_wk] is Layer 1, [NfCode_subst] depends on Layer 0.5.
@@ -144,7 +144,7 @@ Lemma wk_lift' D G i A A' w
     Wk (oExt D i A') (oExt G i A) (oLiftW D G w i A A').
 Proof. intros; apply wk_lift; assumption. Qed.
 
-(* [DttSyntax.oLift] is [oLiftW] at the shapes the binder rules use. *)
+(* [Syntax.oLift] is [oLiftW] at the shapes the binder rules use. *)
 Lemma oLift_oLiftW G G' g rF lF F
   : oLift G G' g rF lF F
     = oLiftW G G' g (iEl rF lF) (oEl G' rF lF F)
@@ -152,7 +152,7 @@ Lemma oLift_oLiftW G G' g rF lF F
 Proof. reflexivity. Qed.
 
 (* The [wf_term] of a lifted weakening's head variable, at the sort
-   [snoc] demands.  (This is [DttNfWf.eq_wk_lift_ty] packaged.) *)
+   [snoc] demands.  (This is [NfTyping.eq_wk_lift_ty] packaged.) *)
 Lemma wf_liftW_hd D G w i A A'
   : wft D sEnv -> wft G sEnv -> wft i sInfo ->
     wft A (sTy G i) -> wft A' (sTy D i) -> wft w (sSub D G) ->
@@ -469,7 +469,7 @@ Qed.
 (* THE "next0" BRIDGE, PAID FOR ONCE                                   *)
 (*                                                                     *)
 (* [iCode L0 = info rel (next L0)] and [info rel (iota L1)] are the two *)
-(* spellings the elaborator left behind.  [DttNf.v] pins every          *)
+(* spellings the elaborator left behind.  [NormalForms.v] pins every          *)
 (* canonical form to the [iCode] spelling; "Nat subst", "Pi_irr" and    *)
 (* "Pi_irr subst" use the other one.  The lemmas below restate exactly  *)
 (* those rules in the [iCode] spelling, so that nothing downstream ever *)
@@ -1821,12 +1821,12 @@ Qed.
 (* [ott_subst_commute] (Lang/OTT/SubstCommute.v) supplies the rules     *)
 (* that were missing when the first half of this file was written:      *)
 (* "app_rel subst", "app_irr subst", "lam_irr subst", "Emptyrec subst". *)
-(* They are repackaged here in the vocabulary of WIP/DttSyntax.v,       *)
-(* exactly as WIP/DttEqns.v does for the other 28.                      *)
+(* They are repackaged here in the vocabulary of src/Pyrosome/Gluing/Dtt/Syntax.v,       *)
+(* exactly as src/Pyrosome/Gluing/Dtt/Eqns.v does for the other 28.                      *)
 (*                                                                     *)
 (* Two spelling facts, both deliberate on the language side:            *)
 (*   - the two [app] rules and [lam_irr subst] lift [g] with            *)
-(*     [DttSyntax.oLift], i.e. over [ext G [rF,iota lF] (El G rF lF     *)
+(*     [Syntax.oLift], i.e. over [ext G [rF,iota lF] (El G rF lF     *)
 (*     g[F])], the same shape "Pi_rel subst"/"lam_rel subst" use;       *)
 (*   - their codomain code [B] sits at [iCode _] ([info rel (next _)]), *)
 (*     matching [lam_irr]/[app_irr]/[app_rel] -- NOT at [Pi_irr]'s      *)

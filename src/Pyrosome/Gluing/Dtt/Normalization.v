@@ -8,8 +8,8 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
-Require Import WIP.DttSyntax WIP.DttNf WIP.DttLR WIP.DttRSub WIP.DttCeq
-  WIP.DttModelStruct WIP.DttModelAll WIP.DttNormalization WIP.DttRSubOk.
+Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq
+  Pyrosome.Gluing.Dtt.ModelStruct Pyrosome.Gluing.Dtt.ModelAll Pyrosome.Gluing.Dtt.ModelSound Pyrosome.Gluing.Dtt.RSubOk.
 Import Core.Notations.
 
 (* =====================================================================
@@ -25,9 +25,9 @@ Import Core.Notations.
    Nat, Empty and its eliminator, over a parameterized substitution
    calculus with explicit substitutions.
 
-   The statements below are the parameterised ones of WIP/DttRSubOk.v and
-   WIP/DttNormalization.v with their two obligation families discharged by
-   WIP/DttModelAll.v.  They are unconditional.
+   The statements below are the parameterised ones of src/Pyrosome/Gluing/Dtt/RSubOk.v and
+   src/Pyrosome/Gluing/Dtt/ModelSound.v with their two obligation families discharged by
+   src/Pyrosome/Gluing/Dtt/ModelAll.v.  They are unconditional.
    ===================================================================== *)
 
 (* ------------------------------------------------------------------ *)
@@ -48,7 +48,7 @@ Theorem ott_dtt_normalization G i A e
     wf_term ott_dtt [] e (sExp G i A) ->
     HasNf G i A e.
 Proof.
-  apply (DttRSubOk.ott_dtt_normalization cong_obligation by_obligation).
+  apply (RSubOk.ott_dtt_normalization cong_obligation by_obligation).
 Qed.
 
 (* The same for types: every well-formed type is a reducible type, hence
@@ -56,7 +56,7 @@ Qed.
 Theorem ott_dtt_ty_normalization G i A
   : EnvOk G -> wf_term ott_dtt [] A (sTy G i) -> RTyN G i A.
 Proof.
-  apply (DttRSubOk.ott_dtt_ty_normalization cong_obligation by_obligation).
+  apply (RSubOk.ott_dtt_ty_normalization cong_obligation by_obligation).
 Qed.
 
 (* And for environments, where the model's content IS the normalization
@@ -64,7 +64,7 @@ Qed.
 Theorem ott_dtt_env_normalization G
   : wf_term ott_dtt [] G sEnv -> HasNfEnv G.
 Proof.
-  apply (DttNormalization.ott_dtt_env_normalization
+  apply (ModelSound.ott_dtt_env_normalization
            cong_obligation by_obligation).
 Qed.
 
@@ -78,5 +78,5 @@ Qed.
 Theorem ott_dtt_eq_sound t e1 e2
   : eq_term ott_dtt [] t e1 e2 -> Ceq_term t e1 e2.
 Proof.
-  apply (DttNormalization.ott_dtt_eq_sound cong_obligation by_obligation).
+  apply (ModelSound.ott_dtt_eq_sound cong_obligation by_obligation).
 Qed.
