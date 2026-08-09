@@ -2194,3 +2194,66 @@ Proof.
         [ exact HwG2 | exact HwG2' | exact Hwg2 | exact Hwr | exact HwlF
         | exact HwlG | exact HwF2 | exact HwB2 | exact Hwf2 | exact Hwa2 ].
 Qed.
+
+(* ================================================================== *)
+(* 9.  The dispatchers                                                 *)
+(* ================================================================== *)
+
+(* Both are stated in exactly the shape of the corresponding
+   [CutTModel_ok] field, with the rule name restricted to this fragment.
+   The name is pinned FIRST and the [In] premise computed afterwards, so
+   each case costs one rule rather than a 32-way split -- WIP/
+   DttModelIdx.v's [idx_pin] idiom, verbatim.
+
+   [eapply]/[eassumption] rather than [apply]/[assumption]: several of
+   these rules do not mention every argument in their conclusion sort
+   ([Pi_rel]'s is just [U G rel lG]), and [assumption] is conversion-only
+   -- it will not instantiate the resulting evars. *)
+
+Ltac pi_pin :=
+  match goal with
+  | [ Hin : In _ ott_dtt |- _ ] =>
+      vm_compute in Hin;
+      repeat (destruct Hin as [Hin|Hin]); try discriminate;
+      inversion Hin; subst; clear Hin
+  end;
+  repeat match goal with
+         | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
+         | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
+         end;
+  cbn [ceq_term ceq_sort DttCM] in *.
+
+Lemma pi_cong_obligation
+  : forall c' name args t s1 s2,
+    In (name, term_rule c' args t) ott_dtt ->
+    (name = "Emptyrec" \/ name = "Pi_rel" \/ name = "Pi_irr"
+     \/ name = "app_rel") ->
+    ceq_args (CM := DttCM) c' s1 s2 ->
+    Ceq_term t[/with_names_from c' s2/] (con name s1) (con name s2).
+Proof.
+  intros c' name args t s1 s2 Hin Hname Hargs.
+  destruct Hname as [-> | [-> | [-> | ->]]]; pi_pin.
+  - (* Emptyrec *) eapply cong_Emptyrec; eassumption.
+  - (* Pi_rel *) eapply cong_PiRel; eassumption.
+  - (* Pi_irr *) eapply cong_PiIrr; eassumption.
+  - (* app_rel *) eapply cong_AppRel; eassumption.
+Qed.
+
+Lemma pi_by_obligation
+  : forall c' name e1 e2 t s1 s2,
+    In (name, term_eq_rule c' e1 e2 t) ott_dtt ->
+    (name = "Pi_rel subst" \/ name = "Pi_irr subst"
+     \/ name = "app_rel subst" \/ name = "Emptyrec subst"
+     \/ name = "Pi_rel eta") ->
+    ceq_args (CM := DttCM) c' s1 s2 ->
+    Ceq_term t[/with_names_from c' s2/]
+             e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
+Proof.
+  intros c' name e1 e2 t s1 s2 Hin Hname Hargs.
+  destruct Hname as [-> | [-> | [-> | [-> | ->]]]]; pi_pin.
+  - (* Pi_rel subst *) eapply by_PiRel_subst; eassumption.
+  - (* Pi_irr subst *) eapply by_PiIrr_subst; eassumption.
+  - (* app_rel subst *) eapply by_AppRel_subst; eassumption.
+  - (* Emptyrec subst *) eapply by_Emptyrec_subst; eassumption.
+  - (* Pi_rel eta *) eapply by_PiRel_eta; eassumption.
+Qed.
