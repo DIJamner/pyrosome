@@ -20,7 +20,8 @@ Import Core.Notations.
 
      Emptyrec  Pi_rel  Pi_irr  lam_rel  lam_irr  app_rel  app_irr
 
-   and the ten equations that live over them,
+   -- of which this file proves the first five and the seven equations
+   listed under STATUS below -- and the ten equations that live over them,
 
      "Pi_rel subst"  "Pi_irr subst"  "lam_rel subst"  "lam_irr subst"
      "app_rel subst" "app_irr subst" "Emptyrec subst"
@@ -50,6 +51,30 @@ Import Core.Notations.
        argument [f], whose clause is a hypothesis; the left-hand side is
        provably equal to it by the rule, and [ceq_exp_eq_l] transports the
        clause across.  No reducibility reasoning at all.
+
+   STATUS.  TWELVE of the seventeen are proved here and axiom-free: the
+   congruences [Emptyrec], [Pi_rel], [Pi_irr], [lam_rel], [app_rel] and
+   the equations "Pi_rel subst", "Pi_irr subst", "lam_rel subst",
+   "app_rel subst", "Emptyrec subst", "Pi_rel eta", "Pi_rel beta".  The
+   two dispatchers at the end are stated over exactly those.
+
+   NOT PROVED HERE: [lam_irr] and [app_irr], and with them the three
+   equations that consume them -- "lam_irr subst", "app_irr subst" and
+   "Pi_irr beta".  They are the irrelevant mirrors of [lam_rel]/[app_rel]
+   and need no new idea, but two things make them a separate piece of
+   work rather than a copy:
+
+     - the codomain code's info.  [Pi_irr] states it at [rel (iota L1)]
+       while [lam_irr]/[app_irr] -- and hence [DttLR.wkCodCodeIrr] and
+       [nfcode_pi_irr] -- state it at [iCode L0], so the [Pi_irr] analogue
+       of [pi_rel_nf] has to move an [exp_subst] between the two spellings
+       twice ([DttLRCand.eq_expsubst_info] is that move);
+     - [rty_pi_irr]'s candidate carries an extra [HasNf] conjunct, which
+       [rty_pi_rel] does without because of eta.  So [cong_LamIrr] must
+       additionally EXHIBIT a normal form of the lambda -- an
+       [nfet_lam_irr] over the body's normal form, which [binder_lift]'s
+       reducible lift plus [RTy_escape] supplies, but which has no
+       counterpart in [cong_LamRel].
 
    THE ONE GENUINELY NEW PIECE OF MACHINERY is [binder_lift] (section 2).
    Every binder congruence must feed its codomain argument's clause a
