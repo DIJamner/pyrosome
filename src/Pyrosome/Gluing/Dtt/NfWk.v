@@ -501,7 +501,7 @@ Lemma wf_U0i G r
     wft (oU G r oL0) (sTy G (oInfo oRel (oIota oL1))).
 Proof.
   intros; eapply wf_term_conv; [ apply wf_U; auto using wf_L0 | ].
-  apply eq_sort_ty_cong; [ er | apply eq_info_next0 ].
+  apply sTy_cong; [ er | apply eq_info_next0 ].
 Qed.
 
 Lemma eq_sort_code0 G r
@@ -509,7 +509,7 @@ Lemma eq_sort_code0 G r
     eq_sort ott_dtt [] (sCode G r oL0)
       (sExp G (oInfo oRel (oIota oL1)) (oU G r oL0)).
 Proof.
-  intros; apply eq_sort_exp_cong;
+  intros; apply sExp_cong;
     [ er | apply eq_info_next0 | apply eq_term_refl; apply wf_U0i; assumption ].
 Qed.
 
@@ -586,7 +586,7 @@ Proof.
       | apply eq_term_refl; apply wf_U0i; assumption ].
   - eapply eq_term_conv.
     + apply eq_U_subst; auto using wf_L0.
-    + apply eq_sort_ty_cong; [ er | apply eq_info_next0 ].
+    + apply sTy_cong; [ er | apply eq_info_next0 ].
 Qed.
 
 (* "Nat subst" in the [iCode] spelling. *)

@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
 Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
-  Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand
+  Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics
   Pyrosome.Gluing.Dtt.Inj.
 Import Core.Notations.
 
@@ -86,7 +86,7 @@ Proof.
      provably equal to [i]. *)
   assert (eqt (sTy G i0) A A1) as HA1'.
   { eapply eq_term_conv; [ exact HA1 | ].
-    apply eq_sort_ty_cong; [ apply eq_term_refl; exact HG | ].
+    apply sTy_cong; [ apply eq_term_refl; exact HG | ].
     eapply eq_term_trans; [ apply eq_term_sym; exact Hi1 | exact Hi ]. }
   destruct (TyOk_inj_gen (j := i0) HT HT1
               (eq_term_trans (eq_term_sym HA) HA1')) as [-> ->].

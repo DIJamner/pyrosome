@@ -133,6 +133,43 @@ Ltac cong_step nm s1 s2 :=
             (s1 := s1) (s2 := s2) _);
   eq_args_solve.
 
+(* Instantiating a SORT rule's congruence -- the same thing one level up.
+   Of [ott_dtt]'s nine sorts only [sub], [ty] and [exp] take arguments, so
+   the three congruences below are the whole story. *)
+Lemma ott_dtt_sort_cong_inst (name : string) c' args (s1 s2 : list term)
+  : In (name, sort_rule c' args) ott_dtt ->
+    eq_args (Model := core_model ott_dtt) [] c' s1 s2 ->
+    eq_sort ott_dtt [] (scon name s1) (scon name s2).
+Proof.
+  intros Hin Hargs.
+  eapply sort_con_congruence; try typeclasses eauto;
+    [ exact Hin | apply ott_dtt_wf | exact Hargs ].
+Qed.
+
+Ltac scong_step nm s1 s2 :=
+  refine (ott_dtt_sort_cong_inst (named_list_lookup_err_in ott_dtt nm eq_refl)
+            (s1 := s1) (s2 := s2) _);
+  eq_args_solve.
+
+Lemma sSub_cong G1 G2 G1' G2'
+  : eq_term ott_dtt [] sEnv G1 G2 ->
+    eq_term ott_dtt [] sEnv G1' G2' ->
+    eq_sort ott_dtt [] (sSub G1 G1') (sSub G2 G2').
+Proof. intros; scong_step "sub" [G1'; G1] [G2'; G2]. Qed.
+
+Lemma sTy_cong G1 G2 i1 i2
+  : eq_term ott_dtt [] sEnv G1 G2 ->
+    eq_term ott_dtt [] sInfo i1 i2 ->
+    eq_sort ott_dtt [] (sTy G1 i1) (sTy G2 i2).
+Proof. intros; scong_step "ty" [i1; G1] [i2; G2]. Qed.
+
+Lemma sExp_cong G1 G2 i1 i2 A1 A2
+  : eq_term ott_dtt [] sEnv G1 G2 ->
+    eq_term ott_dtt [] sInfo i1 i2 ->
+    eq_term ott_dtt [] (sTy G2 i2) A1 A2 ->
+    eq_sort ott_dtt [] (sExp G1 i1 A1) (sExp G2 i2 A2).
+Proof. intros; scong_step "exp" [A1; i1; G1] [A2; i2; G2]. Qed.
+
 (* ================================================================== *)
 (* ott_info: relevance, levels, type levels                            *)
 (* ================================================================== *)

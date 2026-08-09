@@ -131,11 +131,6 @@ Qed.
    [ext] case that asks for reducibility of the entry at the OTHER info --
    i.e. for the normalization theorem itself. *)
 
-Lemma sSub_cong G1 G2 G1' G2'
-  : eqt sEnv G1 G2 -> eqt sEnv G1' G2' ->
-    eq_sort ott_dtt [] (sSub G1 G1') (sSub G2 G2').
-Proof. intros; scong_step "sub" [G1'; G1] [G2'; G2]. Qed.
-
 Definition RSubN (D G g : term) : Prop :=
   exists G0, EnvOk G0 /\ eqt sEnv G G0 /\ RSub D G0 g.
 

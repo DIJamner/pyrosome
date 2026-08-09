@@ -20,7 +20,7 @@ Import Core.Notations.
      * a [wf_term] inversion principle for a [con] (peeling conversions),
        and the three argument-inversions it is used for
        ([wft_El_args], [wft_PiRel_args], [wft_PiIrr_args]);
-     * the sort congruences [eq_sort_ty_cong] / [eq_sort_exp_cong] and the
+     * the sort congruences [sTy_cong] / [sExp_cong] and the
        "next0" sort bridges;
      * the structural corollaries [Nf_EnvOk], [EnvOk_ext_inv],
        [VarT_TyOk], [VarT_hd_inv], [VarT_wkn_inv], [NeET_TyOk],
@@ -41,7 +41,7 @@ Import Core.Notations.
        pins every canonical form to the [iCode]/[next] spelling, so the
        [Empty]/[Pi_irr] rules have to be converted across.  Bridge:
        [eq_next0], lifted to [eq_sort] by [eq_sort_U_irr0] (which is
-       [eq_sort_exp_cong] applied to [Info_cong Rel_cong eq_next0]).
+       [sExp_cong] applied to [Info_cong Rel_cong eq_next0]).
        Sites: [nfcode_empty], [nfcode_pi_irr] (twice: once on the codomain
        premise, once on the conclusion), [neet_app_irr] (on the codomain
        recovered from the type of the head).
@@ -151,46 +151,19 @@ Qed.
 
 (* ------------------------------------------------------------------ *)
 (* Sort congruences                                                     *)
+(*                                                                      *)
+(* [sSub_cong]/[sTy_cong]/[sExp_cong] and the [scong_step] tactic that   *)
+(* generates them are src/Pyrosome/Gluing/Dtt/Eqns.v's, next to their    *)
+(* term-level twins.  The one special case below does all the work in    *)
+(* this development.                                                    *)
 (* ------------------------------------------------------------------ *)
 
-Lemma ott_dtt_sort_cong_inst (name : string) c' args (s1 s2 : list term)
-  : In (name, sort_rule c' args) ott_dtt ->
-    eq_args (Model := core_model ott_dtt) [] c' s1 s2 ->
-    eq_sort ott_dtt [] (scon name s1) (scon name s2).
-Proof.
-  intros Hin Hargs.
-  eapply sort_con_congruence.
-  - typeclasses eauto.
-  - exact Hin.
-  - apply ott_dtt_wf.
-  - exact Hargs.
-Qed.
-
-Ltac scong_step nm s1 s2 :=
-  refine (ott_dtt_sort_cong_inst (named_list_lookup_err_in ott_dtt nm eq_refl)
-            (s1 := s1) (s2 := s2) _);
-  eq_args_solve.
-
-Lemma eq_sort_ty_cong G1 G2 i1 i2
-  : eqt sEnv G1 G2 ->
-    eqt sInfo i1 i2 ->
-    eq_sort ott_dtt [] (sTy G1 i1) (sTy G2 i2).
-Proof. intros; scong_step "ty" [i1; G1] [i2; G2]. Qed.
-
-Lemma eq_sort_exp_cong G1 G2 i1 i2 A1 A2
-  : eqt sEnv G1 G2 ->
-    eqt sInfo i1 i2 ->
-    eqt (sTy G2 i2) A1 A2 ->
-    eq_sort ott_dtt [] (sExp G1 i1 A1) (sExp G2 i2 A2).
-Proof. intros; scong_step "exp" [A1; i1; G1] [A2; i2; G2]. Qed.
-
-(* The special case that does all the work below: same environment, same
-   info, provably equal types. *)
+(* Same environment, same info, provably equal types. *)
 Lemma eq_sort_exp_ty G i A1 A2
   : wft G sEnv -> wft i sInfo -> eqt (sTy G i) A1 A2 ->
     eq_sort ott_dtt [] (sExp G i A1) (sExp G i A2).
 Proof.
-  intros HG Hi HA; apply eq_sort_exp_cong;
+  intros HG Hi HA; apply sExp_cong;
     [ apply eq_term_refl; exact HG
     | apply eq_term_refl; exact Hi
     | exact HA ].
@@ -223,7 +196,7 @@ Lemma wf_U_irr0' G
   : wft G sEnv -> wft (oU G oIrr oL0) (sTy G (oInfo oRel (oIota oL1))).
 Proof.
   intro HG; eapply wf_term_conv; [ apply wf_U_irr0; exact HG | ].
-  apply eq_sort_ty_cong; [ apply eq_term_refl; exact HG | apply eq_info_next0 ].
+  apply sTy_cong; [ apply eq_term_refl; exact HG | apply eq_info_next0 ].
 Qed.
 
 Lemma eq_sort_U_irr0 G
@@ -231,7 +204,7 @@ Lemma eq_sort_U_irr0 G
     eq_sort ott_dtt [] (sCode G oIrr oL0)
       (sExp G (oInfo oRel (oIota oL1)) (oU G oIrr oL0)).
 Proof.
-  intro HG; apply eq_sort_exp_cong;
+  intro HG; apply sExp_cong;
     [ apply eq_term_refl; exact HG
     | apply eq_info_next0
     | apply eq_term_refl; apply wf_U_irr0'; exact HG ].

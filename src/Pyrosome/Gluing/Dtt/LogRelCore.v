@@ -129,7 +129,7 @@ Section AppNamed.
     : eqt (sCode (oExtC D rF lF Fw) rG lG) B' Bw.
   Proof.
     eapply eq_term_conv; [ apply eq_term_sym; exact HeqB | ].
-    unfold sCode; apply eq_sort_exp_cong;
+    unfold sCode; apply sExp_cong;
       [ apply an_env
       | apply eq_term_refl; apply an_cG
       | apply U_cong;
@@ -1300,7 +1300,7 @@ Section WkStepC.
 
   Lemma wsc_sortE : eq_sort ott_dtt [] (sCode E1 rG lG) (sCode E2 rG lG).
   Proof.
-    unfold sCode; apply eq_sort_exp_cong;
+    unfold sCode; apply sExp_cong;
       [ apply wsc_Eeq
       | apply eq_term_refl; apply wsc_cG
       | apply U_cong;
@@ -1935,9 +1935,6 @@ Proof.
     | apply eq_term_refl; exact Ha ].
 Qed.
 
-Lemma iff_trans' (X Y Z : Prop) : (X <-> Y) -> (Y <-> Z) -> (X <-> Z).
-Proof. tauto. Qed.
-
 (* [RTy] only ever constrains its candidate through an [iff], so it is
    stable under replacing the candidate by an equivalent one. *)
 Lemma RTy_iff G i A P Q : RTy G i A P -> (forall e, Q e <-> P e) -> RTy G i A Q.
@@ -1951,17 +1948,17 @@ Proof.
     | G rF lF F B P Pd Pc HrF HlF HF HB Hd Hc Hiff ];
     intro Hq.
   - apply rty_U; try assumption;
-      intro e; eapply iff_trans'; [ apply Hq | apply Hiff ].
+      intro e; eapply iff_trans_r; [ apply Hq | apply iff_sym, Hiff ].
   - apply rty_nat; try assumption;
-      intro e; eapply iff_trans'; [ apply Hq | apply Hiff ].
+      intro e; eapply iff_trans_r; [ apply Hq | apply iff_sym, Hiff ].
   - apply rty_empty; try assumption;
-      intro e; eapply iff_trans'; [ apply Hq | apply Hiff ].
+      intro e; eapply iff_trans_r; [ apply Hq | apply iff_sym, Hiff ].
   - eapply rty_var; try eassumption;
-      intro e; eapply iff_trans'; [ apply Hq | apply Hiff ].
+      intro e; eapply iff_trans_r; [ apply Hq | apply iff_sym, Hiff ].
   - eapply rty_pi_rel with (Pd := Pd) (Pc := Pc); try eassumption;
-      intro e; eapply iff_trans'; [ apply Hq | apply Hiff ].
+      intro e; eapply iff_trans_r; [ apply Hq | apply iff_sym, Hiff ].
   - eapply rty_pi_irr with (Pd := Pd) (Pc := Pc); try eassumption;
-      intro e; eapply iff_trans'; [ apply Hq | apply Hiff ].
+      intro e; eapply iff_trans_r; [ apply Hq | apply iff_sym, Hiff ].
 Qed.
 
 (* ================================================================== *)

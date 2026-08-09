@@ -220,7 +220,7 @@ Lemma wf_U0_iota1 G r
 Proof.
   intros HG Hr; eapply wf_term_conv;
     [ apply wf_U; [ exact HG | exact Hr | apply wf_L0 ] | ].
-  apply eq_sort_ty_cong; [ apply eq_term_refl; exact HG | apply eq_info_next0 ].
+  apply sTy_cong; [ apply eq_term_refl; exact HG | apply eq_info_next0 ].
 Qed.
 
 Lemma eq_sort_U0 G r
@@ -228,7 +228,7 @@ Lemma eq_sort_U0 G r
     eq_sort ott_dtt [] (sCode G r oL0)
       (sExp G (oInfo oRel (oIota oL1)) (oU G r oL0)).
 Proof.
-  intros HG Hr; apply eq_sort_exp_cong;
+  intros HG Hr; apply sExp_cong;
     [ apply eq_term_refl; exact HG
     | apply eq_info_next0
     | apply eq_term_refl; apply wf_U0_iota1; assumption ].

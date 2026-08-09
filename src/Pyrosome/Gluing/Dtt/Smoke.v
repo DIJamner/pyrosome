@@ -114,6 +114,6 @@ Qed.
    info also occurs INSIDE the [exp_subst] argument list -- so the chain is
    [ExpSubst_cong] (to move the info inside the term), then [eq_Nat_subst],
    then [eq_term_conv] along a sort congruence (to move the info in the
-   sort).  The reusable helpers for that -- [eq_sort_exp_cong] and friends
+   sort).  The reusable helpers for that -- [sExp_cong] and friends
    -- belong in the Layer-1 typing file, so the open witnesses land here
    once that exists. *)

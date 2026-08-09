@@ -674,7 +674,7 @@ Proof.
       | apply eq_info_next0
       | apply eq_term_refl; apply wf_U_irr0'; exact HG
       | apply eq_term_refl; apply wft_U0irr_next; [ exact HG | exact Hv ] ].
-  - apply eq_sort_exp_cong;
+  - apply sExp_cong;
       [ apply eq_term_refl; exact HD
       | apply eq_term_sym; apply eq_info_next0
       | exact Hty ].

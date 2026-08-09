@@ -579,44 +579,6 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* Sort congruence at [exp] (needed to move a subject equation between  *)
-(* provably equal types)                                                *)
-(* ================================================================== *)
-
-Lemma ott_dtt_sort_cong_inst (name : string) c' args (s1 s2 : list term)
-  : In (name, sort_rule c' args) ott_dtt ->
-    eq_args (Model := core_model ott_dtt) [] c' s1 s2 ->
-    eq_sort ott_dtt [] (scon name s1) (scon name s2).
-Proof.
-  intros Hin Hargs.
-  eapply sort_con_congruence; try typeclasses eauto;
-    [ exact Hin | apply ott_dtt_wf | exact Hargs ].
-Qed.
-
-Ltac scong_step nm s1 s2 :=
-  refine (ott_dtt_sort_cong_inst (named_list_lookup_err_in ott_dtt nm eq_refl)
-            (s1 := s1) (s2 := s2) _);
-  eq_args_solve.
-
-Lemma sExp_cong G1 G2 i1 i2 A1 A2
-  : eqt sEnv G1 G2 ->
-    eqt sInfo i1 i2 ->
-    eqt (sTy G2 i2) A1 A2 ->
-    eq_sort ott_dtt [] (sExp G1 i1 A1) (sExp G2 i2 A2).
-Proof. intros; scong_step "exp" [A1; i1; G1] [A2; i2; G2]. Qed.
-
-(* The special case that matters: two provably equal TYPES give the same
-   [exp] sort.  No side conditions -- inverting the sort of the type
-   equation recovers everything. *)
-Lemma sExp_cong_ty G i A1 A2
-  : eqt (sTy G i) A1 A2 -> eq_sort ott_dtt [] (sExp G i A1) (sExp G i A2).
-Proof.
-  intro H.
-  destruct (wf_sort_ty_inv (eqt_wf_sort H)) as [HG Hi].
-  apply sExp_cong; [ apply eq_term_refl | apply eq_term_refl | ]; assumption.
-Qed.
-
-(* ================================================================== *)
 (* 3b. The corollaries of candidate closure                            *)
 (* ================================================================== *)
 
@@ -683,12 +645,6 @@ Qed.
 
 (* Closure of [RTyN] under equality of the TYPE, on the other hand, is
    free: the normal representative is unchanged. *)
-(* The [ty] analogue of [sExp_cong]. *)
-Lemma sTy_cong G1 G2 i1 i2
-  : eqt sEnv G1 G2 -> eqt sInfo i1 i2 ->
-    eq_sort ott_dtt [] (sTy G1 i1) (sTy G2 i2).
-Proof. intros; scong_step "ty" [i1; G1] [i2; G2]. Qed.
-
 Lemma RTyN_eq G i A A'
   : RTyN G i A -> eqt (sTy G i) A A' -> RTyN G i A'.
 Proof.
