@@ -244,6 +244,44 @@ parameterised by `NfCode_inj`/`TyOk_inj`. It is declined because the existential
 compose, via the seam above, and switching would invalidate several thousand verified lines.
 Worth revisiting only if a later layer hits the same wall a third time.
 
+### 4b. Status, and the one step that remains
+
+Both halves are built and axiom-free:
+
+* `WIP/DttErase.v` — the domain, the erasure, totality, functionality, and injectivity of the
+  erasure (each injectivity theorem taking `WknInj`).
+* `WIP/DttRigid.v` + `WIP/DttRigidOk.v` — the rigid model, **all ten `CutTModel_ok` obligations**,
+  and `rigid_sound : eq_term ott_dtt [] t e1 e2 -> rceq_term t e1 e2`, with the readings
+  `rigid_env`/`rigid_ty`/`rigid_sub`/`rigid_code`. §2's claim survived contact with every one of
+  the 28 equation obligations: everything at an `El`-sort, **including both β rules and η**, is
+  discharged by `exact I`.
+
+What remains is only the composition, and it has one wrinkle worth writing down because a naive
+attempt loops. `WknInj` at `ext G j B` is discharged by the model (both `wkn`-instances go to
+`rshift` of their erasures, `rshift` is injective) **plus `TyOk_inj` at `G`** — but `DttErase.v`
+states `WknInj` globally, so feeding it back is circular as stated. The fix is to run **one strong
+induction on `length E`**, proving the environment, type, code and variable injectivity statements
+simultaneously against the *model's own* relations `IEnv`/`ITy`/`ICode`, since the only place a
+shorter environment is needed is the `vart_wkn` case:
+
+```coq
+Theorem rigid_inj : forall n E, length E < n ->
+  (forall G1 G2,     IEnv G1 E -> IEnv G2 E -> EnvOk G1 -> EnvOk G2 -> G1 = G2)
+  /\ (forall G i1 A1 i2 A2 T, IEnv G E -> TyOk G i1 A1 -> TyOk G i2 A2 ->
+        ITy E A1 T -> ITy E A2 T -> i1 = i2 /\ A1 = A2)
+  /\ (forall G r l c1 c2 n0, IEnv G E -> NfCode G r l c1 -> NfCode G r l c2 ->
+        ICode E c1 n0 -> ICode E c2 n0 -> c1 = c2)
+  /\ (variables, likewise).
+```
+
+`NfCode_inj`/`TyOk_inj`/`EnvOk_inj` then follow by combining `rigid_code`/`rigid_ty`/`rigid_env`
+with the interpretation's totality on normal forms. `WIP/DttErase.v`'s own theorems become
+available too, since `WknInj` is a corollary — but nothing else needs them.
+
+Why the induction is needed at all, concretely: `vart_wkn`'s *term* mentions the named normal type
+of the **inner** variable, so two normal codes at the same de Bruijn index in the same environment
+are distinct syntax unless that naming is unique — which is `TyOk_inj` one environment down.
+
 **Kill-switch.** If `NfCode_inj` is not proved by the end of Layer 0.5, stop and re-plan —
 every later layer consumes it, and there is no second route to it.
 
