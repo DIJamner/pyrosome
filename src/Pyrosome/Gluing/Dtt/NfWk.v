@@ -21,10 +21,9 @@ Import Core.Notations.
      * [TyOk_wk] [NfCode_wk] [VarT_wk] [NeET_wk] [NfET_wk]
                                    the whole normal-form block is stable
                                    under weakening;
-     * [NSub] [NSub_wf]            normal substitutions and their typing;
-     * [CSub]                      the class of substitutions the CODE
-                                   fragment needs, and [NfCode_subst] /
-                                   [NfCode_csubst];
+     * [CSub] [CSub_wf]            the class of substitutions the CODE
+                                   fragment needs, and [NfCode_csubst] /
+                                   [TyOk_subst];
      * [eq_app_rel_subst] [eq_app_irr_subst] [eq_lam_irr_subst]
        [eq_Emptyrec_subst]         the four commutations of
                                    [Lang/OTT/SubstCommute.v], repackaged
@@ -46,17 +45,20 @@ Import Core.Notations.
        relation, no determinism proof, and no separate "structural" and
        "existential" statements of the theorem.
 
-   (2) [NSub] IS NOT CLOSED UNDER LIFTING.  The lift snocs the head
-       variable, and [hd] at a [Pi_rel] type is not an [NfET] -- eta-long
-       normality forbids it.  But the code fragment only ever inspects the
-       UNIVERSE-typed entries, and there [hd] IS normal (it is a normal
-       code, by [nfcode_var]).  [CSub] is [NSub] weakened exactly that far:
-       its entries are constrained only when their normal type is a
-       universe, and then only to HAVE a normal code ([HasNfCode], so that
-       the class survives composition with a weakening).  [CSub_lift] is
-       the payoff; [NSub_CSub] shows nothing is lost.
+   (2) [CSub] IS THE CLASS THAT SURVIVES, BECAUSE THE OBVIOUS ONE IS NOT
+       CLOSED UNDER LIFTING.  The obvious class -- every entry an [NfET] at
+       the entry's normal type -- does not survive going under a binder:
+       the lift snocs the head variable, and [hd] at a [Pi_rel] type is not
+       an [NfET], since eta-long normality forbids it.  But the code
+       fragment only ever inspects the UNIVERSE-typed entries, and there
+       [hd] IS normal (it is a normal code, by [nfcode_var]).  So [CSub]
+       constrains its entries only when their normal type is a universe,
+       and then only to HAVE a normal code ([HasNfCode], so that the class
+       survives composition with a weakening).  [CSub_lift] is the payoff.
+       Every consumer, in this file and downstream, goes through [CSub];
+       nothing needs the stricter class, so it is not defined here.
 
-   (3) THE VARIABLE CASE OF [NfCode_subst] NEEDS LAYER 0.5.  Reading a code
+   (3) THE VARIABLE CASE OF [NfCode_csubst] NEEDS LAYER 0.5.  Reading a code
        variable off a [snoc] gives a normal term at the entry's normal type,
        and turning that into an [NfCode D r l] needs the type to BE
        [oU D r l] syntactically.  The head and the level are syntactic (a
@@ -65,7 +67,7 @@ Import Core.Notations.
        are where [Inj.TyOk_inj] is cashed in.  So the design doc's
        "R2 dissolves ... provable in Layer 1 with no reducibility at all"
        is right about the reducibility but wrong about the layering:
-       [NfCode_wk] is Layer 1, [NfCode_subst] depends on Layer 0.5.
+       [NfCode_wk] is Layer 1, [NfCode_csubst] depends on Layer 0.5.
    ===================================================================== *)
 
 Notation term := (@Term.term string).
@@ -1551,41 +1553,6 @@ Qed.
 (* PART 2: NORMAL SUBSTITUTIONS                                        *)
 (* ================================================================== *)
 
-Inductive NSub : term -> term -> term -> Prop :=
-| nsub_wk : forall D G w, Wk D G w -> NSub D G w
-| nsub_forget : forall D, EnvOk D -> NSub D oEmp (oForget D)
-| nsub_snoc : forall D G i A g a A',
-    NSub D G g -> TyOk G i A -> TyOk D i A' ->
-    eqt (sTy D i) (oTySubst D G g i A) A' ->
-    NfET D i A' a ->
-    NSub D (oExt G i A) (oSnoc D G i A g a).
-
-Lemma NSub_dom D G g : NSub D G g -> EnvOk D.
-Proof.
-  induction 1; [ eapply Wk_dom; eassumption | assumption | assumption ].
-Qed.
-
-Lemma NSub_cod D G g : NSub D G g -> EnvOk G.
-Proof.
-  induction 1;
-    [ eapply Wk_cod; eassumption | apply envok_emp
-    | apply envok_ext; [ | assumption ];
-      eapply TyOk_EnvOk; eassumption ].
-Qed.
-
-Lemma NSub_wf D G g : NSub D G g -> wf_term ott_dtt [] g (sSub D G).
-Proof.
-  induction 1 as [ D G w HW | D HD | D G i A g a A' Hg IHg HA HA' Heq Ha ].
-  - apply Wk_wf; assumption.
-  - apply wf_Forget; apply EnvOk_wf; assumption.
-  - assert (EnvOk D) as HDok by (eapply NSub_dom; eassumption).
-    assert (EnvOk G) as HGok by (eapply NSub_cod; eassumption).
-    apply wf_Snoc; try wfx.
-    eapply wf_term_conv; [ apply (NfET_wf Ha) | ].
-    apply eq_sort_exp_ty; [ wfx | wfx | apply eq_term_sym; exact Heq ].
-Qed.
-
-
 (* ================================================================== *)
 (* (a) THE FOUR NEW SUBSTITUTION COMMUTATIONS                          *)
 (*                                                                     *)
@@ -2473,12 +2440,14 @@ Qed.
 (* ================================================================== *)
 (* (c) CLOSURE OF NORMAL CODES UNDER SUBSTITUTION                      *)
 (*                                                                     *)
-(* [NSub] as originally specified is NOT closed under lifting: the lift *)
-(* snocs the head variable, and [hd] at a [Pi_rel] type is not an       *)
-(* [NfET] (eta-long normality forbids it).  But the code fragment only  *)
-(* ever inspects the UNIVERSE-typed entries, and there [hd] IS normal   *)
-(* -- it is a normal code, by [nfcode_var].  [CSub] is [NSub] weakened  *)
-(* exactly that far; it is closed under lifting, and [NSub] implies it. *)
+(* The obvious class of normal substitutions -- every entry an [NfET] at *)
+(* the entry's normal type -- is NOT closed under lifting: the lift      *)
+(* snocs the head variable, and [hd] at a [Pi_rel] type is not an        *)
+(* [NfET] (eta-long normality forbids it).  But the code fragment only   *)
+(* ever inspects the UNIVERSE-typed entries, and there [hd] IS normal    *)
+(* -- it is a normal code, by [nfcode_var].  [CSub] is weakened exactly  *)
+(* that far, and is closed under lifting; it is the only class any       *)
+(* consumer, here or downstream, ever needs.                             *)
 (* ================================================================== *)
 
 Definition oWk1 (D i A' : term) : term :=
@@ -2575,37 +2544,6 @@ Proof.
     apply wf_Snoc; try wfx.
     eapply wf_term_conv; [ exact Hv | ].
     apply eq_sort_exp_ty; [ wfx | wfx | apply eq_term_sym; exact Heq ].
-Qed.
-
-(* The originally specified [NSub] is a [CSub]. *)
-Lemma NfET_U_inv' G i A e
-  : NfET G i A e -> forall r l, A = oU G r l -> NfCode G r l e.
-Proof.
-  destruct 1 as
-    [ G r l c Hc | G HG | G n Hn | G e He | G e He | G r l c e Hc He
-    | G rF lF lG F B t HrF HlF HlG HF HB Ht
-    | G rF lF F B t HrF HlF HF HB Ht
-    | G rF lF F B e HF HB He ];
-    intros r0 l0 HA;
-    try (cbv [oU oEl] in HA; discriminate).
-  cbv [oU] in HA; safe_invert HA; assumption.
-Qed.
-
-Lemma NSub_CSub D G g : NSub D G g -> CSub D G g.
-Proof.
-  induction 1 as
-    [ D G w HW | D HD | D G i A g a A' Hg IHg HA HA' Heq Ha ].
-  - apply csub_wk; assumption.
-  - apply csub_forget; assumption.
-  - apply csub_snoc with (A' := A');
-      [ exact IHg | eapply NSub_dom; eassumption | exact HA | exact HA'
-      | exact Heq | apply NfET_wf; exact Ha | ].
-    intros r l HA'eq.
-    assert (i = iCode l) as Hi by (eapply TyOk_U_info; [ exact HA' | exact HA'eq ]).
-    subst i.
-    exists a; split;
-      [ eapply NfET_U_inv'; [ exact Ha | exact HA'eq ]
-      | rewrite HA'eq in Ha; apply eq_term_refl; apply NfET_wf; exact Ha ].
 Qed.
 
 (* [CSub] is closed under composing with a one-step weakening ... *)
@@ -3235,21 +3173,10 @@ Qed.
 
 Definition TyOk_subst := proj1 (proj2 Nf_subst_str).
 
-(* The theorem, for the weakened class ... *)
+(* The theorem, for the class that survived: [CSub]. *)
 Theorem NfCode_csubst G r l c
   : NfCode G r l c -> forall D g, CSub D G g -> EnvOk D ->
     exists c', NfCode D r l c'
             /\ eqt (sCode D r l)
                  (oExpSubst D G g (iCode l) (oU G r l) c) c'.
 Proof. exact (proj1 (proj2 (proj2 Nf_subst_str)) G r l c). Qed.
-
-(* ... and for [NSub] exactly as originally specified. *)
-Theorem NfCode_subst G r l c
-  : NfCode G r l c -> forall D g, NSub D G g -> EnvOk D ->
-    exists c', NfCode D r l c'
-            /\ eqt (sCode D r l)
-                 (oExpSubst D G g (iCode l) (oU G r l) c) c'.
-Proof.
-  intros Hc D g Hg HD.
-  apply (NfCode_csubst Hc (NSub_CSub Hg) HD).
-Qed.
