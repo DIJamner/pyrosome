@@ -127,12 +127,7 @@ Proof.
     [ left; reflexivity | right; exists G, i, A; repeat split; assumption ].
 Qed.
 
-Lemma EnvOk_ext_inv G i A : EnvOk (oExt G i A) -> EnvOk G /\ TyOk G i A.
-Proof.
-  intro H; apply EnvOk_inv in H as [ Habs | [G0 [i0 [A0 [Heq [HG HA]]]]]].
-  - cbv [oEmp oExt] in Habs; discriminate.
-  - cbv [oExt] in Heq; safe_invert Heq; split; assumption.
-Qed.
+(* [EnvOk_ext_inv], the [ext] case of the above, is NfTyping.v's. *)
 
 (* ================================================================== *)
 (* 3.  A reducible substitution is a canonical substitution            *)

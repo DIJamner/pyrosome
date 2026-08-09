@@ -727,6 +727,11 @@ Proof.
   - right; exists r, l, c; repeat split; assumption.
 Qed.
 
+(* The INFO IS ALREADY PINNED here: this is the only [TyOk_El_inv] in the
+   development, and it is deliberately the weaker of the two forms that
+   used to exist -- it does not also conclude [i = iEl r l] for an
+   arbitrary [i], because nothing needs that.  [TyOk_inv] above is the
+   general form to reach for if it is ever wanted. *)
 Lemma TyOk_El_inv G r l c : TyOk G (iEl r l) (oEl G r l c) -> NfCode G r l c.
 Proof.
   intro H; apply TyOk_inv in H;
