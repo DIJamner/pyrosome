@@ -85,6 +85,63 @@ Proof.
     (pi_injectivity ++ nat_injectivity ++ ott_base_injectivity
        ++ ott_info_injectivity ++ subst_ott_injectivity).
 
+  (* substitution commutes with the proof-irrelevant application.            *)
+  (*                                                                         *)
+  (* The two sides live at DIFFERENT spellings of the same sort:             *)
+  (*   LHS  g[app_irr .. f a]           : ty_subst g (ty_subst <id,a> (El B))*)
+  (*   RHS  app_irr .. g[f] g[a]        : ty_subst <id,g[a]> (El (g^+)[B])   *)
+  (* They are equal (ty_subst_cmp + cmp_snoc + the id laws) and BOTH pass    *)
+  (* compute_wf_rule.  We write the RIGHT-hand spelling, because the         *)
+  (* left-hand one makes the elaborator record B's context sort with the     *)
+  (* `info rel (iota L1)` spelling of the code info, whereas the `app_irr` / *)
+  (* `lam_irr` rules of ott_pi use `info rel (next L0)` (the two are equal   *)
+  (* by "next0" but are not the same term, so a mismatch would make this     *)
+  (* rule fail to apply syntactically).  Note the elaborator normalizes the  *)
+  (* CONCLUSION sort back to the left-hand `ty_subst g (ty_subst ...)` form  *)
+  (* either way.                                                             *)
+  elab_rule {[r "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
+          "rF" : #"relevance", "lF" : #"lvl",
+          "F" : #"exp" "G'" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G'"] "rF" "lF"),
+          "B" : #"exp" (#"ext" "G'" (#"El" "F")) (#"info" #"rel" (#"next" #"L0"))
+                       (#"U" ["G" := #"ext" "G'" (#"El" "F")] #"irr" #"L0"),
+          "f" : #"exp" "G'" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G'"] ["r" := #"irr"] ["l" := #"L0"] (#"Pi_irr" ["G" := "G'"] "rF" "lF" "F" "B")),
+          "a" : #"exp" "G'" (#"info" "rF" (#"iota" "lF")) (#"El" "F")
+      ----------------------------------------------- ("app_irr subst")
+      #"exp_subst" "g" (#"app_irr" "rF" "lF" "F" "B" "f" "a")
+        = #"app_irr" "rF" "lF" (#"exp_subst" "g" "F")
+              (#"exp_subst" {inr (under' {{pe "g"}}) } "B")
+              (#"exp_subst" "g" "f") (#"exp_subst" "g" "a")
+      : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+        (#"ty_subst" (#"snoc" #"id" (#"exp_subst" "g" "a"))
+              (#"El" (#"exp_subst" {inr (under' {{pe "g"}}) } "B")))
+    ]}%prerule
+    (pi_injectivity ++ nat_injectivity ++ ott_base_injectivity
+       ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* substitution commutes with the proof-relevant application.  Same sort   *)
+  (* situation as "app_irr subst" above; here the codomain level is the      *)
+  (* variable "lG", so `next "lG"` has no alternative spelling.              *)
+  elab_rule {[r "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
+          "rF" : #"relevance", "lF" : #"lvl", "lG" : #"lvl",
+          "F" : #"exp" "G'" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G'"] "rF" "lF"),
+          "B" : #"exp" (#"ext" "G'" (#"El" "F")) (#"info" #"rel" (#"next" "lG"))
+                       (#"U" ["G" := #"ext" "G'" (#"El" "F")] #"rel" "lG"),
+          "f" : #"exp" "G'" (#"info" #"rel" (#"iota" "lG"))
+                       (#"El" ["G" := "G'"] ["r" := #"rel"] ["l" := "lG"] (#"Pi_rel" ["G" := "G'"] "rF" "lF" "lG" "F" "B")),
+          "a" : #"exp" "G'" (#"info" "rF" (#"iota" "lF")) (#"El" "F")
+      ----------------------------------------------- ("app_rel subst")
+      #"exp_subst" "g" (#"app_rel" "rF" "lF" "lG" "F" "B" "f" "a")
+        = #"app_rel" "rF" "lF" "lG" (#"exp_subst" "g" "F")
+              (#"exp_subst" {inr (under' {{pe "g"}}) } "B")
+              (#"exp_subst" "g" "f") (#"exp_subst" "g" "a")
+      : #"exp" "G" (#"info" #"rel" (#"iota" "lG"))
+        (#"ty_subst" (#"snoc" #"id" (#"exp_subst" "g" "a"))
+              (#"El" (#"exp_subst" {inr (under' {{pe "g"}}) } "B")))
+    ]}%prerule
+    (pi_injectivity ++ nat_injectivity ++ ott_base_injectivity
+       ++ ott_info_injectivity ++ subst_ott_injectivity).
+
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
