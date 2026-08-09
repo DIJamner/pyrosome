@@ -555,7 +555,7 @@ Fixing it at the source would mean either hand-elaborating the affected rules an
 `push_rule` (as `Pi.v` now does for η), or changing the extraction weight in
 `Tools/EGraph/TypeInference.v` — which re-elaborates every language in the project.
 
-**The cheap fix is to let the e-graph bridge it.** `WIP/DttIdx.v`'s `egraph_eq` discharges the
+**The cheap fix is to let the e-graph bridge it.** the e-graph (`egraph_sound`) discharges the
 index equations in 0.005 s of tactic time and 0.7 s at `Qed`, axiom-free; the conversion lemmas
 built on them (`eq_sort_ty_cong`, `eq_sort_exp_cong`, `eq_sort_exp_ty`, `wft_U0irr_next`,
 `wft_U0irr_iota`) live in `WIP/DttNfWf.v`. Every conversion the development needs falls into

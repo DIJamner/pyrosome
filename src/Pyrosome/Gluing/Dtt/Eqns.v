@@ -53,6 +53,24 @@ Import Core.Notations.
 
    These are equal sorts (by "next0"), but they are not the same TERM, so
    a lemma stated with the wrong one will simply not apply.
+
+   THIS IS NOT AN AUTHORING BUG, AND WRITING THE IDEAL REPRESENTATION DOES
+   NOT FIX IT.  Lang/OTT/Nat.v already writes [info rel (next L0)]
+   uniformly in all four of the Nat/Empty rules above.  [infer_rule] does
+   not treat the written conclusion sort as authoritative: it loads the
+   sort into an e-graph, saturates, and re-EXTRACTS a representative with
+   [TypeInference.mk_weight], which charges 1 per non-hole atom.  The two
+   spellings both cost 4, so the winner is an arbitrary tie-break -- and it
+   depends on the AMBIENT LANGUAGE, not on the rule.  Checked both ways:
+   elaborated in isolation, "Empty" comes out [next L0] whichever spelling
+   is written (the two prerules elaborate to the IDENTICAL rule); elaborated
+   inside Nat.v's [Derive], after Nat/zero/suc have been pushed, it comes
+   out [iota L1].  See design.md section 9a.
+
+   The bridge is [eq_next0] below, lifted to the sorts by
+   [NfTyping.eq_info_next0] and the [wft_c2i]/[wft_i2c] pair of
+   NfWk.v -- not, as a first pass tried, by running the e-graph on each
+   instance.
    ===================================================================== *)
 
 (* A rule's context is well formed, since the language is.
