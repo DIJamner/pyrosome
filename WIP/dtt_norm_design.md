@@ -194,6 +194,47 @@ Effort estimate: a first-order normalization proof for explicit substitutions ov
 term algebra. Comparable to `Gluing/Stlc/RSub.v` + half of `NormalForms.v`, i.e. ~600–1200
 lines, with no logical relation.
 
+### 4a. The split, and why it is not circular
+
+Layer 0.5 splits in two, and the seam between them is the one thing to get right.
+
+* **`Dtt/Erase.v` (done)** — pure syntax, no model, no `eq_term` reasoning. It gives a de Bruijn
+  domain (`rcode`/`rty`/`renv`), erasure relations for `EnvOk`/`TyOk`/`NfCode`/`VarT`, totality
+  and functionality of the erasure on normal forms, and **injectivity of the erasure**:
+  same environment + same erasure ⇒ syntactically equal.
+* **`Dtt/Rigid.v`** — the rigid model, which supplies the semantic input: provably-equal things
+  have equal erasures.
+
+The seam is an explicit hypothesis of the first half:
+
+```coq
+Definition WknInj : Prop := forall G j B i1 A1 i2 A2 A',
+  TyOk G i1 A1 -> TyOk G i2 A2 ->
+  eqt (sTy (oExt G j B) i1) (oTySubst (oExt G j B) G (oWkn G j B) i1 A1) A' ->
+  eqt (sTy (oExt G j B) i2) (oTySubst (oExt G j B) G (oWkn G j B) i2 A2) A' -> A1 = A2.
+```
+
+**Its quantification is the whole point.** `A1` and `A2` live in the *shorter* `G`; only `A'`
+lives in `oExt G j B`. The naive statement — "the normal representative named over
+`oExt G j B` is unique" — is an instance of `TyOk_inj` at the *same* environment, and composing
+that with the rigid model would be circular. As stated, the model discharges it by sending both
+`wkn`-instances to `rshift` of the respective erasures; `rshift` is injective, so the erasures
+agree, and `TyOk_erase_inj` **at `G`** finishes. The recursion is on environment length and is
+well founded.
+
+Why the hypothesis exists at all: **normal environments do not determine each slot's type
+syntactically.** `VarT` names the normal representative of a weakened type and pins it only by an
+`eq_term` premise, and the index-`k+1` variable term *contains* the named representative of the
+index-`k` one. So erasure-injectivity on variables is exactly uniqueness of that naming.
+
+**The alternative, considered and declined.** All of this disappears if Layer 1's `VarT`/`NeET`
+(and `RTy`'s Π clause) named the *computed* normal representative rather than an arbitrary
+provably-equal one — §2 says the substitution action on normal forms is a total function, so it
+is available. That would also make `RTy_fun` (§7) an ordinary induction instead of one
+parameterised by `NfCode_inj`/`TyOk_inj`. It is declined because the existential form *does*
+compose, via the seam above, and switching would invalidate several thousand verified lines.
+Worth revisiting only if a later layer hits the same wall a third time.
+
 **Kill-switch.** If `NfCode_inj` is not proved by the end of Layer 0.5, stop and re-plan —
 every later layer consumes it, and there is no second route to it.
 
