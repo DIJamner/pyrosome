@@ -25,19 +25,21 @@ Import Core.Notations.
        of the subject, with no side conditions at all;
      * and [RTm]'s elimination direction is definitionally free.
 
-   Two things are NOT here, and both are blocked on layers that do not
-   exist yet rather than on effort; see the section headers for the exact
-   obstruction.
+   Two things are NOT here unconditionally; see the section headers for
+   the exact obstruction in each case.
 
      * [RTy_fun] (syntactic functionality).  The Pi clauses name their
        domain/codomain candidates at a CHOSEN normal representative
        ([F']/[C]), and two derivations at the same syntactic type may
        choose different ones.  Identifying them is exactly Layer 0.5's
-       [NfCode_inj]/[TyOk_inj], so [RTy_fun] is proved here from those two
-       statements as explicit hypotheses ([NfCodeInj]/[TyOkInj] below,
-       verbatim from WIP/dtt_norm_design.md section 4).
+       [NfCode_inj]/[TyOk_inj], which does not exist yet, so [RTy_fun] is
+       proved here from those two statements as explicit hypotheses
+       ([NfCodeInj]/[TyOkInj] below, verbatim from
+       WIP/dtt_norm_design.md section 4).  Nothing else is missing: the
+       four leaf clauses and the whole induction are discharged.
 
-     * [RTy_cand_eq] at the two Pi clauses.  See the header of section 3.
+     * [RTy_cand_eq] at the two Pi clauses -- pure substitution-calculus
+       volume, not a missing input.  See the header of section 3b.
 
    STRUCTURAL NOTE.  Coq's generated [RTy_ind] has NO induction hypothesis
    in either Pi case: the recursive occurrences of [RTy] sit under [ex] and
@@ -439,4 +441,245 @@ Proof.
   intros Hx H e e' He Heq.
   apply (RTy_var_e e' Hx H).
   eapply HasNe_eq; [ apply (RTy_var_e e Hx H); exact He | exact Heq ].
+Qed.
+
+(* ================================================================== *)
+(* 2b. Syntactic functionality                                         *)
+(* ================================================================== *)
+
+(* WHY THIS IS NOT UNCONDITIONAL.  At a leaf clause the candidate is
+   literally determined by the type index, so functionality there is the
+   corresponding [RTy_*_e] and nothing else.  At a Pi clause it is not:
+   the clause names its domain and codomain candidates at a CHOSEN normal
+   representative ([F'] for [F[w]], [C] for the codomain instance), and it
+   only records that the choice is PROVABLY equal to the raw substitution
+   instance.  Two derivations at the same syntactic type may therefore
+   choose different representatives, and the induction hypothesis -- which
+   compares candidates at the SAME syntactic type -- does not apply until
+   the two choices are identified.
+
+   Identifying them is exactly Layer 0.5 (WIP/dtt_norm_design.md section 4),
+   whose two exports are reproduced verbatim below as hypotheses.  Once
+   [Dtt/Rigid.v] exists, [RTy_fun] is [RTy_fun_of_inj NfCode_inj TyOk_inj]
+   and nothing else changes. *)
+
+Definition NfCodeInj : Prop :=
+  forall G r l c1 c2,
+    NfCode G r l c1 -> NfCode G r l c2 -> eqt (sCode G r l) c1 c2 -> c1 = c2.
+
+Definition TyOkInj : Prop :=
+  forall G i A1 A2,
+    TyOk G i A1 -> TyOk G i A2 -> eqt (sTy G i) A1 A2 -> A1 = A2.
+
+Lemma iff_trans_r (A B C : Prop) : (A <-> B) -> (C <-> B) -> (A <-> C).
+Proof. tauto. Qed.
+
+Theorem RTy_fun_of_inj (Hci : NfCodeInj) (Hti : TyOkInj)
+  : forall G i A P, RTy G i A P ->
+      forall Q, RTy G i A Q -> forall e, P e <-> Q e.
+Proof.
+  apply (@RTy_strong_ind
+           (fun G i A P => forall Q, RTy G i A Q -> forall e, P e <-> Q e)).
+  (* U *)
+  - intros G r l P HG Hr Hl Hiff Q HQ e.
+    eapply iff_trans_r; [ apply Hiff | apply RTy_U_e; exact HQ ].
+  (* Nat *)
+  - intros G P HG Hiff Q HQ e.
+    eapply iff_trans_r; [ apply Hiff | apply RTy_nat_e; exact HQ ].
+  (* Empty *)
+  - intros G P HG Hiff Q HQ e.
+    eapply iff_trans_r; [ apply Hiff | apply RTy_empty_e; exact HQ ].
+  (* variable *)
+  - intros G r l c P Hx Hiff Q HQ e.
+    eapply iff_trans_r;
+      [ apply Hiff | eapply RTy_var_e; [ exact Hx | exact HQ ] ].
+  (* Pi_rel *)
+  - intros G rF lF lG F B P Pd Pc HrF HlF HlG HF HB Hd Hc Hiff Q HQ e.
+    apply RTy_pi_rel_e in HQ.
+    destruct HQ as [Pd' [Pc' (HrF'&HlF'&HlG'&HF'&HB'&Hd'&Hc'&Hiff')]].
+    assert (Hdom : forall D w a, Wk D G w -> EnvOk D ->
+                     (Pd D w a <-> Pd' D w a)).
+    { intros D w a Hw HD.
+      destruct (Hd D w Hw HD) as [F1 (HN1 & He1 & HR1 & HI1)].
+      destruct (Hd' D w Hw HD) as [F2 (HN2 & He2 & HR2)].
+      assert (F1 = F2) as ->.
+      { eapply Hci; [ exact HN1 | exact HN2 | ].
+        eapply eq_term_trans; [ apply eq_term_sym; exact He1 | exact He2 ]. }
+      apply (HI1 _ HR2). }
+    assert (Hcod : forall D w a x, Wk D G w -> EnvOk D ->
+                     Pd D w a -> Pd' D w a -> (Pc D w a x <-> Pc' D w a x)).
+    { intros D w a x Hw HD Ha Ha'.
+      destruct (Hc D w a Hw HD Ha) as [C1 (HT1 & He1 & HR1 & HI1)].
+      destruct (Hc' D w a Hw HD Ha') as [C2 (HT2 & He2 & HR2)].
+      assert (C1 = C2) as ->.
+      { eapply Hti; [ exact HT1 | exact HT2 | ].
+        eapply eq_term_trans; [ apply eq_term_sym; exact He1 | exact He2 ]. }
+      apply (HI1 _ HR2). }
+    split; intro Hx.
+    + apply Hiff'; intros D w a Hw HD Ha'.
+      assert (Ha : Pd D w a) by (apply (Hdom D w a Hw HD); exact Ha').
+      apply (Hcod D w a _ Hw HD Ha Ha').
+      apply (proj1 (Hiff e) Hx); assumption.
+    + apply Hiff; intros D w a Hw HD Ha.
+      assert (Ha' : Pd' D w a) by (apply (Hdom D w a Hw HD); exact Ha).
+      apply (Hcod D w a _ Hw HD Ha Ha').
+      apply (proj1 (Hiff' e) Hx); assumption.
+  (* Pi_irr *)
+  - intros G rF lF F B P Pd Pc HrF HlF HF HB Hd Hc Hiff Q HQ e.
+    apply RTy_pi_irr_e in HQ.
+    destruct HQ as [Pd' [Pc' (HrF'&HlF'&HF'&HB'&Hd'&Hc'&Hiff')]].
+    assert (Hdom : forall D w a, Wk D G w -> EnvOk D ->
+                     (Pd D w a <-> Pd' D w a)).
+    { intros D w a Hw HD.
+      destruct (Hd D w Hw HD) as [F1 (HN1 & He1 & HR1 & HI1)].
+      destruct (Hd' D w Hw HD) as [F2 (HN2 & He2 & HR2)].
+      assert (F1 = F2) as ->.
+      { eapply Hci; [ exact HN1 | exact HN2 | ].
+        eapply eq_term_trans; [ apply eq_term_sym; exact He1 | exact He2 ]. }
+      apply (HI1 _ HR2). }
+    assert (Hcod : forall D w a x, Wk D G w -> EnvOk D ->
+                     Pd D w a -> Pd' D w a -> (Pc D w a x <-> Pc' D w a x)).
+    { intros D w a x Hw HD Ha Ha'.
+      destruct (Hc D w a Hw HD Ha) as [C1 (HT1 & He1 & HR1 & HI1)].
+      destruct (Hc' D w a Hw HD Ha') as [C2 (HT2 & He2 & HR2)].
+      assert (C1 = C2) as ->.
+      { eapply Hti; [ exact HT1 | exact HT2 | ].
+        eapply eq_term_trans; [ apply eq_term_sym; exact He1 | exact He2 ]. }
+      apply (HI1 _ HR2). }
+    split; intro Hx.
+    + apply Hiff'; split;
+        [ apply (proj1 (Hiff e) Hx) | ].
+      intros D w a Hw HD Ha'.
+      assert (Ha : Pd D w a) by (apply (Hdom D w a Hw HD); exact Ha').
+      apply (Hcod D w a _ Hw HD Ha Ha').
+      apply (proj1 (Hiff e) Hx); assumption.
+    + apply Hiff; split;
+        [ apply (proj1 (Hiff' e) Hx) | ].
+      intros D w a Hw HD Ha.
+      assert (Ha' : Pd' D w a) by (apply (Hdom D w a Hw HD); exact Ha).
+      apply (Hcod D w a _ Hw HD Ha Ha').
+      apply (proj1 (Hiff' e) Hx); assumption.
+Qed.
+
+(* ================================================================== *)
+(* 2c. [RTm] as the universally-quantified form                        *)
+(* ================================================================== *)
+
+(* The elimination direction is definitional. *)
+Lemma RTm_elim G i A P e : RTy G i A P -> RTm G i A e -> P e.
+Proof. intros HP He; exact (He P HP). Qed.
+
+(* The introduction direction is precisely where functionality is used. *)
+Theorem RTm_intro_of_inj (Hci : NfCodeInj) (Hti : TyOkInj) G i A P e
+  : RTy G i A P -> P e -> RTm G i A e.
+Proof.
+  intros HP He Q HQ.
+  assert (Hiff := RTy_fun_of_inj Hci Hti HP HQ e).
+  apply Hiff; exact He.
+Qed.
+
+(* ================================================================== *)
+(* Sort congruence at [exp] (needed to move a subject equation between  *)
+(* provably equal types)                                                *)
+(* ================================================================== *)
+
+Lemma ott_dtt_sort_cong_inst (name : string) c' args (s1 s2 : list term)
+  : In (name, sort_rule c' args) ott_dtt ->
+    eq_args (Model := core_model ott_dtt) [] c' s1 s2 ->
+    eq_sort ott_dtt [] (scon name s1) (scon name s2).
+Proof.
+  intros Hin Hargs.
+  eapply sort_con_congruence; try typeclasses eauto;
+    [ exact Hin | apply ott_dtt_wf | exact Hargs ].
+Qed.
+
+Ltac scong_step nm s1 s2 :=
+  refine (ott_dtt_sort_cong_inst (named_list_lookup_err_in ott_dtt nm eq_refl)
+            (s1 := s1) (s2 := s2) _);
+  eq_args_solve.
+
+Lemma sExp_cong G1 G2 i1 i2 A1 A2
+  : eqt sEnv G1 G2 ->
+    eqt sInfo i1 i2 ->
+    eqt (sTy G2 i2) A1 A2 ->
+    eq_sort ott_dtt [] (sExp G1 i1 A1) (sExp G2 i2 A2).
+Proof. intros; scong_step "exp" [A1; i1; G1] [A2; i2; G2]. Qed.
+
+(* The special case that matters: two provably equal TYPES give the same
+   [exp] sort.  No side conditions -- inverting the sort of the type
+   equation recovers everything. *)
+Lemma sExp_cong_ty G i A1 A2
+  : eqt (sTy G i) A1 A2 -> eq_sort ott_dtt [] (sExp G i A1) (sExp G i A2).
+Proof.
+  intro H.
+  destruct (wf_sort_ty_inv (eqt_wf_sort H)) as [HG Hi].
+  apply sExp_cong; [ apply eq_term_refl | apply eq_term_refl | ]; assumption.
+Qed.
+
+(* ================================================================== *)
+(* 3b. The corollaries of candidate closure                            *)
+(* ================================================================== *)
+
+(* [RTy_cand_eq] in full -- i.e. INCLUDING the two Pi clauses -- is not
+   proved here.  The obstruction is NOT the induction (section 2 supplies
+   the recursor) and NOT a missing hypothesis; it is sheer
+   substitution-calculus volume.  Precisely: transporting the codomain
+   candidate along the subject equation asks for
+
+     eqt (sExp D (iEl oRel lG) C)
+         (appAtRel D G rF lF lG F B w e a) (appAtRel D G rF lF lG F B w e' a)
+
+   whose SORT is the clause's chosen representative [C], whereas
+   [AppRel_cong] delivers the equation at [app_rel]'s own conclusion sort
+   [sAppRelConcl D rF lF lG (wkCode ...) (wkCodCodeRel ...) a].  Bridging
+   the two is
+
+     (a) the substitution identity  <id,a> o (w lifted) = <w,a>
+         (by "cmp_snoc", "cmp_assoc", "wkn_snoc", "id_left", "snoc_hd"),
+     (b) "ty_subst_cmp" + "El subst" to fold that into the type, and
+     (c) "Pi_rel subst" + "El subst" to type the weakened function at
+         [El D rel lG (Pi_rel D rF lF lG F[w] B[w^])],
+
+   each step carrying its own [wf_term] side conditions and a [wf_term_conv]
+   for the info/sort mismatch.  Every side condition IS recoverable inside
+   this file -- [WfCutElim.invert_wf_term_con] inverts a [wf_term] of a
+   [con] into well-formedness of its arguments, and the clause's own
+   premise
+
+     eqt (sTy D (iEl oRel lG)) (codAtRel D G rF lF lG F B w a) C
+
+   already contains [w], [F], [B] and the Kripke argument [a] as
+   subterms, so NEITHER Layer 1's [Wk_wf]/[NfCode_wf] NOR any assumption
+   about [Pd]'s members being well typed is actually needed.  (In
+   particular the apparent gap "[rty_pi_rel] imposes no well-typedness on
+   [Pd]" is not real: whenever [Pd D w a] holds, the codomain premise
+   fires and its equation forces [a] to be a well-formed term.)  It is
+   simply several hundred lines of equational bookkeeping, which belongs
+   with the rest of the Pi interface rather than in this elementary file.
+
+   The two corollaries below are therefore stated against [CandEqOk], the
+   full statement; instantiate them once the Pi cases land. *)
+
+Definition CandEqOk : Prop := forall G i A P, RTy G i A P -> CandEq G i A P.
+
+Lemma RTm_eq (Hce : CandEqOk) G i A e e'
+  : RTm G i A e -> eqt (sExp G i A) e e' -> RTm G i A e'.
+Proof. intros He Heq P HP; exact (Hce _ _ _ _ HP e e' (He P HP) Heq). Qed.
+
+Lemma RTmN_eq (Hce : CandEqOk) G i A e e'
+  : RTmN G i A e -> eqt (sExp G i A) e e' -> RTmN G i A e'.
+Proof.
+  intros He Heq A0 HT HA0.
+  eapply (RTm_eq Hce); [ apply He; assumption | ].
+  eapply eq_term_conv; [ exact Heq | apply sExp_cong_ty; exact HA0 ].
+Qed.
+
+(* Closure of [RTyN] under equality of the TYPE, on the other hand, is
+   free: the normal representative is unchanged. *)
+Lemma RTyN_eq G i A A'
+  : RTyN G i A -> eqt (sTy G i) A A' -> RTyN G i A'.
+Proof.
+  intros [A0 [P (HT & Heq & HR)]] Heq'.
+  exists A0, P; split; [ exact HT | split; [ | exact HR ] ].
+  eapply eq_term_trans; [ apply eq_term_sym; exact Heq' | exact Heq ].
 Qed.
