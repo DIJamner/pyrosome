@@ -42,7 +42,7 @@ Proof.
      (Agda Typed.agda Id-ℕ-00.) *)
   elab_rule {[r "G" : #"env"
       ----------------------------------------------- ("Id-Nat-00")
-      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) #"zero" #"zero"
+      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"]) #"zero" #"zero"
         = #"Pi_irr" #"irr" #"L0" (#"Empty" ["G" := "G"])
             (#"Empty" ["G" := #"ext" "G" (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"] (#"Empty" ["G" := "G"]))])
       : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
