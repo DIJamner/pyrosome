@@ -24,21 +24,20 @@ Import Core.Notations.
    ([ceq_relevance] .. [ceq_exp], [Ceq_relevance_e] .. [Ceq_exp_e]);
    [Ceq_term] is inverted by hand nowhere.
 
-   RESULT.  Seven of the eight structural/sort obligations are proved
-   outright ([cterm_var], [csort_by], [cterm_conv], [csort_trans],
-   [csort_sym], [cterm_trans], [cterm_sym]), and so are six of
-   [csort_cong]'s nine cases.  The three substantive [csort_cong] cases --
-   [sub], [ty], [exp] -- are NOT provable against the present [Ceq_term]:
-   the contract's semantic conjuncts are stated at the RAW index terms
-   ([G] and [i]), but [csort_cong] varies those indices up to provable
-   equality, and neither [RSub] (a [Fixpoint] on [G]'s syntax) nor
-   [RTy]/[TyOk] (whose info index is deliberately un-normalized) is stable
-   under it.  Section 5 makes this precise and machine-checked: from the
-   [ty] transfer ALONE it derives an equation [ott_dtt] does not prove.
-   The three are therefore isolated as named hypotheses in the style of
-   WIP/DttLRBasics.v's [NfCodeInj]/[TyOkInj]/[CandEqOk], so that
-   [sort_cong_obligation] and the record assembly (section 6) are banked
-   and the gap is one named statement rather than a hole.
+   RESULT.  All sixteen obligations covered here are proved outright and
+   unconditionally: the seven structural/sort fields ([cterm_var],
+   [csort_by], [cterm_conv], [csort_trans], [csort_sym], [cterm_trans],
+   [cterm_sym]) and all nine cases of [csort_cong].  Only [cterm_cong] and
+   [cterm_by] are developed elsewhere.
+
+   THE SORT TRANSFERS ARE CHEAP -- BUT ONLY BECAUSE EVERY SORT INDEX IS
+   QUANTIFIED UP TO [eq_term].  See the note at section 4's [ty] case: an
+   earlier version of Layers 2/3 held the info index and the codomain
+   environment FIXED, and the resulting [csort_cong] was refutable modulo
+   consistency.  With [RTmN]/[RTyN] quantifying [i] and [RSubN] quantifying
+   [G], each transfer direction is now a use of transitivity
+   ([RTyN_eq_info] / [RTmN_eq_info] / [RSubN_env]) composed with the
+   type/subject closure lemmas and one congruence from WIP/DttEqns.v.
    ===================================================================== *)
 
 Local Notation eqt := (eq_term ott_dtt []).
@@ -56,6 +55,34 @@ Proof.
   intro H; apply RSub_inv in H
     as [[-> Hf] | [G0 [i [A [g0 [v [-> [Hs _]]]]]]]];
     eapply eqt_wf_l; eassumption.
+Qed.
+
+(* The same for a substitution reducible only up to a provable equality of
+   the codomain environment: transport the sort along [sSub_cong]. *)
+Lemma RSubN_wf D G g : RSubN D G g -> wft g (sSub D G).
+Proof.
+  intros [G0 (HG0 & Heq & HR)].
+  apply RSub_wf in HR.
+  eapply wf_term_conv; [ exact HR | ].
+  apply sSub_cong;
+    [ apply eq_term_refl; eapply wft_sub_dom; exact HR
+    | apply eq_term_sym; exact Heq ].
+Qed.
+
+(* [RTmN] is closed under provable equality of the TYPE, exactly as
+   [RTyN_eq] is: the representative is quantified up to [eq_term] already,
+   so this is one transitivity plus the sort conversion that [RTmN]'s
+   quantified info index forces ([sTy_cong]).  The [subject] and [info]
+   versions are [RTmN_eq] / [RTmN_eq_info] in Layers 2a/2b. *)
+Lemma RTmN_eq_ty G i A A' e
+  : RTmN G i A e -> eqt (sTy G i) A A' -> RTmN G i A' e.
+Proof.
+  intros He Heq i0 A0 Hi HT HA0.
+  apply He; try assumption.
+  eapply eq_term_trans; [ | exact HA0 ].
+  destruct (wf_sort_ty_inv (eqt_wf_sort HA0)) as [HG _].
+  eapply eq_term_conv; [ exact Heq | ].
+  apply sTy_cong; [ apply eq_term_refl; exact HG | exact Hi ].
 Qed.
 
 (* ================================================================== *)
@@ -177,12 +204,12 @@ Proof.
     apply ceq_sub; [ apply eq_term_sym; exact Ha | ].
     intros D h HD Hh.
     assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
-    apply RSub_eq with (g := oCmp D G G' h g1); [ apply Hb; assumption | ].
+    apply RSubN_eq with (g := oCmp D G G' h g1); [ apply Hb; assumption | ].
     apply Cmp_cong;
       [ apply eq_term_refl; exact HwD
       | apply eq_term_refl; exact HwG
       | apply eq_term_refl; exact HwG'
-      | apply eq_term_refl; apply RSub_wf; exact Hh
+      | apply eq_term_refl; apply RSubN_wf; exact Hh
       | exact Ha ].
   - (* types *)
     destruct (wft_ty_inv (eqt_wf_l Ha)) as [HwG Hwi].
@@ -193,7 +220,7 @@ Proof.
     apply TySubst_cong;
       [ apply eq_term_refl; exact HwD
       | apply eq_term_refl; exact HwG
-      | apply eq_term_refl; apply RSub_wf; exact Hg
+      | apply eq_term_refl; apply RSubN_wf; exact Hg
       | apply eq_term_refl; exact Hwi
       | exact Ha ].
   - (* terms *)
@@ -205,56 +232,200 @@ Proof.
     apply ExpSubst_cong;
       [ apply eq_term_refl; exact HwD
       | apply eq_term_refl; exact HwG
-      | apply eq_term_refl; apply RSub_wf; exact Hg
+      | apply eq_term_refl; apply RSubN_wf; exact Hg
       | apply eq_term_refl; exact Hwi
       | apply eq_term_refl; exact HwA
       | exact Ha ].
 Qed.
 
+
 (* ================================================================== *)
 (* 4.  Sort congruence                                                 *)
 (* ================================================================== *)
 
-(* [ott_dtt] has nine sort rules.  Computing the membership premise splits
-   the obligation nine ways; the goals come out in the language's own
-   order:
+(* [ott_dtt] has nine sort rules, so computing the membership premise
+   splits the obligation nine ways.  The goals come out in the language's
+   own order:
 
      exp, ty, sub, env, tyinfo, tlvl, ltl, lvl, relevance.
 
-   SIX of them are settled outright by [Ceq_sort_refl]:
+   SIX are settled outright by [Ceq_sort_refl]:
 
      - [env], [tyinfo], [tlvl], [lvl], [relevance] are NULLARY sort rules,
        so [s1 = s2 = []] and the two sorts are syntactically identical;
-     - [ltl]'s two arguments are at [lvl], where [Ceq_term] forces
-       syntactic equality ([Ceq_lvl_e]), so again [s1 = s2].
-       (Proof irrelevance -- [eq_ltl_irr] -- is not even needed: it would
-       be, if [Ceq_term] at [lvl] carried an equation rather than an
-       identity.)
+     - [ltl]'s two arguments are at [lvl], where [Ceq_term] IS identity
+       ([Ceq_lvl_e]), so again [s1 = s2].  (Proof irrelevance --
+       [eq_ltl_irr] -- is not needed: it would be, if [Ceq_term] at [lvl]
+       carried an equation rather than an identity.)
 
-   The remaining THREE -- [sub], [ty], [exp] -- are the substantive ones
-   and are NOT provable against the present contract; see section 5.  They
-   are isolated here as three named statements and taken as hypotheses, in
-   the same style as WIP/DttLRBasics.v's [NfCodeInj]/[TyOkInj]/[CandEqOk],
-   so that the six settled cases and the plumbing are banked. *)
+   The three substantive ones are the transfer lemmas below. *)
 
-Definition SubSortTransfer : Prop :=
-  forall G1 G2 G1' G2',
-    Ceq_term sEnv G1 G2 -> Ceq_term sEnv G1' G2' ->
+(* ---- the three transfers ---------------------------------------- *)
+
+(* Each is stated in ONE direction only and applied twice, with the
+   argument equations reversed, to give both halves of [Ceq_sort]. *)
+
+Lemma ceq_sub_transfer G1 G2 G1' G2' g1 g2
+  : eqt sEnv G1 G2 -> eqt sEnv G1' G2' ->
+    Ceq_term (sSub G1 G1') g1 g2 -> Ceq_term (sSub G2 G2') g1 g2.
+Proof.
+  intros H12 H12' Hc.
+  apply Ceq_sub_e in Hc as [Ha Hb].
+  assert (eqt (sSub G2 G2') g1 g2) as Ha'
+      by (eapply eq_term_conv; [ exact Ha | apply sSub_cong; assumption ]).
+  apply ceq_sub; [ exact Ha' | ].
+  intros D h HD Hh.
+  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
+  assert (wft h (sSub D G2)) as Hwh by (apply RSubN_wf; exact Hh).
+  (* [RSubN] is stable under equality of the codomain environment in BOTH
+     directions -- that is the whole point of the wrapper. *)
+  apply RSubN_eq with (g := oCmp D G1 G1' h g1).
+  - apply RSubN_env with (G := G1');
+      [ apply Hb; [ exact HD | eapply RSubN_env;
+                    [ exact Hh | apply eq_term_sym; exact H12 ] ]
+      | exact H12' ].
+  - apply Cmp_cong;
+      [ apply eq_term_refl; exact HwD
+      | exact H12
+      | exact H12'
+      | apply eq_term_refl; exact Hwh
+      | apply eq_term_refl; eapply eqt_wf_l; exact Ha' ].
+Qed.
+
+(* THE [ty] CASE, AND THE BUG THAT IS NOT THERE ANY MORE.
+   [RTyN D i X] asks for a normal representative [A0] with [TyOk D i0 A0]
+   for SOME [i0] provably equal to [i].  An earlier version of WIP/DttLR.v
+   held [i0 := i] fixed, and this transfer was then REFUTABLE modulo
+   consistency, not merely unproved.  The reason: [TyOk]'s info index is
+   syntactic BY DESIGN (WIP/DttNf.v's header) -- a universe is pinned at
+   [iCode l = info rel (next l)], an [El] at [iEl r l = info r (iota l)] --
+   whereas "next0" makes [iCode L0] and [iEl rel L1] provably equal infos,
+   and [Ceq_term] at [tyinfo] relates them (it only demands equal
+   [ninfo]s).  So [ty G (iCode L0)] and [ty G (iEl rel L1)] are provably
+   equal sorts whose sets of normal representatives are DISJOINT.  Taking
+   [A1 := U emp irr L0], whose reducibility at [iCode L0] is immediate from
+   "U subst" and [rty_U], the fixed-index transfer forced
+   [RTyN emp (iEl rel L1) (U emp irr L0)]; the only [TyOk]s at that info
+   are [El emp rel L1 c], and the only normal code there (no variables in
+   [emp], [Nat] is at L0, [Empty]/[Pi_irr] are irrelevant) is a [Pi_rel] --
+   i.e. the closed universe would have to be provably equal to the [El] of
+   a closed relevant [Pi] code, which [ott_dtt] does not prove (there is no
+   code for a universe: [U] is a sort former, see Lang/OTT/Base.v).
+   Quantifying [i0] absorbs the aliasing here, leaving [TyOk]'s pinned
+   infos alone, and the transfer becomes [RTyN_eq_info] -- transitivity. *)
+Lemma ceq_ty_transfer G1 G2 i1 i2 A1 A2
+  : eqt sEnv G1 G2 -> eqt sInfo i1 i2 ->
+    Ceq_term (sTy G1 i1) A1 A2 -> Ceq_term (sTy G2 i2) A1 A2.
+Proof.
+  intros H12 Hi12 Hc.
+  apply Ceq_ty_e in Hc as [Ha Hb].
+  assert (eqt (sTy G2 i2) A1 A2) as Ha'
+      by (eapply eq_term_conv; [ exact Ha | apply sTy_cong; assumption ]).
+  apply ceq_ty; [ exact Ha' | ].
+  intros D g HD Hg.
+  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
+  assert (wft g (sSub D G2)) as Hwg by (apply RSubN_wf; exact Hg).
+  apply RTyN_eq with (A := oTySubst D G1 g i1 A1).
+  - apply RTyN_eq_info with (i := i1); [ | exact Hi12 ].
+    apply Hb; [ exact HD | ].
+    eapply RSubN_env; [ exact Hg | apply eq_term_sym; exact H12 ].
+  - apply TySubst_cong;
+      [ apply eq_term_refl; exact HwD
+      | exact H12
+      | apply eq_term_refl; exact Hwg
+      | exact Hi12
+      | apply eq_term_refl; eapply eqt_wf_l; exact Ha' ].
+Qed.
+
+Lemma ceq_exp_transfer G1 G2 i1 i2 A1 A2 e1 e2
+  : eqt sEnv G1 G2 -> eqt sInfo i1 i2 -> eqt (sTy G2 i2) A1 A2 ->
+    Ceq_term (sExp G1 i1 A1) e1 e2 -> Ceq_term (sExp G2 i2 A2) e1 e2.
+Proof.
+  intros H12 Hi12 HA Hc.
+  apply Ceq_exp_e in Hc as [Ha Hb].
+  assert (eqt (sExp G2 i2 A2) e1 e2) as Ha'
+      by (eapply eq_term_conv; [ exact Ha | apply sExp_cong; assumption ]).
+  apply ceq_exp; [ exact Ha' | ].
+  intros D g HD Hg.
+  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
+  assert (wft g (sSub D G2)) as Hwg by (apply RSubN_wf; exact Hg).
+  assert (eqt (sTy D i2)
+              (oTySubst D G1 g i1 A1) (oTySubst D G2 g i2 A2)) as Hty.
+  { apply TySubst_cong;
+      [ apply eq_term_refl; exact HwD
+      | exact H12
+      | apply eq_term_refl; exact Hwg
+      | exact Hi12
+      | exact HA ]. }
+  (* three moves, each side-condition-free: the info, then the type, then
+     the subject. *)
+  apply RTmN_eq with (e := oExpSubst D G1 g i1 A1 e1).
+  - apply RTmN_eq_ty with (A := oTySubst D G1 g i1 A1); [ | exact Hty ].
+    apply RTmN_eq_info with (i := i1); [ | exact Hi12 ].
+    apply Hb; [ exact HD | ].
+    eapply RSubN_env; [ exact Hg | apply eq_term_sym; exact H12 ].
+  - apply ExpSubst_cong;
+      [ apply eq_term_refl; exact HwD
+      | exact H12
+      | apply eq_term_refl; exact Hwg
+      | exact Hi12
+      | exact HA
+      | apply eq_term_refl; eapply eqt_wf_l; exact Ha' ].
+Qed.
+
+(* ---- packaged as [Ceq_sort] -------------------------------------- *)
+
+(* Each transfer lemma is applied twice, with the argument equations
+   reversed.  Only the [exp] case needs a conversion to do so: its type
+   equation is stated at the RIGHT sort ([sTy G2 i2], as [ceq_args]
+   delivers it), and the reversed direction wants it at the left one. *)
+
+Lemma Ceq_sort_sub G1 G2 G1' G2'
+  : eqt sEnv G1 G2 -> eqt sEnv G1' G2' ->
     Ceq_sort (sSub G1 G1') (sSub G2 G2').
+Proof.
+  intros H12 H12'; repeat split.
+  - apply sSub_cong; assumption.
+  - intros; eapply ceq_sub_transfer; eassumption.
+  - intros; eapply ceq_sub_transfer;
+      [ apply eq_term_sym; exact H12
+      | apply eq_term_sym; exact H12'
+      | eassumption ].
+Qed.
 
-Definition TySortTransfer : Prop :=
-  forall G1 G2 i1 i2,
-    Ceq_term sEnv G1 G2 -> Ceq_term sInfo i1 i2 ->
-    Ceq_sort (sTy G1 i1) (sTy G2 i2).
+Lemma Ceq_sort_ty G1 G2 i1 i2
+  : eqt sEnv G1 G2 -> eqt sInfo i1 i2 -> Ceq_sort (sTy G1 i1) (sTy G2 i2).
+Proof.
+  intros H12 Hi12; repeat split.
+  - apply sTy_cong; assumption.
+  - intros; eapply ceq_ty_transfer; eassumption.
+  - intros; eapply ceq_ty_transfer;
+      [ apply eq_term_sym; exact H12
+      | apply eq_term_sym; exact Hi12
+      | eassumption ].
+Qed.
 
-Definition ExpSortTransfer : Prop :=
-  forall G1 G2 i1 i2 A1 A2,
-    Ceq_term sEnv G1 G2 -> Ceq_term sInfo i1 i2 ->
-    Ceq_term (sTy G2 i2) A1 A2 ->
+Lemma Ceq_sort_exp G1 G2 i1 i2 A1 A2
+  : eqt sEnv G1 G2 -> eqt sInfo i1 i2 -> eqt (sTy G2 i2) A1 A2 ->
     Ceq_sort (sExp G1 i1 A1) (sExp G2 i2 A2).
+Proof.
+  intros H12 Hi12 HA.
+  assert (eqt (sTy G1 i1) A1 A2) as HA'
+      by (eapply eq_term_conv;
+          [ exact HA | apply eq_sort_sym; apply sTy_cong; assumption ]).
+  repeat split.
+  - apply sExp_cong; assumption.
+  - intros; eapply ceq_exp_transfer; eassumption.
+  - intros; eapply ceq_exp_transfer;
+      [ apply eq_term_sym; exact H12
+      | apply eq_term_sym; exact Hi12
+      | apply eq_term_sym; exact HA'
+      | eassumption ].
+Qed.
+
+(* ---- the obligation ---------------------------------------------- *)
 
 Lemma sort_cong_obligation
-      (Hexp : ExpSortTransfer) (Hty : TySortTransfer) (Hsub : SubSortTransfer)
   : forall c' name args s1 s2,
     In (name, sort_rule c' args) ott_dtt ->
     ceq_args (CM := DttCM) c' s1 s2 ->
@@ -269,195 +440,42 @@ Proof.
            | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
            end;
     cbn [ceq_term ceq_sort DttCM] in *.
-  - (* exp *) apply Hexp; assumption.
-  - (* ty *) apply Hty; assumption.
-  - (* sub *) apply Hsub; assumption.
+  (* The sorts in [Hargs] are presented as [t[/with_names_from c' s2/]], so
+     the clause readings are applied by unification, not by matching. *)
+  all: repeat match goal with
+              | [ H : Ceq_term _ _ _ |- _ ] =>
+                  first [ apply Ceq_env_e in H
+                        | apply Ceq_tyinfo_e in H
+                        | apply Ceq_ty_e in H
+                        | apply Ceq_lvl_e in H ];
+                  destruct H as [H ?]
+              end.
+  - (* exp *) apply Ceq_sort_exp; assumption.
+  - (* ty *) apply Ceq_sort_ty; assumption.
+  - (* sub *) apply Ceq_sort_sub; assumption.
   - (* env *) apply Ceq_sort_refl, wf_sort_env.
   - (* tyinfo *) apply Ceq_sort_refl, wf_sort_info.
   - (* tlvl *) apply Ceq_sort_refl, wf_sort_tlvl.
-  - (* ltl *)
-    (* the two arguments are at [lvl]; [Ceq_term] there IS identity.  The
-       sorts in [Hargs] are presented as [t[/with_names_from .../]], so the
-       clause lemma is applied by unification rather than by matching. *)
-    repeat match goal with
-           | [ H : Ceq_term _ _ _ |- _ ] => apply Ceq_lvl_e in H as [-> ?]
-           end.
-    apply Ceq_sort_refl, wf_sort_ltl; apply LvlNf_wf; assumption.
+  - (* ltl: both arguments are at [lvl], where [Ceq_term] is identity, so
+       the two sorts are syntactically equal.  (Proof irrelevance --
+       [eq_ltl_irr] -- is not needed here.) *)
+    subst; apply Ceq_sort_refl, wf_sort_ltl; apply LvlNf_wf; assumption.
   - (* lvl *) apply Ceq_sort_refl, wf_sort_lvl.
   - (* relevance *) apply Ceq_sort_refl, wf_sort_relevance.
 Qed.
 
 (* ================================================================== *)
-(* 5.  Why [sub]/[ty]/[exp] do not hold against the present contract   *)
+(* 5.  Assembly                                                        *)
 (* ================================================================== *)
 
-(* The design note in WIP/DttCeq.v says the [Ceq_sort] transfer is cheap
-   because "[Ceq_term] at [exp G i A] quantifies over the NORMAL
-   REPRESENTATIVES of the type, and two provably-equal sorts have literally
-   the same set of normal representatives".  That is TRUE of the TYPE
-   argument [A] -- [RTmN]/[RTyN] quantify [A0] up to [eqt (sTy G i) A A0],
-   so replacing [A] by a provably equal [A'] is one use of transitivity
-   (that is exactly what [term_sym_obligation] above exploits).
+(* The two obligations developed elsewhere.  Naming them here is not idle:
+   building the record below CHECKS that the sixteen statements above have
+   exactly the shapes the class's fields demand (argument order, the
+   [with_names_from c' s2] on the conclusion sort, the [ceq_term]/
+   [ceq_sort] projections of [DttCM]).
 
-   It is NOT true of the two INDEX arguments, and [csort_cong] varies them:
-
-     * [i].  [RTyN G i A] asks for [A0] with [TyOk G i A0], and [TyOk]'s
-       info index is SYNTACTIC -- deliberately so, per the header of
-       WIP/DttNf.v: a universe is pinned at [iCode l = info rel (next l)]
-       and an [El] at [iEl r l = info r (iota l)].  But "next0" makes
-       [iCode L0] and [iEl rel L1] PROVABLY EQUAL infos (that is
-       [eq_info_next0], WIP/DttNfWf.v), and [Ceq_term sInfo] relates them
-       (it only demands equal [ninfo]s).  So the two sorts [ty G (iCode L0)]
-       and [ty G (iEl rel L1)] are provably equal yet have DISJOINT sets of
-       normal representatives.
-
-     * [G].  [RSub D G g] is a [Fixpoint] on the SYNTAX of [G], and the
-       [env] clause of [Ceq_term] supplies only [eqt sEnv G1 G2] (plus
-       [HasNfEnv G1]).  Transferring [RSub] across a provable environment
-       equality is not available -- and in the [ext] case it would demand
-       exactly a normalization fact about the extension's value ([RTmN] at
-       the entry type), i.e. the theorem being proved.
-
-   The [ty] failure is not merely "unproved": it is refutable modulo
-   consistency, and the lemma below MAKES THAT PRECISE, with no admits.
-   From [TySortTransfer] alone it derives that the closed universe
-   [U irr L0] is provably equal, at sort [ty emp (info rel (iota L1))], to
-   the [El] of a closed relevant [Pi] code.  [ott_dtt] proves no such
-   equation (distinct type formers, no code for a universe in
-   Lang/OTT/Base.v), so [TySortTransfer] is false; it is only the absence
-   of a consistency/injectivity result at this layer that keeps the
-   statement from being an outright [False].
-
-   THE FIX (a contract change, hence reported rather than applied): close
-   [RSub]/[RTyN]/[RTmN] under provable equality of their INDEX arguments
-   the way they are already closed under equality of the subject and of the
-   type -- i.e. quantify the info existentially/universally up to [eqt],
-
-     RTyN G i A := exists i0 A0 P, eqt sInfo i i0 /\ TyOk G i0 A0 /\ ...
-     RTmN G i A e := forall i0 A0, eqt sInfo i i0 -> TyOk G i0 A0 -> ...
-
-   and wrap [RSub] as [RSubN D G g := exists G0, EnvOk G0 /\ eqt sEnv G G0
-   /\ RSub D G0 g].  Both wrappers are stable under [eqt] in the index by
-   transitivity alone, in BOTH directions, which is what the two transfers
-   of [Ceq_sort] need.  Nothing else in Layers 1-3 has to move. *)
-
-Lemma HasNfEnv_emp : HasNfEnv oEmp.
-Proof. exists oEmp; split; [ apply envok_emp | apply eq_term_refl, wf_Emp ]. Qed.
-
-Lemma Ceq_env_emp : Ceq_term sEnv oEmp oEmp.
-Proof. apply ceq_env; [ apply eq_term_refl, wf_Emp | apply HasNfEnv_emp ]. Qed.
-
-(* The two spellings the elaborator left behind are related by [Ceq_term]:
-   [info rel (next L0)] and [info rel (iota L1)] have the same [ninfo]. *)
-Lemma Ceq_info_next0 : Ceq_term sInfo (iCode oL0) (iEl oRel oL1).
-Proof.
-  apply ceq_tyinfo.
-  - apply eq_info_next0.
-  - reflexivity.
-  - change (InfoNf (oInfo oRel (oIota oL1))).
-    apply infonf; [ apply relnf_rel | apply tlvlnf_iota, lvlnf_L1 ].
-Qed.
-
-(* [U irr L0] is a reducible type at the [iCode] spelling: its every
-   reducible instance is [U irr L0] again ("U subst"), which is [rty_U]. *)
-Lemma Ceq_ty_U_irr0
-  : Ceq_term (sTy oEmp (iCode oL0)) (oU oEmp oIrr oL0) (oU oEmp oIrr oL0).
-Proof.
-  assert (wft (oU oEmp oIrr oL0) (sTy oEmp (iCode oL0))) as HwU by wfa.
-  apply ceq_ty; [ apply eq_term_refl; exact HwU | ].
-  intros D g HD Hg.
-  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
-  assert (wft g (sSub D oEmp)) as Hwg by (apply RSub_wf; exact Hg).
-  apply RTyN_eq with (A := oU D oIrr oL0).
-  - exists (oU D oIrr oL0), (HasNfCode D oIrr oL0); repeat split.
-    + apply tyok_U; [ exact HD | apply relnf_irr | apply lvlnf_L0 ].
-    + apply eq_term_refl; wfa.
-    + apply RTy_U_i; [ exact HD | apply relnf_irr | apply lvlnf_L0 ].
-  - apply eq_term_sym; apply eq_U_subst; wfa.
-Qed.
-
-(* The empty environment has no object variables. *)
-Lemma VarT_not_emp i A x : ~ VarT oEmp i A x.
-Proof. intro H; inversion H. Qed.
-
-(* [TyOk] is info-directed: at an [iEl] info only [tyok_El] can fire, since
-   [tyok_U]'s info is the [iCode] spelling.  This IS the rigidity that makes
-   [TySortTransfer] fail. *)
-Lemma TyOk_iEl_inv G r l A
-  : TyOk G (iEl r l) A -> exists c, A = oEl G r l c /\ NfCode G r l c.
-Proof.
-  intro H; remember (iEl r l) as i eqn:Hi; destruct H.
-  - unfold iEl, iCode, oInfo, oIota, oNext in Hi; congruence.
-  - assert (r0 = r /\ l0 = l) as [-> ->]
-      by (unfold iEl, oInfo, oIota in Hi; split; congruence).
-    exists c; split; [ reflexivity | assumption ].
-Qed.
-
-(* In the EMPTY environment there are no variables, so the only normal code
-   at [(rel, L1)] is a relevant [Pi]. *)
-Lemma NfCode_emp_rel_L1 c
-  : NfCode oEmp oRel oL1 c ->
-    exists rF lF F B, c = oPiRel oEmp rF lF oL1 F B.
-Proof.
-  intro H.
-  remember oEmp as G eqn:HG; remember oRel as r eqn:Hr; remember oL1 as l eqn:Hl.
-  destruct H.
-  - unfold oL0, oL1 in *; congruence.
-  - unfold oRel, oIrr in *; congruence.
-  - subst; eauto 6.
-  - unfold oRel, oIrr in *; congruence.
-  - exfalso; subst; eapply VarT_not_emp; eassumption.
-Qed.
-
-Lemma ty_transfer_absurd (H : TySortTransfer)
-  : exists rF lF F B,
-      eqt (sTy oEmp (iEl oRel oL1))
-          (oU oEmp oIrr oL0)
-          (oEl oEmp oRel oL1 (oPiRel oEmp rF lF oL1 F B)).
-Proof.
-  destruct (H oEmp oEmp (iCode oL0) (iEl oRel oL1) Ceq_env_emp Ceq_info_next0)
-    as [_ [Hfwd _]].
-  pose proof (Hfwd _ _ Ceq_ty_U_irr0) as Hc.
-  apply Ceq_ty_e in Hc as [_ Hsem].
-  specialize (Hsem oEmp (oForget oEmp) envok_emp).
-  assert (RSub oEmp oEmp (oForget oEmp)) as Hg
-      by (apply RSub_emp_intro; apply eq_term_refl; wfa).
-  specialize (Hsem Hg).
-  (* move the raw instance to [U irr L0]: change the info argument by
-     [TySubst_cong], then fire "U subst" at its own ([iCode]) spelling. *)
-  assert (eqt (sTy oEmp (iEl oRel oL1))
-              (oTySubst oEmp oEmp (oForget oEmp) (iEl oRel oL1)
-                        (oU oEmp oIrr oL0))
-              (oU oEmp oIrr oL0)) as Hmove.
-  {
-    eapply eq_term_trans.
-    - apply eq_term_sym.
-      apply TySubst_cong with (i1 := iCode oL0);
-        [ apply eq_term_refl; wfa
-        | apply eq_term_refl; wfa
-        | apply eq_term_refl; wfa
-        | apply eq_info_next0
-        | apply eq_term_refl; apply wf_U_irr0'; wfa ].
-    - eapply eq_term_conv;
-        [ apply eq_U_subst; wfa
-        | apply eq_sort_ty_cong;
-          [ apply eq_term_refl; wfa | apply eq_info_next0 ] ].
-  }
-  destruct (RTyN_eq Hsem Hmove) as [A0 [P (HT & Heq & _)]].
-  apply TyOk_iEl_inv in HT as [c [-> Hc]].
-  apply NfCode_emp_rel_L1 in Hc as [rF [lF [F [B ->]]]].
-  eauto 6.
-Qed.
-
-(* ================================================================== *)
-(* 6.  Assembly                                                        *)
-(* ================================================================== *)
-
-(* The two obligations developed elsewhere.  Naming them here is not
-   idle: building the record below CHECKS that the sixteen statements
-   above have exactly the shapes the class's fields demand (argument
-   order, the [with_names_from c' s2] on the conclusion sort, the
-   [ceq_term]/[ceq_sort] projections of [DttCM]). *)
+   NB the record must be built with tactics: the [{| ... |}] literal makes
+   elaboration diverge (stack overflow) on this class. *)
 
 Definition CongObligation : Prop :=
   forall c' name args t s1 s2,
@@ -472,9 +490,7 @@ Definition ByObligation : Prop :=
     Ceq_term t[/with_names_from c' s2/]
              e1[/with_names_from c' s1/] e2[/with_names_from c' s2/].
 
-Definition DttCM_ok
-  (Hcong : CongObligation) (Hby : ByObligation)
-  (Hexp : ExpSortTransfer) (Hty : TySortTransfer) (Hsub : SubSortTransfer)
+Definition DttCM_ok (Hcong : CongObligation) (Hby : ByObligation)
   : CutTModel_ok (V := string) ott_dtt [] (CM := DttCM).
 Proof.
   constructor.
@@ -484,7 +500,7 @@ Proof.
   - exact term_trans_obligation.
   - exact term_sym_obligation.
   - exact term_conv_obligation.
-  - exact (sort_cong_obligation Hexp Hty Hsub).
+  - exact sort_cong_obligation.
   - exact sort_by_obligation.
   - exact sort_trans_obligation.
   - exact sort_sym_obligation.
