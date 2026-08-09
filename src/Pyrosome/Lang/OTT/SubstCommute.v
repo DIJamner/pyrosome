@@ -90,6 +90,107 @@ Definition lam_irr_subst_rule : string * rule :=
      {{e #"lam_irr" "G" "rF" "lF" {gF} {gB} {gt} }}
      {{s #"exp" "G" {it} (#"ty_subst" "G" "G'" "g" {it} {pity}) }}).
 
+(* Substitution commutes with the two applications, proof-irrelevant first.
+
+   Both are PRE-ELABORATED and added with `push_rule` (the automated
+   wf-CHECK `compute_wf_rule` only; ~85s for the pair).  `elab_rule` does
+   succeed on both, but it builds the lifted substitution `under' g` over the
+   extended context `ext G [rF,iota lF] (ty_subst g (El F))`, whereas EVERY
+   other binder-commutation rule in this family — ott_pi's "Pi_rel subst",
+   "Pi_irr subst", "lam_rel subst", ott_sigma's "Sig subst", and
+   "lam_irr subst" above — uses `ext G [rF,iota lF] (El (g[F]))`.  The two
+   are equal by "El subst" but are not the same term, so letting the
+   elaborator choose would leave `g[app_rel ...]` reducing to a differently
+   spelled context than `g[lam_rel ...]` does.  Writing them out keeps the
+   whole family confluent on the nose.
+
+   On the conclusion sort: the two sides live at different spellings of the
+   same type,
+     LHS  g[app_rel .. f a]      : ty_subst g (ty_subst <id,a> (El B))
+     RHS  app_rel .. g[f] g[a]   : ty_subst <id,g[a]> (El ((under' g)[B]))
+   equal via ty_subst_cmp + cmp_snoc + the id laws.  Both spellings pass
+   compute_wf_rule; we state the LEFT-hand one, which is what the elaborator
+   also normalizes to.
+
+   Note also that B sits at `info rel (next L0)` (resp. `next lG`) here,
+   matching ott_pi's `app_irr`/`app_rel`, NOT Pi_irr's `info rel (iota L1)`;
+   `next L0` and `iota L1` are equal by "next0" but are distinct terms. *)
+
+Definition app_irr_subst_rule : string * rule :=
+  let iF   : term := {{e #"info" "rF" (#"iota" "lF") }} in
+  let iuF  : term := {{e #"info" #"rel" (#"next" "lF") }} in
+  let iBl  : term := {{e #"info" #"rel" (#"next" #"L0") }} in
+  let ifl  : term := {{e #"info" #"irr" (#"iota" #"L0") }} in
+  let uF'  : term := {{e #"U" "G'" "rF" "lF" }} in
+  let elF' : term := {{e #"El" "G'" "rF" "lF" "F" }} in
+  let gext' : term := {{e #"ext" "G'" {iF} {elF'} }} in
+  let gF   : term := {{e #"exp_subst" "G" "G'" "g" {iuF} {uF'} "F" }} in
+  let elgF : term := {{e #"El" "G" "rF" "lF" {gF} }} in
+  let gext : term := {{e #"ext" "G" {iF} {elgF} }} in
+  let underg : term := {{e #"snoc" {gext} "G'" {iF} {elF'}
+                            (#"cmp" {gext} "G" "G'" (#"wkn" "G" {iF} {elgF}) "g")
+                            (#"hd" "G" {iF} {elgF}) }} in
+  let uB'  : term := {{e #"U" {gext'} #"irr" #"L0" }} in
+  let elB' : term := {{e #"El" {gext'} #"irr" #"L0" "B" }} in
+  let gB   : term := {{e #"exp_subst" {gext} {gext'} {underg} {iBl} {uB'} "B" }} in
+  let piT' : term := {{e #"El" "G'" #"irr" #"L0" (#"Pi_irr" "G'" "rF" "lF" "F" "B") }} in
+  let gf   : term := {{e #"exp_subst" "G" "G'" "g" {ifl} {piT'} "f" }} in
+  let ga   : term := {{e #"exp_subst" "G" "G'" "g" {iF} {elF'} "a" }} in
+  let ida' : term := {{e #"snoc" "G'" "G'" {iF} {elF'} (#"id" "G'") "a" }} in
+  let resT' : term := {{e #"ty_subst" "G'" {gext'} {ida'} {ifl} {elB'} }} in
+  ("app_irr subst",
+   term_eq_rule
+     [("a", {{s #"exp" "G'" {iF} {elF'} }});
+      ("f", {{s #"exp" "G'" {ifl} {piT'} }});
+      ("B", {{s #"exp" {gext'} {iBl} {uB'} }});
+      ("F", {{s #"exp" "G'" {iuF} {uF'} }});
+      ("lF", {{s #"lvl" }});
+      ("rF", {{s #"relevance" }});
+      ("g", {{s #"sub" "G" "G'" }});
+      ("G'", {{s #"env" }});
+      ("G", {{s #"env" }})]
+     {{e #"exp_subst" "G" "G'" "g" {ifl} {resT'} (#"app_irr" "G'" "rF" "lF" "F" "B" "f" "a") }}
+     {{e #"app_irr" "G" "rF" "lF" {gF} {gB} {gf} {ga} }}
+     {{s #"exp" "G" {ifl} (#"ty_subst" "G" "G'" "g" {ifl} {resT'}) }}).
+
+Definition app_rel_subst_rule : string * rule :=
+  let iF   : term := {{e #"info" "rF" (#"iota" "lF") }} in
+  let iuF  : term := {{e #"info" #"rel" (#"next" "lF") }} in
+  let iBl  : term := {{e #"info" #"rel" (#"next" "lG") }} in
+  let ifl  : term := {{e #"info" #"rel" (#"iota" "lG") }} in
+  let uF'  : term := {{e #"U" "G'" "rF" "lF" }} in
+  let elF' : term := {{e #"El" "G'" "rF" "lF" "F" }} in
+  let gext' : term := {{e #"ext" "G'" {iF} {elF'} }} in
+  let gF   : term := {{e #"exp_subst" "G" "G'" "g" {iuF} {uF'} "F" }} in
+  let elgF : term := {{e #"El" "G" "rF" "lF" {gF} }} in
+  let gext : term := {{e #"ext" "G" {iF} {elgF} }} in
+  let underg : term := {{e #"snoc" {gext} "G'" {iF} {elF'}
+                            (#"cmp" {gext} "G" "G'" (#"wkn" "G" {iF} {elgF}) "g")
+                            (#"hd" "G" {iF} {elgF}) }} in
+  let uB'  : term := {{e #"U" {gext'} #"rel" "lG" }} in
+  let elB' : term := {{e #"El" {gext'} #"rel" "lG" "B" }} in
+  let gB   : term := {{e #"exp_subst" {gext} {gext'} {underg} {iBl} {uB'} "B" }} in
+  let piT' : term := {{e #"El" "G'" #"rel" "lG" (#"Pi_rel" "G'" "rF" "lF" "lG" "F" "B") }} in
+  let gf   : term := {{e #"exp_subst" "G" "G'" "g" {ifl} {piT'} "f" }} in
+  let ga   : term := {{e #"exp_subst" "G" "G'" "g" {iF} {elF'} "a" }} in
+  let ida' : term := {{e #"snoc" "G'" "G'" {iF} {elF'} (#"id" "G'") "a" }} in
+  let resT' : term := {{e #"ty_subst" "G'" {gext'} {ida'} {ifl} {elB'} }} in
+  ("app_rel subst",
+   term_eq_rule
+     [("a", {{s #"exp" "G'" {iF} {elF'} }});
+      ("f", {{s #"exp" "G'" {ifl} {piT'} }});
+      ("B", {{s #"exp" {gext'} {iBl} {uB'} }});
+      ("F", {{s #"exp" "G'" {iuF} {uF'} }});
+      ("lG", {{s #"lvl" }});
+      ("lF", {{s #"lvl" }});
+      ("rF", {{s #"relevance" }});
+      ("g", {{s #"sub" "G" "G'" }});
+      ("G'", {{s #"env" }});
+      ("G", {{s #"env" }})]
+     {{e #"exp_subst" "G" "G'" "g" {ifl} {resT'} (#"app_rel" "G'" "rF" "lF" "lG" "F" "B" "f" "a") }}
+     {{e #"app_rel" "G" "rF" "lF" "lG" {gF} {gB} {gf} {ga} }}
+     {{s #"exp" "G" {ifl} (#"ty_subst" "G" "G'" "g" {ifl} {resT'}) }}).
+
 Derive ott_subst_commute
   in (wf_lang_ext (ott_pi ++ ott_nat ++ ott_base ++ subst_ott ++ ott_info) ott_subst_commute)
   as ott_subst_commute_wf.
@@ -116,62 +217,12 @@ Proof.
   (* lam_irr_subst_rule above for why this one is pre-elaborated.            *)
   push_rule lam_irr_subst_rule.
 
-  (* substitution commutes with the proof-irrelevant application.            *)
-  (*                                                                         *)
-  (* The two sides live at DIFFERENT spellings of the same sort:             *)
-  (*   LHS  g[app_irr .. f a]           : ty_subst g (ty_subst <id,a> (El B))*)
-  (*   RHS  app_irr .. g[f] g[a]        : ty_subst <id,g[a]> (El (g^+)[B])   *)
-  (* They are equal (ty_subst_cmp + cmp_snoc + the id laws) and BOTH pass    *)
-  (* compute_wf_rule.  We write the RIGHT-hand spelling, because the         *)
-  (* left-hand one makes the elaborator record B's context sort with the     *)
-  (* `info rel (iota L1)` spelling of the code info, whereas the `app_irr` / *)
-  (* `lam_irr` rules of ott_pi use `info rel (next L0)` (the two are equal   *)
-  (* by "next0" but are not the same term, so a mismatch would make this     *)
-  (* rule fail to apply syntactically).  Note the elaborator normalizes the  *)
-  (* CONCLUSION sort back to the left-hand `ty_subst g (ty_subst ...)` form  *)
-  (* either way.                                                             *)
-  elab_rule {[r "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
-          "rF" : #"relevance", "lF" : #"lvl",
-          "F" : #"exp" "G'" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G'"] "rF" "lF"),
-          "B" : #"exp" (#"ext" "G'" (#"El" "F")) (#"info" #"rel" (#"next" #"L0"))
-                       (#"U" ["G" := #"ext" "G'" (#"El" "F")] #"irr" #"L0"),
-          "f" : #"exp" "G'" (#"info" #"irr" (#"iota" #"L0"))
-                       (#"El" ["G" := "G'"] ["r" := #"irr"] ["l" := #"L0"] (#"Pi_irr" ["G" := "G'"] "rF" "lF" "F" "B")),
-          "a" : #"exp" "G'" (#"info" "rF" (#"iota" "lF")) (#"El" "F")
-      ----------------------------------------------- ("app_irr subst")
-      #"exp_subst" "g" (#"app_irr" "rF" "lF" "F" "B" "f" "a")
-        = #"app_irr" "rF" "lF" (#"exp_subst" "g" "F")
-              (#"exp_subst" {inr (under' {{pe "g"}}) } "B")
-              (#"exp_subst" "g" "f") (#"exp_subst" "g" "a")
-      : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
-        (#"ty_subst" (#"snoc" #"id" (#"exp_subst" "g" "a"))
-              (#"El" (#"exp_subst" {inr (under' {{pe "g"}}) } "B")))
-    ]}%prerule
-    (pi_injectivity ++ nat_injectivity ++ ott_base_injectivity
-       ++ ott_info_injectivity ++ subst_ott_injectivity).
-
-  (* substitution commutes with the proof-relevant application.  Same sort   *)
-  (* situation as "app_irr subst" above; here the codomain level is the      *)
-  (* variable "lG", so `next "lG"` has no alternative spelling.              *)
-  elab_rule {[r "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
-          "rF" : #"relevance", "lF" : #"lvl", "lG" : #"lvl",
-          "F" : #"exp" "G'" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G'"] "rF" "lF"),
-          "B" : #"exp" (#"ext" "G'" (#"El" "F")) (#"info" #"rel" (#"next" "lG"))
-                       (#"U" ["G" := #"ext" "G'" (#"El" "F")] #"rel" "lG"),
-          "f" : #"exp" "G'" (#"info" #"rel" (#"iota" "lG"))
-                       (#"El" ["G" := "G'"] ["r" := #"rel"] ["l" := "lG"] (#"Pi_rel" ["G" := "G'"] "rF" "lF" "lG" "F" "B")),
-          "a" : #"exp" "G'" (#"info" "rF" (#"iota" "lF")) (#"El" "F")
-      ----------------------------------------------- ("app_rel subst")
-      #"exp_subst" "g" (#"app_rel" "rF" "lF" "lG" "F" "B" "f" "a")
-        = #"app_rel" "rF" "lF" "lG" (#"exp_subst" "g" "F")
-              (#"exp_subst" {inr (under' {{pe "g"}}) } "B")
-              (#"exp_subst" "g" "f") (#"exp_subst" "g" "a")
-      : #"exp" "G" (#"info" #"rel" (#"iota" "lG"))
-        (#"ty_subst" (#"snoc" #"id" (#"exp_subst" "g" "a"))
-              (#"El" (#"exp_subst" {inr (under' {{pe "g"}}) } "B")))
-    ]}%prerule
-    (pi_injectivity ++ nat_injectivity ++ ott_base_injectivity
-       ++ ott_info_injectivity ++ subst_ott_injectivity).
+  (* substitution commutes with the two applications.  Both are written
+     PRE-ELABORATED (see app_irr_subst_rule / app_rel_subst_rule above) so
+     that the lifted substitution `under' g` uses the same spelling of the
+     extended context as every other binder-commutation rule in the family. *)
+  push_rule app_irr_subst_rule.
+  push_rule app_rel_subst_rule.
 
   apply wf_lang_nil.
 Unshelve.
