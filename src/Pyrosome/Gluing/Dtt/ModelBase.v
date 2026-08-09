@@ -10,7 +10,7 @@ From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel.
 Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
   Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand Pyrosome.Gluing.Dtt.LogRelCore Pyrosome.Gluing.Dtt.LogRelFun
-  Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct.
+  Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct Pyrosome.Gluing.Dtt.ModelGlue.
 Import Core.Notations.
 
 (* =====================================================================
@@ -65,126 +65,10 @@ Local Notation wft := (wf_term ott_dtt []).
 (* 0.  Glue                                                            *)
 (* ================================================================== *)
 
-(* [Ceq_term]'s semantic conjunct constrains only the LEFT term, so a
-   reflexive instance at the RIGHT one is not immediate -- it is one use
-   of symmetry (which recovers the missing half from the equation) and one
-   of transitivity.  Both are src/Pyrosome/Gluing/Dtt/ModelStruct.v's, already proved. *)
-
-Lemma ceq_refl_l t e1 e2 : Ceq_term t e1 e2 -> Ceq_term t e1 e1.
-Proof.
-  intro H; exact (term_trans_obligation H (term_sym_obligation H)).
-Qed.
-
-Lemma ceq_refl_r t e1 e2 : Ceq_term t e1 e2 -> Ceq_term t e2 e2.
-Proof.
-  intro H; exact (term_trans_obligation (term_sym_obligation H) H).
-Qed.
-
-(* Replacing the RIGHT term by a provably equal one is free: the semantic
-   conjunct does not mention it. *)
-
-Lemma ceq_ty_eq_r G i A1 A2 A3
-  : Ceq_term (sTy G i) A1 A2 -> eqt (sTy G i) A2 A3 ->
-    Ceq_term (sTy G i) A1 A3.
-Proof.
-  intros H Heq; apply Ceq_ty_e in H as [Ha Hb].
-  apply ceq_ty; [ eapply eq_term_trans; eassumption | exact Hb ].
-Qed.
-
-Lemma ceq_exp_eq_r G i A e1 e2 e3
-  : Ceq_term (sExp G i A) e1 e2 -> eqt (sExp G i A) e2 e3 ->
-    Ceq_term (sExp G i A) e1 e3.
-Proof.
-  intros H Heq; apply Ceq_exp_e in H as [Ha Hb].
-  apply ceq_exp; [ eapply eq_term_trans; eassumption | exact Hb ].
-Qed.
-
-(* Replacing the LEFT term costs one transport of the semantic conjunct,
-   through the side-condition-free closure lemmas [RTyN_eq]/[RTmN_eq] and
-   the matching congruence of src/Pyrosome/Gluing/Dtt/Eqns.v -- exactly as
-   [term_sym_obligation] does. *)
-
-Lemma ceq_ty_eq_l G i A1 A2 A3
-  : eqt (sTy G i) A1 A2 -> Ceq_term (sTy G i) A2 A3 ->
-    Ceq_term (sTy G i) A1 A3.
-Proof.
-  intros Heq H; apply Ceq_ty_e in H as [Ha Hb].
-  destruct (wft_ty_inv (eqt_wf_l Heq)) as [HwG Hwi].
-  apply ceq_ty; [ eapply eq_term_trans; eassumption | ].
-  intros D g HD Hg.
-  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
-  apply RTyN_eq with (A := oTySubst D G g i A2); [ apply Hb; assumption | ].
-  apply TySubst_cong;
-    [ apply eq_term_refl; exact HwD
-    | apply eq_term_refl; exact HwG
-    | apply eq_term_refl; apply RSubN_wf; exact Hg
-    | apply eq_term_refl; exact Hwi
-    | apply eq_term_sym; exact Heq ].
-Qed.
-
-Lemma ceq_exp_eq_l G i A e1 e2 e3
-  : eqt (sExp G i A) e1 e2 -> Ceq_term (sExp G i A) e2 e3 ->
-    Ceq_term (sExp G i A) e1 e3.
-Proof.
-  intros Heq H; apply Ceq_exp_e in H as [Ha Hb].
-  destruct (wft_exp_inv (eqt_wf_l Heq)) as [HwG [Hwi HwA]].
-  apply ceq_exp; [ eapply eq_term_trans; eassumption | ].
-  intros D g HD Hg.
-  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
-  apply RTmN_eq with (e := oExpSubst D G g i A e2); [ apply Hb; assumption | ].
-  apply ExpSubst_cong;
-    [ apply eq_term_refl; exact HwD
-    | apply eq_term_refl; exact HwG
-    | apply eq_term_refl; apply RSubN_wf; exact Hg
-    | apply eq_term_refl; exact Hwi
-    | apply eq_term_refl; exact HwA
-    | apply eq_term_sym; exact Heq ].
-Qed.
-
-(* ---- the two info spellings of a level-0 universe ----------------- *)
-
-Lemma wf_U0_iota1 G r
-  : wft G sEnv -> wft r sRelevance ->
-    wft (oU G r oL0) (sTy G (oInfo oRel (oIota oL1))).
-Proof.
-  intros HG Hr; eapply wf_term_conv;
-    [ apply wf_U; [ exact HG | exact Hr | apply wf_L0 ] | ].
-  apply eq_sort_ty_cong; [ apply eq_term_refl; exact HG | apply eq_info_next0 ].
-Qed.
-
-Lemma eq_sort_U0 G r
-  : wft G sEnv -> wft r sRelevance ->
-    eq_sort ott_dtt [] (sCode G r oL0)
-      (sExp G (oInfo oRel (oIota oL1)) (oU G r oL0)).
-Proof.
-  intros HG Hr; apply eq_sort_exp_cong;
-    [ apply eq_term_refl; exact HG
-    | apply eq_info_next0
-    | apply eq_term_refl; apply wf_U0_iota1; assumption ].
-Qed.
-
-(* "U subst" at the OTHER spelling of the info -- the one the rules "Nat"
-   and "Empty" put a level-0 universe at. *)
-Lemma eq_U_subst_iota1 G G' g r
-  : wft G sEnv -> wft G' sEnv -> wft g (sSub G G') -> wft r sRelevance ->
-    eqt (sTy G (oInfo oRel (oIota oL1)))
-      (oTySubst G G' g (oInfo oRel (oIota oL1)) (oU G' r oL0))
-      (oU G r oL0).
-Proof.
-  intros HG HG' Hg Hr.
-  eapply eq_term_trans.
-  - apply eq_term_sym.
-    apply TySubst_cong;
-      [ apply eq_term_refl; exact HG
-      | apply eq_term_refl; exact HG'
-      | apply eq_term_refl; exact Hg
-      | apply eq_info_next0
-      | apply eq_term_refl; apply wf_U0_iota1; assumption ].
-  - eapply eq_term_conv.
-    + apply eq_U_subst; auto using wf_L0.
-    + apply eq_sort_ty_cong;
-        [ apply eq_term_refl; exact HG | apply eq_info_next0 ].
-Qed.
+(* The clause transports ([ceq_refl_r], [ceq_ty_eq_l], [ceq_exp_eq_l],
+   [ceq_exp_eq_r]) and the two info spellings of a level-0 universe
+   ([wf_U0_iota1], [eq_sort_U0], [eq_U_subst_iota1]) are shared with the
+   other three fragments: src/Pyrosome/Gluing/Dtt/ModelGlue.v. *)
 
 (* "Nat subst" at the [iCode] spelling of the info.  The rule itself is
    stated at [rel (iota L1)]; the [zero]/[suc] cases need it at

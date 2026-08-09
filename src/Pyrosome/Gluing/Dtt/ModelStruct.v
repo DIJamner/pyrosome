@@ -133,6 +133,39 @@ Proof.
   apply sTy_cong; [ apply eq_term_refl; exact HG | exact Hi ].
 Qed.
 
+(* ---- the three sigma congruences, all arguments but the last
+       reflexive -------------------------------------------------- *)
+
+(* The shape every transport below (and most of ModelBase/ModelSubst/
+   ModelPi) actually uses: only the SUBJECT moves, and the four or five
+   index arguments are reflexive at well-formedness facts already in
+   context. *)
+
+Lemma Cmp_cong_r D G G' h g1 g2
+  : wft D sEnv -> wft G sEnv -> wft G' sEnv -> wft h (sSub D G) ->
+    eqt (sSub G G') g1 g2 ->
+    eqt (sSub D G') (oCmp D G G' h g1) (oCmp D G G' h g2).
+Proof.
+  intros; apply Cmp_cong; try (apply eq_term_refl; assumption); assumption.
+Qed.
+
+Lemma TySubst_cong_r D G g i A1 A2
+  : wft D sEnv -> wft G sEnv -> wft g (sSub D G) -> wft i sInfo ->
+    eqt (sTy G i) A1 A2 ->
+    eqt (sTy D i) (oTySubst D G g i A1) (oTySubst D G g i A2).
+Proof.
+  intros; apply TySubst_cong; try (apply eq_term_refl; assumption); assumption.
+Qed.
+
+Lemma ExpSubst_cong_r D G g i A e1 e2
+  : wft D sEnv -> wft G sEnv -> wft g (sSub D G) -> wft i sInfo ->
+    wft A (sTy G i) -> eqt (sExp G i A) e1 e2 ->
+    eqt (sExp D i (oTySubst D G g i A))
+      (oExpSubst D G g i A e1) (oExpSubst D G g i A e2).
+Proof.
+  intros; apply ExpSubst_cong; try (apply eq_term_refl; assumption); assumption.
+Qed.
+
 (* ================================================================== *)
 (* 1.  The vacuous / immediate obligations                             *)
 (* ================================================================== *)
@@ -252,36 +285,24 @@ Proof.
     intros D h HD Hh.
     assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
     apply RSubN_eq with (g := oCmp D G G' h g1); [ apply Hb; assumption | ].
-    apply Cmp_cong;
-      [ apply eq_term_refl; exact HwD
-      | apply eq_term_refl; exact HwG
-      | apply eq_term_refl; exact HwG'
-      | apply eq_term_refl; apply RSubN_wf; exact Hh
-      | exact Ha ].
+    apply Cmp_cong_r;
+      [ exact HwD | exact HwG | exact HwG' | apply RSubN_wf; exact Hh | exact Ha ].
   - (* types *)
     destruct (wft_ty_inv (eqt_wf_l Ha)) as [HwG Hwi].
     apply ceq_ty; [ apply eq_term_sym; exact Ha | ].
     intros D g HD Hg.
     assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
     apply RTyN_eq with (A := oTySubst D G g i A1); [ apply Hb; assumption | ].
-    apply TySubst_cong;
-      [ apply eq_term_refl; exact HwD
-      | apply eq_term_refl; exact HwG
-      | apply eq_term_refl; apply RSubN_wf; exact Hg
-      | apply eq_term_refl; exact Hwi
-      | exact Ha ].
+    apply TySubst_cong_r;
+      [ exact HwD | exact HwG | apply RSubN_wf; exact Hg | exact Hwi | exact Ha ].
   - (* terms *)
     destruct (wft_exp_inv (eqt_wf_l Ha)) as [HwG [Hwi HwA]].
     apply ceq_exp; [ apply eq_term_sym; exact Ha | ].
     intros D g HD Hg.
     assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
     apply RTmN_eq with (e := oExpSubst D G g i A f1); [ apply Hb; assumption | ].
-    apply ExpSubst_cong;
-      [ apply eq_term_refl; exact HwD
-      | apply eq_term_refl; exact HwG
-      | apply eq_term_refl; apply RSubN_wf; exact Hg
-      | apply eq_term_refl; exact Hwi
-      | apply eq_term_refl; exact HwA
+    apply ExpSubst_cong_r;
+      [ exact HwD | exact HwG | apply RSubN_wf; exact Hg | exact Hwi | exact HwA
       | exact Ha ].
 Qed.
 
@@ -307,19 +328,39 @@ Qed.
 
    The three substantive ones are the transfer lemmas below. *)
 
-(* ---- the three transfers ---------------------------------------- *)
+(* ---- the three transports --------------------------------------- *)
 
-(* Each is stated in ONE direction only and applied twice, with the
-   argument equations reversed, to give both halves of [Ceq_sort]. *)
+(* ONE lemma per semantic sort, moving EVERYTHING the sort can carry: its
+   indices, its left term and its right term.  Everything downstream is a
+   corollary --
 
-Lemma ceq_sub_transfer G1 G2 G1' G2' g1 g2
+     - the sort-congruence [transfer]s just below (indices move, terms are
+       reflexive), applied twice with the argument equations reversed to
+       give the two halves of [Ceq_sort];
+     - src/Pyrosome/Gluing/Dtt/ModelGlue.v's [ceq_*_eq_l] / [ceq_*_eq_r]
+       (terms move, indices are reflexive), which is how every equation of
+       Layer 4b transports a clause across the rule it is proving.
+
+   All three have the same three-step body: compose the term equations with
+   the clause's own and convert the result to the new sort; then push the
+   semantic conjunct along [RSubN_env] into the new environment, along
+   [R*_eq_info] into the new info, along [RTmN_eq_ty] into the new type,
+   and finally along [R*_eq] onto the new subject -- each step
+   side-condition-free, and each paired with the matching sigma congruence
+   of src/Pyrosome/Gluing/Dtt/Eqns.v. *)
+
+Lemma ceq_sub_transport G1 G2 G1' G2' g1 g2 g1' g2'
   : eqt sEnv G1 G2 -> eqt sEnv G1' G2' ->
-    Ceq_term (sSub G1 G1') g1 g2 -> Ceq_term (sSub G2 G2') g1 g2.
+    eqt (sSub G1 G1') g1' g1 -> eqt (sSub G1 G1') g2 g2' ->
+    Ceq_term (sSub G1 G1') g1 g2 ->
+    Ceq_term (sSub G2 G2') g1' g2'.
 Proof.
-  intros H12 H12' Hc.
+  intros H12 H12' Hl Hr Hc.
   apply Ceq_sub_e in Hc as [Ha Hb].
-  assert (eqt (sSub G2 G2') g1 g2) as Ha'
-      by (eapply eq_term_conv; [ exact Ha | apply sSub_cong; assumption ]).
+  assert (eqt (sSub G1 G1') g1' g2') as Hq
+      by (eapply eq_term_trans; [ exact Hl | eapply eq_term_trans; eassumption ]).
+  assert (eqt (sSub G2 G2') g1' g2') as Ha'
+      by (eapply eq_term_conv; [ exact Hq | apply sSub_cong; assumption ]).
   apply ceq_sub; [ exact Ha' | ].
   intros D h HD Hh.
   assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
@@ -336,13 +377,14 @@ Proof.
       | exact H12
       | exact H12'
       | apply eq_term_refl; exact Hwh
-      | apply eq_term_refl; eapply eqt_wf_l; exact Ha' ].
+      | eapply eq_term_conv;
+        [ apply eq_term_sym; exact Hl | apply sSub_cong; assumption ] ].
 Qed.
 
 (* THE [ty] CASE, AND THE BUG THAT IS NOT THERE ANY MORE.
    [RTyN D i X] asks for a normal representative [A0] with [TyOk D i0 A0]
    for SOME [i0] provably equal to [i].  An earlier version of src/Pyrosome/Gluing/Dtt/LogRel.v
-   held [i0 := i] fixed, and this transfer was then REFUTABLE modulo
+   held [i0 := i] fixed, and this transport was then REFUTABLE modulo
    consistency, not merely unproved.  The reason: [TyOk]'s info index is
    syntactic BY DESIGN (src/Pyrosome/Gluing/Dtt/NormalForms.v's header) -- a universe is pinned at
    [iCode l = info rel (next l)], an [El] at [iEl r l = info r (iota l)] --
@@ -351,7 +393,7 @@ Qed.
    [ninfo]s).  So [ty G (iCode L0)] and [ty G (iEl rel L1)] are provably
    equal sorts whose sets of normal representatives are DISJOINT.  Taking
    [A1 := U emp irr L0], whose reducibility at [iCode L0] is immediate from
-   "U subst" and [rty_U], the fixed-index transfer forced
+   "U subst" and [rty_U], the fixed-index transport forced
    [RTyN emp (iEl rel L1) (U emp irr L0)]; the only [TyOk]s at that info
    are [El emp rel L1 c], and the only normal code there (no variables in
    [emp], [Nat] is at L0, [Empty]/[Pi_irr] are irrelevant) is a [Pi_rel] --
@@ -359,15 +401,19 @@ Qed.
    a closed relevant [Pi] code, which [ott_dtt] does not prove (there is no
    code for a universe: [U] is a sort former, see Lang/OTT/Base.v).
    Quantifying [i0] absorbs the aliasing here, leaving [TyOk]'s pinned
-   infos alone, and the transfer becomes [RTyN_eq_info] -- transitivity. *)
-Lemma ceq_ty_transfer G1 G2 i1 i2 A1 A2
+   infos alone, and the transport becomes [RTyN_eq_info] -- transitivity. *)
+Lemma ceq_ty_transport G1 G2 i1 i2 A1 A2 A1' A2'
   : eqt sEnv G1 G2 -> eqt sInfo i1 i2 ->
-    Ceq_term (sTy G1 i1) A1 A2 -> Ceq_term (sTy G2 i2) A1 A2.
+    eqt (sTy G1 i1) A1' A1 -> eqt (sTy G1 i1) A2 A2' ->
+    Ceq_term (sTy G1 i1) A1 A2 ->
+    Ceq_term (sTy G2 i2) A1' A2'.
 Proof.
-  intros H12 Hi12 Hc.
+  intros H12 Hi12 Hl Hr Hc.
   apply Ceq_ty_e in Hc as [Ha Hb].
-  assert (eqt (sTy G2 i2) A1 A2) as Ha'
-      by (eapply eq_term_conv; [ exact Ha | apply sTy_cong; assumption ]).
+  assert (eqt (sTy G1 i1) A1' A2') as Hq
+      by (eapply eq_term_trans; [ exact Hl | eapply eq_term_trans; eassumption ]).
+  assert (eqt (sTy G2 i2) A1' A2') as Ha'
+      by (eapply eq_term_conv; [ exact Hq | apply sTy_cong; assumption ]).
   apply ceq_ty; [ exact Ha' | ].
   intros D g HD Hg.
   assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
@@ -381,17 +427,22 @@ Proof.
       | exact H12
       | apply eq_term_refl; exact Hwg
       | exact Hi12
-      | apply eq_term_refl; eapply eqt_wf_l; exact Ha' ].
+      | eapply eq_term_conv;
+        [ apply eq_term_sym; exact Hl | apply sTy_cong; assumption ] ].
 Qed.
 
-Lemma ceq_exp_transfer G1 G2 i1 i2 A1 A2 e1 e2
+Lemma ceq_exp_transport G1 G2 i1 i2 A1 A2 e1 e2 e1' e2'
   : eqt sEnv G1 G2 -> eqt sInfo i1 i2 -> eqt (sTy G2 i2) A1 A2 ->
-    Ceq_term (sExp G1 i1 A1) e1 e2 -> Ceq_term (sExp G2 i2 A2) e1 e2.
+    eqt (sExp G1 i1 A1) e1' e1 -> eqt (sExp G1 i1 A1) e2 e2' ->
+    Ceq_term (sExp G1 i1 A1) e1 e2 ->
+    Ceq_term (sExp G2 i2 A2) e1' e2'.
 Proof.
-  intros H12 Hi12 HA Hc.
+  intros H12 Hi12 HA Hl Hr Hc.
   apply Ceq_exp_e in Hc as [Ha Hb].
-  assert (eqt (sExp G2 i2 A2) e1 e2) as Ha'
-      by (eapply eq_term_conv; [ exact Ha | apply sExp_cong; assumption ]).
+  assert (eqt (sExp G1 i1 A1) e1' e2') as Hq
+      by (eapply eq_term_trans; [ exact Hl | eapply eq_term_trans; eassumption ]).
+  assert (eqt (sExp G2 i2 A2) e1' e2') as Ha'
+      by (eapply eq_term_conv; [ exact Hq | apply sExp_cong; assumption ]).
   apply ceq_exp; [ exact Ha' | ].
   intros D g HD Hg.
   assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
@@ -417,7 +468,50 @@ Proof.
       | apply eq_term_refl; exact Hwg
       | exact Hi12
       | exact HA
-      | apply eq_term_refl; eapply eqt_wf_l; exact Ha' ].
+      | eapply eq_term_conv;
+        [ apply eq_term_sym; exact Hl | apply sExp_cong; assumption ] ].
+Qed.
+
+(* ---- the three transfers, i.e. the transports with both terms held
+       fixed -------------------------------------------------------- *)
+
+Lemma ceq_sub_transfer G1 G2 G1' G2' g1 g2
+  : eqt sEnv G1 G2 -> eqt sEnv G1' G2' ->
+    Ceq_term (sSub G1 G1') g1 g2 -> Ceq_term (sSub G2 G2') g1 g2.
+Proof.
+  intros H12 H12' Hc.
+  pose proof (proj1 (Ceq_sub_e Hc)) as Ha.
+  eapply ceq_sub_transport;
+    [ exact H12 | exact H12'
+    | apply eq_term_refl; eapply eqt_wf_l; exact Ha
+    | apply eq_term_refl; eapply eqt_wf_r; exact Ha
+    | exact Hc ].
+Qed.
+
+Lemma ceq_ty_transfer G1 G2 i1 i2 A1 A2
+  : eqt sEnv G1 G2 -> eqt sInfo i1 i2 ->
+    Ceq_term (sTy G1 i1) A1 A2 -> Ceq_term (sTy G2 i2) A1 A2.
+Proof.
+  intros H12 Hi12 Hc.
+  pose proof (proj1 (Ceq_ty_e Hc)) as Ha.
+  eapply ceq_ty_transport;
+    [ exact H12 | exact Hi12
+    | apply eq_term_refl; eapply eqt_wf_l; exact Ha
+    | apply eq_term_refl; eapply eqt_wf_r; exact Ha
+    | exact Hc ].
+Qed.
+
+Lemma ceq_exp_transfer G1 G2 i1 i2 A1 A2 e1 e2
+  : eqt sEnv G1 G2 -> eqt sInfo i1 i2 -> eqt (sTy G2 i2) A1 A2 ->
+    Ceq_term (sExp G1 i1 A1) e1 e2 -> Ceq_term (sExp G2 i2 A2) e1 e2.
+Proof.
+  intros H12 Hi12 HA Hc.
+  pose proof (proj1 (Ceq_exp_e Hc)) as Ha.
+  eapply ceq_exp_transport;
+    [ exact H12 | exact Hi12 | exact HA
+    | apply eq_term_refl; eapply eqt_wf_l; exact Ha
+    | apply eq_term_refl; eapply eqt_wf_r; exact Ha
+    | exact Hc ].
 Qed.
 
 (* ---- packaged as [Ceq_sort] -------------------------------------- *)

@@ -11,7 +11,7 @@ From Pyrosome.Gluing Require Import CutTModel.
 Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
   Pyrosome.Gluing.Dtt.NfWk Pyrosome.Gluing.Dtt.Inj Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand
   Pyrosome.Gluing.Dtt.LogRelCore Pyrosome.Gluing.Dtt.LogRelFun Pyrosome.Gluing.Dtt.LogRelElim Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.RSubOk
-  Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct.
+  Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct Pyrosome.Gluing.Dtt.ModelGlue.
 Import Core.Notations.
 
 (* =====================================================================
@@ -91,57 +91,10 @@ Local Notation wft := (wf_term ott_dtt []).
 (* 0.  Glue                                                            *)
 (* ================================================================== *)
 
-(* [Ceq_term]'s semantic conjunct constrains only the LEFT term, so a
-   reflexive instance at the RIGHT one is one use of symmetry and one of
-   transitivity.  (Both are src/Pyrosome/Gluing/Dtt/ModelStruct.v's.) *)
-
-Lemma ceq_refl_l t e1 e2 : Ceq_term t e1 e2 -> Ceq_term t e1 e1.
-Proof. intro H; exact (term_trans_obligation H (term_sym_obligation H)). Qed.
-
-Lemma ceq_refl_r t e1 e2 : Ceq_term t e1 e2 -> Ceq_term t e2 e2.
-Proof. intro H; exact (term_trans_obligation (term_sym_obligation H) H). Qed.
-
-(* Replacing the RIGHT term by a provably equal one is free. *)
-Lemma ceq_exp_eq_r G i A e1 e2 e3
-  : Ceq_term (sExp G i A) e1 e2 -> eqt (sExp G i A) e2 e3 ->
-    Ceq_term (sExp G i A) e1 e3.
-Proof.
-  intros H Heq; apply Ceq_exp_e in H as [Ha Hb].
-  apply ceq_exp; [ eapply eq_term_trans; eassumption | exact Hb ].
-Qed.
-
-(* Replacing the LEFT term costs one transport of the semantic conjunct. *)
-Lemma ceq_exp_eq_l G i A e1 e2 e3
-  : eqt (sExp G i A) e1 e2 -> Ceq_term (sExp G i A) e2 e3 ->
-    Ceq_term (sExp G i A) e1 e3.
-Proof.
-  intros Heq H; apply Ceq_exp_e in H as [Ha Hb].
-  destruct (wft_exp_inv (eqt_wf_l Heq)) as [HwG [Hwi HwA]].
-  apply ceq_exp; [ eapply eq_term_trans; eassumption | ].
-  intros D g HD Hg.
-  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
-  apply RTmN_eq with (e := oExpSubst D G g i A e2); [ apply Hb; assumption | ].
-  apply ExpSubst_cong;
-    [ apply eq_term_refl; exact HwD
-    | apply eq_term_refl; exact HwG
-    | apply eq_term_refl; apply RSubN_wf; exact Hg
-    | apply eq_term_refl; exact Hwi
-    | apply eq_term_refl; exact HwA
-    | apply eq_term_sym; exact Heq ].
-Qed.
-
-(* ---- the clause transport, named --------------------------------- *)
-
-(* A [Ceq_term] constrains only its LEFT term semantically; this is the
-   clause for the RIGHT one, which is what every "run the argument's clause
-   at the right-hand argument" step wants.  ([pi_rel_nf] predates it and
-   derives the same two facts inline, by [RTmN_eq]; everything after
-   [cong_LamRel] goes through this.) *)
-Lemma ceq_clause_r G i A e1 e2
-  : Ceq_term (sExp G i A) e1 e2 ->
-    forall D g, EnvOk D -> RSubN D G g ->
-      RTmN D i (oTySubst D G g i A) (oExpSubst D G g i A e2).
-Proof. intro H; exact (proj2 (Ceq_exp_e (ceq_refl_r H))). Qed.
+(* The clause transports ([ceq_refl_r], [ceq_clause_r], [ceq_exp_eq_l],
+   [ceq_exp_eq_r]) and the [iota L1] spelling of a level-0 universe
+   ([eq_U_subst_i1c], [eq_U_subst_iota1]) are shared with the other three
+   fragments: src/Pyrosome/Gluing/Dtt/ModelGlue.v. *)
 
 (* ---- reading a normal code off a code argument's clause ---------- *)
 
@@ -764,47 +717,6 @@ Proof.
       | eapply eq_term_trans; [ exact HstepB | exact HB0eq ] ].
 Qed.
 
-(* ---- the [iota L1] spelling of a level-0 universe ----------------- *)
-
-(* [Pi_irr] and its substitution commutation state the codomain code and
-   the conclusion at info [rel (iota L1)], where every other rule of the
-   fragment uses [iCode L0 = rel (next L0)].  Both name the same sort, via
-   "next0"; these two lemmas are the bridge, and they are the only place
-   the mismatch is paid for. *)
-Lemma eq_U_subst_i1c G G' g r
-  : wft G sEnv -> wft G' sEnv -> wft g (sSub G G') -> wft r sRelevance ->
-    eqt (sTy G (iCode oL0))
-      (oTySubst G G' g (oInfo oRel (oIota oL1)) (oU G' r oL0)) (oU G r oL0).
-Proof.
-  intros HG HG' Hg Hr.
-  assert (wft (oU G' r oL0) (sTy G' (iCode oL0))) as HU'
-      by (apply wf_U; [ exact HG' | exact Hr | apply wf_L0 ]).
-  eapply eq_term_trans.
-  - apply TySubst_cong
-      with (G1 := G) (G2 := G) (G1' := G') (G2' := G') (g1 := g) (g2 := g)
-           (i1 := oInfo oRel (oIota oL1)) (i2 := iCode oL0)
-           (A1 := oU G' r oL0) (A2 := oU G' r oL0);
-      [ apply eq_term_refl; exact HG
-      | apply eq_term_refl; exact HG'
-      | apply eq_term_refl; exact Hg
-      | apply eq_term_sym; apply eq_info_next0
-      | apply eq_term_refl; exact HU' ].
-  - apply eq_U_subst;
-      [ exact HG | exact HG' | exact Hg | exact Hr | apply wf_L0 ].
-Qed.
-
-Lemma eq_U_subst_i1 G G' g r
-  : wft G sEnv -> wft G' sEnv -> wft g (sSub G G') -> wft r sRelevance ->
-    eqt (sTy G (oInfo oRel (oIota oL1)))
-      (oTySubst G G' g (oInfo oRel (oIota oL1)) (oU G' r oL0)) (oU G r oL0).
-Proof.
-  intros HG HG' Hg Hr.
-  eapply eq_term_conv;
-    [ apply eq_U_subst_i1c; assumption
-    | apply sTy_cong;
-      [ apply eq_term_refl; exact HG | apply eq_info_next0 ] ].
-Qed.
-
 (* The mirror of [cong_PiRel].  Everything is the same except that the
    codomain code and the conclusion live at [rel (iota L1)]: the code
    reading goes through [ceq_code_nf'] and the equation chain is run at the
@@ -909,7 +821,7 @@ Proof.
           | apply eq_term_refl; exact HwB1' ] ].
     - apply eq_sort_exp_ty;
         [ exact HwD | exact Hi1L
-        | apply eq_U_subst_i1;
+        | apply eq_U_subst_iota1;
           [ exact HwD | exact HwG2 | exact Hwg | apply wf_Irr ] ]. }
   assert (eqt (sExp (oExtC D rF2 lF2 F0) (oInfo oRel (oIota oL1))
                  (oU (oExtC D rF2 lF2 F0) oIrr oL0))
@@ -954,7 +866,7 @@ Proof.
         | apply eq_term_refl; exact HwB1 ].
     - apply eq_sort_exp_ty;
         [ exact HwDF | exact Hi1L
-        | apply eq_U_subst_i1;
+        | apply eq_U_subst_iota1;
           [ exact HwDF | exact HwGF2 | exact Hwh | apply wf_Irr ] ]. }
   (* ---- assemble ---- *)
   eapply RTmN_intro with
@@ -1417,13 +1329,13 @@ Proof.
           | exact HFa | exact HBa ] ].
     + apply eq_sort_exp_ty;
         [ exact HwG2 | exact Hi1L
-        | apply eq_U_subst_i1;
+        | apply eq_U_subst_iota1;
           [ exact HwG2 | exact HwG2' | exact Hwg2 | apply wf_Irr ] ].
   - eapply ceq_exp_eq_r.
     + eapply ceq_exp_transfer;
         [ apply eq_term_refl; exact HwG2
         | apply eq_term_refl; exact Hi1L
-        | apply eq_U_subst_i1;
+        | apply eq_U_subst_iota1;
           [ exact HwG2 | exact HwG2' | exact Hwg2 | apply wf_Irr ]
         | eapply ceq_exp_subst_l; [ exact Hg2c | exact HPi2 ] ].
     + apply eq_Pi_irr_subst;

@@ -10,7 +10,8 @@ From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel.
 Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Wf Pyrosome.Gluing.Dtt.Eqns Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.NfTyping
   Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.LogRelBasics Pyrosome.Gluing.Dtt.LogRelCand Pyrosome.Gluing.Dtt.LogRelFun Pyrosome.Gluing.Dtt.Inj
-  Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct Pyrosome.Gluing.Dtt.RSubOk.
+  Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq Pyrosome.Gluing.Dtt.ModelStruct Pyrosome.Gluing.Dtt.ModelGlue
+  Pyrosome.Gluing.Dtt.RSubOk.
 Import Core.Notations.
 
 (* =====================================================================
@@ -69,27 +70,11 @@ Local Notation wft := (wf_term ott_dtt []).
 (* 0.  Glue                                                            *)
 (* ================================================================== *)
 
-(* ---- sort conversions for [wf_term] ----------------------------- *)
-
-Lemma wft_conv_sub g G1 G2 G1' G2'
-  : wft g (sSub G1 G1') -> eqt sEnv G1 G2 -> eqt sEnv G1' G2' ->
-    wft g (sSub G2 G2').
-Proof.
-  intros; eapply wf_term_conv; [ eassumption | apply sSub_cong; assumption ].
-Qed.
-
-Lemma wft_conv_ty A G1 G2 i1 i2
-  : wft A (sTy G1 i1) -> eqt sEnv G1 G2 -> eqt sInfo i1 i2 -> wft A (sTy G2 i2).
-Proof.
-  intros; eapply wf_term_conv; [ eassumption | apply sTy_cong; assumption ].
-Qed.
-
-Lemma wft_conv_exp e G1 G2 i1 i2 A1 A2
-  : wft e (sExp G1 i1 A1) -> eqt sEnv G1 G2 -> eqt sInfo i1 i2 ->
-    eqt (sTy G2 i2) A1 A2 -> wft e (sExp G2 i2 A2).
-Proof.
-  intros; eapply wf_term_conv; [ eassumption | apply sExp_cong; assumption ].
-Qed.
+(* The sort conversions for [wf_term] ([wft_conv_sub]/[wft_conv_ty]/
+   [wft_conv_exp]/[wft_conv_exp_l], [eqt_conv_ty_l]) and the closure of
+   [Ceq_term] under equality of its LEFT argument ([ceq_sub_eq_l],
+   [ceq_ty_eq_l], [ceq_exp_eq_l]) are shared with the other three
+   fragments: src/Pyrosome/Gluing/Dtt/ModelGlue.v. *)
 
 (* ---- the three semantic wrappers, packaged as one conversion ---- *)
 
@@ -97,92 +82,6 @@ Lemma RSubN_conv D G G' g g'
   : RSubN D G g -> eqt sEnv G G' -> eqt (sSub D G') g g' -> RSubN D G' g'.
 Proof.
   intros H HG Hg; eapply RSubN_eq; [ eapply RSubN_env; eassumption | exact Hg ].
-Qed.
-
-Lemma RTyN_conv D i i' A A'
-  : RTyN D i A -> eqt sInfo i i' -> eqt (sTy D i') A A' -> RTyN D i' A'.
-Proof.
-  intros H Hi HA; eapply RTyN_eq; [ eapply RTyN_eq_info; eassumption | exact HA ].
-Qed.
-
-Lemma RTmN_conv D i i' A A' e e'
-  : RTmN D i A e -> eqt sInfo i i' -> eqt (sTy D i') A A' ->
-    eqt (sExp D i' A') e e' -> RTmN D i' A' e'.
-Proof.
-  intros H Hi HA He.
-  eapply RTmN_eq; [ eapply RTmN_eq_ty; [ eapply RTmN_eq_info; eassumption | exact HA ]
-                  | exact He ].
-Qed.
-
-(* ---- closure of [Ceq_term] under equality of its LEFT argument --- *)
-
-(* Not provable at [relevance]/[lvl], whose clauses force syntactic
-   equality; the four sorts that carry a semantic conjunct are exactly the
-   four that need it here. *)
-
-Lemma Ceq_env_eq_l e G1 G2
-  : Ceq_term sEnv G1 G2 -> eqt sEnv e G1 -> Ceq_term sEnv e G2.
-Proof.
-  intros H Heq; apply Ceq_env_e in H as [Ha [G0 [HG0 Heq0]]].
-  apply ceq_env; [ eapply eq_term_trans; eassumption | ].
-  exists G0; split; [ exact HG0 | eapply eq_term_trans; eassumption ].
-Qed.
-
-Lemma Ceq_sub_eq_l G G' e g1 g2
-  : Ceq_term (sSub G G') g1 g2 -> eqt (sSub G G') e g1 ->
-    Ceq_term (sSub G G') e g2.
-Proof.
-  intros H Heq; apply Ceq_sub_e in H as [Ha Hb].
-  destruct (wft_sub_inv (eqt_wf_l Heq)) as [HwG HwG'].
-  apply ceq_sub; [ eapply eq_term_trans; eassumption | ].
-  intros D h HD Hh.
-  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
-  assert (wft h (sSub D G)) as Hwh by (apply RSubN_wf; exact Hh).
-  apply RSubN_eq with (g := oCmp D G G' h g1); [ apply Hb; assumption | ].
-  apply Cmp_cong;
-    [ apply eq_term_refl; exact HwD
-    | apply eq_term_refl; exact HwG
-    | apply eq_term_refl; exact HwG'
-    | apply eq_term_refl; exact Hwh
-    | apply eq_term_sym; exact Heq ].
-Qed.
-
-Lemma Ceq_ty_eq_l G i e A1 A2
-  : Ceq_term (sTy G i) A1 A2 -> eqt (sTy G i) e A1 -> Ceq_term (sTy G i) e A2.
-Proof.
-  intros H Heq; apply Ceq_ty_e in H as [Ha Hb].
-  destruct (wft_ty_inv (eqt_wf_l Heq)) as [HwG Hwi].
-  apply ceq_ty; [ eapply eq_term_trans; eassumption | ].
-  intros D g HD Hg.
-  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
-  assert (wft g (sSub D G)) as Hwg by (apply RSubN_wf; exact Hg).
-  apply RTyN_eq with (A := oTySubst D G g i A1); [ apply Hb; assumption | ].
-  apply TySubst_cong;
-    [ apply eq_term_refl; exact HwD
-    | apply eq_term_refl; exact HwG
-    | apply eq_term_refl; exact Hwg
-    | apply eq_term_refl; exact Hwi
-    | apply eq_term_sym; exact Heq ].
-Qed.
-
-Lemma Ceq_exp_eq_l G i A e e1 e2
-  : Ceq_term (sExp G i A) e1 e2 -> eqt (sExp G i A) e e1 ->
-    Ceq_term (sExp G i A) e e2.
-Proof.
-  intros H Heq; apply Ceq_exp_e in H as [Ha Hb].
-  destruct (wft_exp_inv (eqt_wf_l Heq)) as [HwG [Hwi HwA]].
-  apply ceq_exp; [ eapply eq_term_trans; eassumption | ].
-  intros D g HD Hg.
-  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
-  assert (wft g (sSub D G)) as Hwg by (apply RSubN_wf; exact Hg).
-  apply RTmN_eq with (e := oExpSubst D G g i A e1); [ apply Hb; assumption | ].
-  apply ExpSubst_cong;
-    [ apply eq_term_refl; exact HwD
-    | apply eq_term_refl; exact HwG
-    | apply eq_term_refl; exact Hwg
-    | apply eq_term_refl; exact Hwi
-    | apply eq_term_refl; exact HwA
-    | apply eq_term_sym; exact Heq ].
 Qed.
 
 (* ---- normal representatives ------------------------------------- *)
@@ -832,14 +731,6 @@ Qed.
    Nothing semantic happens here: every clause's content travels with the
    congruences. *)
 
-Lemma eqt_conv_ty_l G1 G2 i1 i2 A1 A2
-  : eqt sEnv G1 G2 -> eqt sInfo i1 i2 -> eqt (sTy G2 i2) A1 A2 ->
-    eqt (sTy G1 i1) A1 A2.
-Proof.
-  intros; eapply eq_term_conv;
-    [ eassumption | apply eq_sort_sym; apply sTy_cong; assumption ].
-Qed.
-
 (* ---- the three [cmp] laws --------------------------------------- *)
 
 Lemma by_id_left Ga Gb Ga' Gb' f1 f2
@@ -856,7 +747,7 @@ Proof.
     by (eapply wft_conv_sub;
         [ eapply eqt_wf_l; exact Hfa
         | apply eq_term_sym; exact HGa | apply eq_term_sym; exact HGa' ]).
-  eapply Ceq_sub_eq_l; [ exact Hf | ].
+  eapply ceq_sub_eq_l; [ | exact Hf ].
   eapply eq_term_conv;
     [ apply eq_id_left; assumption | apply sSub_cong; assumption ].
 Qed.
@@ -875,7 +766,7 @@ Proof.
     by (eapply wft_conv_sub;
         [ eapply eqt_wf_l; exact Hfa
         | apply eq_term_sym; exact HGa | apply eq_term_sym; exact HGa' ]).
-  eapply Ceq_sub_eq_l; [ exact Hf | ].
+  eapply ceq_sub_eq_l; [ | exact Hf ].
   eapply eq_term_conv;
     [ apply eq_id_right; assumption | apply sSub_cong; assumption ].
 Qed.
@@ -910,12 +801,11 @@ Proof.
     by (eapply wft_conv_sub;
         [ eapply eqt_wf_l; exact Hha
         | apply eq_term_sym; exact Ha3 | apply eq_term_sym; exact Ha4 ]).
-  eapply Ceq_sub_eq_l;
-    [ apply cong_cmp;
-      [ exact H1 | exact H3 | exact H4
-      | apply cong_cmp; [ exact H1 | exact H2 | exact H3 | exact Hf | exact Hg ]
-      | exact Hh ]
-    | ].
+  eapply ceq_sub_eq_l;
+    [ | apply cong_cmp;
+        [ exact H1 | exact H3 | exact H4
+        | apply cong_cmp; [ exact H1 | exact H2 | exact H3 | exact Hf | exact Hg ]
+        | exact Hh ] ].
   eapply eq_term_conv;
     [ apply eq_cmp_assoc; assumption | apply sSub_cong; assumption ].
 Qed.
@@ -934,7 +824,7 @@ Proof.
     by (eapply wft_conv_sub;
         [ eapply eqt_wf_l; exact Hga
         | apply eq_term_sym; exact HGa | apply eq_term_sym; exact HGa' ]).
-  eapply Ceq_sub_eq_l; [ apply cong_forget; exact HG | ].
+  eapply ceq_sub_eq_l; [ | apply cong_forget; exact HG ].
   eapply eq_term_conv;
     [ apply eq_cmp_forget; assumption
     | apply sSub_cong; [ exact HGa | apply eq_term_refl; apply wf_Emp ] ].
@@ -942,8 +832,8 @@ Qed.
 
 Lemma by_id_emp_forget : Ceq_term (sSub oEmp oEmp) (oId oEmp) (oForget oEmp).
 Proof.
-  eapply Ceq_sub_eq_l;
-    [ apply cong_forget; apply cong_emp | apply eq_id_emp_forget ].
+  eapply ceq_sub_eq_l;
+    [ apply eq_id_emp_forget | apply cong_forget; apply cong_emp ].
 Qed.
 
 (* ---- the two [ty_subst] laws ------------------------------------ *)
@@ -962,7 +852,7 @@ Proof.
     by (eapply wft_conv_ty;
         [ eapply eqt_wf_l; exact HAa
         | apply eq_term_sym; exact HGa | apply eq_term_sym; exact Hia ]).
-  eapply Ceq_ty_eq_l; [ exact HA | ].
+  eapply ceq_ty_eq_l; [ | exact HA ].
   eapply eq_term_conv;
     [ apply eq_ty_subst_id; assumption | apply sTy_cong; assumption ].
 Qed.
@@ -997,28 +887,16 @@ Proof.
     by (eapply wft_conv_ty;
         [ eapply eqt_wf_l; exact HAa
         | apply eq_term_sym; exact Ha3 | apply eq_term_sym; exact Hia ]).
-  eapply Ceq_ty_eq_l;
-    [ apply cong_ty_subst;
-      [ exact H1 | exact H3
-      | apply cong_cmp; [ exact H1 | exact H2 | exact H3 | exact Hf | exact Hg ]
-      | exact Hi | exact HA ]
-    | ].
+  eapply ceq_ty_eq_l;
+    [ | apply cong_ty_subst;
+        [ exact H1 | exact H3
+        | apply cong_cmp; [ exact H1 | exact H2 | exact H3 | exact Hf | exact Hg ]
+        | exact Hi | exact HA ] ].
   eapply eq_term_conv;
     [ apply eq_ty_subst_cmp; assumption | apply sTy_cong; assumption ].
 Qed.
 
 (* ---- the two [exp_subst] laws ----------------------------------- *)
-
-Lemma wft_conv_exp_l e G1 G2 i1 i2 A1 A2
-  : wft e (sExp G2 i2 A2) -> eqt sEnv G1 G2 -> eqt sInfo i1 i2 ->
-    eqt (sTy G2 i2) A1 A2 -> wft e (sExp G1 i1 A1).
-Proof.
-  intros He HG Hi HA; eapply wft_conv_exp;
-    [ exact He
-    | apply eq_term_sym; exact HG
-    | apply eq_term_sym; exact Hi
-    | apply eq_term_sym; eapply eqt_conv_ty_l; eassumption ].
-Qed.
 
 Lemma by_exp_subst_id Ga Gb i1 i2 A1 A2 v1 v2
   : Ceq_term sEnv Ga Gb -> Ceq_term sInfo i1 i2 -> Ceq_term (sTy Gb i2) A1 A2 ->
@@ -1039,7 +917,7 @@ Proof.
   assert (wft v1 (sExp Ga i1 A1)) as Hwv
     by (eapply wft_conv_exp_l;
         [ eapply eqt_wf_l; exact Hva | exact HGa | exact Hia | exact HAa ]).
-  eapply Ceq_exp_eq_l; [ exact Hv | ].
+  eapply ceq_exp_eq_l; [ | exact Hv ].
   eapply eq_term_conv;
     [ apply eq_exp_subst_id; assumption | apply sExp_cong; assumption ].
 Qed.
@@ -1087,7 +965,15 @@ Proof.
   assert (wft v1 (sExp Ga3 i1 A1)) as Hwv
     by (eapply wft_conv_exp_l;
         [ eapply eqt_wf_l; exact Hva | exact Ha3 | exact Hia | exact HAa ]).
-  eapply Ceq_exp_eq_l.
+  eapply ceq_exp_eq_l.
+  - eapply eq_term_conv;
+      [ apply eq_exp_subst_cmp; assumption
+      | apply sExp_cong;
+        [ exact Ha1 | exact Hia
+        | apply TySubst_cong;
+          [ exact Ha1 | exact Ha2 | exact Hfa | exact Hia
+          | apply TySubst_cong;
+            [ exact Ha2 | exact Ha3 | exact Hga | exact Hia | exact HAa ] ] ] ].
   - eapply ceq_exp_transfer;
       [ apply eq_term_refl; exact Hwb1
       | apply eq_term_refl; exact Hwi2
@@ -1097,14 +983,6 @@ Proof.
         | apply cong_cmp;
           [ exact H1 | exact H2 | exact H3 | exact Hf | exact Hg ]
         | exact Hi | exact HA | exact Hv ] ].
-  - eapply eq_term_conv;
-      [ apply eq_exp_subst_cmp; assumption
-      | apply sExp_cong;
-        [ exact Ha1 | exact Hia
-        | apply TySubst_cong;
-          [ exact Ha1 | exact Ha2 | exact Hfa | exact Hia
-          | apply TySubst_cong;
-            [ exact Ha2 | exact Ha3 | exact Hga | exact Hia | exact HAa ] ] ] ].
 Qed.
 
 (* ---- the four [snoc] laws --------------------------------------- *)
@@ -1141,7 +1019,7 @@ Proof.
   assert (wft v1 (sExp Ga i1 (oTySubst Ga Ga' g1 i1 A1))) as Hwv
     by (eapply wft_conv_exp_l;
         [ eapply eqt_wf_l; exact Hva | exact HGa | exact Hia | exact Hty ]).
-  eapply Ceq_sub_eq_l; [ exact Hg | ].
+  eapply ceq_sub_eq_l; [ | exact Hg ].
   eapply eq_term_conv;
     [ apply eq_wkn_snoc; assumption | apply sSub_cong; assumption ].
 Qed.
@@ -1180,7 +1058,7 @@ Proof.
   assert (wft v1 (sExp Ga i1 (oTySubst Ga Ga' g1 i1 A1))) as Hwv
     by (eapply wft_conv_exp_l;
         [ eapply eqt_wf_l; exact Hva | exact HGa | exact Hia | exact Hty ]).
-  eapply Ceq_exp_eq_l; [ exact Hv | ].
+  eapply ceq_exp_eq_l; [ | exact Hv ].
   eapply eq_term_conv;
     [ apply eq_snoc_hd; assumption | apply sExp_cong; assumption ].
 Qed.
@@ -1231,7 +1109,10 @@ Proof.
   assert (wft v1 (sExp Ga2 i1 (oTySubst Ga2 Ga3 g1 i1 A1))) as Hwv
     by (eapply wft_conv_exp_l;
         [ eapply eqt_wf_l; exact Hva | exact Ha2 | exact Hia | exact Hty ]).
-  eapply Ceq_sub_eq_l.
+  eapply ceq_sub_eq_l.
+  - eapply eq_term_conv;
+      [ apply eq_cmp_snoc; assumption
+      | apply sSub_cong; [ exact Ha1 | apply Ext_cong; assumption ] ].
   - apply cong_snoc;
       [ exact H1 | exact H3 | exact Hi | exact HA
       | apply cong_cmp; [ exact H1 | exact H2 | exact H3 | exact Hf | exact Hg ]
@@ -1244,9 +1125,6 @@ Proof.
           | apply cong_ty_subst;
             [ exact H2 | exact H3 | exact Hg | exact Hi | exact HA ]
           | exact Hv ] ] ].
-  - eapply eq_term_conv;
-      [ apply eq_cmp_snoc; assumption
-      | apply sSub_cong; [ exact Ha1 | apply Ext_cong; assumption ] ].
 Qed.
 
 Lemma by_snoc_wkn_hd Ga Gb i1 i2 A1 A2
@@ -1267,8 +1145,8 @@ Proof.
         | apply eq_term_sym; exact HGa | apply eq_term_sym; exact Hia ]).
   assert (eqt sEnv (oExt Ga i1 A1) (oExt Gb i2 A2)) as Hext
     by (apply Ext_cong; assumption).
-  eapply Ceq_sub_eq_l;
-    [ apply cong_id; apply cong_ext; [ exact HG | exact Hi | exact HA ] | ].
+  eapply ceq_sub_eq_l;
+    [ | apply cong_id; apply cong_ext; [ exact HG | exact Hi | exact HA ] ].
   eapply eq_term_conv;
     [ apply eq_snoc_wkn_hd; assumption | apply sSub_cong; assumption ].
 Qed.
