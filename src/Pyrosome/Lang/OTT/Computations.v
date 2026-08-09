@@ -49,6 +49,36 @@ Proof.
     ]}%prerule
     (pi_injectivity ++ id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
+  (* Head clash ℕ vs Π at level ⁰: heterogeneous Id between codes with distinct
+     head constructors reduces to the empty proposition (OTT "clash" rule).
+     Both codes sit at level ⁰, so the Π result level lG is fixed to L0. *)
+  elab_rule {[r "G" : #"env", "rF" : #"relevance", "lF" : #"lvl",
+          "F" : #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G"] "rF" "lF"),
+          "B" : #"exp" (#"ext" "G" (#"El" "F")) (#"info" #"rel" (#"next" #"L0"))
+                       (#"U" ["G" := #"ext" "G" (#"El" "F")] #"rel" #"L0"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"])),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Pi_rel" ["G" := "G"] "rF" "lF" #"L0" "F" "B"))
+      ----------------------------------------------- ("Id-Nat-Pi")
+      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Pi_rel" ["G" := "G"] "rF" "lF" #"L0" "F" "B") "t" "u"
+        = #"Empty" ["G" := "G"]
+      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
+    ]}%prerule
+    (pi_injectivity ++ id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+  elab_rule {[r "G" : #"env", "rF" : #"relevance", "lF" : #"lvl",
+          "F" : #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G"] "rF" "lF"),
+          "B" : #"exp" (#"ext" "G" (#"El" "F")) (#"info" #"rel" (#"next" #"L0"))
+                       (#"U" ["G" := #"ext" "G" (#"El" "F")] #"rel" #"L0"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Pi_rel" ["G" := "G"] "rF" "lF" #"L0" "F" "B")),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
+      ----------------------------------------------- ("Id-Pi-Nat")
+      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Pi_rel" ["G" := "G"] "rF" "lF" #"L0" "F" "B") (#"Nat" ["G" := "G"]) "t" "u"
+        = #"Empty" ["G" := "G"]
+      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
+    ]}%prerule
+    (pi_injectivity ++ id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
   (* NOTE: the cross-former conversions Id-Π (Typed.agda:231-240), cast-Π
      (:300-312) and Id-U-ΠΠ (:251-261) are DEFERRED.  Id-Π was attempted here
      (LHS Id (Pi_rel A B) t u; RHS Pi_irr with codomain Id B of the pointwise
