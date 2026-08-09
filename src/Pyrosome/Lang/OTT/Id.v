@@ -78,7 +78,8 @@ Ltac wfstep :=
 
 Definition id_injectivity :=
   [("Id", ["u"; "t"; "B"; "A"; "l"; "G"]);
-   ("Idrefl", ["t"; "A"; "l"; "G"])].
+   ("Idrefl", ["t"; "A"; "l"; "G"]);
+   ("transp", ["s"; "e"; "u"; "t"; "P"; "A"; "l"; "G"])].
 
 Derive ott_id
        in (wf_lang_ext (ott_nat ++ ott_base ++ subst_ott ++ ott_info) ott_id)
@@ -148,19 +149,27 @@ Proof.
     ]}%prerule
     (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
-  (* transp (Typed.agda:109-116): DEFERRED — correct proof, but OOMs here.
-     The structural prover (wfstep, above) fully proves transp's wf_rule:
-       push_rule_no_compute [:| <transp, fully explicit> ]%rule.
-       1:{ apply wf_lang_nil. }  apply wf_term_rule.  all: repeat wfstep.
-       Unshelve. all: try (vm_compute;reflexivity). all: try (repeat wfstep). all: shelve.
-     wfstep decomposes to leaves with NO solve_wf_ctx: tries the compact noconv
-     check (compute_noconv_term_wf) first, falls back to wf_sort_by/wf_args_cons2/
-     wf_term_by'/wf_term_conv, and discharges the snoc-id ty_subst_id conversion
-     via by_reduction (0 remaining goals — verified).  Memory: even with
-     noconv-first the proof peaks at 6.93GB RSS (rocqworker OOM-killed; box has
-     7.6GB total / ~6.9GB available, no swap; adding swap was permission-denied).
-     So it is ~0.2GB over on THIS machine — lands with a little more RAM/swap.
-     Its computation is in any case subsumed by proof irrelevance. *)
+  (* transp (Typed.agda:109-116): transport a proof s : El(P t) along a
+     proof e : Id A A t u to El(P u).  P is a proof-irrelevant predicate
+     (a code in SProp over El A); the result lives in SProp. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "P" : #"exp" (#"ext" "G" (#"El" "A")) (#"info" #"rel" (#"next" #"L0"))
+                       (#"U" ["G" := #"ext" "G" (#"El" "A")] #"irr" #"L0"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u")),
+          "s" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" (#"exp_subst" (#"snoc" #"id" "t") "P"))
+      -----------------------------------------------
+      #"transp" "A" "P" "t" "u" "e" "s"
+        : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+          (#"El" (#"exp_subst" (#"snoc" #"id" "u") "P"))
+    ]}%prerule
+    (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
