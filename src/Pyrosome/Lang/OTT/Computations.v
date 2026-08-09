@@ -32,6 +32,49 @@ Import PreRule.Notations.
 (* First: confirm the concatenated base is provable by the wf db.          *)
 (* ====================================================================== *)
 
+(* Id-Π — function extensionality (Typed.agda:231-240), homogeneous form.
+   Two functions f,g : Π F B are equal iff they agree pointwise:
+     Id (Π F B) (Π F B) f g  ↝  Π(a:F). Id B B (f·a) (g·a)   [a proof-irr Π]
+   The inner equality is on the CODOMAIN (rel), so no constraint on the domain
+   relevance rF and no cast is needed.  Pre-elaborated (all implicit env/subst
+   args explicit) and added with push_rule, exactly like Pi.v's `Pi_rel eta`,
+   because the deeply-nested binder+application body defeats elab_rule's
+   inference.  The application body reuses the eta rule's wkF/liftB/app_rel
+   spelling (so app_rel … : El B by the same conversion). *)
+Definition id_pi_funext_rule : string * rule :=
+  let iF : term := {{e #"info" "rF" (#"iota" "lF") }} in
+  let elF : term := {{e #"El" "G" "rF" "lF" "F" }} in
+  let gext : term := {{e #"ext" "G" {iF} {elF} }} in
+  let wkn_g : term := {{e #"wkn" "G" {iF} {elF} }} in
+  let wkF : term := {{e #"exp_subst" {gext} "G" {wkn_g} (#"info" #"rel" (#"next" "lF")) (#"U" "G" "rF" "lF") "F" }} in
+  let elwkF : term := {{e #"El" {gext} "rF" "lF" {wkF} }} in
+  let extnew : term := {{e #"ext" {gext} {iF} {elwkF} }} in
+  let underwkn : term := {{e #"snoc" {extnew} "G" {iF} {elF}
+                              (#"cmp" {extnew} {gext} "G" (#"wkn" {gext} {iF} {elwkF}) {wkn_g})
+                              (#"hd" {gext} {iF} {elwkF}) }} in
+  let liftB : term := {{e #"exp_subst" {extnew} {gext} {underwkn} (#"info" #"rel" (#"next" "lG")) (#"U" {gext} #"rel" "lG") "B" }} in
+  let piFB : term := {{e #"Pi_rel" "G" "rF" "lF" "lG" "F" "B" }} in
+  let elpi : term := {{e #"El" "G" #"rel" "lG" {piFB} }} in
+  let wkf : term := {{e #"exp_subst" {gext} "G" {wkn_g} (#"info" #"rel" (#"iota" "lG")) {elpi} "f" }} in
+  let wkg : term := {{e #"exp_subst" {gext} "G" {wkn_g} (#"info" #"rel" (#"iota" "lG")) {elpi} "g" }} in
+  let hd_a : term := {{e #"hd" "G" {iF} {elF} }} in
+  let appf : term := {{e #"app_rel" {gext} "rF" "lF" "lG" {wkF} {liftB} {wkf} {hd_a} }} in
+  let appg : term := {{e #"app_rel" {gext} "rF" "lF" "lG" {wkF} {liftB} {wkg} {hd_a} }} in
+  let bodyId : term := {{e #"Id" {gext} "lG" "B" "B" {appf} {appg} }} in
+  ("Id-Pi",
+   term_eq_rule
+     [("g", {{s #"exp" "G" (#"info" #"rel" (#"iota" "lG")) {elpi} }});
+      ("f", {{s #"exp" "G" (#"info" #"rel" (#"iota" "lG")) {elpi} }});
+      ("B", {{s #"exp" {gext} (#"info" #"rel" (#"next" "lG")) (#"U" {gext} #"rel" "lG") }});
+      ("F", {{s #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" "G" "rF" "lF") }});
+      ("lG", {{s #"lvl" }});
+      ("lF", {{s #"lvl" }});
+      ("rF", {{s #"relevance" }});
+      ("G", {{s #"env" }})]
+     {{e #"Id" "G" "lG" {piFB} {piFB} "f" "g" }}
+     {{e #"Pi_irr" "G" "rF" "lF" "F" {bodyId} }}
+     {{s #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" "G" #"irr" #"L0") }}).
+
 Derive ott_comp
        in (wf_lang_ext (ott_id ++ ott_pi ++ ott_nat ++ ott_base ++ subst_ott ++ ott_info) ott_comp)
        as ott_comp_wf.
@@ -79,24 +122,16 @@ Proof.
     ]}%prerule
     (pi_injectivity ++ id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
-  (* Id-Π — the same-head STRUCTURAL rule for two Π codes (funext,
-     Typed.agda:231-240) — remains DEFERRED.  The intended reduction is the
-     heterogeneous function extensionality
-       Id (Π F1 B1) (Π F2 B2) f g
-         ↝ Π(a1:F1) Π(a2:F2) (Id F1 F2 a1 a2) ⇒ Id (B1[a1]) (B2[a2]) (f·a1) (g·a2)
-     as a triple-nested Pi_irr.  Two obstacles, both real:
-       (1) SEMANTIC.  Id requires its two type arguments at a COMMON level and
-           relevance rel (see the Id former).  So the inner Id F1 F2 a1 a2 only
-           typechecks when the domains F1,F2 share level/relevance; the general
-           case (distinct domains) must instead cast a1 across F1~F2, which needs
-           Idsym/transp — themselves deferred (see Id.v).
-       (2) COST.  Even the restricted same-shape-domain form OOMs: it is the
-           deeply-nested binder + substitution + application term whose e-graph
-           wf/inference pass does not finish in practical time (killed >500s),
-           the same wall hit by transp.
-     The head-CLASH rules above (Id-Nat-Pi / Id-Pi-Nat) are the tractable part of
-     the Π fragment and are done.  cast-Π (:300-312) and the universe-level
-     Id-U-ΠΠ (:251-261, see IdUniv.v) are strictly harder for the same reasons. *)
+  (* Id-Π — homogeneous function extensionality (see id_pi_funext_rule above). *)
+  push_rule id_pi_funext_rule.
+
+  (* The fully HETEROGENEOUS funext Id (Π F1 B1)(Π F2 B2) f g with DISTINCT
+     domains F1≠F2 is still open here: its pointwise clause quantifies over the
+     domain equality Id F1 F2 a1 a2, which (since Id needs its type args at a
+     common level/relevance) only typechecks when the domains match, else it must
+     cast a1 across F1~F2 — needing the domain equality as a hypothesis, i.e. the
+     universe rule Id-U-ΠΠ (:251-261, see IdUniv.v).  cast-Π (:300-312) is the
+     matching computation for that cast. *)
 
   apply wf_lang_nil.
 Unshelve.

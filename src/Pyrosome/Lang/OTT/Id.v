@@ -79,7 +79,8 @@ Ltac wfstep :=
 Definition id_injectivity :=
   [("Id", ["u"; "t"; "B"; "A"; "l"; "G"]);
    ("Idrefl", ["t"; "A"; "l"; "G"]);
-   ("transp", ["s"; "e"; "u"; "t"; "P"; "A"; "l"; "G"])].
+   ("transp", ["s"; "e"; "u"; "t"; "P"; "A"; "l"; "G"]);
+   ("Idsym", ["e"; "u"; "t"; "B"; "A"; "l"; "G"])].
 
 Derive ott_id
        in (wf_lang_ext (ott_nat ++ ott_base ++ subst_ott ++ ott_info) ott_id)
@@ -167,6 +168,26 @@ Proof.
       #"transp" "A" "P" "t" "u" "e" "s"
         : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
           (#"El" (#"exp_subst" (#"snoc" #"id" "u") "P"))
+    ]}%prerule
+    (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* Idsym: symmetry of the heterogeneous equality.  A proof e : Id A B t u
+     yields a proof of the swapped Id B A u t.  Lives in SProp, so positing it
+     as a term former is coherent by proof irrelevance; it is the flip needed to
+     state the codomain equalities of the structural Π / universe rules. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "B" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "B"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "B" "t" "u"))
+      -----------------------------------------------
+      #"Idsym" "A" "B" "t" "u" "e"
+        : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+          (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                (#"Id" ["G" := "G"] ["l" := "l"] "B" "A" "u" "t"))
     ]}%prerule
     (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
