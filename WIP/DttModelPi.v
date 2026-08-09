@@ -557,3 +557,177 @@ Proof.
         [ apply eq_term_refl; apply EnvOk_wf; exact HEok
         | apply eq_term_sym; exact HEnvEq ].
 Qed.
+
+(* ================================================================== *)
+(* 3.  The two [Pi] congruences                                        *)
+(* ================================================================== *)
+
+(* A [Pi] concludes at a CODE sort, so the semantic content is
+   [HasNfCode] of the instance: push the substitution in with
+   "Pi_rel subst", take the domain's normal code from its own clause and
+   the codomain's from its clause AT THE LIFTED SUBSTITUTION (section 2),
+   and assemble with [nfcode_pi_rel]. *)
+Lemma cong_PiRel G1 G2 rF1 rF2 lF1 lF2 lG1 lG2 F1 F2 B1 B2
+  : Ceq_term sEnv G1 G2 -> Ceq_term sRelevance rF1 rF2 ->
+    Ceq_term sLvl lF1 lF2 -> Ceq_term sLvl lG1 lG2 ->
+    Ceq_term (sCode G2 rF2 lF2) F1 F2 ->
+    Ceq_term (sCode (oExtC G2 rF2 lF2 F2) oRel lG2) B1 B2 ->
+    Ceq_term (sCode G2 oRel lG2)
+      (oPiRel G1 rF1 lF1 lG1 F1 B1) (oPiRel G2 rF2 lF2 lG2 F2 B2).
+Proof.
+  intros HGc Hr Hlf Hlg HFc HBc.
+  apply Ceq_env_e in HGc as [HG _].
+  apply Ceq_relevance_e in Hr as [Hrq Hrnf]; subst rF1.
+  apply Ceq_lvl_e in Hlf as [Hlfq Hlfnf]; subst lF1.
+  apply Ceq_lvl_e in Hlg as [Hlgq Hlgnf]; subst lG1.
+  apply Ceq_exp_e in HFc as [HFa HFb].
+  apply Ceq_exp_e in HBc as [HBa HBb].
+  assert (wft rF2 sRelevance) as Hwr by (apply RelNf_wf; exact Hrnf).
+  assert (wft lF2 sLvl) as HwlF by (apply LvlNf_wf; exact Hlfnf).
+  assert (wft lG2 sLvl) as HwlG by (apply LvlNf_wf; exact Hlgnf).
+  assert (wft G2 sEnv) as HwG2 by (eapply eqt_wf_r; exact HG).
+  assert (wft F1 (sCode G2 rF2 lF2)) as HwF1 by (eapply eqt_wf_l; exact HFa).
+  assert (wft F2 (sCode G2 rF2 lF2)) as HwF2 by (eapply eqt_wf_r; exact HFa).
+  assert (wft B1 (sCode (oExtC G2 rF2 lF2 F2) oRel lG2)) as HwB1
+      by (eapply eqt_wf_l; exact HBa).
+  assert (wft (iEl rF2 lF2) sInfo) as HiF
+      by (unfold iEl; apply wf_Info; [ exact Hwr | apply wf_Iota; exact HwlF ]).
+  assert (wft (iCode lG2) sInfo) as HcG
+      by (unfold iCode; apply wf_Info; [ apply wf_Rel | apply wf_Next; exact HwlG ]).
+  assert (wft (oExtC G2 rF2 lF2 F2) sEnv) as HwGF2
+      by (apply wf_ExtC; assumption).
+  assert (wft (oExtC G2 rF2 lF2 F1) sEnv) as HwGF1
+      by (apply wf_ExtC; assumption).
+  assert (eqt sEnv (oExtC G2 rF2 lF2 F2) (oExtC G2 rF2 lF2 F1)) as HExtEq.
+  { unfold oExtC; apply Ext_cong;
+      [ apply eq_term_refl; exact HwG2
+      | apply eq_term_refl; exact HiF
+      | apply El_cong;
+        [ apply eq_term_refl; exact HwG2
+        | apply eq_term_refl; exact Hwr
+        | apply eq_term_refl; exact HwlF
+        | apply eq_term_sym; exact HFa ] ]. }
+  assert (wft B1 (sCode (oExtC G2 rF2 lF2 F1) oRel lG2)) as HwB1'.
+  { eapply wf_term_conv; [ exact HwB1 | ].
+    apply sExp_cong;
+      [ exact HExtEq | apply eq_term_refl; exact HcG
+      | apply U_cong;
+        [ exact HExtEq
+        | apply eq_term_refl; apply wf_Rel
+        | apply eq_term_refl; exact HwlG ] ]. }
+  apply ceq_exp.
+  { apply PiRel_cong;
+      [ exact HG
+      | apply eq_term_refl; exact Hwr
+      | apply eq_term_refl; exact HwlF
+      | apply eq_term_refl; exact HwlG
+      | exact HFa
+      | exact HBa ]. }
+  intros D g HD Hg.
+  assert (wft D sEnv) as HwD by (apply EnvOk_wf; exact HD).
+  assert (wft g (sSub D G2)) as Hwg by (apply RSubN_wf; exact Hg).
+  destruct (binder_lift Hrnf Hlfnf HwF1 HFb HD Hg)
+    as [F0 [h (HF0 & HF0eq & HEok & HRS & HLeq)]].
+  assert (wft (oExtC D rF2 lF2 F0) sEnv) as HwDF
+      by (apply EnvOk_wf; exact HEok).
+  assert (RSubN (oExtC D rF2 lF2 F0) (oExtC G2 rF2 lF2 F2) h) as HRS2
+      by (eapply RSubN_env; [ exact HRS | apply eq_term_sym; exact HExtEq ]).
+  assert (wft h (sSub (oExtC D rF2 lF2 F0) (oExtC G2 rF2 lF2 F2))) as Hwh
+      by (apply RSubN_wf; exact HRS2).
+  destruct (ceq_code_nf relnf_rel Hlgnf HEok HRS2
+              (HBb (oExtC D rF2 lF2 F0) h HEok HRS2)) as [B0 [HB0 HB0eq]].
+  (* ---- the equation ---- *)
+  assert (eqt (sCode D oRel lG2)
+            (oExpSubst D G2 g (iCode lG2) (oU G2 oRel lG2)
+               (oPiRel G1 rF2 lF2 lG2 F1 B1))
+            (oExpSubst D G2 g (iCode lG2) (oU G2 oRel lG2)
+               (oPiRel G2 rF2 lF2 lG2 F1 B1))) as HstepA.
+  { eapply eq_term_conv.
+    - apply ExpSubst_cong
+        with (G1 := D) (G2 := D) (G1' := G2) (G2' := G2)
+             (g1 := g) (g2 := g) (i1 := iCode lG2) (i2 := iCode lG2)
+             (A1 := oU G2 oRel lG2) (A2 := oU G2 oRel lG2)
+             (v1 := oPiRel G1 rF2 lF2 lG2 F1 B1)
+             (v2 := oPiRel G2 rF2 lF2 lG2 F1 B1);
+        [ apply eq_term_refl; exact HwD
+        | apply eq_term_refl; exact HwG2
+        | apply eq_term_refl; exact Hwg
+        | apply eq_term_refl; exact HcG
+        | apply eq_term_refl; apply wf_U;
+          [ exact HwG2 | apply wf_Rel | exact HwlG ]
+        | apply PiRel_cong;
+          [ exact HG
+          | apply eq_term_refl; exact Hwr
+          | apply eq_term_refl; exact HwlF
+          | apply eq_term_refl; exact HwlG
+          | apply eq_term_refl; exact HwF1
+          | apply eq_term_refl; exact HwB1' ] ].
+    - apply eq_sort_exp_ty;
+        [ exact HwD | exact HcG
+        | apply eq_U_subst;
+          [ exact HwD | exact HwG2 | exact Hwg | apply wf_Rel | exact HwlG ] ]. }
+  assert (eqt (sCode (oExtC D rF2 lF2 F0) oRel lG2)
+            (oExpSubst (oExtC D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F1))
+               (oExtC G2 rF2 lF2 F1) (oLift D G2 g rF2 lF2 F1)
+               (iCode lG2) (oU (oExtC G2 rF2 lF2 F1) oRel lG2) B1)
+            (oExpSubst (oExtC D rF2 lF2 F0) (oExtC G2 rF2 lF2 F2) h
+               (iCode lG2) (oU (oExtC G2 rF2 lF2 F2) oRel lG2) B1))
+    as HstepB.
+  { eapply eq_term_conv.
+    - apply ExpSubst_cong
+        with (G1 := oExtC D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F1))
+             (G2 := oExtC D rF2 lF2 F0)
+             (G1' := oExtC G2 rF2 lF2 F1) (G2' := oExtC G2 rF2 lF2 F2)
+             (g1 := oLift D G2 g rF2 lF2 F1) (g2 := h)
+             (i1 := iCode lG2) (i2 := iCode lG2)
+             (A1 := oU (oExtC G2 rF2 lF2 F1) oRel lG2)
+             (A2 := oU (oExtC G2 rF2 lF2 F2) oRel lG2)
+             (v1 := B1) (v2 := B1);
+        [ unfold oExtC; apply Ext_cong;
+          [ apply eq_term_refl; exact HwD
+          | apply eq_term_refl; exact HiF
+          | apply El_cong;
+            [ apply eq_term_refl; exact HwD
+            | apply eq_term_refl; exact Hwr
+            | apply eq_term_refl; exact HwlF
+            | exact HF0eq ] ]
+        | apply eq_term_sym; exact HExtEq
+        | eapply eq_term_conv;
+          [ exact HLeq
+          | apply sSub_cong;
+            [ apply eq_term_refl; exact HwDF
+            | apply eq_term_sym; exact HExtEq ] ]
+        | apply eq_term_refl; exact HcG
+        | apply U_cong;
+          [ apply eq_term_sym; exact HExtEq
+          | apply eq_term_refl; apply wf_Rel
+          | apply eq_term_refl; exact HwlG ]
+        | apply eq_term_refl; exact HwB1 ].
+    - apply eq_sort_exp_ty;
+        [ exact HwDF | exact HcG
+        | apply eq_U_subst;
+          [ exact HwDF | exact HwGF2 | exact Hwh | apply wf_Rel
+          | exact HwlG ] ]. }
+  (* ---- assemble ---- *)
+  eapply RTmN_intro with
+    (i0 := iCode lG2) (A0 := oU D oRel lG2) (P := HasNfCode D oRel lG2).
+  - apply eq_term_refl; exact HcG.
+  - apply tyok_U; [ exact HD | constructor | exact Hlgnf ].
+  - apply eq_U_subst;
+      [ exact HwD | exact HwG2 | exact Hwg | apply wf_Rel | exact HwlG ].
+  - apply RTy_U_i; [ exact HD | constructor | exact Hlgnf ].
+  - exists (oPiRel D rF2 lF2 lG2 F0 B0); split;
+      [ apply nfcode_pi_rel; assumption | ].
+    eapply eq_term_trans; [ exact HstepA | ].
+    eapply eq_term_trans;
+      [ apply eq_Pi_rel_subst;
+        [ exact HwD | exact HwG2 | exact Hwg | exact Hwr | exact HwlF
+        | exact HwlG | exact HwF1 | exact HwB1' ] | ].
+    apply PiRel_cong;
+      [ apply eq_term_refl; exact HwD
+      | apply eq_term_refl; exact Hwr
+      | apply eq_term_refl; exact HwlF
+      | apply eq_term_refl; exact HwlG
+      | exact HF0eq
+      | eapply eq_term_trans; [ exact HstepB | exact HB0eq ] ].
+Qed.
