@@ -17,11 +17,23 @@ Section WithVar.
 
   Notation named_list := (@named_list V).
   Notation named_map := (@named_map V).
+  (* Source syntax is the syntactic [term]/[sort]. *)
   Notation term := (@term V).
   Notation ctx := (@ctx V).
   Notation sort := (@sort V).
   Notation subst := (@subst V).
   Notation lang := (@lang V).
+
+  (* The target of a closed compiler is an *abstract* carrier [tgt_term]/
+     [tgt_sort] (as in Theory/Model.v / ClosedModel.v), equipped with a
+     [PreModel] -- used to interpret source variables via [inj_var] -- and
+     defaults for the (unreachable, in a well-formed compiler) lookup-failure
+     cases. *)
+  Section WithTarget.
+    Context {tgt_term tgt_sort : Type}
+            {tgt_pre : @PreModel V tgt_term tgt_sort}
+            {tgt_term_default : WithDefault tgt_term}
+            {tgt_sort_default : WithDefault tgt_sort}.
 
   (* A closed compiler case is a *function* from the compiled subterms to a
      target term/sort, rather than a term/sort with argument variables plus a
@@ -29,20 +41,20 @@ Section WithVar.
      subterms, [compile] never performs an object-level substitution: the
      plumbing between subterms is done at the meta level. *)
   Variant closed_compiler_case : Type :=
-    | closed_term_case (f : list term -> term)
-    | closed_sort_case (f : list term -> sort).
+    | closed_term_case (f : list tgt_term -> tgt_term)
+    | closed_sort_case (f : list tgt_term -> tgt_sort).
 
   Definition closed_compiler := named_list closed_compiler_case.
-
-  Existing Instance term_default.
-  Existing Instance sort_default.
 
   Section CompileFn.
     Context (cmp : closed_compiler).
 
-    Fixpoint compile (e : term) : term :=
+    (* A source variable compiles to the target's injected variable; in the
+       closed setting no variable actually survives to be compiled, but the
+       recursion is total over all source terms. *)
+    Fixpoint compile (e : term) : tgt_term :=
       match e with
-      | var x => var x
+      | var x => inj_var x
       | con n s =>
           let s' := map compile s in
           match named_list_lookup_err cmp n with
@@ -51,7 +63,7 @@ Section WithVar.
           end
       end.
 
-    Definition compile_sort (t : sort) : sort :=
+    Definition compile_sort (t : sort) : tgt_sort :=
       match t with
       | scon n s =>
           let s' := map compile s in
@@ -68,30 +80,25 @@ Section WithVar.
 
   (* The pullback model: a target [ClosedModel] [CM], viewed through [compile],
      is itself a [ClosedModel] over the *source* syntax.  Semantics preservation
-     will be exactly the statement that this pullback satisfies the cut-free
-     model laws of the source language (i.e. is a [ClosedModel_ok]). *)
-  Definition compile_model (cmp : closed_compiler) (CM : ClosedModel) : ClosedModel :=
+     will be exactly the statement that the source language's equalities hold in
+     this pullback. *)
+  Definition compile_model (cmp : closed_compiler) (CM : @ClosedModel V tgt_term tgt_sort)
+    : @ClosedModel V term sort :=
     {|
+      cpremodel := @syntax_model V V_Eqb;
       ceq_sort t1 t2 :=
-        ceq_sort (ClosedModel:=CM) (compile_sort cmp t1) (compile_sort cmp t2);
+        CM.(ceq_sort) (compile_sort cmp t1) (compile_sort cmp t2);
       ceq_term t e1 e2 :=
-        ceq_term (ClosedModel:=CM) (compile_sort cmp t) (compile cmp e1) (compile cmp e2);
+        CM.(ceq_term) (compile_sort cmp t) (compile cmp e1) (compile cmp e2);
     |}.
-
-  (* A closed compiler [cmp] preserves the semantics of source language [l] at
-     ambient context [c], targeting model [CM], exactly when the pullback of [CM]
-     along [cmp] is a well-formed cut-free model of [l]. *)
-  Definition preserving_closed_compiler
-    (cmp : closed_compiler) (l : lang) (c : ctx) (CM : ClosedModel) : Prop :=
-    ClosedModel_ok l c (CM := compile_model cmp CM).
 
   (* The inductive, per-rule characterization of a preserving compiler (the
      closed analogue of CompilerDefs.preserving_compiler_ext).  It walks the
      source language rule-by-rule; each constructor carries EXACTLY ONE
      obligation for that rule, phrased entirely in the target model [CM] on the
      compiled syntax.  The equational structural laws (transitivity, symmetry,
-     conversion) and the variable case are NOT obligations here -- they are
-     discharged once and generically from [CM]'s own [ClosedModel_ok] in
+     conversion) are NOT obligations here -- they are discharged once and
+     generically from [CM]'s own [ClosedModel_ok] in
      ClosedCompilers.preserving_closed_compiler_ext_sound.
 
      Each obligation quantifies over argument lists [s1]/[s2] related by the
@@ -100,7 +107,7 @@ Section WithVar.
      cut-free target model has no primitive substitution law to lift a single
      fact with. *)
   Inductive preserving_closed_compiler_ext
-    (cmp : closed_compiler) (CM : ClosedModel) : lang -> Prop :=
+    (cmp : closed_compiler) (CM : @ClosedModel V tgt_term tgt_sort) : lang -> Prop :=
   | preserving_closed_nil : preserving_closed_compiler_ext cmp CM []
   | preserving_closed_sort_rule : forall l n c' args,
       preserving_closed_compiler_ext cmp CM l ->
@@ -134,6 +141,8 @@ Section WithVar.
                    (compile cmp (e1 [/with_names_from c' s1/]))
                    (compile cmp (e2 [/with_names_from c' s2/]))) ->
       preserving_closed_compiler_ext cmp CM ((n, term_eq_rule c' e1 e2 t) :: l).
+
+  End WithTarget.
 
 End WithVar.
 

@@ -6,57 +6,44 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome.Theory Require Import Core.
-Import Core.Notations.
+From Pyrosome.Theory Require Import Substable Model.
 
-(* A *cut-free*, Prop-valued model of a language [l], over the syntactic terms.
+(* A *cut-free*, Prop-valued, *closed* model, parameterized by an abstract type
+   of terms and an abstract type of sorts (via a [PreModel], exactly as
+   Theory/Model.v is).
 
-   This is the Prop-valued analogue of Gluing/CutTModel.v's [CutTModel]: where
-   that model's judgments [ceq_sort]/[ceq_term] are Type-valued (so a member can
-   carry data, e.g. a normal form), a [ClosedModel]'s judgments are Prop-valued.
-   Everything else is identical -- the operations are exactly the constructors of
-   the cut-free judgment of Theory/ConvElim.v (and of TreeProofs.pf /
-   TreeProofs.check_proof): congruence, axiom instances, variables, transitivity,
-   symmetry, conversion -- with NO primitive substitution rule (substitution is
-   baked into rule instances).  Consequences:
+   This is the Prop-valued analogue of Gluing/CutTModel.v's [CutTModel], but
+   abstracted away from the syntactic carrier and specialized to the *closed*
+   setting.  In particular, compared to a [Model]:
 
-   - a generic evaluation [pf -> ceq_term] is a direct fold over [pf];
-   - to build a model one only provides these finitely-many operations, never a
-     substitution-stability law.
+   - the judgments [ceq_sort]/[ceq_term] are Prop-valued (so a member carries no
+     data), and they carry NO ambient context: a [ClosedModel] describes the
+     equalities that hold among closed terms/sorts of its carrier;
+   - correspondingly [ClosedModel_ok] contains only the structural equational
+     laws -- transitivity, symmetry and conversion.  There is NO substitution
+     law, NO congruence/axiom-instance operation (those mention a source
+     language and are supplied instead, per rule, by a compiler; see
+     Compilers/ClosedCompilerDefs.v), and NO variable rule (the model is closed).
 
    Because the judgments are Props, a [ClosedModel] can serve directly as the
    *target* of a semantics-preserving compiler whose conclusions are Props (no
-   [inhabited] truncation is needed to eliminate its witnesses).
-
-   Carriers are the syntactic [term]/[sort]; the model's content lives in the
-   Prop-valued judgments [ceq_sort]/[ceq_term]. *)
+   [inhabited] truncation is needed to eliminate its witnesses). *)
 Section WithVar.
-  Context {V : Type}
-          {V_Eqb : Eqb V}
-          {V_Eqb_ok : Eqb_ok V_Eqb}
-          {V_default : WithDefault V}.
+  Context {V : Type}.
 
-  Notation term := (@term V).
-  Notation var := (@var V).
-  Notation con := (@con V).
-  Notation ctx := (@ctx V).
-  Notation sort := (@sort V).
-  Notation scon := (@scon V).
-  Notation subst := (@subst V).
-  Notation rule := (@rule V).
-  Notation lang := (@lang V).
+  Notation named_list := (@named_list V).
+  Notation Substable0 := (Substable0 V).
+  Notation Substable := (Substable (V:=V)).
 
-  Section WithLang.
-    Context (l : lang).
-    (* The ambient context is CONSTANT across a model (mirroring TreeProofs, where
-       [check_proof]'s context never changes during the cut-free fold), so we fix
-       it here rather than threading it through every judgment.  [ceq_sort]/
-       [ceq_term] drop their context argument; only [cterm_var] still refers to
-       [c] (a variable is well-formed against the ambient context). *)
-    Context (c : ctx).
+  Section WithModelArgs.
+    Context {term sort : Type}.
+
+    Local Notation ctx := (named_list sort).
+    Local Notation subst := (named_list term).
 
     Class ClosedModel :=
       {
+        cpremodel :: @PreModel V term sort;
         ceq_sort : sort -> sort -> Prop;
         ceq_term : sort -> term -> term -> Prop;
       }.
@@ -67,7 +54,8 @@ Section WithVar.
       (* Argument equality, built pointwise from [ceq_term] exactly as
          TreeProofs.check_args_proof checks an argument list (each argument at the
          rule-context type substituted by the preceding right-hand values).  The
-         index is the rule's context [c']; the ambient [c] is the fixed one above. *)
+         index is the rule's context [c'].  This is used to state a compiler's
+         per-rule obligations; it is not itself a model law. *)
       Inductive ceq_args : ctx -> list term -> list term -> Prop :=
       | ceq_args_nil : ceq_args [] [] []
       | ceq_args_cons : forall c' es1 es2,
@@ -76,24 +64,13 @@ Section WithVar.
             ceq_term t[/with_names_from c' es2/] e1 e2 ->
             ceq_args ((name,t)::c') (e1::es1) (e2::es2).
 
-      (* The cut-free operations.  Each lines up with a [check_proof] /
-         [check_sort_proof] case (TreeProofs.v:169-228). *)
+      (* The structural equational laws.  Each lines up with a [check_proof] /
+         [check_sort_proof] structural case (TreeProofs.v): ptrans, psym, pconv.
+         The pcon (congruence / axiom-instance) and pvar cases are absent: the
+         former are discharged per source rule by a compiler, the latter cannot
+         arise in the closed setting. *)
       Class ClosedModel_ok :=
         {
-          (* pvar *)
-          cterm_var : forall n t,
-            In (n, t) c -> ceq_term t (var n) (var n);
-          (* pcon, term_rule: congruence *)
-          cterm_cong : forall c' name args t s1 s2,
-            In (name, term_rule c' args t) l ->
-            ceq_args c' s1 s2 ->
-            ceq_term t[/with_names_from c' s2/] (con name s1) (con name s2);
-          (* pcon, term_eq_rule: axiom instance *)
-          cterm_by : forall c' name e1 e2 t s1 s2,
-            In (name, term_eq_rule c' e1 e2 t) l ->
-            ceq_args c' s1 s2 ->
-            ceq_term t[/with_names_from c' s2/]
-                     e1[/with_names_from c' s1/] e2[/with_names_from c' s2/];
           (* ptrans *)
           cterm_trans : forall t e1 e12 e2,
             ceq_term t e1 e12 -> ceq_term t e12 e2 -> ceq_term t e1 e2;
@@ -105,14 +82,6 @@ Section WithVar.
             ceq_sort t1 t2 -> ceq_term t1 e1 e2 -> ceq_term t2 e1 e2;
 
           (* sort versions (check_sort_proof) *)
-          csort_cong : forall c' name args s1 s2,
-            In (name, sort_rule c' args) l ->
-            ceq_args c' s1 s2 ->
-            ceq_sort (scon name s1) (scon name s2);
-          csort_by : forall c' name t1 t2 s1 s2,
-            In (name, sort_eq_rule c' t1 t2) l ->
-            ceq_args c' s1 s2 ->
-            ceq_sort t1[/with_names_from c' s1/] t2[/with_names_from c' s2/];
           csort_trans : forall t1 t12 t2,
             ceq_sort t1 t12 -> ceq_sort t12 t2 -> ceq_sort t1 t2;
           csort_sym : forall t1 t2,
@@ -121,6 +90,9 @@ Section WithVar.
 
     End WithCM.
 
-  End WithLang.
+  End WithModelArgs.
 
 End WithVar.
+
+Arguments ClosedModel {V} term sort.
+Arguments ClosedModel_ok {V term sort} CM.
