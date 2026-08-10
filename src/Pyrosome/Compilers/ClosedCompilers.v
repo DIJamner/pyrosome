@@ -28,7 +28,6 @@ Section WithVar.
 
   Section WithTarget.
     Context {tgt_term tgt_sort : Type}
-      {tgt_pre : @PreModel V tgt_term tgt_sort}
       {tgt_term_default : WithDefault tgt_term}
       {tgt_sort_default : WithDefault tgt_sort}.
 
@@ -38,12 +37,12 @@ Section WithVar.
        congruence / axiom-instance facts that [eval] folds into the model. *)
     Section ExtLookups.
       Context (cmp : closed_compiler V tgt_term tgt_sort)
-        (CM : @ClosedModel V tgt_term tgt_sort).
+        (CM : ClosedModel tgt_term tgt_sort).
 
       Lemma pcce_term_rule_lookup
         : forall l, preserving_closed_compiler_ext cmp CM l ->
           forall n c' args t, In (n, term_rule c' args t) l ->
-          forall s1 s2, ceq_args (CM := compile_model cmp CM) c' s1 s2 ->
+          forall s1 s2, ceq_args (compile_model cmp CM) c' s1 s2 ->
             ceq_term (ClosedModel := CM) (compile_sort cmp (t [/with_names_from c' s2/]))
               (compile cmp (con n s1)) (compile cmp (con n s2)).
       Proof.
@@ -65,7 +64,7 @@ Section WithVar.
       Lemma pcce_sort_rule_lookup
         : forall l, preserving_closed_compiler_ext cmp CM l ->
           forall n c' args, In (n, sort_rule c' args) l ->
-          forall s1 s2, ceq_args (CM := compile_model cmp CM) c' s1 s2 ->
+          forall s1 s2, ceq_args (compile_model cmp CM) c' s1 s2 ->
             ceq_sort (ClosedModel := CM)
               (compile_sort cmp (scon n s1)) (compile_sort cmp (scon n s2)).
       Proof.
@@ -87,7 +86,7 @@ Section WithVar.
       Lemma pcce_sort_eq_lookup
         : forall l, preserving_closed_compiler_ext cmp CM l ->
           forall n c' t1 t2, In (n, sort_eq_rule c' t1 t2) l ->
-          forall s1 s2, ceq_args (CM := compile_model cmp CM) c' s1 s2 ->
+          forall s1 s2, ceq_args (compile_model cmp CM) c' s1 s2 ->
             ceq_sort (ClosedModel := CM)
               (compile_sort cmp (t1 [/with_names_from c' s1/]))
               (compile_sort cmp (t2 [/with_names_from c' s2/])).
@@ -110,7 +109,7 @@ Section WithVar.
       Lemma pcce_term_eq_lookup
         : forall l, preserving_closed_compiler_ext cmp CM l ->
           forall n c' e1 e2 t, In (n, term_eq_rule c' e1 e2 t) l ->
-          forall s1 s2, ceq_args (CM := compile_model cmp CM) c' s1 s2 ->
+          forall s1 s2, ceq_args (compile_model cmp CM) c' s1 s2 ->
             ceq_term (ClosedModel := CM) (compile_sort cmp (t [/with_names_from c' s2/]))
               (compile cmp (e1 [/with_names_from c' s1/]))
               (compile cmp (e2 [/with_names_from c' s2/])).
@@ -135,7 +134,7 @@ Section WithVar.
     Section Eval.
       Context (l : lang)
         (cmp : closed_compiler V tgt_term tgt_sort)
-        (CM : @ClosedModel V tgt_term tgt_sort)
+        (CM : ClosedModel tgt_term tgt_sort)
         (CMok : ClosedModel_ok CM)
         (Hext : preserving_closed_compiler_ext cmp CM l).
 
@@ -165,7 +164,7 @@ Section WithVar.
         : fold_right (fun p => and (Pp p)) True s ->
           forall c' lhs rhs,
             check_args_proof (check_proof l []) s c' = Some (lhs, rhs) ->
-            ceq_args (CM:=M) c' lhs rhs.
+            ceq_args M c' lhs rhs.
       Proof.
         induction s as [| p s IHs]; intros IH c' lhs rhs Hc.
         - destruct c'; cbn in Hc; try discriminate.
@@ -257,7 +256,7 @@ Section WithVar.
       Context (l : lang)
         (wfl : wf_lang l)
         (cmp : closed_compiler V tgt_term tgt_sort)
-        (CM : @ClosedModel V tgt_term tgt_sort)
+        (CM : ClosedModel tgt_term tgt_sort)
         (CMok : ClosedModel_ok CM)
         (Hext : preserving_closed_compiler_ext cmp CM l).
 
