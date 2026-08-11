@@ -1579,7 +1579,6 @@ Proof.
   - intros; exact I.
   - intros; exact I.
   - intros; exact I.
-  - intros; exact I.
 Qed.
 
 (* ================================================================== *)
@@ -2448,30 +2447,6 @@ Proof.
       eapply eq_term_conv;
         [ apply eq_lift_shift; wfx
         | apply eq_sort_exp_ty; exact HeqElB ].
-
-  - (* nfet_ne_pi_irr *)
-    intros G rF lF F B e HF IHF HB IHB He IHe D w HW.
-    assert (EnvOk D) as HD by (eapply Wk_dom; exact HW).
-    assert (NfCode G oIrr oL0 (oPiIrr G rF lF F B)) as HPi
-        by (apply nfcode_pi_irr;
-            [ eapply NfCode_RelNf; exact HF | eapply NfCode_LvlNf; exact HF
-            | exact HF | exact HB ]).
-    destruct (IHe D w HW) as [Ae [e' [HTe [HeqTe [HNe Heqe]]]]].
-    destruct (TyOk_wk_pi_irr HW HD HPi HTe HeqTe)
-      as [F' [B' [HAe [HFn [HBn [HF' [HeqF [HB' HeqB]]]]]]]].
-    subst Ae.
-    assert (NfCode D oIrr oL0 (oPiIrr D rF lF F' B')) as HPi'
-        by (apply nfcode_pi_irr;
-            [ eapply NfCode_RelNf; exact HF | eapply NfCode_LvlNf; exact HF
-            | exact HF' | exact HB' ]).
-    exists (oEl D oIrr oL0 (oPiIrr D rF lF F' B')), e'.
-    repeat split;
-      [ apply tyok_El; exact HPi'
-      | apply eq_El_wk;
-        [ exact HW | exact HD | exact HPi | exact HPi'
-        | apply eq_pi_irr_wk; assumption ]
-      | eapply nfet_ne_pi_irr; [ exact HF' | exact HB' | exact HNe ]
-      | exact Heqe ].
 Qed.
 
 Theorem NeET_wk G i A e
@@ -3144,7 +3119,6 @@ Proof.
     intros D0 s0 HC0 HD0 r0 l0 HAeq.
     exact (IHx D0 s0 HC0 HD0 r0 l0 HAeq).
   (* ---- NeET / NfET ---- *)
-  - intros; exact I.
   - intros; exact I.
   - intros; exact I.
   - intros; exact I.

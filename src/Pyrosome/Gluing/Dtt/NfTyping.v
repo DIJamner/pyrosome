@@ -358,12 +358,6 @@ Proof.
   - apply tyok_El, nfcode_var; assumption.
   - apply tyok_El, nfcode_pi_rel; assumption.
   - apply tyok_El, nfcode_pi_irr; assumption.
-  - (* nfet_ne_pi_irr carries no [RelNf]/[LvlNf] premise; recover them from
-       the domain code. *)
-    apply tyok_El, nfcode_pi_irr;
-      [ eapply NfCode_RelNf; eassumption
-      | eapply NfCode_LvlNf; eassumption
-      | assumption | assumption ].
 Qed.
 
 (* ================================================================== *)
@@ -544,8 +538,6 @@ Proof.
       | apply RelNf_wf; exact HrF
       | apply LvlNf_wf; exact HlF
       | exact IHF | exact IHB | exact IHt ].
-  - (* nfet_ne_pi_irr *)
-    intros G rF lF F B e HF IHF HB IHB He IHe; exact IHe.
 Qed.
 
 Definition EnvOk_wf := proj1 Nf_wf.

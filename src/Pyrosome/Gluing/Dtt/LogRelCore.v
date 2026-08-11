@@ -485,6 +485,58 @@ Proof.
     | apply eq_term_refl; exact HElB ].
 Qed.
 
+(* The [Pi_irr] analogue of [eq_codAt_wkn] above -- same statement with
+   [lG] pinned to [oL0] and the relevance of the binder pinned to [oIrr].
+   Used by the REFLECT half of [rty_pi_irr] below, to identify the
+   codomain candidate's own type [C] with [oEl (oExtC G rF lF F) oIrr oL0 B]
+   at the one-step weakening, exactly as the [Pi_rel] ESCAPE half does for
+   [codAtRel]. *)
+Lemma eq_codAtIrr_wkn G rF lF F B
+  : wft G sEnv -> wft rF sRelevance -> wft lF sLvl ->
+    wft F (sCode G rF lF) -> wft B (sCode (oExtC G rF lF F) oIrr oL0) ->
+    eqt (sTy (oExtC G rF lF F) (iEl oIrr oL0))
+      (codAtIrr (oExtC G rF lF F) G rF lF F B
+         (oWkn G (iEl rF lF) (oEl G rF lF F))
+         (oHd G (iEl rF lF) (oEl G rF lF F)))
+      (oEl (oExtC G rF lF F) oIrr oL0 B).
+Proof.
+  intros HG HrF HlF HF HB.
+  assert (wft (iEl rF lF) sInfo) as HiF
+      by (unfold iEl; apply wf_Info; [ exact HrF | apply wf_Iota; exact HlF ]).
+  assert (wft (iEl oIrr oL0) sInfo) as HiG
+      by (unfold iEl; apply wf_Info;
+          [ apply wf_Irr | apply wf_Iota; apply wf_L0 ]).
+  assert (wft (oEl G rF lF F) (sTy G (iEl rF lF))) as HA
+      by (apply wf_El; [ exact HG | exact HrF | exact HlF | exact HF ]).
+  assert (wft (oExtC G rF lF F) sEnv) as HD
+      by (apply wf_ExtC; [ exact HG | exact HrF | exact HlF | exact HF ]).
+  assert (wft (oEl (oExtC G rF lF F) oIrr oL0 B)
+            (sTy (oExtC G rF lF F) (iEl oIrr oL0))) as HElB
+      by (apply wf_El; [ exact HD | apply wf_Irr | apply wf_L0 | exact HB ]).
+  assert (eqt (sSub (oExtC G rF lF F) (oExtC G rF lF F))
+            (instAt (oExtC G rF lF F) G rF lF F
+               (oWkn G (iEl rF lF) (oEl G rF lF F))
+               (oHd G (iEl rF lF) (oEl G rF lF F)))
+            (oId (oExtC G rF lF F))) as Hsnoc
+      by (unfold instAt, oExtC;
+          apply eq_snoc_wkn_hd; [ exact HG | exact HiF | exact HA ]).
+  unfold codAtIrr.
+  eapply eq_term_trans;
+    [ | apply eq_ty_subst_id; [ exact HD | exact HiG | exact HElB ] ].
+  apply TySubst_cong
+    with (G1 := oExtC G rF lF F) (G2 := oExtC G rF lF F)
+         (G1' := oExtC G rF lF F) (G2' := oExtC G rF lF F)
+         (g2 := oId (oExtC G rF lF F))
+         (i1 := iEl oIrr oL0) (i2 := iEl oIrr oL0)
+         (A1 := oEl (oExtC G rF lF F) oIrr oL0 B)
+         (A2 := oEl (oExtC G rF lF F) oIrr oL0 B);
+    [ apply eq_term_refl; exact HD
+    | apply eq_term_refl; exact HD
+    | exact Hsnoc
+    | apply eq_term_refl; exact HiG
+    | apply eq_term_refl; exact HElB ].
+Qed.
+
 (* THE eta STEP.  [t] is a normal form of [e] applied to the fresh
    variable; [lam t] is then a normal form of [e] ITSELF, and nothing but
    "Pi_rel eta" can supply that. *)
@@ -695,22 +747,77 @@ Proof.
          and the candidate carries the [HasNf] conjunct outright. *)
       intros e He; exact (proj1 (proj1 (Hiff e) He)).
 
-    + (* REFLECT *)
+    + (* REFLECT.  Escape is free (above) precisely because REFLECT has to
+         pay for it here: the candidate's [HasNf] conjunct is no longer
+         handed back by a neutral-is-normal clause (there is none at
+         [Pi_irr], see NormalForms.v) -- it is built directly, by producing
+         an actual normal LAMBDA (reflecting the neutral application at
+         the codomain, then escaping the result and wrapping it in
+         [lam_irr]) and using
+         "proof irrelevance" ([Eqns.eq_proof_irr]) to identify that lambda
+         with the neutral [e] itself.  This is the ONLY use of the new rule
+         in the development; it replaces the missing "Pi_irr eta". *)
       intros e HNe.
-      apply Hiff; split;
-        [ eapply HasNe_HasNf_pi_irr; [ exact HF | exact HB | exact HNe ] | ].
-      intros D w a HW HD Ha.
-      destruct (Hd D w HW HD) as [F1 (HF1 & HeqF1 & HR1 & Hesc1 & Href1)].
-      destruct (Hc D w a HW HD Ha) as [C (HTC & HeqC & HRC & HescC & HrefC)].
-      apply HrefC.
-      assert (wft a (sElt D rF lF (wkCode D G w rF lF F))) as Haw.
-      { eapply codAt_wf_a with (rG := oIrr) (lG := oL0) (B := B);
-          [ wfx | wfx | wfx | wfx | apply Wk_wf; exact HW | wfx
-          | apply (eqt_wf_l HeqC) ]. }
-      eapply pi_irr_reflect_app;
-        [ exact HW | exact HD | exact HF | exact HB | exact HNe
-        | exact HF1 | exact HeqF1 | apply Hesc1; exact Ha | exact Haw
-        | exact HTC | exact HeqC ].
+      assert (forall D w a, Wk D G w -> EnvOk D -> Pd D w a ->
+                 Pc D w a (appAtIrr D G rF lF F B w e a)) as HKrip.
+      { intros D w a HW HD Ha.
+        destruct (Hd D w HW HD) as [F1 (HF1 & HeqF1 & HR1 & Hesc1 & Href1)].
+        destruct (Hc D w a HW HD Ha) as [C (HTC & HeqC & HRC & HescC & HrefC)].
+        apply HrefC.
+        assert (wft a (sElt D rF lF (wkCode D G w rF lF F))) as Haw.
+        { eapply codAt_wf_a with (rG := oIrr) (lG := oL0) (B := B);
+            [ wfx | wfx | wfx | wfx | apply Wk_wf; exact HW | wfx
+            | apply (eqt_wf_l HeqC) ]. }
+        eapply pi_irr_reflect_app;
+          [ exact HW | exact HD | exact HF | exact HB | exact HNe
+          | exact HF1 | exact HeqF1 | apply Hesc1; exact Ha | exact Haw
+          | exact HTC | exact HeqC ]. }
+      apply Hiff; split; [ | exact HKrip ].
+      (* the [HasNf] conjunct *)
+      assert (EnvOk G) as HGok by (eapply NfCode_EnvOk; exact HF).
+      assert (TyOk G (iEl rF lF) (oEl G rF lF F)) as HTA
+          by (apply tyok_El; exact HF).
+      assert (EnvOk (oExtC G rF lF F)) as HDok
+          by (unfold oExtC; apply envok_ext; [ exact HGok | exact HTA ]).
+      assert (Wk (oExtC G rF lF F) G (oWkn G (iEl rF lF) (oEl G rF lF F)))
+        as HW1 by (unfold oExtC; apply wk_wkn; [ exact HGok | exact HTA ]).
+      destruct (Hd _ _ HW1 HDok) as [F1 (HF1 & HeqF1 & HR1 & Hesc1 & Href1)].
+      assert (VarT (oExtC G rF lF F) (iEl rF lF)
+                (oEl (oExtC G rF lF F) rF lF F1)
+                (oHd G (iEl rF lF) (oEl G rF lF F))) as Hvar
+          by (apply esc_hd_var; assumption).
+      assert (Pd (oExtC G rF lF F) (oWkn G (iEl rF lF) (oEl G rF lF F))
+                (oHd G (iEl rF lF) (oEl G rF lF F))) as Hhd.
+      { apply Href1.
+        exists (oHd G (iEl rF lF) (oEl G rF lF F)); split;
+          [ apply neet_var; exact Hvar
+          | apply eq_term_refl; apply VarT_wf; exact Hvar ]. }
+      destruct (Hc _ _ _ HW1 HDok Hhd)
+        as [C (HTC & HeqC & HRC & HescC & HrefC)].
+      assert (C = oEl (oExtC G rF lF F) oIrr oL0 B) as HCeq.
+      { eapply TyOk_inj;
+          [ exact HTC | apply tyok_El; exact HB
+          | eapply eq_term_trans;
+            [ apply eq_term_sym; exact HeqC
+            | apply eq_codAtIrr_wkn; wfx ] ]. }
+      subst C.
+      (* [e] is only NEUTRAL here (unlike the [Pi_rel] ESCAPE half, which
+         had [P e] to work with): the Kripke property at this one-step
+         weakening comes from [HKrip], proved above by reflecting the
+         neutral application at the codomain -- the crux of this branch. *)
+      destruct (HescC _ (HKrip _ _ _ HW1 HDok Hhd)) as [t (Ht1 & Ht2)].
+      assert (NfET G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B))
+                (oLamIrr G rF lF F B t)) as Hn
+          by (apply nfet_lam_irr; assumption).
+      assert (NfCode G oIrr oL0 (oPiIrr G rF lF F B)) as HPiC
+          by (apply nfcode_pi_irr; assumption).
+      assert (wft e (sElt G oIrr oL0 (oPiIrr G rF lF F B))) as He_wf
+          by (destruct HNe as [n0 [Hn0 Heqn]]; eapply eqt_wf_l; exact Heqn).
+      assert (wft (oLamIrr G rF lF F B t)
+                (sElt G oIrr oL0 (oPiIrr G rF lF F B))) as Hlam_wf
+          by (eapply NfET_wf; exact Hn).
+      exists (oLamIrr G rF lF F B t); split; [ exact Hn | ].
+      apply eq_proof_irr; wfx.
 Qed.
 
 Theorem RTy_escape G i A P : RTy G i A P -> forall e, P e -> HasNf G i A e.
@@ -3088,7 +3195,6 @@ Proof.
     exists (HasNe D (iEl r l) (oEl D r l x')); apply RTy_var_i; exact Hx'.
 
   (* ---- VarT / NeET / NfET: nothing to prove ---- *)
-  - intros; exact I.
   - intros; exact I.
   - intros; exact I.
   - intros; exact I.

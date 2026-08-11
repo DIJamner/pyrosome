@@ -563,6 +563,21 @@ Lemma eq_Pi_rel_eta G rF lF lG F B f
       f.
 Proof. intros; estep "Pi_rel eta". Qed.
 
+(* [proof irrelevance] (ott_proofirr_el, Lang/OTT/ProofIrr.v).  This is the
+   ONLY appeal to this rule in the development: it is what stands in for
+   the missing "Pi_irr eta" -- [Pi_irr] has no eta rule of its own, but any
+   two elements of the same proof-irrelevant type [El irr l c] are equal
+   definitionally, which is exactly what LogRelCore.v's [Pi_irr] REFLECT
+   branch needs to produce a [HasNf] witness from a bare neutral. *)
+Lemma eq_proof_irr G l c t u
+  : wf_term ott_dtt [] G sEnv ->
+    wf_term ott_dtt [] l sLvl ->
+    wf_term ott_dtt [] c (sCode G oIrr l) ->
+    wf_term ott_dtt [] t (sElt G oIrr l c) ->
+    wf_term ott_dtt [] u (sElt G oIrr l c) ->
+    eq_term ott_dtt [] (sElt G oIrr l c) t u.
+Proof. intros; estep "proof irrelevance". Qed.
+
 (* ================================================================== *)
 (* Congruences                                                         *)
 (* ================================================================== *)

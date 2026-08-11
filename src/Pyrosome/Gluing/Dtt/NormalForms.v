@@ -27,9 +27,17 @@ Import Core.Notations.
        neutral at a [Pi_rel] type is NOT normal -- its normal form is its
        eta-expansion.  Concretely: [NfET] has no neutral clause at
        [El _ rel _ (Pi_rel ...)]; the only normal there is a [lam_rel].
-       [Pi_irr] keeps a neutral clause, because "Pi_irr eta" is not a rule
-       of [ott_pi] (upstream it is subsumed by proof irrelevance, and
-       ProofIrr is out of scope here).
+       [Pi_irr] ALSO has no neutral clause, but for a different reason:
+       [ott_dtt] contains a "proof irrelevance" rule (El-sorted, from
+       [ott_proofirr_el] in Lang/OTT/ProofIrr.v), and it subsumes irrelevant
+       eta -- for [e] at [El G irr L0 (Pi_irr F B)], [e = lam_irr F B t]
+       holds for ANY well-typed body [t], so a neutral there is not normal
+       either.  The two cases are discharged asymmetrically: at [Pi_rel]
+       the normal form must be THE eta-expansion of the neutral (only
+       "Pi_rel eta" proves that equality), whereas at [Pi_irr] ANY normal
+       inhabitant of the codomain will do (proof irrelevance equates the
+       neutral to all of them at once), so [HasNf] is derived from
+       [eq_proof_irr] rather than from a dedicated [NfET] clause.
 
        Two STLC clauses disappear as a consequence.  [nee_lamapp] (a normal
        function value applied to a neutral argument is stuck) existed only
@@ -158,7 +166,7 @@ with NeET : term -> term -> term -> term -> Prop :=
      A = El G irr L0 (Empty G)      -> neutral
      A = El G r l x,  x a variable  -> neutral
      A = El G rel lG (Pi_rel ...)   -> lam_rel ONLY            <-- eta
-     A = El G irr L0 (Pi_irr ...)   -> lam_irr | neutral       <-- no eta *)
+     A = El G irr L0 (Pi_irr ...)   -> lam_irr ONLY            <-- proof irr *)
 with NfET : term -> term -> term -> term -> Prop :=
 | nfet_code : forall G r l c,
     NfCode G r l c -> NfET G (iCode l) (oU G r l) c
@@ -190,12 +198,7 @@ with NfET : term -> term -> term -> term -> Prop :=
     NfCode (oExtC G rF lF F) oIrr oL0 B ->
     NfET (oExtC G rF lF F) (iEl oIrr oL0) (oEl (oExtC G rF lF F) oIrr oL0 B) t ->
     NfET G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B))
-         (oLamIrr G rF lF F B t)
-| nfet_ne_pi_irr : forall G rF lF F B e,
-    NfCode G rF lF F ->
-    NfCode (oExtC G rF lF F) oIrr oL0 B ->
-    NeET G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B)) e ->
-    NfET G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B)) e.
+         (oLamIrr G rF lF F B t).
 
 Scheme EnvOk_min := Minimality for EnvOk Sort Prop
   with TyOk_min := Minimality for TyOk Sort Prop
@@ -290,15 +293,13 @@ Proof.
     [ eapply nfet_ne_var; eassumption | assumption ].
 Qed.
 
-Lemma HasNe_HasNf_pi_irr G rF lF F B e
-  : NfCode G rF lF F ->
-    NfCode (oExtC G rF lF F) oIrr oL0 B ->
-    HasNe G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B)) e ->
-    HasNf G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B)) e.
-Proof.
-  intros HF HB [n [Hn Heq]]; exists n; split;
-    [ eapply nfet_ne_pi_irr; eassumption | assumption ].
-Qed.
-
-(* There is deliberately NO [HasNe_HasNf] at a [Pi_rel] type: that is
-   exactly what eta forbids, and what makes reification type-directed. *)
+(* There is deliberately NO [HasNe_HasNf] at a [Pi_rel] OR a [Pi_irr] type.
+   At [Pi_rel] that is exactly what eta forbids: the normal form of a
+   neutral there must be its eta-expansion, not the neutral itself, and
+   only "Pi_rel eta" proves the two equal.  At [Pi_irr] the reason is
+   different -- proof irrelevance, not eta -- but the conclusion is the
+   same: "proof irrelevance" (see [eq_proof_irr] in Eqns.v) equates a
+   neutral at [El G irr L0 (Pi_irr ...)] with EVERY well-typed [lam_irr] at
+   that type, so a neutral there is never the (unique) normal form either;
+   what makes reification type-directed at [Pi_irr] is deriving [HasNf]
+   from [eq_proof_irr] rather than from a dedicated [NfET] clause. *)
