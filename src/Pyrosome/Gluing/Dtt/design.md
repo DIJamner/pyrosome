@@ -660,3 +660,137 @@ parallel proof development safe is exactly what manufactures this duplication. B
 consolidation pass.
 
 Net: 29 files → 28, 25 228 lines → 23 111, no `Admitted` and no `Axiom` at any point.
+
+---
+
+## 12. The Id extension (in progress)
+
+`ott_dtt` is being extended with the heterogeneous, observational identity type. The fragment
+is `src/Pyrosome/Lang/OTT/IdCong.v` (`ott_id_cong`), **prepended**:
+
+```
+ott_dtt := ott_id_cong ++ ott_proofirr_el ++ ott_subst_commute ++ ott_pi ++ ott_nat
+             ++ ott_base ++ subst_ott ++ ott_info
+```
+
+Prepending is not a style choice. `infer_rule` re-extracts each rule's conclusion sort with
+`mk_weight`, whose tie-breaks depend on the *ambient* language (§9b), so inserting the fragment
+anywhere it is in scope while an earlier fragment elaborates can silently flip an existing rule
+between `next L0` and `iota L1` and invalidate a large amount of `Eqns.v`/`Wf.v`/`Model*.v`.
+
+### 12a. What is in the fragment
+
+Two term rules and thirteen equations.
+
+* `Id G l A B t u : U G irr L0`, with `A B : U G rel l`, `t : El A`, `u : El B` — *heterogeneous*,
+  and restricted to **relevant** codes. There is no `Id` between irrelevant codes and none is
+  wanted: proof irrelevance already equates all their inhabitants.
+* `Idcong A B b t u e : Id (B[t]) (B[u]) (b[t]) (b[u])`, from `e : Id A A t u` and a body
+  `b : El B` in `ext G (El A)`. **The only proof former.**
+* `Id subst`, and the computation rules of §12b.
+
+**No `Idrefl`.** `Idcong` strictly generalizes it: for a body that ignores the bound variable,
+`Idcong Nat C[wkn] c[wkn] zero zero triv : Id C C c c`, where `triv` inhabits `Id ℕ ℕ 0 0`, which
+`Id-Nat-00` reduces to the unit proposition.
+
+**No equations for `Idcong` at all** — not its substitution commutation, not the rules that push
+it under a constructor. Every one of them equates two inhabitants of a code at `U _ irr _`, so
+`ott_proofirr_el` proves it outright; they are *derived* in `Eqns.v`. This is the one place the
+§9a lesson ("a former with no substitution commutation is stuck under an explicit substitution,
+and normal forms are not stable under weakening") does **not** apply, because irrelevance
+supplies the equation that the missing rule would have.
+
+### 12b. The computation rules, and why `Id` never survives a closed environment
+
+The design constraint is: *the extension adds no normal form except neutrals*. Equivalently, an
+`Id` code whose arguments are all canonical must reduce. Since `Id`'s type arguments are relevant
+codes at a common level, the normal codes it can see are `Nat`, `Pi_rel …` and neutrals, so the
+case analysis is finite:
+
+| A, B | rule(s) |
+|---|---|
+| `ℕ`, `ℕ`, endpoints canonical | `Id-Nat-00` → unit, `Id-Nat-0S`/`Id-Nat-S0` → `Empty`, `Id-Nat-SS` → recurse |
+| `ℕ` vs `Pi_rel` | `Id-Nat-Pi` / `Id-Pi-Nat` → `Empty` (type-directed: endpoints arbitrary) |
+| `Pi_rel`, `Pi_rel`, domain indices differ | 4 clash rules → `Empty` |
+| `Pi_rel`, `Pi_rel`, domain indices agree | function extensionality, §12c |
+| either code neutral, or `ℕ`/`ℕ` with a neutral endpoint | **stuck — the new neutral code** |
+
+### 12c. Function extensionality is heterogeneous, and the domain-equality premise is not optional
+
+```
+Id (Π_{rF,lF} F1 B1) (Π_{rF,lF} F2 B2) f g
+  ↝  Π_irr (a1 : F1). Π_irr (a2 : F2). Π_irr (p : Id F1 F2 a1 a2).
+       Id (B1[a1]) (B2[a2]) (f·a1) (g·a2)                        (rF = rel)
+  ↝  Π_irr (a1 : F1). Π_irr (a2 : F2).
+       Id (B1[a1]) (B2[a2]) (f·a1) (g·a2)                        (rF = irr)
+```
+
+Quantifying over a *pair* of arguments plus a proof that they are equal is what lets the rule be
+stated without a **cast**, and that matters: `Cast`'s `u0` is a code whose `El` is a universe,
+which breaks the code grammar §2 rests on (§9's warning). The heterogeneous `Id` pays for itself
+here.
+
+The `p` premise is **required for consistency** at relevant domains, not a refinement. Dropping it
+gives `Id (Π ℕ ℕ) (Π ℕ ℕ) f g ↝ Π(a1)Π(a2). Id ℕ ℕ (f·a1) (g·a2)`; instantiate with `f = g = id`
+and it inhabits `Id ℕ ℕ a1 a2` for arbitrary `a1,a2`, hence `Id ℕ ℕ 0 1 = Empty`. At *irrelevant*
+domains the premise is genuinely unnecessary — a relevant result cannot depend on an irrelevant
+argument except through `Emptyrec` — so the two-binder form is used there, which is why the two
+cases are separate rules.
+
+### 12d. `Idcong` is an UNCONDITIONAL neutral, and that is what makes reification work
+
+The first design had `Idcong A B b t u e` neutral only when `b` is neutral, with a structural
+recursion on `b` supplying the normal form otherwise. That recursion does not close. At
+`b = lam_rel F' B'' s` the reduced type is the triple-`Π_irr` above, and its body needs a proof of
+`Id (B''[t,a1]) (B''[u,a2]) (s[t,a1]) (s[u,a2])` — a congruence in **two** variables at once,
+which the single-binder `Idcong` cannot express and which cannot be assembled from two
+single-variable congruences (the intermediate point would have to be `a1` transported along
+`F'[t] ~ F'[u]`, i.e. a cast).
+
+Making `Idcong` neutral *unconditionally* dissolves this. Its normal form is then whatever its
+**type** dictates, and the type-directed machinery already in place does all the work:
+
+* type reduces to a `Π_irr` (the unit proposition, or a funext Π) → not normal there, so it
+  η-expands by proof irrelevance to `lam_irr … (Idcong … · a1 · a2 · p)`, and the body is
+  `app_irr` applied to a neutral, hence **again a neutral**, at the smaller inner `Id`;
+* type reduces to `Empty` → neutrals are normal there;
+* type is a stuck `Id` → neutrals are normal there.
+
+So "push the congruence under each term former of the shared context" is realised by the *type*
+computing under that former, with the proof following it. The pushing equations
+(`Idcong … (suc n) … = Idcong … n …`, `Idcong … hd … = e`, `Idcong` of a closed body = reflexivity)
+remain true and are derived in `Eqns.v`, but no case of the normalization proof has to be
+organised around them.
+
+Note this makes normal forms at `El _ irr _` non-unique — `Idcong A A[wkn] hd t u e` and `e` are
+both normal at the same stuck `Id`. That is already true of the language (§6(a): at `Pi_irr` *any*
+normal inhabitant of the codomain will do) and it is harmless, because uniqueness is only ever
+needed for **codes**, and a proof never occurs inside a code: `Id`'s element arguments sit at
+relevant types.
+
+### 12e. What it costs: code rigidity, and the replacement
+
+`Id` is a code whose arguments include element terms, and its ℕ rules dispatch on those elements.
+Layer 0.5's rigid model has `rceq_term = True` at every non-universe-like `exp` sort
+(`Rigid.v:697`, `USkel (El _) = false` at `:285`) — which is exactly what let it discharge β, η and
+proof irrelevance with `exact I` — so it must erase `t,u`, and then
+
+* `Id-Nat-00` forces `rc_id rc_nat rc_nat = rc_pi … rc_empty rc_empty`, and
+* `Id-Nat-0S` forces `rc_id rc_nat rc_nat = rc_empty`,
+
+which `ICode`'s functionality (`Rigid.v:507`) makes contradictory. The two obligations are not
+merely unproved, they are **refutable**. Giving the model real information about elements makes it
+responsible for β and η, i.e. turns Layer 0.5 into a second normalization proof. This is §9's
+`Cast` kill-switch arriving through `Id`.
+
+**Decision: retire Layer 0.5 and make the logical relation two-sided.** `RTy`'s candidate becomes a
+binary relation; the universe clause relates two codes that share a normal representative, so
+`NfCode_inj` / `TyOk_inj` / `EnvOk_inj` become *corollaries of the fundamental theorem* rather than
+inputs to it. `Rigid.v`, `RigidOk.v` and `Inj.v` are deleted. The ~30 consumers listed in §4 —
+`RTy_fun_of_inj` (`LogRelBasics.v:475`), `RTy_fun_eq` (`LogRelFun.v:60`), `RTmN_intro`
+(`LogRelFun.v:77`, the sole constructor of `RTmN`), `TyOk_pin`/`NfCode_pin` and their 11 call sites
+in `NfWk.v`, and the 20 inside `RTyEx_str` — are re-derived from the PER.
+
+This is the third time the development has hit this wall (§3, §4b, here); §4b's "computed normal
+representatives" alternative was considered again and declined for the same reason as before, plus
+the new one that it does not by itself supply non-confusion.
