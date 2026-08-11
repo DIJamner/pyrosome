@@ -7,7 +7,11 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
+(* [Require EXPORT]: [oStar] and the weakening relation live in WkRel.v
+   (see the note there on why the dependency runs this way), and everything
+   downstream of Values.v wants both. *)
 Require Import Pyrosome.Gluing.Dtt.Syntax.
+Require Export Pyrosome.Gluing.Dtt.WkRel.
 Import Core.Notations.
 
 (* =====================================================================
@@ -75,33 +79,20 @@ Import Core.Notations.
 
 Local Notation eqt := (eq_term ott_dtt []).
 
-(* ------------------------------------------------------------------ *)
-(* The one value of the irrelevant fragment                             *)
-(* ------------------------------------------------------------------ *)
-
-(* [*] is DELIBERATELY NOT A FORMER OF [ott_dtt].  It is not a term of the
-   object theory at all, and it must not be: if it were, [Val_inj] would have
-   to distinguish it from the terms it collapses.  The consequence is that
-   soundness of the value layer cannot be [eqt e v] -- [*] does not have a
-   sort.  It becomes a realization relation [Rz] whose only interesting
-   clause discharges [*] by proof irrelevance (design.md section 14d).  *)
-Definition oStar : term := con "*" [].
-
-Lemma oStar_not_a_former nm args : oStar = con nm args -> nm = "*" /\ args = [].
-Proof. unfold oStar; intro H; injection H; auto. Qed.
-
 Section WithReps.
 
-  (* [wkTy G i A0 T] : the value form of [T[wkn G i A0]], for [T] a value
-     type over [G] and [(i,A0)] the binding being pushed.  Used ONLY as the
-     type index of a variable value: a variable's type is always a weakened
-     one, and the value layer must name THE weakening, not some provably
-     equal type. *)
-  Context (wkTy : term -> term -> term -> term -> term).
+  (* THE [wkTy] PARAMETER IS GONE.  It named the value form of a weakened
+     type, and a variable's type is always a weakened one; it is now the
+     relation [WkRel.WkTy], whose determinism ([WkRel.Wk_det]) is what makes
+     the naming functional.  That is decision (a) of WkVal.v's trailer,
+     discharged: relation plus determinism, not a Gallina [Fixpoint], which
+     the guard checker refuses on this syntax.
 
-  (* [instC G rF lF F a lG B] : the value form of [B[<id,a>]], for [B] a value
-     code at level [lG] over [oExtC G rF lF F] and [a] a value at
-     [El G rF lF F].  Used ONLY as the type index of an [app_rel] neutral. *)
+     [instC] survives, and is the last parameter.  It is the value form of
+     [B[<id,a>]], for [B] a value code at level [lG] over [oExtC G rF lF F]
+     and [a] a value at [El G rF lF F]; it is used ONLY as the type index of
+     an [app_rel] neutral.  It retires the same way [wkTy] just did, into
+     the instantiation relation, once that block exists. *)
   Context (instC : term -> term -> term -> term -> term -> term -> term -> term).
 
 (* ------------------------------------------------------------------ *)
@@ -190,18 +181,27 @@ with NeCode : term -> term -> term -> term -> Prop :=
    [wkn]-shifts.
 
    THE FUNCTIONAL POINT.  NormalForms.v's [vart_hd]/[vart_wkn] took the
-   representative [A'] as an EXTRA ARGUMENT pinned by an [eq_term] premise;
-   here it is the applied function [wkTy].  Note also that the type
-   ANNOTATION carried by the term itself is exactly the premise's index [A],
-   so the term is determined by [x] and the binding alone -- no choice is
-   made anywhere. *)
+   representative [A'] as an EXTRA ARGUMENT pinned by an [eq_term] premise
+   -- "SOME normal type provably equal to [A[wkn]]".  Here it is pinned by
+   [WkRel.WkTy], which is DETERMINISTIC ([WkRel.Wk_det]), so [A'] is THE
+   weakening and not merely one of them.  The distinction is the whole of
+   design.md section 13's turn to functional content.
+
+   Note also that the type ANNOTATION carried by the term itself is exactly
+   the premise's index [A], so the term is determined by [x] and the binding
+   alone -- no choice is made anywhere.
+
+   These two clauses are [WkRel.VarTy]'s two clauses plus the value-hood
+   side conditions; [ValVar_VarTy] below is the erasure. *)
 with ValVar : term -> term -> term -> term -> Prop :=
-| valvar_hd : forall G i A,
+| valvar_hd : forall G i A A',
     ValEnv G -> ValTy G i A ->
-    ValVar (oExt G i A) i (wkTy G i A A) (oHd G i A)
-| valvar_wkn : forall G i A x j B,
+    WkTy (oExt G i A) G (oWkn G i A) i A A' ->
+    ValVar (oExt G i A) i A' (oHd G i A)
+| valvar_wkn : forall G i A x j B A',
     ValVar G i A x -> ValTy G j B ->
-    ValVar (oExt G j B) i (wkTy G j B A)
+    WkTy (oExt G j B) G (oWkn G j B) i A A' ->
+    ValVar (oExt G j B) i A'
            (oExpSubst (oExt G j B) G (oWkn G j B) i A x)
 
 (* [ValNe G i A e] : [e] is neutral at the value type [A].  No conversion
@@ -358,6 +358,24 @@ Lemma ValVar_shape G i A x : ValVar G i A x ->
          x = oExpSubst (oExt G0 j B) G0 (oWkn G0 j B) i0 A0 y).
 Proof. destruct 1; [ left | right ]; eauto 10. Qed.
 
+(* A value variable is a variable, forgetting value-hood.  This is the
+   bridge that lets the weakening layer's [VarTy]-indexed facts be used on
+   [ValVar]-indexed ones. *)
+Lemma ValVar_VarTy G i A x : ValVar G i A x -> VarTy G i A x.
+Proof.
+  induction 1;
+    [ eapply varty_hd; eassumption | eapply varty_wkn; eassumption ].
+Qed.
+
+(* Hence a value variable's type is determined by its context and itself --
+   [WkRel.Wk_det]'s fourth conjunct, transported. *)
+Lemma ValVar_type_unique G i1 A1 i2 A2 x
+  : ValVar G i1 A1 x -> ValVar G i2 A2 x -> i1 = i2 /\ A1 = A2.
+Proof.
+  intros H1 H2;
+    exact (VarTy_det (ValVar_VarTy H1) (ValVar_VarTy H2)).
+Qed.
+
 (* The same, one level up: a [ValNe] is a variable, an [app_rel] or an
    [Emptyrec].  (The [NeET_shape]-like helper the old development never
    needed, because [NeET] had four more clauses.) *)
@@ -383,22 +401,17 @@ Proof. destruct 1; [ left | right .. ]; eauto 10. Qed.
 End WithReps.
 
 (* =====================================================================
-   T3 NOTE -- what [wkTy] and [instC] have to be.
+   WHAT IS LEFT PARAMETRIC, AND WHY.
 
-   [wkTy] is the value layer's ONE genuinely new function, and its shape
-   decides the representation of everything above.  On the annotated syntax
-   of this file it must satisfy
+   [instC] is the last parameter.  It is needed only as the type index of
+   [valne_app_rel]: an application's result type is [B[<id,a>]], and the
+   value layer must name THE instantiation.  It retires exactly as [wkTy]
+   just did -- into a deterministic relation -- once the instantiation
+   block exists.  That block is mutual with WkRel.v's, because
+   instantiating under a binder lifts, and lifting is weakening.
 
-     wkTy G i A0 (oU G r l)    = oU (oExt G i A0) r l
-     wkTy G i A0 (oEl G r l c) = oEl (oExt G i A0) r l (wkC G i A0 r l c)
-
-   for a code-level [wkC] whose soundness statement is
-
-     Wk D G w -> ValCode G r l c ->
-     eqt (sCode D r l) (oExpSubst D G w (iCode l) (oU G r l) c) (wkC ... c)
-
-   The [Nat]/[Empty]/[Pi_rel]/[Pi_irr] clauses of that are exactly
-   NfWk.v's [eq_Nat_subst'] / [eq_Empty_subst] / [eq_pi_rel_wk] /
-   [eq_pi_irr_wk], which are proved.  The VARIABLE clause is the open one;
-   see the report accompanying this commit.
+   design.md section 14d predicts it will be the harder of the two: the
+   [Id-Nat-*] rules inspect endpoints and funext recurses through
+   application, so code normalization is no longer structural on its own
+   and a lexicographic measure (codes, then endpoints) may be needed.
    ===================================================================== *)

@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core.
-Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.Values.
+Require Import Pyrosome.Gluing.Dtt.Syntax.
 Import Core.Notations.
 
 (* =====================================================================
@@ -54,6 +54,27 @@ Import Core.Notations.
    at irrelevant [El]s where the only value is [*], and [*] weakens to
    [*] ([wktm_star]).
    ===================================================================== *)
+
+(* ------------------------------------------------------------------ *)
+(* The one value of the irrelevant fragment                             *)
+(*                                                                      *)
+(* [oStar] LIVES HERE, not in Values.v, because the dependency runs the  *)
+(* other way: [Values.v]'s variable clauses need [WkTy] to name the      *)
+(* weakened type of a variable, so Values.v imports this file.  Both     *)
+(* files need [*] -- this one for [wktm_star] and [wktm_emptyrec] -- so  *)
+(* it is defined at the bottom of the stack and re-exported upward.      *)
+(* ------------------------------------------------------------------ *)
+
+(* [*] is DELIBERATELY NOT A FORMER OF [ott_dtt].  It is not a term of the
+   object theory at all, and it must not be: if it were, [Val_inj] would
+   have to distinguish it from the terms it collapses.  The consequence is
+   that soundness of the value layer cannot be [eqt e v] -- [*] has no
+   sort -- and becomes the realization relation [Rz] of Rz.v, whose
+   [rz_star] clause discharges it by proof irrelevance. *)
+Definition oStar : term := con "*" [].
+
+Lemma oStar_not_a_former nm args : oStar = con nm args -> nm = "*" /\ args = [].
+Proof. unfold oStar; intro H; injection H; auto. Qed.
 
 (* The lifted weakening, verbatim from NfWk.v:141.  (WkVal.v has its own
    copy; this file deliberately does not depend on WkVal.v, which drags in
