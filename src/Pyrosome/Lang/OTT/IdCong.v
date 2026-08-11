@@ -10,528 +10,96 @@ From Pyrosome Require Import
   Tools.ComputeWf
   Tools.Matches
   Tools.Resolution
-  Tools.EGraph.TypeInference
-  Tools.EGraph.ComputeWf
-  Tools.EGraph.Automation
   Tools.Interactive.
-
-From Pyrosome.Compilers Require Import Parameterizer.
 
 From Pyrosome.Lang Require Import
   Subst SubstEqnGen.
-From Pyrosome.Lang.OTT Require Import Base Nat Pi SubstCommute ProofIrr.
-
-From Stdlib Require derive.Derive.
+From Pyrosome.Lang.OTT Require Import
+  Base Nat Pi SubstCommute ProofIrr IdCore IdComp IdFunextIrr IdFunextRel.
 
 Import Core.Notations.
-Import PreRule.Notations.
 
 (* ======================================================================= *)
-(* The heterogeneous observational identity type, for the language the      *)
-(* normalization proof targets (src/Pyrosome/Gluing/Dtt/).                  *)
+(* The heterogeneous observational identity type: ASSEMBLY.                 *)
 (*                                                                          *)
-(* This is a SEPARATE fragment from Lang/OTT/Id.v.  Id.v is the exploratory *)
-(* OTT playground (it also carries Idrefl / Idsym / transp and feeds        *)
-(* Cast.v, Computations.v, IdUniv.v, none of which are in ott_dtt); the     *)
-(* fragment below is the one added to ott_dtt, and it differs in three      *)
-(* deliberate ways.                                                         *)
+(* The fragment is authored in three pieces and concatenated here.  The     *)
+(* split is a PERFORMANCE measure, and the numbers are the justification:   *)
+(* [compute_wf_rule] checks each rule against its PREFIX, and its cost      *)
+(* grows sharply with that prefix.  The 3-binder function-extensionality    *)
+(* rule was measured at 1h55m against a two-rule prefix, and had not        *)
+(* finished after 2h35m against the full one.                               *)
 (*                                                                          *)
-(* (1) NO Idrefl.  [Idcong] strictly generalizes it: taking the congruence  *)
-(*     of a term that ignores the bound variable, i.e.                      *)
-(*       Idcong Nat C[wkn] c[wkn] zero zero triv : Id C C c c,             *)
-(*     where [triv] inhabits [Id Nat Nat zero zero], which "Id-Nat-00"      *)
-(*     below reduces to the unit proposition.  So reflexivity is DERIVED.   *)
+(*   IdCore.v    ott_id_core    Id, Id subst                     (~35 s)    *)
+(*   IdComp.v    ott_id_comp    Idcong + the computation rules   (~4 min)   *)
+(*   IdFunextDefs.v  the two rule DEFINITIONS only              (1.3 s)    *)
+(*   IdFunextIrr.v   2-binder funext  } SIBLINGS over a common   (~12 min)  *)
+(*   IdFunextRel.v   3-binder funext  } base, neither in the      (~2h13m)  *)
+(*                                      other's prefix                      *)
+(*   IdCong.v    ott_id_cong = funext_rel ++ funext_irr ++ comp ++ core     *)
 (*                                                                          *)
-(* (2) NO equations for Idcong at all -- not the substitution commutation,  *)
-(*     not the computation rules that push it under a constructor.  Every   *)
-(*     one of them is an equation between two inhabitants of a code at      *)
-(*     [U _ irr _], so [ott_proofirr_el] proves it outright.  They are      *)
-(*     DERIVED in Gluing/Dtt/Eqns.v instead of posited here; the            *)
-(*     normalization proof still rewrites with them exactly as if they      *)
-(*     were rules (that is what makes reification at an Id type a           *)
-(*     structural recursion on the congruence's body).                      *)
+(* The payoff is not the first build, it is every later one: editing a      *)
+(* computation rule no longer re-triggers the two-hour funext check.        *)
 (*                                                                          *)
-(* (3) THE COMPUTATION RULES ARE COMPLETE.  An [Id] whose arguments are all *)
-(*     canonical always reduces; equivalently, in a closed environment an   *)
-(*     Id type never survives, and the only [Id] codes that are normal are  *)
-(*     the NEUTRAL ones (stuck on a neutral endpoint or a neutral code).    *)
-(*     That is what keeps the extension from adding any normal form beyond  *)
-(*     neutrals.                                                            *)
+(* Two constraints shape the decomposition, and neither is negotiable.      *)
 (*                                                                          *)
-(* Id is HETEROGENEOUS: [Id A B t u] relates [t : El A] and [u : El B] for  *)
-(* two codes A,B of a common level, and it is that generality which lets    *)
-(* the function-extensionality rule below quantify over a pair of arguments *)
-(* plus a proof that they are equal, rather than casting one argument       *)
-(* across a domain equality (which would need [Cast], whose [u0] gives a    *)
-(* code for a universe and breaks the code grammar the proof rests on).     *)
+(* (1) [ott_id_comp] must be derived over a base WITHOUT the funext rules.  *)
+(*     With a funext rule in scope, [infer_rule] re-elaborates "Id-Nat-00"  *)
+(*     to a DIFFERENT rule -- verified directly, the two inferred rules     *)
+(*     compare unequal, and inference costs 5.6x more.  That is the         *)
+(*     [next L0] <-> [iota L1] flip Gluing/Dtt/Syntax.v warns about, and it *)
+(*     would silently invalidate the rule shapes baked into Eqns.v / Wf.v / *)
+(*     Model*.v.  Deriving [ott_id_comp] and [ott_id_funext] over a COMMON  *)
+(*     base keeps each one's elaboration exactly as it is.                  *)
+(*                                                                          *)
+(* (2) Consequently the two extensions are SIBLINGS, not a chain, so one of *)
+(*     them has to be lifted to its position in the assembled language.     *)
+(*     [Core.lang_ext_monotonicity] does exactly that: a rule verified      *)
+(*     against a smaller prefix stays well-formed against a larger one.     *)
+(*     We lift [ott_id_funext], so [ott_id_comp] keeps the prefix it was    *)
+(*     checked against and only the (already paid for) funext rules move.   *)
+(*                                                                          *)
+(* Downstream sees exactly what it saw before: [ott_id_cong] together with  *)
+(* [ott_id_cong_wf : wf_lang_ext ott_id_base ott_id_cong].                  *)
 (* ======================================================================= *)
 
-Definition id_cong_injectivity :=
-  [("Id", ["u"; "t"; "B"; "A"; "l"; "G"]);
-   ("Idcong", ["e"; "u"; "t"; "b"; "B"; "lB"; "A"; "l"; "G"])].
-
-Definition ott_id_base :=
-  ott_proofirr_el ++ ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base
-    ++ subst_ott ++ ott_info.
-
-Definition id_inj_all :=
-  id_cong_injectivity ++ pi_injectivity ++ nat_injectivity
-    ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity.
-
-(* Pre-elaborated function-extensionality rules for ott_id_cong.
-   To be inserted into src/Pyrosome/Lang/OTT/IdCong.v BEFORE the Derive,
-   and pushed with `push_rule` inside the Derive block.
-
-   Con argument orders (read off Gluing/Dtt/Syntax.v, authoritative):
-     ext   G i A          wkn G i A        hd G i A
-     cmp   G1 G2 G3 f g   (f : sub G1 G2, g : sub G2 G3)
-     snoc  G G' i A g v   (g : sub G G', result : sub G (ext G' i A))
-     exp_subst G G' g i A v      (A : ty G' i, v : exp G' i A)
-     El G r l e           U G r l
-     Pi_rel G rF lF lG F B       Pi_irr G rF lF F B
-     app_rel G rF lF lG F B f a
-     Id G l A B t u
-*)
-
-(* ---------------------------------------------------------------- *)
-(* IRRELEVANT domains: two binders, no domain-equality premise.       *)
-(*                                                                    *)
-(*   Id (Pi_rel irr lF l F1 B1) (Pi_rel irr lF l F2 B2) f g           *)
-(*     = Pi_irr irr lF F1 (Pi_irr irr lF F2[w1]                       *)
-(*         (Id (B1[a1]) (B2[a2]) (f a1) (g a2)))                      *)
-(*                                                                    *)
-(* Sound WITHOUT the premise because a relevant result cannot depend  *)
-(* on an irrelevant argument except through Emptyrec.                 *)
-(* ---------------------------------------------------------------- *)
-Definition id_pi_pi_irr_rule : string * rule :=
-  let iF    : term := {{e #"info" #"irr" (#"iota" "lF") }} in
-  let nF    : term := {{e #"info" #"rel" (#"next" "lF") }} in
-  let nl    : term := {{e #"info" #"rel" (#"next" "l") }} in
-  let il    : term := {{e #"info" #"rel" (#"iota" "l") }} in
-  let UGF   : term := {{e #"U" "G" #"irr" "lF" }} in
-  let elF1  : term := {{e #"El" "G" #"irr" "lF" "F1" }} in
-  let elF2  : term := {{e #"El" "G" #"irr" "lF" "F2" }} in
-  let X1    : term := {{e #"ext" "G" {iF} {elF1} }} in
-  let X2    : term := {{e #"ext" "G" {iF} {elF2} }} in
-  let UX1   : term := {{e #"U" {X1} #"rel" "l" }} in
-  let UX2   : term := {{e #"U" {X2} #"rel" "l" }} in
-  let pi1   : term := {{e #"Pi_rel" "G" #"irr" "lF" "l" "F1" "B1" }} in
-  let pi2   : term := {{e #"Pi_rel" "G" #"irr" "lF" "l" "F2" "B2" }} in
-  let elpi1 : term := {{e #"El" "G" #"rel" "l" {pi1} }} in
-  let elpi2 : term := {{e #"El" "G" #"rel" "l" {pi2} }} in
-  (* binder 1: a1 : El F1, living in X1 *)
-  let w1    : term := {{e #"wkn" "G" {iF} {elF1} }} in
-  let a1    : term := {{e #"hd" "G" {iF} {elF1} }} in
-  let F1w   : term := {{e #"exp_subst" {X1} "G" {w1} {nF} {UGF} "F1" }} in
-  let elF1w : term := {{e #"El" {X1} #"irr" "lF" {F1w} }} in
-  let F2w   : term := {{e #"exp_subst" {X1} "G" {w1} {nF} {UGF} "F2" }} in
-  let elF2w : term := {{e #"El" {X1} #"irr" "lF" {F2w} }} in
-  (* binder 2: a2 : El F2[w1], living in Y *)
-  let Y     : term := {{e #"ext" {X1} {iF} {elF2w} }} in
-  let w2    : term := {{e #"wkn" {X1} {iF} {elF2w} }} in
-  let a2    : term := {{e #"hd" {X1} {iF} {elF2w} }} in
-  let w21   : term := {{e #"cmp" {Y} {X1} "G" {w2} {w1} }} in
-  let a1w   : term := {{e #"exp_subst" {Y} {X1} {w2} {iF} {elF1w} {a1} }} in
-  (* the domain codes, weakened all the way to Y *)
-  let F1s   : term := {{e #"exp_subst" {Y} "G" {w21} {nF} {UGF} "F1" }} in
-  let F2s   : term := {{e #"exp_subst" {Y} "G" {w21} {nF} {UGF} "F2" }} in
-  let elF1s : term := {{e #"El" {Y} #"irr" "lF" {F1s} }} in
-  let elF2s : term := {{e #"El" {Y} #"irr" "lF" {F2s} }} in
-  (* the two codomain instances *)
-  let ins1  : term := {{e #"snoc" {Y} "G" {iF} {elF1} {w21} {a1w} }} in
-  let ins2  : term := {{e #"snoc" {Y} "G" {iF} {elF2} {w21} {a2} }} in
-  let cod1   : term := {{e #"exp_subst" {Y} {X1} {ins1} {nl} {UX1} "B1" }} in
-  let cod2   : term := {{e #"exp_subst" {Y} {X2} {ins2} {nl} {UX2} "B2" }} in
-  (* the two applications: codomain codes lifted along w21 *)
-  let YF1   : term := {{e #"ext" {Y} {iF} {elF1s} }} in
-  let YF2   : term := {{e #"ext" {Y} {iF} {elF2s} }} in
-  let lift1 : term := {{e #"snoc" {YF1} "G" {iF} {elF1}
-                          (#"cmp" {YF1} {Y} "G" (#"wkn" {Y} {iF} {elF1s}) {w21})
-                          (#"hd" {Y} {iF} {elF1s}) }} in
-  let lift2 : term := {{e #"snoc" {YF2} "G" {iF} {elF2}
-                          (#"cmp" {YF2} {Y} "G" (#"wkn" {Y} {iF} {elF2s}) {w21})
-                          (#"hd" {Y} {iF} {elF2s}) }} in
-  let lifb1   : term := {{e #"exp_subst" {YF1} {X1} {lift1} {nl} {UX1} "B1" }} in
-  let lifb2   : term := {{e #"exp_subst" {YF2} {X2} {lift2} {nl} {UX2} "B2" }} in
-  let fw    : term := {{e #"exp_subst" {Y} "G" {w21} {il} {elpi1} "f" }} in
-  let gw    : term := {{e #"exp_subst" {Y} "G" {w21} {il} {elpi2} "g" }} in
-  let app1  : term := {{e #"app_rel" {Y} #"irr" "lF" "l" {F1s} {lifb1} {fw} {a1w} }} in
-  let app2  : term := {{e #"app_rel" {Y} #"irr" "lF" "l" {F2s} {lifb2} {gw} {a2} }} in
-  let body  : term := {{e #"Id" {Y} "l" {cod1} {cod2} {app1} {app2} }} in
-  let inner : term := {{e #"Pi_irr" {X1} #"irr" "lF" {F2w} {body} }} in
-  ("Id-Pi-Pi-irr",
-   term_eq_rule
-     [("g", {{s #"exp" "G" {il} {elpi2} }});
-      ("f", {{s #"exp" "G" {il} {elpi1} }});
-      ("B2", {{s #"exp" {X2} {nl} {UX2} }});
-      ("F2", {{s #"exp" "G" {nF} {UGF} }});
-      ("B1", {{s #"exp" {X1} {nl} {UX1} }});
-      ("F1", {{s #"exp" "G" {nF} {UGF} }});
-      ("l", {{s #"lvl" }});
-      ("lF", {{s #"lvl" }});
-      ("G", {{s #"env" }})]
-     {{e #"Id" "G" "l" {pi1} {pi2} "f" "g" }}
-     {{e #"Pi_irr" "G" #"irr" "lF" "F1" {inner} }}
-     {{s #"exp" "G" (#"info" #"rel" (#"iota" #"L1")) (#"U" "G" #"irr" #"L0") }}).
-
-(* ---------------------------------------------------------------- *)
-(* RELEVANT domains: three binders, with the domain-equality premise. *)
-(*                                                                    *)
-(*   Id (Pi_rel rel lF l F1 B1) (Pi_rel rel lF l F2 B2) f g           *)
-(*     = Pi_irr rel lF F1 (Pi_irr rel lF F2[w1]                       *)
-(*         (Pi_irr irr L0 (Id F1 F2 a1 a2)                            *)
-(*           (Id (B1[a1]) (B2[a2]) (f a1) (g a2))))                   *)
-(* ---------------------------------------------------------------- *)
-Definition id_pi_pi_rel_rule : string * rule :=
-  let iF    : term := {{e #"info" #"rel" (#"iota" "lF") }} in
-  let iP    : term := {{e #"info" #"irr" (#"iota" #"L0") }} in
-  let nF    : term := {{e #"info" #"rel" (#"next" "lF") }} in
-  let nl    : term := {{e #"info" #"rel" (#"next" "l") }} in
-  let il    : term := {{e #"info" #"rel" (#"iota" "l") }} in
-  let n0    : term := {{e #"info" #"rel" (#"iota" #"L1") }} in
-  let UGF   : term := {{e #"U" "G" #"rel" "lF" }} in
-  let elF1  : term := {{e #"El" "G" #"rel" "lF" "F1" }} in
-  let elF2  : term := {{e #"El" "G" #"rel" "lF" "F2" }} in
-  let X1    : term := {{e #"ext" "G" {iF} {elF1} }} in
-  let X2    : term := {{e #"ext" "G" {iF} {elF2} }} in
-  let UX1   : term := {{e #"U" {X1} #"rel" "l" }} in
-  let UX2   : term := {{e #"U" {X2} #"rel" "l" }} in
-  let pi1   : term := {{e #"Pi_rel" "G" #"rel" "lF" "l" "F1" "B1" }} in
-  let pi2   : term := {{e #"Pi_rel" "G" #"rel" "lF" "l" "F2" "B2" }} in
-  let elpi1 : term := {{e #"El" "G" #"rel" "l" {pi1} }} in
-  let elpi2 : term := {{e #"El" "G" #"rel" "l" {pi2} }} in
-  (* binder 1: a1 : El F1, in X1 *)
-  let w1    : term := {{e #"wkn" "G" {iF} {elF1} }} in
-  let a1    : term := {{e #"hd" "G" {iF} {elF1} }} in
-  let F1w   : term := {{e #"exp_subst" {X1} "G" {w1} {nF} {UGF} "F1" }} in
-  let elF1w : term := {{e #"El" {X1} #"rel" "lF" {F1w} }} in
-  let F2w   : term := {{e #"exp_subst" {X1} "G" {w1} {nF} {UGF} "F2" }} in
-  let elF2w : term := {{e #"El" {X1} #"rel" "lF" {F2w} }} in
-  (* binder 2: a2 : El F2[w1], in Y *)
-  let Y     : term := {{e #"ext" {X1} {iF} {elF2w} }} in
-  let w2    : term := {{e #"wkn" {X1} {iF} {elF2w} }} in
-  let a2    : term := {{e #"hd" {X1} {iF} {elF2w} }} in
-  let w21   : term := {{e #"cmp" {Y} {X1} "G" {w2} {w1} }} in
-  let a1w   : term := {{e #"exp_subst" {Y} {X1} {w2} {iF} {elF1w} {a1} }} in
-  let F1s   : term := {{e #"exp_subst" {Y} "G" {w21} {nF} {UGF} "F1" }} in
-  let F2s   : term := {{e #"exp_subst" {Y} "G" {w21} {nF} {UGF} "F2" }} in
-  (* binder 3: p : Id F1 F2 a1 a2, in Z *)
-  let ieq   : term := {{e #"Id" {Y} "lF" {F1s} {F2s} {a1w} {a2} }} in
-  let elieq : term := {{e #"El" {Y} #"irr" #"L0" {ieq} }} in
-  let Z     : term := {{e #"ext" {Y} {iP} {elieq} }} in
-  let w3    : term := {{e #"wkn" {Y} {iP} {elieq} }} in
-  let w3G   : term := {{e #"cmp" {Z} {Y} "G" {w3} {w21} }} in
-  (* everything transported from Y to Z *)
-  let a1z   : term := {{e #"exp_subst" {Z} {Y} {w3} {iF} (#"El" {Y} #"rel" "lF" {F1s}) {a1w} }} in
-  let a2z   : term := {{e #"exp_subst" {Z} {Y} {w3} {iF} (#"El" {Y} #"rel" "lF" {F2s}) {a2} }} in
-  let F1z   : term := {{e #"exp_subst" {Z} "G" {w3G} {nF} {UGF} "F1" }} in
-  let F2z   : term := {{e #"exp_subst" {Z} "G" {w3G} {nF} {UGF} "F2" }} in
-  let elF1z : term := {{e #"El" {Z} #"rel" "lF" {F1z} }} in
-  let elF2z : term := {{e #"El" {Z} #"rel" "lF" {F2z} }} in
-  (* the two codomain instances, in Z *)
-  let ins1  : term := {{e #"snoc" {Z} "G" {iF} {elF1} {w3G} {a1z} }} in
-  let ins2  : term := {{e #"snoc" {Z} "G" {iF} {elF2} {w3G} {a2z} }} in
-  let cod1   : term := {{e #"exp_subst" {Z} {X1} {ins1} {nl} {UX1} "B1" }} in
-  let cod2   : term := {{e #"exp_subst" {Z} {X2} {ins2} {nl} {UX2} "B2" }} in
-  (* the two applications, in Z *)
-  let ZF1   : term := {{e #"ext" {Z} {iF} {elF1z} }} in
-  let ZF2   : term := {{e #"ext" {Z} {iF} {elF2z} }} in
-  let lift1 : term := {{e #"snoc" {ZF1} "G" {iF} {elF1}
-                          (#"cmp" {ZF1} {Z} "G" (#"wkn" {Z} {iF} {elF1z}) {w3G})
-                          (#"hd" {Z} {iF} {elF1z}) }} in
-  let lift2 : term := {{e #"snoc" {ZF2} "G" {iF} {elF2}
-                          (#"cmp" {ZF2} {Z} "G" (#"wkn" {Z} {iF} {elF2z}) {w3G})
-                          (#"hd" {Z} {iF} {elF2z}) }} in
-  let lifb1   : term := {{e #"exp_subst" {ZF1} {X1} {lift1} {nl} {UX1} "B1" }} in
-  let lifb2   : term := {{e #"exp_subst" {ZF2} {X2} {lift2} {nl} {UX2} "B2" }} in
-  let fz    : term := {{e #"exp_subst" {Z} "G" {w3G} {il} {elpi1} "f" }} in
-  let gz    : term := {{e #"exp_subst" {Z} "G" {w3G} {il} {elpi2} "g" }} in
-  let app1  : term := {{e #"app_rel" {Z} #"rel" "lF" "l" {F1z} {lifb1} {fz} {a1z} }} in
-  let app2  : term := {{e #"app_rel" {Z} #"rel" "lF" "l" {F2z} {lifb2} {gz} {a2z} }} in
-  let body  : term := {{e #"Id" {Z} "l" {cod1} {cod2} {app1} {app2} }} in
-  let mid   : term := {{e #"Pi_irr" {Y} #"irr" #"L0" {ieq} {body} }} in
-  let inner : term := {{e #"Pi_irr" {X1} #"rel" "lF" {F2w} {mid} }} in
-  ("Id-Pi-Pi-rel",
-   term_eq_rule
-     [("g", {{s #"exp" "G" {il} {elpi2} }});
-      ("f", {{s #"exp" "G" {il} {elpi1} }});
-      ("B2", {{s #"exp" {X2} {nl} {UX2} }});
-      ("F2", {{s #"exp" "G" {nF} {UGF} }});
-      ("B1", {{s #"exp" {X1} {nl} {UX1} }});
-      ("F1", {{s #"exp" "G" {nF} {UGF} }});
-      ("l", {{s #"lvl" }});
-      ("lF", {{s #"lvl" }});
-      ("G", {{s #"env" }})]
-     {{e #"Id" "G" "l" {pi1} {pi2} "f" "g" }}
-     {{e #"Pi_irr" "G" #"rel" "lF" "F1" {inner} }}
-     {{s #"exp" "G" {n0} (#"U" "G" #"irr" #"L0") }}).
-
-Derive ott_id_cong
-       in (wf_lang_ext ott_id_base ott_id_cong)
-       as ott_id_cong_wf.
+(* Composition of two extensions.  [wf_lang_ext lp ((n,r)::l)] demands
+   [wf_rule (l ++ lp) r], so stacking an extension of [l1 ++ lp] on top of an
+   extension of [lp] is exactly an associativity shuffle. *)
+Lemma wf_lang_ext_compose (lp l1 l2 : lang)
+  : wf_lang_ext lp l1 ->
+    wf_lang_ext (l1 ++ lp) l2 ->
+    wf_lang_ext lp (l2 ++ l1).
 Proof.
-  setup_lang_interactive.
-
-  (* --------------------------------------------------------------- *)
-  (* The code.                                                        *)
-  (* --------------------------------------------------------------- *)
-
-  (* [Id A B t u] : the heterogeneous equality of [t : El A] and
-     [u : El B], a code in SProp = U_{%,0}.  A and B are proof-RELEVANT
-     codes at a common level [l]; there is no [Id] between irrelevant
-     codes, and none is needed -- proof irrelevance already equates all
-     inhabitants of those. *)
-  elab_rule {[r "G" : #"env", "l" : #"lvl",
-          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
-          "B" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
-          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
-          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "B")
-      -----------------------------------------------
-      #"Id" "A" "B" "t" "u" : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-
-  elab_rule {[r "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'", "l" : #"lvl",
-          "A" : #"exp" "G'" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G'"] #"rel" "l"),
-          "B" : #"exp" "G'" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G'"] #"rel" "l"),
-          "t" : #"exp" "G'" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
-          "u" : #"exp" "G'" (#"info" #"rel" (#"iota" "l")) (#"El" "B")
-      ----------------------------------------------- ("Id subst")
-      #"exp_subst" "g" (#"Id" "A" "B" "t" "u")
-        = #"Id" (#"exp_subst" "g" "A") (#"exp_subst" "g" "B") (#"exp_subst" "g" "t") (#"exp_subst" "g" "u")
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-
-  (* --------------------------------------------------------------- *)
-  (* The congruence -- the only proof former, and the generalization   *)
-  (* of reflexivity.                                                   *)
-  (* --------------------------------------------------------------- *)
-
-  (* [Idcong A B b t u e] : from [e : Id A A t u] and a term [b : El B]
-     with one free variable of type [El A], conclude that the two
-     instantiations of [b] are (heterogeneously) equal:
-        Id (B[t]) (B[u]) (b[t]) (b[u]).
-     The codomain code B may itself mention the variable, which is
-     exactly why the equality has to be heterogeneous.
-
-     It lives in SProp, so positing it as a term former is coherent by
-     proof irrelevance, and no computation rule for it is needed: every
-     equation one would write -- pushing it under [suc], under a [lam],
-     under a substitution, or bottoming out at the variable ([Idcong] of
-     [hd] is [e]) or at a closed subterm (reflexivity) -- is an equation
-     between two inhabitants of the same irrelevant code, hence already
-     provable.  Gluing/Dtt/Eqns.v derives them. *)
-  elab_rule {[r "G" : #"env", "l" : #"lvl", "lB" : #"lvl",
-          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
-          "B" : #"exp" (#"ext" "G" (#"El" "A")) (#"info" #"rel" (#"next" "lB"))
-                       (#"U" ["G" := #"ext" "G" (#"El" "A")] #"rel" "lB"),
-          "b" : #"exp" (#"ext" "G" (#"El" "A")) (#"info" #"rel" (#"iota" "lB")) (#"El" "B"),
-          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
-          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
-          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
-                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
-                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
-      -----------------------------------------------
-      #"Idcong" "A" "B" "b" "t" "u" "e"
-        : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
-          (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
-                (#"Id" ["G" := "G"] ["l" := "lB"]
-                      (#"exp_subst" (#"snoc" #"id" "t") "B")
-                      (#"exp_subst" (#"snoc" #"id" "u") "B")
-                      (#"exp_subst" (#"snoc" #"id" "t") "b")
-                      (#"exp_subst" (#"snoc" #"id" "u") "b")))
-    ]}%prerule
-    id_inj_all.
-
-  (* --------------------------------------------------------------- *)
-  (* Computation, part 1: both codes are Nat.                          *)
-  (*                                                                   *)
-  (* The four canonical/canonical cases.  Together with the clashes     *)
-  (* below they leave an [Id] at Nat stuck exactly when an ENDPOINT is  *)
-  (* neutral, which is what makes the extension add no normal form      *)
-  (* beyond neutrals.                                                   *)
-  (* --------------------------------------------------------------- *)
-
-  (* 0 = 0 : the unit proposition (Pi_irr Empty Empty). *)
-  elab_rule {[r "G" : #"env"
-      ----------------------------------------------- ("Id-Nat-00")
-      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"]) #"zero" #"zero"
-        = #"Pi_irr" #"irr" #"L0" (#"Empty" ["G" := "G"])
-            (#"Empty" ["G" := #"ext" "G" (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"] (#"Empty" ["G" := "G"]))])
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-
-  (* 0 = suc t, suc t = 0 : the constructors are disjoint. *)
-  elab_rule {[r "G" : #"env",
-          "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
-      ----------------------------------------------- ("Id-Nat-0S")
-      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"]) #"zero" (#"suc" "t")
-        = #"Empty" ["G" := "G"]
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-  elab_rule {[r "G" : #"env",
-          "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
-      ----------------------------------------------- ("Id-Nat-S0")
-      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"]) (#"suc" "t") #"zero"
-        = #"Empty" ["G" := "G"]
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-
-  (* suc is injective. *)
-  elab_rule {[r "G" : #"env",
-          "m" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"])),
-          "n" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
-      ----------------------------------------------- ("Id-Nat-SS")
-      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"]) (#"suc" "m") (#"suc" "n")
-        = #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"]) "m" "n"
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-
-  (* --------------------------------------------------------------- *)
-  (* Computation, part 2: the two codes have different heads.          *)
-  (*                                                                   *)
-  (* Nat against Pi, and Pi against Nat.  These are TYPE-DIRECTED --    *)
-  (* the endpoints t,u are arbitrary -- which is why they cost nothing  *)
-  (* structurally.                                                      *)
-  (* --------------------------------------------------------------- *)
-
-  elab_rule {[r "G" : #"env", "rF" : #"relevance", "lF" : #"lvl",
-          "F" : #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G"] "rF" "lF"),
-          "B" : #"exp" (#"ext" "G" (#"El" "F")) (#"info" #"rel" (#"next" #"L0"))
-                       (#"U" ["G" := #"ext" "G" (#"El" "F")] #"rel" #"L0"),
-          "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"])),
-          "u" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0"))
-                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Pi_rel" ["G" := "G"] "rF" "lF" #"L0" "F" "B"))
-      ----------------------------------------------- ("Id-Nat-Pi")
-      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Pi_rel" ["G" := "G"] "rF" "lF" #"L0" "F" "B") "t" "u"
-        = #"Empty" ["G" := "G"]
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-  elab_rule {[r "G" : #"env", "rF" : #"relevance", "lF" : #"lvl",
-          "F" : #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G"] "rF" "lF"),
-          "B" : #"exp" (#"ext" "G" (#"El" "F")) (#"info" #"rel" (#"next" #"L0"))
-                       (#"U" ["G" := #"ext" "G" (#"El" "F")] #"rel" #"L0"),
-          "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0"))
-                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Pi_rel" ["G" := "G"] "rF" "lF" #"L0" "F" "B")),
-          "u" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
-      ----------------------------------------------- ("Id-Pi-Nat")
-      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Pi_rel" ["G" := "G"] "rF" "lF" #"L0" "F" "B") (#"Nat" ["G" := "G"]) "t" "u"
-        = #"Empty" ["G" := "G"]
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-
-  (* --------------------------------------------------------------- *)
-  (* Computation, part 3: both codes are Pi, but their DOMAIN INDICES  *)
-  (* disagree.                                                         *)
-  (*                                                                   *)
-  (* [Pi_rel G rF lF lG F B] records the domain's relevance and level   *)
-  (* in the code, so two Pi codes whose (rF,lF) differ are as distinct  *)
-  (* as a Nat and a Pi: the equality clashes to Empty.  Four rules      *)
-  (* cover it -- relevance mismatch either way (levels arbitrary), and  *)
-  (* level mismatch either way (relevance shared).  They overlap, which *)
-  (* is harmless: every one of them gives Empty.  The remaining case,   *)
-  (* (rF,lF) shared, is genuine function extensionality, below.         *)
-  (* --------------------------------------------------------------- *)
-
-  elab_rule {[r "G" : #"env", "l" : #"lvl", "lF1" : #"lvl", "lF2" : #"lvl",
-          "F1" : #"exp" "G" (#"info" #"rel" (#"next" "lF1")) (#"U" ["G" := "G"] #"rel" "lF1"),
-          "B1" : #"exp" (#"ext" "G" (#"El" "F1")) (#"info" #"rel" (#"next" "l"))
-                        (#"U" ["G" := #"ext" "G" (#"El" "F1")] #"rel" "l"),
-          "F2" : #"exp" "G" (#"info" #"rel" (#"next" "lF2")) (#"U" ["G" := "G"] #"irr" "lF2"),
-          "B2" : #"exp" (#"ext" "G" (#"El" "F2")) (#"info" #"rel" (#"next" "l"))
-                        (#"U" ["G" := #"ext" "G" (#"El" "F2")] #"rel" "l"),
-          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l"))
-                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "l"] (#"Pi_rel" ["G" := "G"] #"rel" "lF1" "l" "F1" "B1")),
-          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l"))
-                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "l"] (#"Pi_rel" ["G" := "G"] #"irr" "lF2" "l" "F2" "B2"))
-      ----------------------------------------------- ("Id-Pi-Pi-rel-irr")
-      #"Id" ["G" := "G"] ["l" := "l"]
-            (#"Pi_rel" ["G" := "G"] #"rel" "lF1" "l" "F1" "B1")
-            (#"Pi_rel" ["G" := "G"] #"irr" "lF2" "l" "F2" "B2") "t" "u"
-        = #"Empty" ["G" := "G"]
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-  elab_rule {[r "G" : #"env", "l" : #"lvl", "lF1" : #"lvl", "lF2" : #"lvl",
-          "F1" : #"exp" "G" (#"info" #"rel" (#"next" "lF1")) (#"U" ["G" := "G"] #"irr" "lF1"),
-          "B1" : #"exp" (#"ext" "G" (#"El" "F1")) (#"info" #"rel" (#"next" "l"))
-                        (#"U" ["G" := #"ext" "G" (#"El" "F1")] #"rel" "l"),
-          "F2" : #"exp" "G" (#"info" #"rel" (#"next" "lF2")) (#"U" ["G" := "G"] #"rel" "lF2"),
-          "B2" : #"exp" (#"ext" "G" (#"El" "F2")) (#"info" #"rel" (#"next" "l"))
-                        (#"U" ["G" := #"ext" "G" (#"El" "F2")] #"rel" "l"),
-          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l"))
-                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "l"] (#"Pi_rel" ["G" := "G"] #"irr" "lF1" "l" "F1" "B1")),
-          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l"))
-                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "l"] (#"Pi_rel" ["G" := "G"] #"rel" "lF2" "l" "F2" "B2"))
-      ----------------------------------------------- ("Id-Pi-Pi-irr-rel")
-      #"Id" ["G" := "G"] ["l" := "l"]
-            (#"Pi_rel" ["G" := "G"] #"irr" "lF1" "l" "F1" "B1")
-            (#"Pi_rel" ["G" := "G"] #"rel" "lF2" "l" "F2" "B2") "t" "u"
-        = #"Empty" ["G" := "G"]
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-  elab_rule {[r "G" : #"env", "l" : #"lvl", "rF" : #"relevance",
-          "F1" : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] "rF" #"L0"),
-          "B1" : #"exp" (#"ext" "G" (#"El" "F1")) (#"info" #"rel" (#"next" "l"))
-                        (#"U" ["G" := #"ext" "G" (#"El" "F1")] #"rel" "l"),
-          "F2" : #"exp" "G" (#"info" #"rel" (#"next" #"L1")) (#"U" ["G" := "G"] "rF" #"L1"),
-          "B2" : #"exp" (#"ext" "G" (#"El" "F2")) (#"info" #"rel" (#"next" "l"))
-                        (#"U" ["G" := #"ext" "G" (#"El" "F2")] #"rel" "l"),
-          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l"))
-                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "l"] (#"Pi_rel" ["G" := "G"] "rF" #"L0" "l" "F1" "B1")),
-          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l"))
-                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "l"] (#"Pi_rel" ["G" := "G"] "rF" #"L1" "l" "F2" "B2"))
-      ----------------------------------------------- ("Id-Pi-Pi-L0-L1")
-      #"Id" ["G" := "G"] ["l" := "l"]
-            (#"Pi_rel" ["G" := "G"] "rF" #"L0" "l" "F1" "B1")
-            (#"Pi_rel" ["G" := "G"] "rF" #"L1" "l" "F2" "B2") "t" "u"
-        = #"Empty" ["G" := "G"]
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-  elab_rule {[r "G" : #"env", "l" : #"lvl", "rF" : #"relevance",
-          "F1" : #"exp" "G" (#"info" #"rel" (#"next" #"L1")) (#"U" ["G" := "G"] "rF" #"L1"),
-          "B1" : #"exp" (#"ext" "G" (#"El" "F1")) (#"info" #"rel" (#"next" "l"))
-                        (#"U" ["G" := #"ext" "G" (#"El" "F1")] #"rel" "l"),
-          "F2" : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] "rF" #"L0"),
-          "B2" : #"exp" (#"ext" "G" (#"El" "F2")) (#"info" #"rel" (#"next" "l"))
-                        (#"U" ["G" := #"ext" "G" (#"El" "F2")] #"rel" "l"),
-          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l"))
-                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "l"] (#"Pi_rel" ["G" := "G"] "rF" #"L1" "l" "F1" "B1")),
-          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l"))
-                       (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := "l"] (#"Pi_rel" ["G" := "G"] "rF" #"L0" "l" "F2" "B2"))
-      ----------------------------------------------- ("Id-Pi-Pi-L1-L0")
-      #"Id" ["G" := "G"] ["l" := "l"]
-            (#"Pi_rel" ["G" := "G"] "rF" #"L1" "l" "F1" "B1")
-            (#"Pi_rel" ["G" := "G"] "rF" #"L0" "l" "F2" "B2") "t" "u"
-        = #"Empty" ["G" := "G"]
-      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
-    ]}%prerule
-    id_inj_all.
-
-  (* --------------------------------------------------------------- *)
-  (* Computation, part 4: function extensionality.                     *)
-  (*                                                                   *)
-  (* Pre-elaborated and added with `push_rule` (which runs only the    *)
-  (* automated wf-CHECK) rather than `elab_rule`, exactly as Pi.v does  *)
-  (* for "Pi_rel eta": the nested binders and the applications under    *)
-  (* them defeat elab_rule's e-graph type INFERENCE.                    *)
-  (* --------------------------------------------------------------- *)
-
-  push_rule id_pi_pi_irr_rule.
-
-  apply wf_lang_nil.
-Unshelve.
-1:shelve.
-1:vm_compute; reflexivity.
+  intros H1 H2; induction H2; basic_goal_prep; auto.
+  constructor; auto;
+    rewrite <- app_assoc; assumption.
 Qed.
+
+Definition ott_id_cong := Eval vm_compute in
+  (ott_id_funext_rel ++ ott_id_funext_irr ++ ott_id_comp ++ ott_id_core).
+
+Lemma ott_id_cong_wf : wf_lang_ext ott_id_base ott_id_cong.
+Proof.
+  replace ott_id_cong
+    with (ott_id_funext_rel ++ (ott_id_funext_irr ++ (ott_id_comp ++ ott_id_core)))
+    by (vm_compute; reflexivity).
+  (* Each piece was checked against the smallest prefix it needs, and is lifted
+     into position here.  The three lifts are the whole point of the split. *)
+  apply wf_lang_ext_compose;
+    [ apply wf_lang_ext_compose;
+      [ apply wf_lang_ext_compose;
+        [ exact ott_id_core_wf | exact ott_id_comp_wf ]
+      | (* funext_irr: checked over core ++ base *)
+        eapply lang_ext_monotonicity;
+        [ exact ott_id_funext_irr_wf
+        | unfold incl; intros; rewrite ?in_app_iff in *; tauto
+        | apply use_compute_all_fresh; vm_compute; exact I ] ]
+    | (* funext_rel: also checked over core ++ base, NOT over funext_irr *)
+      eapply lang_ext_monotonicity;
+      [ exact ott_id_funext_rel_wf
+      | unfold incl; intros; rewrite ?in_app_iff in *; tauto
+      | apply use_compute_all_fresh; vm_compute; exact I ] ].
+Qed.
+
 #[local] Definition ott_id_cong_entry := lang_entry ott_id_cong_wf.
 #[export] Hint Resolve ott_id_cong_entry : wf_lang_db.

@@ -7,9 +7,9 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Tools.ComputeWf Tools.Matches
-  Tools.EGraph.ComputeWf.
+  Tools.Resolution Tools.EGraph.ComputeWf.
 From Pyrosome.Lang Require Import Subst.
-From Pyrosome.Lang.OTT Require Import Base Nat Pi SubstCommute ProofIrr.
+From Pyrosome.Lang.OTT Require Import Base Nat Pi SubstCommute ProofIrr IdCore IdCong.
 Import Core.Notations.
 
 (* =====================================================================
@@ -79,11 +79,34 @@ Notation lang := (@Rule.lang string).
 (* The language                                                         *)
 (* ------------------------------------------------------------------ *)
 
+(* [ott_id_cong] is PREPENDED, and that is forced, not cosmetic: [infer_rule]
+   re-extracts every rule's conclusion sort with [TypeInference.mk_weight],
+   whose tie-breaks depend on the AMBIENT language (see the "next0" spelling
+   discussion in design.md section 9b).  Inserting the Id fragment anywhere it
+   would be in scope while an earlier fragment elaborates can silently flip an
+   existing rule between [next L0] and [iota L1], which invalidates the shapes
+   baked into Eqns.v / Wf.v / Model*.v.  Adding it at the front leaves every
+   pre-existing rule byte-identical. *)
 Definition ott_dtt : lang := Eval vm_compute in
-  (ott_proofirr_el ++ ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base ++ subst_ott ++ ott_info).
+  (ott_id_cong ++ ott_proofirr_el ++ ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base
+     ++ subst_ott ++ ott_info).
 
+(* COMPOSITIONAL, not [compute_wf_lang].  Re-running the e-graph wf checker
+   over the whole language costs time proportional to (number of rules) x
+   (cost of checking a rule against its prefix), and the Id fragment makes
+   the second factor much worse: adding a function-extensionality rule to a
+   rule's prefix was measured at a >3.5x blowup on the very next check.
+   Every fragment already carries its own [wf_lang_ext] lemma, so there is
+   nothing to recompute -- [prove_by_lang_db] assembles them from the
+   [wf_lang_db] hints in about a second.  The [replace] is what lets it see
+   [ott_dtt] (a [vm_compute]d flat list) as the concatenation the hints are
+   stated about. *)
 Lemma ott_dtt_wf : wf_lang ott_dtt.
-Proof. compute_wf_lang. Qed.
+Proof.
+  replace ott_dtt with (ott_id_cong ++ ott_id_base)
+    by (vm_compute; reflexivity).
+  prove_by_lang_db.
+Qed.
 
 (* ------------------------------------------------------------------ *)
 (* Sorts                                                                *)
@@ -154,6 +177,27 @@ Definition oAppRel (G rF lF lG F B f a : term) : term :=
 Definition oAppIrr (G rF lF F B f a : term) : term :=
   con "app_irr" [a; f; B; F; lF; rF; G].
 
+(* --- ott_id_cong --- *)
+(* [Id G l A B t u] : the heterogeneous equality of [t : El A] and [u : El B],
+   for RELEVANT codes A,B of the common level [l].  It is a code at
+   [U G irr L0], and -- like [Empty] and [Pi_irr], and unlike [Nat] -- it is
+   elaborated at the info [iEl oRel oL1] rather than the [iCode oL0] the rule
+   was written with; the two are equal by "next0".
+
+   NOTE the name: [oId] is already taken, by the identity SUBSTITUTION
+   [con "id" [G]] of subst_ott.  The object-language constructor here is
+   [con "Id" ...] -- a different string -- so only the Gallina abbreviation
+   needs to differ. *)
+Definition oIdEq (G l A B t u : term) : term := con "Id" [u; t; B; A; l; G].
+
+(* [Idcong G l lB A B b t u e] : the congruence of the one-hole context [b]
+   along [e : Id A A t u].  The ONLY proof former of the fragment (it
+   generalizes reflexivity), and it carries no equations at all -- proof
+   irrelevance proves every one, including its substitution commutation.
+   See design.md section 12. *)
+Definition oIdcong (G l lB A B b t u e : term) : term :=
+  con "Idcong" [e; u; t; b; B; lB; A; l; G].
+
 (* ------------------------------------------------------------------ *)
 (* Derived abbreviations that recur in the rules' conclusion sorts       *)
 (* ------------------------------------------------------------------ *)
@@ -177,6 +221,12 @@ Definition oExtC (G rF lF F : term) : term :=
    appears in [app_rel]'s conclusion sort. *)
 Definition oInst (G rF lF F a : term) : term :=
   oSnoc G G (iEl rF lF) (oEl G rF lF F) (oId G) a.
+
+(* The unit proposition: what "Id-Nat-00" reduces to, and the only closed
+   inhabited code at [U _ irr L0].  Written out because the Id computation
+   table names it. *)
+Definition oUnit (G : term) : term :=
+  oPiIrr G oIrr oL0 (oEmpty G) (oEmpty (oExtC G oIrr oL0 (oEmpty G))).
 
 (* [app_rel]'s conclusion sort, verbatim from the compiled rule (with the
    argument [a] left abstract). *)
