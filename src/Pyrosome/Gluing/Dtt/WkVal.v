@@ -319,5 +319,10 @@ End WithNeutrals.
          syntax, so the annotation is derivable from the depth and the
          context.  A hybrid; not obviously cheaper than (a).
 
-   The choice is upstream of everything else in the value layer.
+   RESOLVED: (a).  See src/Pyrosome/Gluing/Dtt/WkRel.v, which carries the
+   relation, its determinism, and -- the thing this file could not reach
+   at all -- the stuck-[Id] and element clauses.  [wkV] and [wkV_sound]
+   are kept here because they remain the record of what IS definitional:
+   on the canonical code grammar the annotated representation needs no
+   relational detour, and that is why (b) was not necessary.
    ===================================================================== *)
