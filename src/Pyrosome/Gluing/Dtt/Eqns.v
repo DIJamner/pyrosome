@@ -563,6 +563,29 @@ Lemma eq_Pi_rel_eta G rF lF lG F B f
       f.
 Proof. intros; estep "Pi_rel eta". Qed.
 
+(* [proof irrelevance] (ott_proofirr_el, Lang/OTT/ProofIrr.v).  This is the
+   ONLY appeal to this rule in the development, and it is what stands in for
+   the missing "Pi_irr eta": [Pi_irr] has no eta rule of its own, but any two
+   elements of the same proof-irrelevant type [El irr l c] are definitionally
+   equal, which is what LogRelCore.v's [Pi_irr] ESCAPE branch needs -- it is
+   the exact counterpart of [eq_eta_wkn]'s use of "Pi_rel eta" in the
+   relevant ESCAPE branch.
+
+   Note the two are not interchangeable in strength, and the [Pi_irr] side is
+   the EASIER one.  "Pi_rel eta" identifies [f] with one specific lambda, its
+   eta-expansion, so the relevant branch must build exactly that term; this
+   rule identifies [t] with EVERY well-typed lambda at the type at once, so
+   the irrelevant branch only has to exhibit some normal inhabitant of the
+   codomain. *)
+Lemma eq_proof_irr G l c t u
+  : wf_term ott_dtt [] G sEnv ->
+    wf_term ott_dtt [] l sLvl ->
+    wf_term ott_dtt [] c (sCode G oIrr l) ->
+    wf_term ott_dtt [] t (sElt G oIrr l c) ->
+    wf_term ott_dtt [] u (sElt G oIrr l c) ->
+    eq_term ott_dtt [] (sElt G oIrr l c) t u.
+Proof. intros; estep "proof irrelevance". Qed.
+
 (* ================================================================== *)
 (* Congruences                                                         *)
 (* ================================================================== *)

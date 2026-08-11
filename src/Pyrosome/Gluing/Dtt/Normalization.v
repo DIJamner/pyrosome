@@ -17,13 +17,14 @@ Import Core.Notations.
 
    [ott_dtt] is
 
-       ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base
-         ++ subst_ott ++ ott_info                            (73 rules)
+       ott_proofirr_el ++ ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base
+         ++ subst_ott ++ ott_info                            (74 rules)
 
    -- a Tarski universe (U/El, two levels, relevance tags) with dependent
    products, both proof-relevant and proof-irrelevant, with BETA AND ETA,
-   Nat, Empty and its eliminator, over a parameterized substitution
-   calculus with explicit substitutions.
+   Nat, Empty and its eliminator, definitional proof irrelevance
+   (El-sorted), over a parameterized substitution calculus with explicit
+   substitutions.
 
    The statements below are the parameterised ones of src/Pyrosome/Gluing/Dtt/RSubOk.v and
    src/Pyrosome/Gluing/Dtt/ModelSound.v with their two obligation families discharged by

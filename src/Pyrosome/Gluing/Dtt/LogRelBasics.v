@@ -243,9 +243,8 @@ Lemma RTy_pi_irr_e G rF lF F B P
                           (codAtIrr D G rF lF F B w a) C
                    /\ RTy D (iEl oIrr oL0) C (Pc D w a))
       /\ (forall e, P e <->
-            (HasNf G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B)) e
-             /\ forall D w a, Wk D G w -> EnvOk D -> Pd D w a ->
-                  Pc D w a (appAtIrr D G rF lF F B w e a))).
+            (forall D w a, Wk D G w -> EnvOk D -> Pd D w a ->
+               Pc D w a (appAtIrr D G rF lF F B w e a))).
 Proof.
   intro H; inversion H; subst; rty_kill;
     do 2 eexists; repeat apply conj; eassumption.
@@ -333,9 +332,8 @@ Section StrongInd.
                   /\ RTy D (iEl oIrr oL0) C (Pc D w a)
                   /\ Pr D (iEl oIrr oL0) C (Pc D w a)) ->
         (forall e, P e <->
-           (HasNf G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B)) e
-            /\ forall D w a, Wk D G w -> EnvOk D -> Pd D w a ->
-                 Pc D w a (appAtIrr D G rF lF F B w e a))) ->
+           (forall D w a, Wk D G w -> EnvOk D -> Pd D w a ->
+              Pc D w a (appAtIrr D G rF lF F B w e a))) ->
         Pr G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B)) P).
 
   Fixpoint RTy_strong_ind G i A P (H : RTy G i A P) {struct H} : Pr G i A P :=
@@ -547,15 +545,11 @@ Proof.
         eapply eq_term_trans; [ apply eq_term_sym; exact He1 | exact He2 ]. }
       apply (HI1 _ HR2). }
     split; intro Hx.
-    + apply Hiff'; split;
-        [ apply (proj1 (Hiff e) Hx) | ].
-      intros D w a Hw HD Ha'.
+    + apply Hiff'; intros D w a Hw HD Ha'.
       assert (Ha : Pd D w a) by (apply (Hdom D w a Hw HD); exact Ha').
       apply (Hcod D w a _ Hw HD Ha Ha').
       apply (proj1 (Hiff e) Hx); assumption.
-    + apply Hiff; split;
-        [ apply (proj1 (Hiff' e) Hx) | ].
-      intros D w a Hw HD Ha.
+    + apply Hiff; intros D w a Hw HD Ha.
       assert (Ha' : Pd' D w a) by (apply (Hdom D w a Hw HD); exact Ha).
       apply (Hcod D w a _ Hw HD Ha Ha').
       apply (proj1 (Hiff' e) Hx); assumption.

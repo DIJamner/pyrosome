@@ -485,6 +485,58 @@ Proof.
     | apply eq_term_refl; exact HElB ].
 Qed.
 
+(* The [Pi_irr] analogue of [eq_codAt_wkn] above -- same statement with
+   [lG] pinned to [oL0] and the relevance of the binder pinned to [oIrr].
+   Used by the ESCAPE half of [rty_pi_irr] below, to identify the
+   codomain candidate's own type [C] with [oEl (oExtC G rF lF F) oIrr oL0 B]
+   at the one-step weakening, exactly as the [Pi_rel] ESCAPE half does for
+   [codAtRel]. *)
+Lemma eq_codAtIrr_wkn G rF lF F B
+  : wft G sEnv -> wft rF sRelevance -> wft lF sLvl ->
+    wft F (sCode G rF lF) -> wft B (sCode (oExtC G rF lF F) oIrr oL0) ->
+    eqt (sTy (oExtC G rF lF F) (iEl oIrr oL0))
+      (codAtIrr (oExtC G rF lF F) G rF lF F B
+         (oWkn G (iEl rF lF) (oEl G rF lF F))
+         (oHd G (iEl rF lF) (oEl G rF lF F)))
+      (oEl (oExtC G rF lF F) oIrr oL0 B).
+Proof.
+  intros HG HrF HlF HF HB.
+  assert (wft (iEl rF lF) sInfo) as HiF
+      by (unfold iEl; apply wf_Info; [ exact HrF | apply wf_Iota; exact HlF ]).
+  assert (wft (iEl oIrr oL0) sInfo) as HiG
+      by (unfold iEl; apply wf_Info;
+          [ apply wf_Irr | apply wf_Iota; apply wf_L0 ]).
+  assert (wft (oEl G rF lF F) (sTy G (iEl rF lF))) as HA
+      by (apply wf_El; [ exact HG | exact HrF | exact HlF | exact HF ]).
+  assert (wft (oExtC G rF lF F) sEnv) as HD
+      by (apply wf_ExtC; [ exact HG | exact HrF | exact HlF | exact HF ]).
+  assert (wft (oEl (oExtC G rF lF F) oIrr oL0 B)
+            (sTy (oExtC G rF lF F) (iEl oIrr oL0))) as HElB
+      by (apply wf_El; [ exact HD | apply wf_Irr | apply wf_L0 | exact HB ]).
+  assert (eqt (sSub (oExtC G rF lF F) (oExtC G rF lF F))
+            (instAt (oExtC G rF lF F) G rF lF F
+               (oWkn G (iEl rF lF) (oEl G rF lF F))
+               (oHd G (iEl rF lF) (oEl G rF lF F)))
+            (oId (oExtC G rF lF F))) as Hsnoc
+      by (unfold instAt, oExtC;
+          apply eq_snoc_wkn_hd; [ exact HG | exact HiF | exact HA ]).
+  unfold codAtIrr.
+  eapply eq_term_trans;
+    [ | apply eq_ty_subst_id; [ exact HD | exact HiG | exact HElB ] ].
+  apply TySubst_cong
+    with (G1 := oExtC G rF lF F) (G2 := oExtC G rF lF F)
+         (G1' := oExtC G rF lF F) (G2' := oExtC G rF lF F)
+         (g2 := oId (oExtC G rF lF F))
+         (i1 := iEl oIrr oL0) (i2 := iEl oIrr oL0)
+         (A1 := oEl (oExtC G rF lF F) oIrr oL0 B)
+         (A2 := oEl (oExtC G rF lF F) oIrr oL0 B);
+    [ apply eq_term_refl; exact HD
+    | apply eq_term_refl; exact HD
+    | exact Hsnoc
+    | apply eq_term_refl; exact HiG
+    | apply eq_term_refl; exact HElB ].
+Qed.
+
 (* THE eta STEP.  [t] is a normal form of [e] applied to the fresh
    variable; [lam t] is then a normal form of [e] ITSELF, and nothing but
    "Pi_rel eta" can supply that. *)
@@ -554,6 +606,30 @@ Proof.
   apply wft_AppRel_args in H.
   destruct H as [_ [_ [_ [_ [_ [_ [Hf _]]]]]]].
   unfold wkFunRel in Hf; apply wft_ExpSubst_args in Hf.
+  destruct Hf as [_ [_ [_ [_ [_ Hv]]]]]; exact Hv.
+Qed.
+
+Lemma wft_AppIrr_args G rF lF F B f a t
+  : wft (oAppIrr G rF lF F B f a) t ->
+    wft G sEnv /\ wft rF sRelevance /\ wft lF sLvl
+    /\ wft F (sCode G rF lF)
+    /\ wft B (sCode (oExtC G rF lF F) oIrr oL0)
+    /\ wft f (sElt G oIrr oL0 (oPiIrr G rF lF F B))
+    /\ wft a (sElt G rF lF F).
+Proof.
+  unfold oAppIrr; intro H; con_args_inv H; repeat split; assumption.
+Qed.
+
+(* [e] is well typed as soon as [appAtIrr ... e ...] is -- the [Pi_irr]
+   analogue of [appAtRel_wf_e], used by [Pi_irr]'s ESCAPE half. *)
+Lemma appAtIrr_wf_e D G rF lF F B w e a t
+  : wft (appAtIrr D G rF lF F B w e a) t ->
+    wft e (sElt G oIrr oL0 (oPiIrr G rF lF F B)).
+Proof.
+  unfold appAtIrr; intro H.
+  apply wft_AppIrr_args in H.
+  destruct H as [_ [_ [_ [_ [_ [Hf _]]]]]].
+  unfold wkFunIrr in Hf; apply wft_ExpSubst_args in Hf.
   destruct Hf as [_ [_ [_ [_ [_ Hv]]]]]; exact Hv.
 Qed.
 
@@ -691,15 +767,63 @@ Proof.
   - intros G rF lF F B P Pd Pc HrF HlF HF HB Hd Hc Hiff.
     split.
 
-    + (* ESCAPE is free here: [Pi_irr] has no eta, so a neutral IS normal
-         and the candidate carries the [HasNf] conjunct outright. *)
-      intros e He; exact (proj1 (proj1 (Hiff e) He)).
+    + (* ESCAPE.  Same shape as the [Pi_rel] ESCAPE half above, with
+         [eq_proof_irr] standing in for [eq_eta_wkn]: the fresh variable
+         is reducible by REFLECT at the domain; the body then has a
+         normal form by ESCAPE at the codomain, read off [He : P e] at
+         the one-step weakening (now the plain Kripke property, via
+         [proj1 (Hiff e) He]); and "proof irrelevance" identifies the
+         resulting lambda with [e] itself -- this is the ONLY use of
+         that rule in the development, and it replaces the missing
+         "Pi_irr eta". *)
+      intros e He.
+      assert (EnvOk G) as HGok by (eapply NfCode_EnvOk; exact HF).
+      assert (TyOk G (iEl rF lF) (oEl G rF lF F)) as HTA
+          by (apply tyok_El; exact HF).
+      assert (EnvOk (oExtC G rF lF F)) as HDok
+          by (unfold oExtC; apply envok_ext; [ exact HGok | exact HTA ]).
+      assert (Wk (oExtC G rF lF F) G (oWkn G (iEl rF lF) (oEl G rF lF F)))
+        as HW1 by (unfold oExtC; apply wk_wkn; [ exact HGok | exact HTA ]).
+      destruct (Hd _ _ HW1 HDok) as [F1 (HF1 & HeqF1 & HR1 & Hesc1 & Href1)].
+      assert (VarT (oExtC G rF lF F) (iEl rF lF)
+                (oEl (oExtC G rF lF F) rF lF F1)
+                (oHd G (iEl rF lF) (oEl G rF lF F))) as Hvar
+          by (apply esc_hd_var; assumption).
+      assert (Pd (oExtC G rF lF F) (oWkn G (iEl rF lF) (oEl G rF lF F))
+                (oHd G (iEl rF lF) (oEl G rF lF F))) as Hhd.
+      { apply Href1.
+        exists (oHd G (iEl rF lF) (oEl G rF lF F)); split;
+          [ apply neet_var; exact Hvar
+          | apply eq_term_refl; apply VarT_wf; exact Hvar ]. }
+      destruct (Hc _ _ _ HW1 HDok Hhd)
+        as [C (HTC & HeqC & HRC & HescC & HrefC)].
+      assert (C = oEl (oExtC G rF lF F) oIrr oL0 B) as HCeq.
+      { eapply TyOk_inj;
+          [ exact HTC | apply tyok_El; exact HB
+          | eapply eq_term_trans;
+            [ apply eq_term_sym; exact HeqC
+            | apply eq_codAtIrr_wkn; wfx ] ]. }
+      subst C.
+      destruct (HescC _ ((proj1 (Hiff e) He) _ _ _ HW1 HDok Hhd))
+        as [t (Ht1 & Ht2)].
+      assert (NfET G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B))
+                (oLamIrr G rF lF F B t)) as Hn
+          by (apply nfet_lam_irr; assumption).
+      assert (NfCode G oIrr oL0 (oPiIrr G rF lF F B)) as HPiC
+          by (apply nfcode_pi_irr; assumption).
+      assert (wft e (sElt G oIrr oL0 (oPiIrr G rF lF F B))) as He_wf
+          by (eapply appAtIrr_wf_e; eapply eqt_wf_l; exact Ht2).
+      assert (wft (oLamIrr G rF lF F B t)
+                (sElt G oIrr oL0 (oPiIrr G rF lF F B))) as Hlam_wf
+          by (eapply NfET_wf; exact Hn).
+      exists (oLamIrr G rF lF F B t); split; [ exact Hn | ].
+      apply eq_proof_irr; wfx.
 
-    + (* REFLECT *)
+    + (* REFLECT.  Plain Kripke body, mirroring the [Pi_rel] REFLECT
+         half: no [HasNf] to construct any more, so this is exactly
+         [Hiff] applied to the standard reflect-at-codomain argument. *)
       intros e HNe.
-      apply Hiff; split;
-        [ eapply HasNe_HasNf_pi_irr; [ exact HF | exact HB | exact HNe ] | ].
-      intros D w a HW HD Ha.
+      apply Hiff; intros D w a HW HD Ha.
       destruct (Hd D w HW HD) as [F1 (HF1 & HeqF1 & HR1 & Hesc1 & Href1)].
       destruct (Hc D w a HW HD Ha) as [C (HTC & HeqC & HRC & HescC & HrefC)].
       apply HrefC.
@@ -2277,13 +2401,11 @@ Proof.
       apply eq_term_sym; apply eq_El_subst;
         [ wfx | wfx | apply Wk_wf; exact HU2 | wfx | wfx | wfx ]. }
     exists (oEl D oIrr oL0 (oPiIrr D rF lF F1 B1)),
-      (fun e => HasNf D (iEl oIrr oL0)
-                  (oEl D oIrr oL0 (oPiIrr D rF lF F1 B1)) e
-         /\ forall D2 w2 a, Wk D2 D w2 -> EnvOk D2 ->
-              (forall u, Wk D2 G u ->
-                 eqt (sSub D2 G) (oCmp D2 D G w2 w) u -> Pd D2 u a) ->
-              forall u, Wk D2 G u -> eqt (sSub D2 G) (oCmp D2 D G w2 w) u ->
-                Pc D2 u a (appAtIrr D2 D rF lF F1 B1 w2 e a)).
+      (fun e => forall D2 w2 a, Wk D2 D w2 -> EnvOk D2 ->
+         (forall u, Wk D2 G u ->
+            eqt (sSub D2 G) (oCmp D2 D G w2 w) u -> Pd D2 u a) ->
+         forall u, Wk D2 G u -> eqt (sSub D2 G) (oCmp D2 D G w2 w) u ->
+           Pc D2 u a (appAtIrr D2 D rF lF F1 B1 w2 e a)).
     split; [ apply tyok_El; apply nfcode_pi_irr; assumption | ].
     split; [ exact HeqPi | ].
     split.
@@ -2351,62 +2473,40 @@ Proof.
                 [ exact HU | exact HU2 | exact HD2 | exact Huu2 | exact Hpda ]
               | exact Hx ]. } } }
       { intros e; split; intro H; exact H. } }
-    { intros e He.
-      destruct (proj1 (Hiff e) He) as [Hnf Happ].
+    (* the transfer *)
+    { intros e He D2 w2 a HW2 HD2 Hpd u HU Hu.
+      assert (Pd D2 u a) as Hpda by (apply Hpd; assumption).
+      destruct (Hc D2 u a HU HD2 Hpda) as [C (HTC & HeqC & HRC & _)].
+      assert (Hpc := (proj1 (Hiff e) He) D2 u a HU HD2 Hpda).
+      destruct (RTy_escape HRC _ Hpc) as [t [Ht1 Ht2]].
       assert (wft e (sElt G oIrr oL0 (oPiIrr G rF lF F B))) as Hew
-          by (destruct Hnf as [n [_ Heqn]]; eapply eqt_wf_l; exact Heqn).
-      split.
-      (* the normal form travels *)
-      { destruct Hnf as [n [Hn Heqn]].
-        destruct (NfET_wk Hn HW HD) as [A2 [e' [HT2 [HeqA2 [Hn' Heq']]]]].
-        assert (A2 = oEl D oIrr oL0 (oPiIrr D rF lF F1 B1)) as ->.
-        { eapply TyOk_inj;
-            [ exact HT2 | apply tyok_El; apply nfcode_pi_irr; assumption
-            | eapply eq_term_trans;
-              [ apply eq_term_sym; exact HeqA2 | exact HeqPi ] ]. }
-        exists e'; split; [ exact Hn' | ].
-        eapply eq_term_trans; [ | exact Heq' ].
-        eapply eq_term_conv;
-          [ apply ExpSubst_cong
-              with (G1 := D) (G2 := D) (G1' := G) (G2' := G)
-                   (g1 := w) (g2 := w)
-                   (i1 := iEl oIrr oL0) (i2 := iEl oIrr oL0)
-                   (A1 := oEl G oIrr oL0 (oPiIrr G rF lF F B))
-                   (A2 := oEl G oIrr oL0 (oPiIrr G rF lF F B))
-                   (v1 := e) (v2 := n);
-            [ er | er | er | er | er | exact Heqn ]
-          | apply eq_sort_exp_ty; exact HeqA2 ]. }
-      (* the applications travel *)
-      { intros D2 w2 a HW2 HD2 Hpd u HU Hu.
-        assert (Pd D2 u a) as Hpda by (apply Hpd; assumption).
-        destruct (Hc D2 u a HU HD2 Hpda) as [C (HTC & HeqC & HRC & _)].
-        assert (Hpc := Happ D2 u a HU HD2 Hpda).
-        assert (wft a (sElt D2 rF lF (wkCode D2 G u rF lF F))) as Haw.
-        { eapply codAt_wf_a with (rG := oIrr) (lG := oL0) (B := B);
-            [ wfx | wfx | wfx | wfx | apply Wk_wf; exact HU | wfx
-            | apply (eqt_wf_l HeqC) ]. }
-        assert (wft a (sExp D2 (iEl rF lF)
-                  (oTySubst D2 D w2 (iEl rF lF) (oEl D rF lF F1)))) as Haw2.
-        { eapply wf_term_conv; [ exact Haw | ].
-          unfold sElt; apply eq_sort_exp_ty.
-          apply eq_term_sym.
-          eapply eq_term_trans;
-            [ apply eq_El_subst;
-              [ wfx | wfx | apply Wk_wf; exact HW2 | wfx | wfx | wfx ] | ].
-          apply El_cong; [ er | er | er | ].
-          apply wsc_F1 with (w := w);
-            [ wfx | wfx | wfx | wfx | wfx | wfx | wfx
-            | apply Wk_wf; exact HW2 | apply Wk_wf; exact HU | exact Hu
-            | exact HeqF1 ]. }
-        eapply (RTy_cand_eq HRC); [ exact Hpc | ].
-        eapply eq_term_conv;
-          [ apply eq_term_sym;
-            apply wpi_app with (w := w);
-            [ wfx | wfx | wfx | wfx | wfx | wfx | wfx | wfx
-            | apply Wk_wf; exact HW2 | apply Wk_wf; exact HU | exact Hu
-            | wfx | exact HeqF1 | exact HeqB1W | exact HeqB1L
-            | exact Hew | exact Haw2 ]
-          | apply eq_sort_exp_ty; exact HeqC ]. } }
+          by (eapply appAtIrr_wf_e; eapply eqt_wf_l; exact Ht2).
+      assert (wft a (sElt D2 rF lF (wkCode D2 G u rF lF F))) as Haw.
+      { eapply codAt_wf_a with (rG := oIrr) (lG := oL0) (B := B);
+          [ wfx | wfx | wfx | wfx | apply Wk_wf; exact HU | wfx
+          | apply (eqt_wf_l HeqC) ]. }
+      assert (wft a (sExp D2 (iEl rF lF)
+                (oTySubst D2 D w2 (iEl rF lF) (oEl D rF lF F1)))) as Haw2.
+      { eapply wf_term_conv; [ exact Haw | ].
+        unfold sElt; apply eq_sort_exp_ty.
+        apply eq_term_sym.
+        eapply eq_term_trans;
+          [ apply eq_El_subst;
+            [ wfx | wfx | apply Wk_wf; exact HW2 | wfx | wfx | wfx ] | ].
+        apply El_cong; [ er | er | er | ].
+        apply wsc_F1 with (w := w);
+          [ wfx | wfx | wfx | wfx | wfx | wfx | wfx
+          | apply Wk_wf; exact HW2 | apply Wk_wf; exact HU | exact Hu
+          | exact HeqF1 ]. }
+      eapply (RTy_cand_eq HRC); [ exact Hpc | ].
+      eapply eq_term_conv;
+        [ apply eq_term_sym;
+          apply wpi_app with (w := w);
+          [ wfx | wfx | wfx | wfx | wfx | wfx | wfx | wfx
+          | apply Wk_wf; exact HW2 | apply Wk_wf; exact HU | exact Hu
+          | wfx | exact HeqF1 | exact HeqB1W | exact HeqB1L
+          | exact Hew | exact Haw2 ]
+        | apply eq_sort_exp_ty; exact HeqC ]. }
 Qed.
 
 (* ================================================================== *)
@@ -2991,17 +3091,15 @@ Proof.
       apply PiIrr_cong;
         [ er | er | er | exact HeqF1
         | apply eqt_c2i; [ wfx | apply wf_Irr | exact HeqB1L ] ]. }
-    exists (fun e => HasNf D (iEl oIrr oL0)
-                       (oEl D oIrr oL0 (oPiIrr D rF lF F1 B1)) e
-              /\ forall D2 w2 a, Wk D2 D w2 -> EnvOk D2 ->
-                   (forall F2, NfCode D2 rF lF F2 ->
-                      eqt (sCode D2 rF lF) (wkCode D2 D w2 rF lF F1) F2 ->
-                      RTm D2 (iEl rF lF) (oEl D2 rF lF F2) a) ->
-                   forall C, TyOk D2 (iEl oIrr oL0) C ->
-                     eqt (sTy D2 (iEl oIrr oL0))
-                         (codAtIrr D2 D rF lF F1 B1 w2 a) C ->
-                     RTm D2 (iEl oIrr oL0) C
-                         (appAtIrr D2 D rF lF F1 B1 w2 e a)).
+    exists (fun e => forall D2 w2 a, Wk D2 D w2 -> EnvOk D2 ->
+              (forall F2, NfCode D2 rF lF F2 ->
+                 eqt (sCode D2 rF lF) (wkCode D2 D w2 rF lF F1) F2 ->
+                 RTm D2 (iEl rF lF) (oEl D2 rF lF F2) a) ->
+              forall C, TyOk D2 (iEl oIrr oL0) C ->
+                eqt (sTy D2 (iEl oIrr oL0))
+                    (codAtIrr D2 D rF lF F1 B1 w2 a) C ->
+                RTm D2 (iEl oIrr oL0) C
+                    (appAtIrr D2 D rF lF F1 B1 w2 e a)).
     apply rty_pi_irr
       with (Pd := fun D2 w2 a => forall F2, NfCode D2 rF lF F2 ->
                     eqt (sCode D2 rF lF) (wkCode D2 D w2 rF lF F1) F2 ->
@@ -3088,7 +3186,6 @@ Proof.
     exists (HasNe D (iEl r l) (oEl D r l x')); apply RTy_var_i; exact Hx'.
 
   (* ---- VarT / NeET / NfET: nothing to prove ---- *)
-  - intros; exact I.
   - intros; exact I.
   - intros; exact I.
   - intros; exact I.

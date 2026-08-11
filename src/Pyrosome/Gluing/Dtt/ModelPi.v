@@ -59,21 +59,18 @@ Import Core.Notations.
    STATUS.  ALL SEVENTEEN are proved here and axiom-free, and the two
    dispatchers at the end are stated over all of them.
 
-   THE IRRELEVANT HALF IS NOT A COPY OF THE RELEVANT ONE, for two reasons
-   (section 9 pays for both):
-
-     - the codomain code's info.  "Pi_irr" states it at [rel (iota L1)]
-       while "lam_irr"/"app_irr" -- and hence [LogRel.wkCodCodeIrr] and
-       [nfcode_pi_irr] -- state it at [iCode L0], so [pi_irr_nf] moves an
-       [exp_subst] between the two spellings twice
-       ([LogRelCand.eq_expsubst_info]), and "Pi_irr beta" has to move its
-       codomain argument's CLAUSE across as well ([ceq_exp_transfer]);
-     - [rty_pi_irr]'s candidate carries an extra [HasNf] conjunct, which
-       [rty_pi_rel] does without because of eta.  So [cong_LamIrr] must
-       additionally EXHIBIT a normal form of the lambda -- an
-       [nfet_lam_irr] over the body's, which [binder_lift]'s reducible lift
-       plus [RTmN_HasNf'] supplies.  That is the one step with no
-       counterpart in [cong_LamRel], and it is small.
+   THE IRRELEVANT HALF IS NOT A COPY OF THE RELEVANT ONE, for one reason
+   (section 9 pays for it): the codomain code's info.  "Pi_irr" states it
+   at [rel (iota L1)] while "lam_irr"/"app_irr" -- and hence
+   [LogRel.wkCodCodeIrr] and [nfcode_pi_irr] -- state it at [iCode L0], so
+   [pi_irr_nf] moves an [exp_subst] between the two spellings twice
+   ([LogRelCand.eq_expsubst_info]), and "Pi_irr beta" has to move its
+   codomain argument's CLAUSE across as well ([ceq_exp_transfer]).
+   [rty_pi_irr]'s candidate is otherwise the plain Kripke one, same as
+   [rty_pi_rel]'s (escape at [Pi_irr] is now supplied by the
+   ["proof irrelevance"] rule instead of eta -- see LogRelCore.v's
+   [RTy_escape_reflect]), so [cong_LamIrr] and [cong_LamRel] are the same
+   shape.
 
    THE ONE GENUINELY NEW PIECE OF MACHINERY is [binder_lift] (section 2).
    Every binder congruence must feed its codomain argument's clause a
@@ -3154,28 +3151,24 @@ Qed.
 (* 9.  The irrelevant binder fragment                                  *)
 (* ================================================================== *)
 
-(* [Pi_irr] differs from [Pi_rel] in exactly two ways, and both are paid
-   for here rather than anywhere else.
+(* [Pi_irr] differs from [Pi_rel] in exactly one way, paid for here rather
+   than anywhere else.
 
-   (i) THE INFO SPELLING.  The former "Pi_irr" stores its codomain code at
-       [rel (iota L1)] while "lam_irr"/"app_irr" -- and hence
-       [LogRel.wkCodCodeIrr] and [nfcode_pi_irr] -- store it at [iCode L0].
-       [LogRelCand.eq_expsubst_info] moves an [exp_subst] of an
-       irrelevant-L0 code between the two, and [pi_irr_nf] below uses it
-       twice: once on the [Pi_irr] itself and once on its codomain.
+   THE INFO SPELLING.  The former "Pi_irr" stores its codomain code at
+   [rel (iota L1)] while "lam_irr"/"app_irr" -- and hence
+   [LogRel.wkCodCodeIrr] and [nfcode_pi_irr] -- store it at [iCode L0].
+   [LogRelCand.eq_expsubst_info] moves an [exp_subst] of an
+   irrelevant-L0 code between the two, and [pi_irr_nf] below uses it
+   twice: once on the [Pi_irr] itself and once on its codomain.
 
-   (ii) [rty_pi_irr] CARRIES AN EXTRA [HasNf] CONJUNCT, which [rty_pi_rel]
-       does without because of eta.  So [cong_LamIrr] must, on top of
-       everything [cong_LamRel] does, EXHIBIT a normal form of the lambda:
-       an [nfet_lam_irr] over the body's, which [binder_lift]'s reducible
-       lift plus [RTy_escape] (through [RTmN_HasNf']) supplies. *)
+   [rty_pi_irr]'s candidate is otherwise the plain Kripke one, same as
+   [rty_pi_rel]'s, so [cong_LamIrr] is the same shape as [cong_LamRel]. *)
 
 (* ---- the normal [Pi_irr] code of an instance ---------------------- *)
 
-(* The [Pi_irr] analogue of [pi_rel_nf], and it exports more: the two
-   [lam_irr]-specific steps (the extra [HasNf] conjunct, and reading the
-   body's normal form back) need the reducible lift [h] and its equation
-   with [oLift] as well. *)
+(* The [Pi_irr] analogue of [pi_rel_nf], and it exports more: the
+   [lam_irr]-specific step of reading the body's normal form back needs
+   the reducible lift [h] and its equation with [oLift] as well. *)
 Lemma pi_irr_nf G rF lF F1 F2 B1 B2 D g
   : RelNf rF -> LvlNf lF ->
     Ceq_term (sCode G rF lF) F1 F2 ->
@@ -3319,13 +3312,11 @@ Qed.
 
 (* ---- [app_irr] ---------------------------------------------------- *)
 
-(* [cong_AppRel] transposed.  Only three things are not a transcription:
-   [RTy_pi_irr_e]'s candidate reading is a CONJUNCTION (the [HasNf] of (ii)
-   above and the application property), so the application property is its
-   second projection; [PiIrr_cong] wants its codomain equation at
-   [rel (iota L1)] while everything else here is at [iCode L0], which
-   [eq_sort_U_irr0] bridges; and [wf_PiIrr] concludes at [rel (iota L1)],
-   which [wft_U0irr_iota] brings back. *)
+(* [cong_AppRel] transposed.  Only two things are not a transcription:
+   [PiIrr_cong] wants its codomain equation at [rel (iota L1)] while
+   everything else here is at [iCode L0], which [eq_sort_U_irr0] bridges;
+   and [wf_PiIrr] concludes at [rel (iota L1)], which [wft_U0irr_iota]
+   brings back. *)
 Lemma cong_AppIrr G1 G2 rF1 rF2 lF1 lF2 F1 F2 B1 B2 f1 f2 a1 a2
   : Ceq_term sEnv G1 G2 -> Ceq_term sRelevance rF1 rF2 ->
     Ceq_term sLvl lF1 lF2 ->
@@ -3469,7 +3460,7 @@ Proof.
       | apply eq_term_refl; exact Hwr
       | apply eq_term_refl; exact HwlF
       | exact HF0F' ]. }
-  pose proof (proj2 (proj1 (Hiff fg) HPf) D (oId D) ag (wk_id HD) HD HPda)
+  pose proof ((proj1 (Hiff fg) HPf) D (oId D) ag (wk_id HD) HD HPda)
     as Hres.
   destruct (Hcod D (oId D) ag (wk_id HD) HD HPda)
     as [C (HTyC & HeqC & HRc)].
@@ -3909,77 +3900,7 @@ Proof.
         | apply eq_term_refl; exact Hwr
         | apply eq_term_refl; exact HwlF
         | exact HF0eq ] ]. }
-  apply (proj2 (Hiff _)); split.
-  { (* (ii) THE CONJUNCT ETA REMOVES ON THE RELEVANT SIDE: the lambda has
-       a normal form.  The body's clause at [binder_lift]'s reducible lift,
-       escaped through [RTmN_HasNf'], gives the body's; [nfet_lam_irr]
-       assembles.  This is the one step [cong_LamRel] does not have. *)
-    assert (eqt (sTy (oExtC D rF2 lF2 F0) (iEl oIrr oL0))
-              (oTySubst (oExtC D rF2 lF2 F0) (oExtC G2 rF2 lF2 F2) h
-                 (iEl oIrr oL0) (oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2))
-              (oEl (oExtC D rF2 lF2 F0) oIrr oL0 B0)) as HtyB.
-    { eapply eq_term_trans;
-        [ apply eq_El_subst;
-          [ exact HwDF | exact HwGF | apply RSubN_wf; exact HRS
-          | apply wf_Irr | apply wf_L0 | exact HwB2 ] | ].
-      apply El_cong;
-        [ apply eq_term_refl; exact HwDF
-        | apply eq_term_refl; apply wf_Irr
-        | apply eq_term_refl; apply wf_L0
-        | exact HB0eq ]. }
-    destruct (RTmN_HasNf' (Htb (oExtC D rF2 lF2 F0) h HEok HRS)
-                (eq_term_refl HiG) (tyok_El HB0) HtyB) as [tn [Htn Htneq]].
-    exists (oLamIrr D rF2 lF2 F0 B0 tn); split;
-      [ apply nfet_lam_irr; assumption | ].
-    eapply eq_term_trans.
-    { eapply eq_term_conv.
-      - apply ExpSubst_cong
-          with (G1 := D) (G2 := D) (G1' := G2) (G2' := G2) (g1 := g) (g2 := g)
-               (i1 := iEl oIrr oL0) (i2 := iEl oIrr oL0)
-               (A1 := oEl G2 oIrr oL0 (oPiIrr G2 rF2 lF2 F2 B2))
-               (A2 := oEl G2 oIrr oL0 (oPiIrr G2 rF2 lF2 F2 B2))
-               (v1 := oLamIrr G1 rF2 lF2 F1 B1 t1)
-               (v2 := oLamIrr G2 rF2 lF2 F2 B2 t1);
-          [ apply eq_term_refl; exact HwD
-          | apply eq_term_refl; exact HwG2
-          | apply eq_term_refl; exact Hwg
-          | apply eq_term_refl; exact HiG
-          | apply eq_term_refl; exact HwElPi
-          | apply LamIrr_cong;
-            [ exact HG | apply eq_term_refl; exact Hwr
-            | apply eq_term_refl; exact HwlF
-            | exact HFa | exact HBa | apply eq_term_refl; exact Hwt1 ] ].
-      - apply eq_sort_exp_ty; exact HtyPi. }
-    eapply eq_term_trans.
-    { eapply eq_term_conv;
-        [ apply eq_lam_irr_subst;
-          [ exact HwD | exact HwG2 | exact Hwg | exact Hwr | exact HwlF
-          | exact HwF2 | exact HwB2 | exact Hwt1 ]
-        | apply eq_sort_exp_ty; exact HtyPi ]. }
-    apply LamIrr_cong;
-      [ apply eq_term_refl; exact HwD
-      | apply eq_term_refl; exact Hwr
-      | apply eq_term_refl; exact HwlF
-      | exact HF0eq
-      | exact HB
-      | eapply eq_term_trans; [ | exact Htneq ] ].
-    eapply eq_term_conv.
-    - apply ExpSubst_cong
-        with (G1 := oExtC D rF2 lF2 (oCodeSubst D G2 g rF2 lF2 F2))
-             (G2 := oExtC D rF2 lF2 F0)
-             (G1' := oExtC G2 rF2 lF2 F2) (G2' := oExtC G2 rF2 lF2 F2)
-             (g1 := oLift D G2 g rF2 lF2 F2) (g2 := h)
-             (i1 := iEl oIrr oL0) (i2 := iEl oIrr oL0)
-             (A1 := oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2)
-             (A2 := oEl (oExtC G2 rF2 lF2 F2) oIrr oL0 B2)
-             (v1 := t1) (v2 := t1);
-        [ exact HEnvFg
-        | apply eq_term_refl; exact HwGF
-        | exact HLeq
-        | apply eq_term_refl; exact HiG
-        | apply eq_term_refl; exact HwElB
-        | apply eq_term_refl; exact Hwt1 ].
-    - apply eq_sort_exp_ty; exact HtyB. }
+  apply (proj2 (Hiff _)).
   intros D' w a HW HD' Hpd.
   assert (wft D' sEnv) as HwD' by (apply EnvOk_wf; exact HD').
   assert (wft w (sSub D' D)) as Hww by (apply Wk_wf; exact HW).

@@ -10,32 +10,33 @@ From Pyrosome Require Import Theory.Core.
 From Pyrosome.Gluing Require Import CutTModel Eval CutModelSound.
 Require Import Pyrosome.Gluing.Dtt.Syntax Pyrosome.Gluing.Dtt.NormalForms Pyrosome.Gluing.Dtt.LogRel Pyrosome.Gluing.Dtt.RSub Pyrosome.Gluing.Dtt.Ceq
   Pyrosome.Gluing.Dtt.ModelStruct Pyrosome.Gluing.Dtt.ModelIdx Pyrosome.Gluing.Dtt.ModelBase Pyrosome.Gluing.Dtt.ModelSubst
-  Pyrosome.Gluing.Dtt.ModelPi.
+  Pyrosome.Gluing.Dtt.ModelPi Pyrosome.Gluing.Dtt.ModelProofIrr.
 Import Core.Notations.
 
 (* =====================================================================
    LAYER 4b, ASSEMBLED.
 
-   The 64 rule obligations were proved in four fragments, each with a
+   The 65 rule obligations were proved in five fragments, each with a
    dispatcher in the right field shape but restricted to its own rule
    names:
 
-     src/Pyrosome/Gluing/Dtt/ModelIdx.v    the index formers        9 cong,  3 eq
-     src/Pyrosome/Gluing/Dtt/ModelBase.v   universe and base types  6 cong,  6 eq
-     src/Pyrosome/Gluing/Dtt/ModelSubst.v  the substitution calculus 10 cong, 13 eq
-     src/Pyrosome/Gluing/Dtt/ModelPi.v     the binders               7 cong, 10 eq
-                                                  ---------------
-                                                   32 cong, 32 eq
+     src/Pyrosome/Gluing/Dtt/ModelIdx.v      the index formers          9 cong,  3 eq
+     src/Pyrosome/Gluing/Dtt/ModelBase.v     universe and base types    6 cong,  6 eq
+     src/Pyrosome/Gluing/Dtt/ModelSubst.v    the substitution calculus 10 cong, 13 eq
+     src/Pyrosome/Gluing/Dtt/ModelPi.v       the binders                7 cong, 10 eq
+     src/Pyrosome/Gluing/Dtt/ModelProofIrr.v proof irrelevance          0 cong,  1 eq
+                                                    ---------------
+                                                     32 cong, 33 eq
 
    This file checks that those name restrictions PARTITION the language --
-   every one of [ott_dtt]'s 32 term rules and 32 equations is claimed by
+   every one of [ott_dtt]'s 32 term rules and 33 equations is claimed by
    exactly one fragment -- and assembles [CongObligation] and
    [ByObligation].  With those, [DttCM_ok] is unconditional and so is
    normalization.
    ===================================================================== *)
 
 (* [pin_name] (src/Pyrosome/Gluing/Dtt/ModelStruct.v) enumerates the
-   language's 73 NAMES -- a disjunction of string literals, not of rules --
+   language's 74 NAMES -- a disjunction of string literals, not of rules --
    so each case has a concrete name and can name its own fragment; the
    wrong fragments fail on the name disjunct rather than silently
    succeeding.  The names whose rule is of the OTHER kind (an equation
@@ -66,6 +67,7 @@ Proof.
     | eapply base_by_obligation;  [ exact Hin | tauto | exact Hargs ]
     | eapply subst_by_obligation; [ exact Hin | tauto | exact Hargs ]
     | eapply pi_by_obligation;    [ exact Hin | tauto | exact Hargs ]
+    | eapply proofirr_by_obligation; [ exact Hin | tauto | exact Hargs ]
     | pin_lookup ].
 Qed.
 

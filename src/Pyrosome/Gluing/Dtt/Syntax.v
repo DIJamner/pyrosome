@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Tools.ComputeWf Tools.Matches
   Tools.EGraph.ComputeWf.
 From Pyrosome.Lang Require Import Subst.
-From Pyrosome.Lang.OTT Require Import Base Nat Pi SubstCommute.
+From Pyrosome.Lang.OTT Require Import Base Nat Pi SubstCommute ProofIrr.
 Import Core.Notations.
 
 (* =====================================================================
@@ -20,15 +20,20 @@ Import Core.Notations.
 
    TARGET LANGUAGE.  [ott_dtt] is
 
-       ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base
-         ++ subst_ott ++ ott_info                                  (73 rules)
+       ott_proofirr_el ++ ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base
+         ++ subst_ott ++ ott_info                                  (74 rules)
 
    i.e. Lang/OTT's Tarski-universe core (U/El, two levels, relevance
    tags), the parameterized substitution calculus, Nat/zero/suc/Empty/
-   Emptyrec, and dependent Pi (relevant + irrelevant) with beta, ETA, and
-   the substitution commutations.
+   Emptyrec, dependent Pi (relevant + irrelevant) with beta, ETA, and
+   the substitution commutations, and definitional proof irrelevance
+   (Lang/OTT/ProofIrr.v's [ott_proofirr_el] -- the El-sorted rule, stated
+   over a universe code "c" : #"U" #"irr" "l" rather than a bare type
+   metavariable, since a bare-type-metavariable statement gives the rigid
+   model's [rceq_term] a refutable USkel obligation; see ProofIrr.v for
+   the full explanation).
 
-   Census: 32 term_rule, 32 term_eq_rule, 9 sort_rule, 0 sort_eq_rule.
+   Census: 32 term_rule, 33 term_eq_rule, 9 sort_rule, 0 sort_eq_rule.
 
    [ott_subst_commute] (src/Pyrosome/Lang/OTT/SubstCommute.v) supplies the
    four substitution commutations Lang/OTT/Pi.v and Lang/OTT/Nat.v never
@@ -75,7 +80,7 @@ Notation lang := (@Rule.lang string).
 (* ------------------------------------------------------------------ *)
 
 Definition ott_dtt : lang := Eval vm_compute in
-  (ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base ++ subst_ott ++ ott_info).
+  (ott_proofirr_el ++ ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base ++ subst_ott ++ ott_info).
 
 Lemma ott_dtt_wf : wf_lang ott_dtt.
 Proof. compute_wf_lang. Qed.
