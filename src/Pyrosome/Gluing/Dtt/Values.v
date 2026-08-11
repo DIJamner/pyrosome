@@ -405,13 +405,39 @@ End WithReps.
 
    [instC] is the last parameter.  It is needed only as the type index of
    [valne_app_rel]: an application's result type is [B[<id,a>]], and the
-   value layer must name THE instantiation.  It retires exactly as [wkTy]
-   just did -- into a deterministic relation -- once the instantiation
-   block exists.  That block is mutual with WkRel.v's, because
-   instantiating under a binder lifts, and lifting is weakening.
+   value layer must name THE instantiation.
 
-   design.md section 14d predicts it will be the harder of the two: the
-   [Id-Nat-*] rules inspect endpoints and funext recurses through
-   application, so code normalization is no longer structural on its own
-   and a lexicographic measure (codes, then endpoints) may be needed.
+   IT DOES NOT RETIRE THE WAY [wkTy] JUST DID, and the difference is not
+   one of degree.  WEAKENING NEVER CREATES A REDEX -- it only shifts -- so
+   WkRel.v is purely structural, which is why it was cheap.
+   INSTANTIATION SUBSTITUTES A VALUE FOR A VARIABLE, and a value in a
+   neutral's head position turns that neutral into a redex.  So the
+   instantiation relation must EVALUATE, and it is therefore not a sibling
+   of the weakening relation but a fragment of the normalizer itself.
+
+   Where exactly, in this grammar.  Substituting the element [a] into a
+   value CODE [B] over [oExtC G rF lF F] is structural at [Nat], [Empty],
+   [Pi_rel], [Pi_irr] and at code VARIABLES -- a code variable's type is a
+   universe, and the de Bruijn-0 variable of [oExtC G rF lF F] has type
+   [El _ rF lF F[wkn]], which is an [El], so a code variable is NEVER the
+   one being substituted and always merely strips.  Likewise an [Id] stuck
+   on a neutral CODE stays stuck, for the same reason.  The one place it
+   breaks is [necode_id_nat_l]/[_r]: there the stuck endpoint is an
+   ELEMENT at [El _ rel L0 (Nat _)], it CAN be the de Bruijn-0 variable
+   (when [F] is [Nat]), and substituting [zero] or [suc n] for it fires
+   "Id-Nat-00"/"-0S"/"-SS".  Symmetrically, an endpoint [app_rel … f a]
+   whose head [f] is the 0-variable becomes a beta-redex when a [lam_rel]
+   is substituted.
+
+   This is design.md section 14d confirmed from the substitution side, and
+   it is exactly what the Id fragment costs: NfWk.v:3139's [NfCode_csubst]
+   -- "the code grammar is a free algebra closed under substitution
+   STRUCTURALLY", NormalForms.v:66 -- was true only because pre-Id codes
+   contain no elements.
+
+   So the instantiation block needs the semantic operations as well as the
+   substitution ones: an application judgement (beta) and an Id judgement
+   (the whole section-12b computation table).  Estimated at five or six
+   mutual judgements, i.e. the factorization survives; the growth is in
+   CLAUSES, not in judgements.
    ===================================================================== *)
