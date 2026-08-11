@@ -55,30 +55,18 @@ Local Notation eqt := (eq_term ott_dtt []).
 
 Ltac er := solve [ apply eq_term_refl; wfa ].
 
-(* ------------------------------------------------------------------ *)
-(* Two facts [Eqns.v] and [Wf.v] were missing, because both predate the  *)
-(* Id fragment (neither mentions [oIdEq] anywhere).  They are in the     *)
-(* files' own idiom and cost one [wf_by] / one [cong_step] each; they    *)
-(* belong upstream in Wf.v/Eqns.v whenever those are next touched.       *)
-(* ------------------------------------------------------------------ *)
+(* [wf_IdEq], [IdEq_cong], [eq_Id_subst] and the [Id-Nat-*] family were
+   written here first and have MOVED UPSTREAM into Wf.v and Eqns.v, where
+   they belong -- both files predated the Id fragment and mentioned
+   [oIdEq] nowhere.  See the [ott_id_cong] section at the end of Eqns.v,
+   in particular its note that the fragment's index spellings are NOT
+   uniform.
 
-Lemma wf_IdEq G l A B t u
-  : wft G sEnv -> wft l sLvl ->
-    wft A (sCode G oRel l) -> wft B (sCode G oRel l) ->
-    wft t (sElt G oRel l A) -> wft u (sElt G oRel l B) ->
-    wft (oIdEq G l A B t u) (sExp G (iEl oRel oL1) (oU G oIrr oL0)).
-Proof. intros; wf_by "Id". Qed.
+   The [next0] BRIDGE stays here, because it cannot go upstream: it needs
+   a [wf_] lemma AND a congruence, and Wf.v and Eqns.v are siblings over
+   Syntax.v with neither importing the other.  This file is currently the
+   first that imports both. *)
 
-Lemma IdEq_cong G1 G2 l1 l2 A1 A2 B1 B2 t1 t2 u1 u2
-  : eqt sEnv G1 G2 -> eqt sLvl l1 l2 ->
-    eqt (sCode G2 oRel l2) A1 A2 -> eqt (sCode G2 oRel l2) B1 B2 ->
-    eqt (sElt G2 oRel l2 A2) t1 t2 -> eqt (sElt G2 oRel l2 B2) u1 u2 ->
-    eqt (sExp G2 (iEl oRel oL1) (oU G2 oIrr oL0))
-      (oIdEq G1 l1 A1 B1 t1 u1) (oIdEq G2 l2 A2 B2 t2 u2).
-Proof. intros; cong_step "Id" [u1;t1;B1;A1;l1;G1] [u2;t2;B2;A2;l2;G2]. Qed.
-
-(* [Empty] elaborates at info [rel (iota L1)]; [eq_proof_irr] wants its
-   code argument at [iCode L0].  The two are equal by "next0". *)
 Lemma wft_c0 G c
   : wft G sEnv ->
     wft c (sExp G (oInfo oRel (oIota oL1)) (oU G oIrr oL0)) ->
@@ -90,6 +78,14 @@ Proof.
   - apply Info_cong; [ apply Rel_cong | apply eq_term_sym; apply eq_next0 ].
   - apply eq_term_refl; apply wf_U; auto using wf_Irr, wf_L0.
 Qed.
+
+(* [Wf.wf_IdEq] in the [sCode] spelling. *)
+Lemma wf_IdEq_c G l A B t u
+  : wft G sEnv -> wft l sLvl ->
+    wft A (sCode G oRel l) -> wft B (sCode G oRel l) ->
+    wft t (sElt G oRel l A) -> wft u (sElt G oRel l B) ->
+    wft (oIdEq G l A B t u) (sCode G oIrr oL0).
+Proof. intros; apply wft_c0; [ assumption | apply wf_IdEq; assumption ]. Qed.
 
 (* ================================================================== *)
 (* The two erasable positions of (E2), discharged directly             *)

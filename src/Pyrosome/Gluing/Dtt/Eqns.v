@@ -886,3 +886,97 @@ Proof.
     cong_step "app_irr" [a1; f1; B1; F1; lF1; rF1; G1]
       [a2; f2; B2; F2; lF2; rF2; G2].
 Qed.
+
+(* ================================================================== *)
+(* ott_id_cong                                                         *)
+(*                                                                     *)
+(* The Id fragment's entries.  This file and Wf.v predated the fragment *)
+(* and mentioned [oIdEq] nowhere, so every consumer was rolling its own *)
+(* on demand; these are the shared ones.                                *)
+(*                                                                     *)
+(* THE INDEX SPELLINGS ARE NOT UNIFORM ACROSS THE FRAGMENT, and they    *)
+(* were determined by experiment, not by reading the rules.  This is    *)
+(* design.md section 9b's mismatch again -- [infer_rule] re-extracts     *)
+(* each conclusion sort with [mk_weight], whose tie-breaks depend on the *)
+(* rule's own right-hand side -- so:                                     *)
+(*                                                                      *)
+(*   "Id", "Id subst", "Id-Nat-00"        stored at  iEl rel L1          *)
+(*   "Id-Nat-0S", "-S0", "-SS"            stored at  iCode L0 (= sCode)  *)
+(*                                                                      *)
+(* i.e. the three rules whose right-hand side is a Pi-shaped code got    *)
+(* one spelling and the three whose right-hand side is [Empty] or an     *)
+(* [Id] got the other.  Do not "tidy" these into a single form; they are *)
+(* what the compiled language actually stores.                          *)
+(* ================================================================== *)
+
+(* NB the [next0] BRIDGE that turns [Wf.wf_IdEq]'s [iota L1] spelling into
+   the [sCode] one is NOT here, and cannot be: it needs both a [wf_]
+   lemma and this file's congruences, and Wf.v and Eqns.v are SIBLINGS
+   over Syntax.v -- neither imports the other.  It lives in the first file
+   that imports both ([wft_c0] / [wf_IdEq_c] in Rz.v today) and should
+   move into whatever bridge file replaces NfTyping.v. *)
+
+Lemma IdEq_cong G1 G2 l1 l2 A1 A2 B1 B2 t1 t2 u1 u2
+  : eq_term ott_dtt [] sEnv G1 G2 ->
+    eq_term ott_dtt [] sLvl l1 l2 ->
+    eq_term ott_dtt [] (sCode G2 oRel l2) A1 A2 ->
+    eq_term ott_dtt [] (sCode G2 oRel l2) B1 B2 ->
+    eq_term ott_dtt [] (sElt G2 oRel l2 A2) t1 t2 ->
+    eq_term ott_dtt [] (sElt G2 oRel l2 B2) u1 u2 ->
+    eq_term ott_dtt [] (sExp G2 (iEl oRel oL1) (oU G2 oIrr oL0))
+      (oIdEq G1 l1 A1 B1 t1 u1) (oIdEq G2 l2 A2 B2 t2 u2).
+Proof. intros; cong_step "Id" [u1;t1;B1;A1;l1;G1] [u2;t2;B2;A2;l2;G2]. Qed.
+
+(* ---- the substitution commutation ---- *)
+
+Lemma eq_Id_subst G G' g l A B t u
+  : wf_term ott_dtt [] G sEnv ->
+    wf_term ott_dtt [] G' sEnv ->
+    wf_term ott_dtt [] g (sSub G G') ->
+    wf_term ott_dtt [] l sLvl ->
+    wf_term ott_dtt [] A (sCode G' oRel l) ->
+    wf_term ott_dtt [] B (sCode G' oRel l) ->
+    wf_term ott_dtt [] t (sElt G' oRel l A) ->
+    wf_term ott_dtt [] u (sElt G' oRel l B) ->
+    eq_term ott_dtt [] (sExp G (iEl oRel oL1) (oU G oIrr oL0))
+      (oExpSubst G G' g (iEl oRel oL1) (oU G' oIrr oL0) (oIdEq G' l A B t u))
+      (oIdEq G l (oExpSubst G G' g (iCode l) (oU G' oRel l) A)
+                 (oExpSubst G G' g (iCode l) (oU G' oRel l) B)
+                 (oExpSubst G G' g (iEl oRel l) (oEl G' oRel l A) t)
+                 (oExpSubst G G' g (iEl oRel l) (oEl G' oRel l B) u)).
+Proof. intros; estep "Id subst". Qed.
+
+(* ---- the Nat computation family (design.md section 12b) ----
+
+   Together with the clash rules these leave an [Id] at [Nat] stuck
+   exactly when an ENDPOINT is neutral, which is what keeps the fragment
+   from adding any normal form beyond neutrals. *)
+
+Lemma eq_Id_Nat_00 G
+  : wf_term ott_dtt [] G sEnv ->
+    eq_term ott_dtt [] (sExp G (iEl oRel oL1) (oU G oIrr oL0))
+      (oIdEq G oL0 (oNat G) (oNat G) (oZero G) (oZero G)) (oUnit G).
+Proof. intros; estep "Id-Nat-00". Qed.
+
+Lemma eq_Id_Nat_0S G t
+  : wf_term ott_dtt [] G sEnv ->
+    wf_term ott_dtt [] t (sElt G oRel oL0 (oNat G)) ->
+    eq_term ott_dtt [] (sCode G oIrr oL0)
+      (oIdEq G oL0 (oNat G) (oNat G) (oZero G) (oSuc G t)) (oEmpty G).
+Proof. intros; estep "Id-Nat-0S". Qed.
+
+Lemma eq_Id_Nat_S0 G t
+  : wf_term ott_dtt [] G sEnv ->
+    wf_term ott_dtt [] t (sElt G oRel oL0 (oNat G)) ->
+    eq_term ott_dtt [] (sCode G oIrr oL0)
+      (oIdEq G oL0 (oNat G) (oNat G) (oSuc G t) (oZero G)) (oEmpty G).
+Proof. intros; estep "Id-Nat-S0". Qed.
+
+Lemma eq_Id_Nat_SS G m n
+  : wf_term ott_dtt [] G sEnv ->
+    wf_term ott_dtt [] m (sElt G oRel oL0 (oNat G)) ->
+    wf_term ott_dtt [] n (sElt G oRel oL0 (oNat G)) ->
+    eq_term ott_dtt [] (sCode G oIrr oL0)
+      (oIdEq G oL0 (oNat G) (oNat G) (oSuc G m) (oSuc G n))
+      (oIdEq G oL0 (oNat G) (oNat G) m n).
+Proof. intros; estep "Id-Nat-SS". Qed.
