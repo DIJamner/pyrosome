@@ -48,12 +48,13 @@ Import Core.Notations.
      [Prop].  The single [Prop]/[Type] bridge in the whole development is
      Gluing/CutModelSound.v's [inhabited], unchanged.
 
-   ETA.  The Pi clause carries NO "and it has a normal form" conjunct.
-   Without eta one has to, because a neutral at a Pi type is already
-   normal and nothing forces a member of the candidate to be one.  With
-   eta the normal form of an inhabitant of a Pi type IS its eta-expansion,
-   so "has a normal form" is derivable -- which is exactly what makes
-   escape and reflect a single mutual induction on the [RTy] derivation.
+   ETA.  Neither Pi clause carries a "has a normal form" conjunct.  For
+   [Pi_rel] the normal form of an inhabitant is its eta-expansion; for
+   [Pi_irr] it is supplied instead by the ["proof irrelevance"] rule of
+   [ott_dtt].  Either way "has a normal form" is derivable from the plain
+   Kripke candidate, which is exactly what makes escape and reflect a
+   single mutual induction on the [RTy] derivation -- see
+   [RTy_escape_reflect] in LogRelCore.v.
    ===================================================================== *)
 
 Local Notation eqt := (eq_term ott_dtt []).
@@ -174,9 +175,10 @@ Inductive RTy : term -> term -> term -> (term -> Prop) -> Prop :=
           Pc D w a (appAtRel D G rF lF lG F B w e a))) ->
     RTy G (iEl oRel lG) (oEl G oRel lG (oPiRel G rF lF lG F B)) P
 
-(* [Pi_irr] has no eta rule in [ott_pi], so a neutral there IS normal and
-   the candidate must say so explicitly -- the "HasNf" conjunct that the
-   relevant Pi does without. *)
+(* [ott_dtt] has a ["proof irrelevance"] rule, so escape at [Pi_irr] is
+   derivable exactly as at [Pi_rel] (see [RTy_escape_reflect] in
+   LogRelCore.v) and the candidate below is the plain Kripke one -- the two
+   Pi clauses are identical up to relevance/level. *)
 | rty_pi_irr :
   forall G rF lF F B P
          (Pd : term -> term -> term -> Prop)
@@ -193,9 +195,8 @@ Inductive RTy : term -> term -> term -> (term -> Prop) -> Prop :=
               /\ eqt (sTy D (iEl oIrr oL0)) (codAtIrr D G rF lF F B w a) C
               /\ RTy D (iEl oIrr oL0) C (Pc D w a)) ->
     (forall e, P e <->
-       (HasNf G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B)) e
-        /\ forall D w a, Wk D G w -> EnvOk D -> Pd D w a ->
-             Pc D w a (appAtIrr D G rF lF F B w e a))) ->
+       (forall D w a, Wk D G w -> EnvOk D -> Pd D w a ->
+          Pc D w a (appAtIrr D G rF lF F B w e a))) ->
     RTy G (iEl oIrr oL0) (oEl G oIrr oL0 (oPiIrr G rF lF F B)) P.
 
 (* ------------------------------------------------------------------ *)

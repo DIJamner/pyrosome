@@ -17,11 +17,11 @@ Everything else — the layer decomposition, the `CutTModel` route, "state every
 ## 1. The target language
 
 ```
-ott_dtt := ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base
-             ++ subst_ott ++ ott_info                                  (73 rules)
+ott_dtt := ott_proofirr_el ++ ott_subst_commute ++ ott_pi ++ ott_nat ++ ott_base
+             ++ subst_ott ++ ott_info                                  (74 rules)
 ```
 
-Census (computed, `named_map summ ott_dtt`): **32** `term_rule`, **32** `term_eq_rule`,
+Census (computed, `named_map summ ott_dtt`): **32** `term_rule`, **33** `term_eq_rule`,
 **9** `sort_rule`, **0** `sort_eq_rule`. `ott_subst_commute` is §9a's fix.
 
 Sorts: `env`, `sub G G'`, `ty G i`, `exp G i A`, `tyinfo`, `relevance`, `lvl`, `tlvl`,
@@ -33,9 +33,17 @@ sort equations anywhere, so `csort_by` is vacuous.
 universe is empty and the theorem vacuous. This is exactly the `unit_lang` situation of the
 STLC proof.
 
-Excluded for Phase 1: `Sigma`, `Id`, `Cast`, `ProofIrr`, `Computations`. `Cast` in
+Excluded for Phase 1: `Sigma`, `Id`, `Cast`, `Computations`. `Cast` in
 particular is *not* benign — its `u0` gives a code for a universe, which breaks §2's
 key structural fact.
+
+`ProofIrr` **is** included, but in the `El`-sorted presentation `ott_proofirr_el` rather
+than the bare-type-metavariable `ott_proofirr`: for a code `c : U G irr l`, any two
+`t u : El G irr l c` are equal. The restatement is forced by the rigid model — `rceq_term`
+at an `exp` sort dispatches on `USkel` of the type and ignores the info index, and it has no
+well-typedness hypotheses, so a premise `A : ty G (info irr l)` lets the rigid obligation be
+instantiated at `A := U emp irr L0`, `t := Nat`, `u := Empty`, which is refutable by `I_fun`.
+`USkel (El …) = false` makes the case `exact I`. See §11.
 
 Argument-order gotchas, read off the compiled language (the surface notation disagrees):
 
@@ -145,6 +153,11 @@ no reduction relation, only the equational theory, so it has to be earned.
 
 §2 is what makes earning it cheap: the needed statement is about the **code fragment only**,
 and that fragment has no β and no η.
+
+Nor is it touched by proof irrelevance, which is why adding that rule (§1) left Layer 0.5
+alone: *every* code sits at info `rel (next l)`, including the irrelevant ones
+(`Pi_irr : exp G (info rel (next L0)) (U G irr L0)`), and the irrelevance rule applies only
+at `info irr`. So it can never equate two codes, and `NfCode_inj`/`TyOk_inj` survive intact.
 
 ---
 
@@ -317,7 +330,7 @@ if a later layer hits the same wall a third time.
 The mutual block is six-way (`EnvOk`, `TyOk`, `NfCode`, `VarT`, `NeET`, `NfET`) with
 `Combined Scheme`. Three things are specific to η, and one to dependency.
 
-**(a) `NfET` has no neutral clause at a `Pi_rel` type.** The clauses are indexed by the
+**(a) `NfET` has no neutral clause at EITHER Π type.** The clauses are indexed by the
 *normal type*, and dispatch on its head:
 
 ```
@@ -326,12 +339,20 @@ A = El G rel L0 (Nat G)           -> zero | suc n | neutral
 A = El G irr L0 (Empty G)         -> neutral
 A = El G r l c,  c neutral        -> neutral
 A = El G rel lG (Pi_rel …)        -> lam_rel … t   ONLY            <-- η
-A = El G irr L0 (Pi_irr …)        -> lam_irr … t | neutral         <-- no η for Pi_irr
+A = El G irr L0 (Pi_irr …)        -> lam_irr … t   ONLY            <-- proof irrelevance
 ```
 
-`"Pi_irr eta"` is not a rule of `ott_pi` (upstream it is subsumed by proof irrelevance, and
-`ProofIrr` is out of scope), so the irrelevant Π keeps the STLC-style shape. The asymmetry is
-harmless — it just means one clause has a neutral case and the other does not.
+The two rows hold for different reasons, and the difference shows up in the proof. At
+`Pi_rel` the normal form of a neutral must be **the** η-expansion, and only `"Pi_rel eta"`
+proves that equality. At `Pi_irr` there is no η rule, but `"proof irrelevance"` equates a
+neutral with **every** well-typed `lam_irr` at that type at once, so *any* normal inhabitant
+of the codomain will do; escape supplies one by escaping the body at the fresh variable and
+wrapping it in `lam_irr`. Either way a neutral is not a normal form there, and the candidate
+at `Pi_irr` is the plain Kripke one — identical to `Pi_rel`'s up to relevance and level.
+
+`Empty` is untouched by this: proof irrelevance equates the inhabitants of
+`El G irr L0 (Empty G)` but supplies none, so the neutral clause there is still what makes a
+normal form EXIST.
 
 **(b) The STLC `neet_lamapp` clause disappears.** It existed because `SimpleVSTLC` is
 call-by-value and β fires only when both sides are `ret`s. `"Pi_rel beta"` fires for an
@@ -374,9 +395,12 @@ mention `RTy`, which is what kills the would-be negative occurrence there. Every
 
 η changes the interface in the direction of *simplification*:
 
-* **The Π candidate needs no `HasNf` conjunct.** Without η one has to carry "…and it has a
+* **Neither Π candidate needs a `HasNf` conjunct.** Without η one has to carry "…and it has a
   normal form" separately, because a neutral at a Π type is already normal. With η the normal
-  form of an inhabitant of a Π type *is* its η-expansion, so it is derivable.
+  form of an inhabitant of a `Pi_rel` type *is* its η-expansion, so it is derivable. The same
+  holds at `Pi_irr`, via `"proof irrelevance"` instead of η (§6(a)), so the two clauses are
+  symmetric. `rty_pi_irr` did carry the extra conjunct while `nfet_ne_pi_irr` existed; both
+  are now gone.
 * **Escape and reflect are one mutual induction on the `RTy` derivation** (`RTy_escape_reflect`,
   proved). At Π:
   * *reflect*: given a neutral `n`, show `P n`, i.e. that `n[w] a` is in the codomain
@@ -385,6 +409,10 @@ mention `RTy`, which is what kills the would-be negative occurrence there. Every
   * *escape*: given `P e`, work in `D = ext G (iEl rF lF) (El G rF lF F)`. By IH-reflect at
     the domain, `hd` is reducible; so `Pc` holds of `(e[wkn]) hd`; by IH-escape at the
     codomain it has a normal form `t`; then `lam_rel … t` is a normal form of `e` **by η**.
+    At `Pi_irr` the same construction runs, with `"proof irrelevance"` in place of η for the
+    last step: it equates `e` with `lam_irr … t` outright, so the body `t` need not be the
+    η-expansion — it just has to be *some* normal inhabitant of the codomain, and the escape
+    at the codomain supplies one.
 
   Without η the second bullet has no proof — the term is not equal to any λ — which is
   exactly why the old plan had to keep reification untyped and defer η to a later phase.
@@ -493,7 +521,7 @@ Obligation count: `cterm_cong` 32, `cterm_by` 32, `csort_cong` 9, `csort_by` 0, 
 | **P6** | Layer 4a + the structural, index and σ obligations (≈ 40) | volume |
 | **P7** | Layer 4b for the 13 new formers + β + η | — |
 | **P8** | Layer 4c, theorems, smoke test | — |
-| **P9** | extensions: `ProofIrr`, `Sigma`, `Id`, `Computations` | — |
+| **P9** | extensions: ~~`ProofIrr`~~ (done, §1), `Sigma`, `Id`, `Computations` | — |
 | **—** | `Cast` | **breaks §2**: `u0` is a code for a universe, so eliminators can land in `U`, code rigidity fails, and the whole architecture reverts to the induction–recursion problem. Do not add `Cast` without redesigning Layers 0.5 and 2 |
 
 ## 9a. A language gap: four missing substitution commutations
@@ -509,8 +537,14 @@ is false for the language as it stands, since a stuck `exp_subst` has no normal 
 `⟨id,a'⟩ ∘ w↑ = w ∘ ⟨id,a⟩`). The other three are not: `Pi_irr` has no η and `Emptyrec` has no η,
 so nothing can move the substitution past them. `Lang/OTT/Pi.v`'s own comment says `lam_irr subst`
 is "subsumed by proof irrelevance" — true in the full theory with `Lang/OTT/ProofIrr.v`, whose
-single rule equates any two inhabitants of a proof-irrelevant type, but `ProofIrr` is out of scope
-here, so for `ott_dtt` the rules are genuinely absent.
+single rule equates any two inhabitants of a proof-irrelevant type, but at the time this was
+written `ProofIrr` was out of scope, so for `ott_dtt` the rules were genuinely absent.
+
+(`ott_dtt` now *does* include proof irrelevance, in the `El`-sorted form — see §1 — so the
+`lam_irr subst` and `app_irr subst` rules of `ott_subst_commute` are strictly speaking
+redundant. They are kept: they are proved and axiom-free, they are what the normal-form
+development actually rewrites with, and deriving each use from irrelevance instead would
+buy nothing.)
 
 **Fixed.** `src/Pyrosome/Lang/OTT/SubstCommute.v` supplies all four, proved and axiom-free, as a
 separate extension rather than an edit to `Pi.v`/`Nat.v` — that leaves every already-compiled

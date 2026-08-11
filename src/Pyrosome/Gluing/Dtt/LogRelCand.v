@@ -875,9 +875,7 @@ Proof.
     assert (wft B (sCode (oExtC G rF lF F) oIrr oL0)) as HBw
         by (apply NfCode_wf; exact HB).
     intros e e' He Heq.
-    destruct (proj1 (Hiff e) He) as [Hnf Happ].
-    apply Hiff; split; [ eapply HasNf_eq; [ exact Hnf | exact Heq ] | ].
-    intros D w a Hw HD Ha.
+    apply Hiff; intros D w a Hw HD Ha.
     destruct (Hc D w a Hw HD Ha) as [C (HT & Heqc & HR & HCE)].
     assert (wft D sEnv) as HDw by (apply EnvOk_wf; exact HD).
     assert (wft w (sSub D G)) as Hww by (apply Wk_wf; exact Hw).
@@ -886,7 +884,7 @@ Proof.
         [ exact HDw | exact HGw | apply RelNf_wf; exact HrF
         | apply LvlNf_wf; exact HlF | exact Hww | exact HFw
         | apply (eqt_wf_l Heqc) ]. }
-    eapply HCE; [ apply (Happ D w a Hw HD Ha) | ].
+    eapply HCE; [ apply (proj1 (Hiff e) He D w a Hw HD Ha) | ].
     eapply eq_term_conv.
     + apply pi_appAt;
         [ exact HDw | exact HGw | apply RelNf_wf; exact HrF
