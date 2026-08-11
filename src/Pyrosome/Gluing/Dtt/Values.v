@@ -398,6 +398,99 @@ Lemma NeCode_shape G r l c : NeCode G r l c ->
   \/ (exists l0 A B t u, c = oIdEq G l0 A B t u).
 Proof. destruct 1; [ left | right .. ]; eauto 10. Qed.
 
+(* ------------------------------------------------------------------ *)
+(* CASE-COMPLETENESS FOR THE Id COMPUTATION TABLE (design.md 12b)       *)
+(*                                                                     *)
+(* The table has a dozen clauses and is the part of the development     *)
+(* most likely to contain a transcription error -- and an omitted case  *)
+(* there does not fail to typecheck, it fails much later as a stuck     *)
+(* determinism proof.  These four lemmas are the table's case analysis, *)
+(* stated over HEAD SYMBOLS and proved once, so that writing the table  *)
+(* against them turns an omission into a missing case rather than a     *)
+(* silent gap.                                                         *)
+(*                                                                     *)
+(* Together they say the analysis is 3 x 3 in the codes (Nat, Pi_rel,   *)
+(* neutral) and, at Nat, 3 x 3 in the endpoints (zero, suc, neutral).   *)
+(* DISJOINTNESS is then immediate and needs no lemma: the shapes are    *)
+(* pairwise distinct [con] heads.                                      *)
+(* ------------------------------------------------------------------ *)
+
+(* The head analysis of a neutral code.  [NeCode_shape] leaves a [ValVar],
+   which is not yet a head; this pushes through to one. *)
+Lemma NeCode_head G r l c : NeCode G r l c ->
+  (exists G0 i0 A0, c = oHd G0 i0 A0)
+  \/ (exists G0 j B i0 A0 y,
+         c = oExpSubst (oExt G0 j B) G0 (oWkn G0 j B) i0 A0 y)
+  \/ (exists G0 l0 A B t u, c = oIdEq G0 l0 A B t u).
+Proof.
+  intro H; destruct (NeCode_shape H) as [ Hv | Hid ].
+  - destruct (ValVar_shape Hv) as [ H0 | H0 ]; [ left | right; left ]; exact H0.
+  - right; right; destruct Hid as [l0 [A [B [t [u ->]]]]]; eauto 10.
+Qed.
+
+(* Hence a neutral code is never a canonical one.  This is what refutes
+   the [val_ne] case in the two shape lemmas below, and it is the only
+   place the argument is not a bare [discriminate]. *)
+Lemma NeCode_not_nat G r l : NeCode G r l (oNat G) -> False.
+Proof.
+  intro H; destruct (NeCode_head H) as [ [?[?[? Hc]]]
+                                       | [ [?[?[?[?[?[? Hc]]]]]]
+                                         | [?[?[?[?[?[? Hc]]]]]] ] ];
+    discriminate Hc.
+Qed.
+
+Lemma NeCode_not_pi_rel G r l rF lF lG F B
+  : NeCode G r l (oPiRel G rF lF lG F B) -> False.
+Proof.
+  intro H; destruct (NeCode_head H) as [ [?[?[? Hc]]]
+                                       | [ [?[?[?[?[?[? Hc]]]]]]
+                                         | [?[?[?[?[?[? Hc]]]]]] ] ];
+    discriminate Hc.
+Qed.
+
+(* (1) THE RELEVANT CANONICAL CODES ARE EXACTLY [Nat] AND [Pi_rel].
+   This is what bounds the table's outer analysis at 3 x 3, and it is the
+   dual of [ValCode_irr_shape] above. *)
+Lemma ValCode_rel_shape G l c
+  : ValCode G oRel l c ->
+    (l = oL0 /\ c = oNat G)
+    \/ (exists rF lF F B, c = oPiRel G rF lF l F B)
+    \/ NeCode G oRel l c.
+Proof. inversion 1; subst; eauto 10. Qed.
+
+(* (2) THE VALUES AT [Nat] ARE EXACTLY [zero], [suc] AND THE NEUTRALS.
+   This bounds the inner analysis, the one the [Id-Nat-*] rules dispatch
+   on. *)
+Lemma Val_nat_shape G v
+  : Val G (iEl oRel oL0) (oEl G oRel oL0 (oNat G)) v ->
+    v = oZero G
+    \/ (exists n, v = oSuc G n
+                  /\ Val G (iEl oRel oL0) (oEl G oRel oL0 (oNat G)) n)
+    \/ ValNe G (iEl oRel oL0) (oEl G oRel oL0 (oNat G)) v.
+Proof.
+  (* the [val_ne] case is ABSORBED by the neutral disjunct rather than
+     refuted -- a neutral at [Nat] is exactly the third alternative.
+     [NeCode_not_nat] is kept anyway: it is half of the table's
+     disjointness, and the [Pi_rel] lemma below genuinely needs its twin. *)
+  inversion 1; subst; eauto 10;
+    exfalso; eapply NeCode_not_nat; eassumption.
+Qed.
+
+(* (3) AT A [Pi_rel] TYPE THE ONLY VALUE IS A [lam_rel] -- eta.  The
+   funext clause of the table needs this to know that its two endpoints
+   are lambdas and not neutrals. *)
+Lemma Val_pi_rel_shape G rF lF lG F B v
+  : Val G (iEl oRel lG) (oEl G oRel lG (oPiRel G rF lF lG F B)) v ->
+    exists t, v = oLamRel G rF lF lG F B t
+              /\ Val (oExtC G rF lF F) (iEl oRel lG)
+                     (oEl (oExtC G rF lF F) oRel lG B) t.
+Proof.
+  (* [val_ne] must be REFUTED here, not absorbed: at a [Pi_rel] type eta
+     leaves no neutral alternative for it to land in. *)
+  inversion 1; subst; eauto 10;
+    exfalso; eapply NeCode_not_pi_rel; eassumption.
+Qed.
+
 End WithReps.
 
 (* =====================================================================
