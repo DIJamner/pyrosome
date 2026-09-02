@@ -355,6 +355,34 @@ Lemma wf_AppIrr G rF lF F B f a
 Proof. intros; wf_by "app_irr". Qed.
 
 (* ------------------------------------------------------------------ *)
+(* ott_id_cong                                                          *)
+(* ------------------------------------------------------------------ *)
+
+(* TRAP, the same one as [Empty] and [Pi_irr] above: [Id] is a code for an
+   IRRELEVANT L0 type, but the elaborator left its info as
+   [rel (iota L1)], NOT as [iCode L0 = rel (next L0)].  So this conclusion
+   is deliberately NOT written as [sCode G oIrr oL0]; [Eqns.wf_IdEq_c] is
+   the [next0]-converted form, and it is the one later layers want. *)
+Lemma wf_IdEq G l A B t u
+  : wft G sEnv ->
+    wft l sLvl ->
+    wft A (sCode G oRel l) ->
+    wft B (sCode G oRel l) ->
+    wft t (sElt G oRel l A) ->
+    wft u (sElt G oRel l B) ->
+    wft (oIdEq G l A B t u) (sExp G (iEl oRel oL1) (oU G oIrr oL0)).
+Proof. intros; wf_by "Id". Qed.
+
+(* [wf_Idcong] is deliberately ABSENT.  Its conclusion sort is the [Id]
+   between the two instantiations of the congruence's body, and the
+   spelling the elaborator stored for it has not been pinned down (the
+   obvious reading, [oIdcongTy] as NormalForms.v writes it, does not
+   unify).  Nothing needs it yet: under the *-collapse an [Idcong] is a
+   proof, so its value is [*] and the value layer never inspects it
+   (design.md section 14b supersedes 12d on exactly this point).  Pin it
+   when something first asks. *)
+
+(* ------------------------------------------------------------------ *)
 (* Sort inversion                                                       *)
 (* ------------------------------------------------------------------ *)
 
@@ -455,6 +483,7 @@ Proof. intro H; apply wf_sort_ltl_inv; eapply wft_wf_sort; exact H. Qed.
   wf_U wf_El
   wf_Nat wf_Zero wf_Suc wf_Empty wf_Emptyrec
   wf_PiRel wf_PiIrr wf_LamRel wf_LamIrr wf_AppRel wf_AppIrr
+  wf_IdEq
   : dtt_wf.
 
 (* The sort-formation rules, so that [wf_sort] goals are discharged too.

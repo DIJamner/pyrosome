@@ -660,3 +660,532 @@ parallel proof development safe is exactly what manufactures this duplication. B
 consolidation pass.
 
 Net: 29 files → 28, 25 228 lines → 23 111, no `Admitted` and no `Axiom` at any point.
+
+---
+
+## 12. The Id extension (in progress)
+
+`ott_dtt` is being extended with the heterogeneous, observational identity type. The fragment
+is `src/Pyrosome/Lang/OTT/IdCong.v` (`ott_id_cong`), **prepended**:
+
+```
+ott_dtt := ott_id_cong ++ ott_proofirr_el ++ ott_subst_commute ++ ott_pi ++ ott_nat
+             ++ ott_base ++ subst_ott ++ ott_info
+```
+
+Prepending is not a style choice. `infer_rule` re-extracts each rule's conclusion sort with
+`mk_weight`, whose tie-breaks depend on the *ambient* language (§9b), so inserting the fragment
+anywhere it is in scope while an earlier fragment elaborates can silently flip an existing rule
+between `next L0` and `iota L1` and invalidate a large amount of `Eqns.v`/`Wf.v`/`Model*.v`.
+
+### 12a. What is in the fragment
+
+Two term rules and thirteen equations.
+
+* `Id G l A B t u : U G irr L0`, with `A B : U G rel l`, `t : El A`, `u : El B` — *heterogeneous*,
+  and restricted to **relevant** codes. There is no `Id` between irrelevant codes and none is
+  wanted: proof irrelevance already equates all their inhabitants.
+* `Idcong A B b t u e : Id (B[t]) (B[u]) (b[t]) (b[u])`, from `e : Id A A t u` and a body
+  `b : El B` in `ext G (El A)`. **The only proof former.**
+* `Id subst`, and the computation rules of §12b.
+
+**No `Idrefl`.** `Idcong` strictly generalizes it: for a body that ignores the bound variable,
+`Idcong Nat C[wkn] c[wkn] zero zero triv : Id C C c c`, where `triv` inhabits `Id ℕ ℕ 0 0`, which
+`Id-Nat-00` reduces to the unit proposition.
+
+**No equations for `Idcong` at all** — not its substitution commutation, not the rules that push
+it under a constructor. Every one of them equates two inhabitants of a code at `U _ irr _`, so
+`ott_proofirr_el` proves it outright; they are *derived* in `Eqns.v`. This is the one place the
+§9a lesson ("a former with no substitution commutation is stuck under an explicit substitution,
+and normal forms are not stable under weakening") does **not** apply, because irrelevance
+supplies the equation that the missing rule would have.
+
+### 12b. The computation rules, and why `Id` never survives a closed environment
+
+The design constraint is: *the extension adds no normal form except neutrals*. Equivalently, an
+`Id` code whose arguments are all canonical must reduce. Since `Id`'s type arguments are relevant
+codes at a common level, the normal codes it can see are `Nat`, `Pi_rel …` and neutrals, so the
+case analysis is finite:
+
+| A, B | rule(s) |
+|---|---|
+| `ℕ`, `ℕ`, endpoints canonical | `Id-Nat-00` → unit, `Id-Nat-0S`/`Id-Nat-S0` → `Empty`, `Id-Nat-SS` → recurse |
+| `ℕ` vs `Pi_rel` | `Id-Nat-Pi` / `Id-Pi-Nat` → `Empty` (type-directed: endpoints arbitrary) |
+| `Pi_rel`, `Pi_rel`, domain indices differ | 4 clash rules → `Empty` (they PARTITION -- see §14l) |
+| `Pi_rel`, `Pi_rel`, domain indices agree | function extensionality, §12c |
+| either code neutral, or `ℕ`/`ℕ` with a neutral endpoint | **stuck — the new neutral code** |
+
+### 12c. Function extensionality is heterogeneous, and the domain-equality premise is not optional
+
+```
+Id (Π_{rF,lF} F1 B1) (Π_{rF,lF} F2 B2) f g
+  ↝  Π_irr (a1 : F1). Π_irr (a2 : F2). Π_irr (p : Id F1 F2 a1 a2).
+       Id (B1[a1]) (B2[a2]) (f·a1) (g·a2)                        (rF = rel)
+  ↝  Π_irr (a1 : F1). Π_irr (a2 : F2).
+       Id (B1[a1]) (B2[a2]) (f·a1) (g·a2)                        (rF = irr)
+```
+
+Quantifying over a *pair* of arguments plus a proof that they are equal is what lets the rule be
+stated without a **cast**, and that matters: `Cast`'s `u0` is a code whose `El` is a universe,
+which breaks the code grammar §2 rests on (§9's warning). The heterogeneous `Id` pays for itself
+here.
+
+The `p` premise is **required for consistency** at relevant domains, not a refinement. Dropping it
+gives `Id (Π ℕ ℕ) (Π ℕ ℕ) f g ↝ Π(a1)Π(a2). Id ℕ ℕ (f·a1) (g·a2)`; instantiate with `f = g = id`
+and it inhabits `Id ℕ ℕ a1 a2` for arbitrary `a1,a2`, hence `Id ℕ ℕ 0 1 = Empty`. At *irrelevant*
+domains the premise is genuinely unnecessary — a relevant result cannot depend on an irrelevant
+argument except through `Emptyrec` — so the two-binder form is used there, which is why the two
+cases are separate rules.
+
+### 12d. `Idcong` is an UNCONDITIONAL neutral, and that is what makes reification work
+
+> **SUPERSEDED by §14.** Under the `*`-erasure of §14 an `Idcong` is simply a proof,
+> its normal form is `*`, and none of the machinery below is needed. The reasoning
+> here is still the correct account of why a *body*-conditional neutral does not
+> work, which is why it is kept.
+
+The first design had `Idcong A B b t u e` neutral only when `b` is neutral, with a structural
+recursion on `b` supplying the normal form otherwise. That recursion does not close. At
+`b = lam_rel F' B'' s` the reduced type is the triple-`Π_irr` above, and its body needs a proof of
+`Id (B''[t,a1]) (B''[u,a2]) (s[t,a1]) (s[u,a2])` — a congruence in **two** variables at once,
+which the single-binder `Idcong` cannot express and which cannot be assembled from two
+single-variable congruences (the intermediate point would have to be `a1` transported along
+`F'[t] ~ F'[u]`, i.e. a cast).
+
+Making `Idcong` neutral *unconditionally* dissolves this. Its normal form is then whatever its
+**type** dictates, and the type-directed machinery already in place does all the work:
+
+* type reduces to a `Π_irr` (the unit proposition, or a funext Π) → not normal there, so it
+  η-expands by proof irrelevance to `lam_irr … (Idcong … · a1 · a2 · p)`, and the body is
+  `app_irr` applied to a neutral, hence **again a neutral**, at the smaller inner `Id`;
+* type reduces to `Empty` → neutrals are normal there;
+* type is a stuck `Id` → neutrals are normal there.
+
+So "push the congruence under each term former of the shared context" is realised by the *type*
+computing under that former, with the proof following it. The pushing equations
+(`Idcong … (suc n) … = Idcong … n …`, `Idcong … hd … = e`, `Idcong` of a closed body = reflexivity)
+remain true and are derived in `Eqns.v`, but no case of the normalization proof has to be
+organised around them.
+
+Note this makes normal forms at `El _ irr _` non-unique — `Idcong A A[wkn] hd t u e` and `e` are
+both normal at the same stuck `Id`. That is already true of the language (§6(a): at `Pi_irr` *any*
+normal inhabitant of the codomain will do) and it is harmless, because uniqueness is only ever
+needed for **codes**, and a proof never occurs inside a code: `Id`'s element arguments sit at
+relevant types.
+
+### 12e. What it costs: code rigidity, and the replacement
+
+`Id` is a code whose arguments include element terms, and its ℕ rules dispatch on those elements.
+Layer 0.5's rigid model has `rceq_term = True` at every non-universe-like `exp` sort
+(`Rigid.v:697`, `USkel (El _) = false` at `:285`) — which is exactly what let it discharge β, η and
+proof irrelevance with `exact I` — so it must erase `t,u`, and then
+
+* `Id-Nat-00` forces `rc_id rc_nat rc_nat = rc_pi … rc_empty rc_empty`, and
+* `Id-Nat-0S` forces `rc_id rc_nat rc_nat = rc_empty`,
+
+which `ICode`'s functionality (`Rigid.v:507`) makes contradictory. The two obligations are not
+merely unproved, they are **refutable**. Giving the model real information about elements makes it
+responsible for β and η, i.e. turns Layer 0.5 into a second normalization proof. This is §9's
+`Cast` kill-switch arriving through `Id`.
+
+**Decision: retire Layer 0.5 and make the logical relation two-sided.** `RTy`'s candidate becomes a
+binary relation; the universe clause relates two codes that share a normal representative, so
+`NfCode_inj` / `TyOk_inj` / `EnvOk_inj` become *corollaries of the fundamental theorem* rather than
+inputs to it. `Rigid.v`, `RigidOk.v` and `Inj.v` are deleted. The ~30 consumers listed in §4 —
+`RTy_fun_of_inj` (`LogRelBasics.v:475`), `RTy_fun_eq` (`LogRelFun.v:60`), `RTmN_intro`
+(`LogRelFun.v:77`, the sole constructor of `RTmN`), `TyOk_pin`/`NfCode_pin` and their 11 call sites
+in `NfWk.v`, and the 20 inside `RTyEx_str` — are re-derived from the PER.
+
+This is the third time the development has hit this wall (§3, §4b, here); §4b's "computed normal
+representatives" alternative was considered again and declined for the same reason as before, plus
+the new one that it does not by itself supply non-confusion.
+
+---
+
+## 13. Normalization becomes FUNCTIONAL (the Id extension forces it)
+
+**Decision.** The development's normalization content is existential — "`e` is provably equal to
+SOME normal form" (`HasNf`, §6). That is deliberate: it is what makes the 28 σ-equations cheap and
+what `Ceq.v` is organised around. It is also the reason `NfCode_inj`/`TyOk_inj` had to be earned
+separately, by the rigid model of §4. Once `Id` is in the language that separate route is gone
+(§12e), and no re-formulation of the *existential* content recovers it. So the content becomes
+FUNCTIONAL: a deterministic big-step `Nrm e n`.
+
+### 13a. Why nothing cheaper works
+
+Four routes were tried and each is refuted, not merely unproved:
+
+| route | refutation |
+|---|---|
+| two-sided (PER) logical relation | the universe clause gives "`c1`,`c2` share a normal representative `c0`"; concluding `c1 = c2` still needs `NfCode_inj`. Stating the clause structurally (heads match, subparts related) only relocates the same fact: its `Nat` clause hypothesis is `c1 ≡ Nat`, and refuting that for a normal `c1 = Pi_rel …` *is* non-confusion |
+| elements into the rigid model | the model must validate η, so its value domain needs `rval -> rval` — not strictly positive. Closures validate β but not η (NbE recovers η at readback, which is exactly the half that cannot be skipped here) |
+| weaken the rigid model to relevant codes, make irrelevant candidates extensional | dies at `cong_AppIrr`, `ModelPi.v:3572-3574`. Its only supply is the Kripke `Hiff` at `:3463`; with an extensional `P` the goal becomes (via `eq_proof_irr` + `RTy_cand_eq`, `C` being irrelevant) "`Pc D id ag` is inhabited", which is refutable — `rty_empty` at `oEmp` has an empty candidate. Closing it needs `NfET_csubst`, which `NfWk.v` deliberately lacks and whose proof *is* a Kripke relation at the Pi type |
+| drop the ℕ-endpoint Id rules | does not help: stuck `Id ℕ ℕ 0 0` and `Id ℕ ℕ 0 (S 0)` are distinct normal codes, so injectivity still needs element information |
+
+The through-line: **any `Id` that can get stuck forces the model to tell normal element forms
+apart**, and `Id` can always get stuck, since deciding otherwise decides equality of arbitrary
+terms. That is normalization strength. This is exactly §9's `Cast` warning, arriving via `Id`.
+
+An earlier session reached the same negative result independently, from the decidability side
+(branch `dtt-decidability`, commit 829dca47): *any logical-relation content stable under `eqt` —
+which the σ-equations need — cannot pin a syntactic representative without already knowing
+canonicity.* At `rty2_nat` escape reduces to `NfET n1/n2/n`, `eqt n1 n`, `eqt n2 n` ⊢ `n1 = n2`,
+an instance of the goal at a leaf with no induction hypothesis.
+
+### 13b. The shape of the fix
+
+> **CORRECTED by §14.** `NfET_inj` as stated below is FALSE — see §14a for the
+> counterexample. The target is `Val_inj` over `*`-collapsed values. (D)/(I)/(T)/(C)
+> survive unchanged; only the theorem they compose into changes.
+
+From the same prior work, `NfET_inj` decomposes into four properties of `Nrm`:
+
+* **(D) determinism** — `Nrm e n1 -> Nrm e n2 -> n1 = n2`; syntactic.
+* **(I) idempotence on normals** — `NfET n -> Nrm n n`; syntactic.
+* **(T) totality** — every well-typed term has an `Nrm`; this is what the existing model already
+  proves.
+* **(C) completeness** — `eq_term e1 e2 -> Nrm e1 n1 -> Nrm e2 n2 -> n1 = n2`.
+
+and `NfET_inj = (I) twice + (C)`. (D) and (I) are what break the circle that the existential
+content could not.
+
+Two consequences the old architecture avoided and this one must pay: a deterministic big-step
+`Nrm` is on the critical path *as a definition*, and σ-confluence becomes REQUIRED — the
+σ-equations must preserve `Nrm`-values. One wrinkle: `NfET` normal forms *contain* explicit
+substitutions (a `vart_wkn` variable is literally `oExpSubst … (oWkn …) … x`), so `Nrm` must not
+push substitutions into variable positions.
+
+### 13c. `Nrm` IS UNIFORM — the irrelevant side is not special-cased
+
+The governing principle, and the reason the irrelevant fragment is expected to be tractable:
+
+> **Irrelevant terms reduce exactly like relevant ones, and the reductions are justified by proof
+> irrelevance.**
+
+`Nrm` does not dispatch on relevance. It reduces a term at a proof-irrelevant type by the same
+structural rules it uses at a relevant one; where a step is not justified by a syntactic equation
+of `ott_dtt`, `ott_proofirr_el` (`eq_proof_irr`) justifies it. This is what dissolves the
+`NfET_csubst` obstruction that killed the extensional-candidate route: closure under substitution
+becomes a property of the *function*, proved once and uniformly, rather than something the
+Kripke candidate has to carry at each irrelevant type.
+
+It also fits §12d: `Idcong` is an unconditional neutral, so `Nrm` on an `Idcong` normalises its
+arguments and its TYPE, and the type-directed machinery (η at `Pi_irr`, proof irrelevance) does
+the rest — the congruence's "pushing under each former" is realised by the type computing, with
+the proof following.
+
+### 13d. Reusable scaffolding
+
+Branch `dtt-decidability` (829dca47) has three compiling scaffolds, recovered:
+
+* `DecEqTerm.v` — `dec_eq_term` FULLY PROVED and axiom-free, with `nf`, its soundness, and
+  `NfET_inj` as *parameters of the term*, not axioms. Part B turns a Prop-level "some fuel
+  suffices" into a total computable `nf` via `ConstructiveEpsilon`, closed under the global
+  context — so `Ceq.v`'s Prop-only discipline is **not** a barrier to computability and no
+  Type-level refactor of the witness layer is needed.
+* `RTy2Spike.v` — the binary-candidate `RTy2` is positivity-ACCEPTED (`Pd`/`Pc` are constructor
+  parameters, so the negative occurrence §3 rejected does not arise).
+* `NfETInjSkel.v` — `NfET_inj`/`NeET_inj` `Qed` by one mutual induction over `Nf_mutind`, resting
+  on exactly 10 named admits: 3 non-confusion, 5 injectivity, 2 hard (`NeET_app_{rel,irr}_confusion`).
+
+---
+
+## 14. `*`-erasure: the irrelevant fragment has ONE normal form
+
+### 14a. `NfET_inj` is false, and it always was
+
+```
+G  := ext (ext emp iE (El emp irr L0 (Empty emp))) iE (El G1 irr L0 (Empty G1))   (iE := iEl irr L0)
+x1 := hd …                          : VarT G iE (El G irr L0 (Empty G))
+x0 := exp_subst … (wkn …) … (hd …)  : VarT G iE (El G irr L0 (Empty G))
+n1 := Emptyrec G rel L0 (Nat G) x0      n2 := Emptyrec G rel L0 (Nat G) x1
+```
+
+Both are `NfET G (iEl rel L0) (oEl G rel L0 (oNat G))`, and `eqt n1 n2` holds by `Emptyrec_cong`
+plus `eq_proof_irr` — yet `n1 ≠ n2`. `Emptyrec`'s motive relevance is a metavariable in the
+compiled rule (`Lang/OTT/Nat.v:105`), so this is not an edge case.
+
+This predates `Id`. It never bit because the old development only needed `NfCode_inj`, and pre-`Id`
+codes contain no element terms. Once `Id` is in, codes contain relevant elements, relevant elements
+contain irrelevant subterms, and `NfCode_inj` inherits the falsity.
+
+### 14b. The fix, which is §13c taken to its endpoint
+
+Reification is **type-directed**, and each type class has its own rule, each justified by one
+equation of the theory. Proof irrelevance is simply the η rule of the irrelevant types:
+
+| normal type | reifies to | justified by |
+|---|---|---|
+| `U D r l` | the normal code | — |
+| `El D rel L0 (Nat D)` | `zero` / `suc v` / neutral | — |
+| `El D rel lG (Pi_rel …)` | `lam_rel … t` | `"Pi_rel eta"` |
+| `El D rel l ĉ`, `ĉ` neutral | the neutral | — |
+| **`El D irr l ĉ`, ANY `ĉ`** | **`*`** | **`"proof irrelevance"`** |
+
+The *reduction* rules never dispatch on relevance — only reification does, exactly as it already
+dispatches on `Nat` vs `Pi_rel`. `Val_inj` over `*`-collapsed values is then TRUE, and
+`NfCode_inj`/`TyOk_inj`/`EnvOk_inj` are its specialisations at `U`/`ty`/`env`, which are relevant.
+
+### 14c. (E1) and (E2), the two facts this rests on — (E2) VERIFIED
+
+**(E1)** `El G irr l c` covers exactly `Empty`, `Pi_irr`, `Id` and irrelevant neutral codes, since
+`Nat` and `Pi_rel` are the only relevant canonical codes. So the whole `Id`/`Idcong`/`Pi_irr`/
+`Empty` *element* fragment collapses to `*`.
+
+**(E2)** Every irrelevant-typed subterm occurring in a *relevant* position is erasable. **Checked
+mechanically** over the compiled language, Id fragment included, by classifying every `term_rule`'s
+argument sorts against its conclusion (counting a relevance METAVARIABLE as possibly-irrelevant —
+counting only constant `irr` under-reports and falsely confirms). The complete answer:
+
+```
+Idcong    concl irr      args [e]        -- whole term erases
+app_irr   concl irr      args [a; f]     -- whole term erases
+lam_irr   concl irr      args [t]        -- whole term erases
+app_rel   concl REL      args [a]        <-- erasable position 1
+Emptyrec  concl rA (var) args [e]        <-- erasable position 2
+```
+
+Exactly the two positions predicted, and no others. `Id`'s endpoints do not appear: they are pinned
+at relevant codes `A B : U G rel l`.
+
+### 14d. What this deletes
+
+`NfET` loses `nfet_ne_empty` and `nfet_lam_irr`; `NeET` loses `neet_app_irr` and `neet_idcong`;
+`RTy` loses `rty_empty` and `rty_pi_irr` for one trivial `rty_irr`; `ModelPi.v` loses its entire
+irrelevant half; `ModelProofIrr.v` becomes three lines. The `Id` fragment costs the normalizer
+exactly ONE clause — the code-level computation table — plus one structural observation: code
+normalization is no longer a plain structural induction (§2) but is mutually recursive with
+term-level normalization, because `Id-Nat-*` inspects endpoints and funext recurses through
+`AppV`. That is the real structural cost of `Id`.
+
+Soundness cannot be `eqt e v`, since `*` is not a term of `ott_dtt`; it becomes a realization
+relation `Rz`, with `Rz_eqt` discharging `*` by proof irrelevance.
+
+### 14e. CORRECTION: `Rz` is on the critical path, not a late concern
+
+§14d ends by noting that soundness becomes a realization relation `Rz` rather than `eqt`, because
+`*` is not a term of `ott_dtt`. It reads as if that bites only the ELEMENT layer. It does not, and
+the difference matters for build order:
+
+> **A CODE can contain `*`.** `Id`'s endpoints are relevant elements; a relevant element can be
+> `app_rel … a` with `rF = irr`, whose argument is `*`; and `Emptyrec G rA lA A *` is a normal
+> element at a RELEVANT type — which is §14a's own counterexample.
+
+So there is no `eqt`-shaped soundness statement for weakening at ANY layer, codes included, until
+`Rz` exists. `WkVal.v`'s `wkV_sound` is `eqt`-shaped only because its `wkV` is code-only and never
+enters an `Id` or an `app_rel`. **`Rz` must be built before any soundness conjunct in the value
+layer.**
+
+### 14f. What the weakening block actually cost (measured, not estimated)
+
+Four mutual judgements — `WkTy` / `WkTm` / `WkVar` / `VarTy` — not the thirteen a naive reading of
+"weaken codes, types, elements and neutrals simultaneously" suggests. Three structural facts did
+the shrinking:
+
+* **The weakening relation never mentions the value judgements.** It is syntax-directed on the
+  weakening and the subject, so it is self-contained and is defined BEFORE `Values.v`, which
+  consumes it as a premise.
+* **Codes and elements share one judgement.** Their head symbols are pairwise disjoint
+  (`Nat`/`Empty`/`Pi_rel`/`Pi_irr`/`Id` against `zero`/`suc`/`*`/`lam_rel`/`app_rel`/`Emptyrec`/
+  `hd`/`exp_subst`), so merging them costs nothing and turns determinism into a discrimination
+  argument. `WkTm` needs no type index at all: every annotation a weakened code or element carries
+  is already stored in the subject. Only VARIABLES introduce one.
+* **§14d overstated the cost of `Id`.** The stuck-`Id` half is ONE clause, weakening two codes and
+  two element endpoints with the same relation. The `*`-collapse is what makes it free: there is no
+  `lam_irr`, `app_irr` or `Idcong` clause, because those live at irrelevant `El`s where the only
+  value is `*`, and `*` weakens to `*` in one line.
+
+Two obstructions that are worth not rediscovering:
+
+* **`VarTy` is forced.** With a purely syntactic `IsVar` side condition, `WkTm` determinism is
+  FALSE: `wkvar_wkn` emits `exp_subst wkn i A x`, whose annotation `A` the relation never pinned,
+  so the output depends on an unconstrained input. `VarTy G i A x` pins it, and it is exactly
+  `Values.v`'s `ValVar` minus the value-hood premises. The resulting circularity (`WkTm` det needs
+  variable-type uniqueness needs `WkTy` det needs `WkTm` det) is closed by strengthening the
+  `WkVar` conjunct to conclude `i = i2 /\ A = A2`, making every use an IH of a sub-derivation.
+* **A single `wktm_var` clause is unsound for `inversion`** — a bare-variable subject overlaps
+  every other clause syntactically, so inverting at a known head spawns a bogus `WkVar` subcase per
+  clause. Splitting into `wktm_var_hd` / `wktm_var_wkn` keeps the judgement head-directed.
+
+### 14g. `Rz_eqt` — the erasure survives its own refutation test
+
+```coq
+Rz_eqt : Rz G i A v e1 -> Rz G i A v e2 -> eqt (sExp G i A) e1 e2
+```
+
+`Qed`, 0 new axioms. It needs neither `Nrm` nor the weakening layer, and it goes entirely through
+`Eqns.v`.
+
+**§14a's counterexample is now the theorem that vindicates the design.** `emptyrec_star_eqt` says
+the two `Emptyrec`s that refuted `NfET_inj` — differing only in their irrelevant argument, at a
+RELEVANT type — are provably equal, by `Emptyrec_cong` + `eq_proof_irr`. The fact that killed the
+existential design is exactly the fact the `*`-collapse needs. `app_rel_star_eqt` is the same at an
+irrelevant domain. Proof irrelevance is spent in exactly one place, `rz_star`, whose only premise
+is well-typedness of `e`.
+
+`rz_id` is in the block deliberately: by §14e the chain is code → `Id` → relevant element →
+`Emptyrec`/`app_rel` → `*`, so `Rz` must carry a code whose element subterms contain `*`, or the
+phenomenon is assumed away rather than handled.
+
+Three things to carry forward:
+
+* **`Rz` must be conversion-FREE, with the closure taken afterwards.** A `rz_conv` clause inside
+  the inductive appears on BOTH sides of `Rz_eqt`, and the case "first derivation is a leaf, second
+  is a conversion" has no induction hypothesis available — the recursion there is on the second
+  derivation. Define `Rz` conv-free and `RzE v e := exists e0, Rz v e0 /\ eqt e e0` on top; then
+  `Rz_eqt` is a plain induction and `RzE_eqt` is three lines. This is the same failure shape as
+  §14f's `wktm_var` overlap: **a clause whose subject is an unconstrained variable defeats
+  `inversion`**, and the fix is always to make the judgement head-directed and take the closure
+  outside.
+* **`Eqns.v` and `Wf.v` have NO `Id` support** — zero occurrences of `oIdEq`/`oIdcong`; both predate
+  the fragment. `wf_IdEq` and `IdEq_cong` currently live at the top of `Rz.v` and belong upstream.
+  The fragment is cheap to support (one `wf_by "Id"`, one `cong_step "Id"`, first try) — it simply
+  has not been done, and more of these will be needed.
+* **Scope limit, stated plainly.** Every TYPE argument is held fixed between value and term
+  (`rz_emptyrec` varies only the erased argument, `rz_id` only the endpoints). That is a restriction
+  on which pairs `Rz` relates, not a hidden assumption. Letting a type argument vary makes the
+  conclusion's SORT vary, which needs a realization relation on TYPES — `app_rel` is outside the
+  block for exactly that reason and is covered by a standalone lemma. So the deferred work is not
+  the erasure's soundness, which is settled, but its propagation through varying type indices.
+
+### 14h. Two things about supporting the Id fragment in Wf.v / Eqns.v
+
+**The fragment's index spellings are NOT uniform, and the tie-break is per-rule.** This is §9b once
+more, but sharper than that section suggests: `infer_rule` re-extracts each conclusion sort with
+`mk_weight`, and the winner depends on the rule's OWN right-hand side, so sibling rules of one
+fragment disagree:
+
+```
+"Id", "Id subst", "Id-Nat-00"     stored at  iEl rel L1
+"Id-Nat-0S" / "-S0" / "-SS"       stored at  iCode L0   (= sCode)
+```
+
+The three whose RHS is a Pi-shaped code got one spelling; the three whose RHS is `Empty` or an `Id`
+got the other. This was found by experiment after two failed attempts that assumed uniformity.
+**Do not "tidy" these into a single form** — they are what the compiled language stores, and the
+instinct on reading this section is exactly to normalise them.
+
+**The `next0` bridge cannot live upstream.** `wft_c0` ("an irrelevant-L0 code typed at the
+`iota L1` spelling is typed at the `next L0` one") needs both a `wf_` lemma and a congruence, but
+`Wf.v` and `Eqns.v` are SIBLINGS over `Syntax.v` — neither imports the other. So any consumer
+needing the code-sort spelling must be a file importing both. It sits in `Rz.v` today, which is the
+wrong home; it belongs in whatever bridge file replaces `NfTyping.v`.
+
+**`wf_Idcong` / `Idcong_cong` are deliberately absent.** `Idcong`'s stored conclusion sort is not
+the obvious one (`NormalForms.v`'s `oIdcongTy`, written against the rule as authored, does not
+unify), and pinning it costs a print-and-probe cycle. Nothing needs them: under the `*`-collapse an
+`Idcong` is a proof, its value is `*`, and the value layer never inspects it — §14b supersedes §12d
+exactly here. Pin them when something first asks.
+
+### 14i. NEGATIVE RESULT: generated injectivity does not speed up the wf-check
+
+Tried and abandoned. Recorded so it is not retried, because the idea is a natural one and the
+plumbing gap that suggests it is real.
+
+**The gap is real.** `compute_wf_rule` (`Tools/EGraph/ComputeWf.v:653`) hard-codes
+`inj_rules := empty_inj_rules`, so `cong_subgoals` (`Tools/EGraph/Defs.v:862`) can never fire — it
+looks the head up in the table and always misses — and `egraph_reducing_cong` falls back to
+re-saturating the WHOLE equation up to `red_fuel := 100` times. Meanwhile `gen_fundep_schemas`
+exists but is plumbed only into type INFERENCE (`elab_rule_auto`, `Tools/Interactive.v:74`), never
+into the check.
+
+**The bridge works.** The two formats differ: `gen_fundep_schemas` yields
+`(name, (shared, concl))`, while `cong_subgoals` wants `(name, [alternatives])` with each
+alternative the list of positions to recurse into — which is exactly `concl`, GROUPED BY NAME (one
+operator can carry several schemas, e.g. left and right cancellation, which is why it is a list).
+Against the funext prefix this generates **40 schemas over 30 operators**, including every former
+the rule is built from: `exp_subst`, `ty_subst`, `El`, `U`, `Pi_rel`, `Pi_irr`, `app_rel`, `snoc`,
+`cmp`, `wkn`, `hd`, `ext`, `Id`. Generation costs ~3.5 min and is cacheable as a `Definition`.
+
+**It does not help.** With that table, `id_pi_pi_rel_rule` ran past 1h35m against a measured
+1h55m baseline for the same rule at the same prefix, with no sign of finishing — killed. Two
+reasons, and together they explain why a richer table would not have helped either:
+
+* the top-level goal is `Id … = Pi_irr …`, whose heads DIFFER, so there is nothing for
+  `cong_subgoals` to decompose at the top no matter how complete the table is;
+* the cost is not in the top-level congruence at all but inside `egraph_reducing_cong`'s
+  `red_fuel` saturate/extract rounds, which injectivity does not touch.
+
+An earlier attempt with a hand-written table for `Id` alone failed the same way, which at the time
+looked like insufficient coverage. It was not: coverage was never the problem.
+
+**What DID work, for the record, is decomposition of the LANGUAGE rather than of the goal** —
+splitting the fragment so each rule is checked against the smallest prefix it needs (§14j).
+
+### 14j. What DID work: split the language, not the goal
+
+`compute_wf_rule` checks each rule against its PREFIX, and its cost grows sharply with that prefix.
+So the lever is to give each rule the smallest prefix it needs, by authoring the fragment in
+several extensions and concatenating them — `Core.lang_ext_monotonicity` (`Theory/Core.v:1681`)
+lifts a rule verified against a small prefix to its position in the assembled language, and
+`wf_rule_lang_monotonicity` (`:553`) is the per-rule version. Both already existed.
+
+Measured, same machine, same rule set:
+
+```
+BEFORE, one Derive, rules sequenced
+  whole fragment                                        > 4 h, killed, never finished
+
+AFTER, five files
+  IdCore.v        Id, Id subst                            35 s
+  IdComp.v        Idcong + 10 computation rules          3.5 min
+  IdFunextDefs.v  the two funext rule DEFINITIONS only    1.3 s
+  IdFunextIrr.v   2-binder funext  ⎫ SIBLINGS over the   ~12 min
+  IdFunextRel.v   3-binder funext  ⎭ same base            ~2 h (the irreducible cost)
+  IdCong.v        assembly, three monotonicity lifts       10 s
+  Syntax.v        89-rule ott_dtt + compositional wf       12 s
+```
+
+Three separate effects, each worth stating because each was a surprise:
+
+1. **A funext rule in a prefix is poison.** The same 2-binder rule cost ~4 min with no funext ahead
+   of it and >16 min with one. Making the two funext rules SIBLINGS over a common base — neither in
+   the other's prefix — is what recovers it. They are independent; only the authoring order made
+   them a chain.
+2. **The split also dissolves the elaboration constraint.** Rules cannot simply be REORDERED to get
+   a smaller prefix: with a funext rule in scope, `infer_rule` re-elaborates `Id-Nat-00` to a
+   DIFFERENT rule (measured: the inferred rules compare unequal, inference costs 5.6x more) — the
+   `next L0` <-> `iota L1` flip of §9b. But siblings over a COMMON base each elaborate exactly as
+   they did before, so the constraint and the optimisation stop competing.
+3. **Put rule DEFINITIONS in their own file.** `IdFunextDefs.v` costs 1.3 s and lets anything import
+   a pre-elaborated rule without triggering its check — which is what makes probing a slow rule
+   possible at all, and what lets a stand-in be swapped for a running proof.
+
+And separately, `ott_dtt_wf` should be COMPOSITIONAL (`prove_by_lang_db` over the fragments'
+`wf_lang_ext` lemmas), never `compute_wf_lang`: re-checking 89 rules took >15 min and growing,
+against 12 s for the assembly.
+
+### 14k. Instantiation is not a sibling of weakening — it is a fragment of `Nrm`
+
+**Weakening never creates a redex; it only shifts.** That is why `WkRel.v` is purely structural and
+why it was cheap (§14f). **Instantiation substitutes a VALUE for a variable, and a value in a
+neutral's head position turns that neutral into a redex.** So the instantiation relation must
+EVALUATE. It is not a sibling of the weakening block; it is the substitution half of `Nrm`.
+
+The break is located precisely, and it is small:
+
+* Substituting an element into a value CODE is structural at `Nat`, `Empty`, `Pi_rel`, `Pi_irr` —
+  and, less obviously, at code VARIABLES. A code variable's type is a universe, but the
+  de Bruijn-0 variable of `oExtC G rF lF F` has type `El _ rF lF F[wkn]`, an `El`. So a code
+  variable is never the one being substituted; it always merely strips. For the same reason an
+  `Id` stuck on a neutral CODE stays stuck.
+* It breaks in **exactly one place**: `necode_id_nat_l`/`_r`. There the stuck endpoint is an
+  ELEMENT at `El _ rel L0 (Nat _)`, it CAN be the 0-variable (when `F` is `Nat`), and substituting
+  `zero` or `suc n` fires `Id-Nat-00`/`-0S`/`-SS`. Symmetrically an endpoint `app_rel … f a` whose
+  head `f` is the 0-variable becomes a β-redex under a `lam_rel`.
+
+This is §14d confirmed from the substitution side, and it says exactly what `Id` costs.
+`NfWk.v:3139`'s `NfCode_csubst` — "the code grammar is a free algebra closed under substitution
+STRUCTURALLY" (`NormalForms.v:66`) — held only because pre-`Id` codes contain no elements.
+`NfWk.v:61` records that its one difficulty was a relevance-injectivity detail, not evaluation.
+That is the whole difference.
+
+**Judgement count: the §14f factorization survives.** `InstTy`/`InstTm`/`InstVar` mirroring
+`WkRel`, plus an application judgement (β) and an `Id` judgement (the §12b table) — five or six.
+The growth is in CLAUSES, not judgements: the `Id` table alone is ~12.
+
+**On the lexicographic measure §14d predicted: it is RELOCATED, not avoided.** As a relation there
+is no termination obligation, exactly as in T3 — but the measure is what a TOTALITY proof needs,
+and totality is §13b's (T). The mutual relation buys definability without a termination argument
+and defers the same debt to the same place. Worth stating that way rather than claiming the measure
+went away.

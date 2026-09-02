@@ -69,6 +69,23 @@ Import Core.Notations.
 
 Local Notation eqt := (eq_term ott_dtt []).
 
+(* ------------------------------------------------------------------ *)
+(* The type an [Idcong] concludes at                                    *)
+(* ------------------------------------------------------------------ *)
+
+(* [Idcong A B b t u e] concludes at the Id between the two instantiations
+   of its body:  Id (B[<id,t>]) (B[<id,u>]) (b[<id,t>]) (b[<id,u>]).
+   Spelled EXACTLY as the compiled rule stores it (read off the elaborated
+   language, not the surface notation): the codomain code travels at the
+   info [iCode lB] and the body at [iEl oRel lB]. *)
+Definition oIdcongTy (G l lB A B b t u : term) : term :=
+  let X := oExtC G oRel l A in
+  oIdEq G lB
+    (oExpSubst G X (oInst G oRel l A t) (iCode lB) (oU X oRel lB) B)
+    (oExpSubst G X (oInst G oRel l A u) (iCode lB) (oU X oRel lB) B)
+    (oExpSubst G X (oInst G oRel l A t) (iEl oRel lB) (oEl X oRel lB B) b)
+    (oExpSubst G X (oInst G oRel l A u) (iEl oRel lB) (oEl X oRel lB B) b).
+
 Inductive EnvOk : term -> Prop :=
 | envok_emp : EnvOk oEmp
 | envok_ext : forall G i A, EnvOk G -> TyOk G i A -> EnvOk (oExt G i A)
@@ -104,8 +121,49 @@ with NfCode : term -> term -> term -> term -> Prop :=
     NfCode G rF lF F ->
     NfCode (oExtC G rF lF F) oIrr oL0 B ->
     NfCode G oIrr oL0 (oPiIrr G rF lF F B)
-| nfcode_var : forall G r l c,
-    VarT G (iCode l) (oU G r l) c -> NfCode G r l c
+| nfcode_ne : forall G r l c,
+    NeCode G r l c -> NfCode G r l c
+
+(* [NeCode G r l c] : [c] is a NEUTRAL code -- a code that no computation
+   rule of [ott_dtt] can reduce.  Before the Id fragment this was exactly
+   "a variable", and [NfCode] had [nfcode_var] instead; [Id] adds a second
+   way for a code to be stuck, so the notion is broken out.
+
+   The clauses are the complete stuck analysis of section 12b of
+   Gluing/Dtt/design.md.  An [Id] reduces as soon as both of its codes are
+   canonical: distinct heads clash to [Empty], two [Pi_rel]s go to funext
+   or (on mismatched domain indices) to [Empty], and two [Nat]s dispatch on
+   the endpoints.  So it is stuck exactly when a CODE is neutral, or when
+   both codes are [Nat] and an ENDPOINT is neutral. *)
+with NeCode : term -> term -> term -> term -> Prop :=
+| necode_var : forall G r l c,
+    VarT G (iCode l) (oU G r l) c -> NeCode G r l c
+
+(* Stuck on a neutral code.  Note the indices: [Id] lands at [irr, L0],
+   while its two code arguments are RELEVANT, and the only neutral code at
+   a relevant index is a variable -- so these clauses do not recurse into
+   further [Id]s. *)
+| necode_id_l : forall G l A B t u,
+    NeCode G oRel l A -> NfCode G oRel l B ->
+    NfET G (iEl oRel l) (oEl G oRel l A) t ->
+    NfET G (iEl oRel l) (oEl G oRel l B) u ->
+    NeCode G oIrr oL0 (oIdEq G l A B t u)
+| necode_id_r : forall G l A B t u,
+    NfCode G oRel l A -> NeCode G oRel l B ->
+    NfET G (iEl oRel l) (oEl G oRel l A) t ->
+    NfET G (iEl oRel l) (oEl G oRel l B) u ->
+    NeCode G oIrr oL0 (oIdEq G l A B t u)
+
+(* Stuck on a neutral endpoint, both codes being [Nat].  No other pair of
+   canonical codes can be stuck. *)
+| necode_id_nat_l : forall G t u,
+    NeET G (iEl oRel oL0) (oEl G oRel oL0 (oNat G)) t ->
+    NfET G (iEl oRel oL0) (oEl G oRel oL0 (oNat G)) u ->
+    NeCode G oIrr oL0 (oIdEq G oL0 (oNat G) (oNat G) t u)
+| necode_id_nat_r : forall G t u,
+    NfET G (iEl oRel oL0) (oEl G oRel oL0 (oNat G)) t ->
+    NeET G (iEl oRel oL0) (oEl G oRel oL0 (oNat G)) u ->
+    NeCode G oIrr oL0 (oIdEq G oL0 (oNat G) (oNat G) t u)
 
 (* [VarT G i A x] : [x] is an object-level variable of the normal type [A].
    The meta-context is empty, so object-level variables are [hd] and its
@@ -156,6 +214,35 @@ with NeET : term -> term -> term -> term -> Prop :=
     NfCode G rA lA A ->
     NeET G (iEl oIrr oL0) (oEl G oIrr oL0 (oEmpty G)) e ->
     NeET G (iEl rA lA) (oEl G rA lA A) (oEmptyrec G rA lA A e)
+(* [Idcong] is neutral UNCONDITIONALLY -- there is no premise on the shape
+   of its body [b].  That is what makes reification at an Id type work; see
+   section 12d of design.md.  The alternative (neutral only when [b] is
+   neutral, with a structural recursion supplying the normal form
+   otherwise) does not close: at a [lam_rel] body the reduced type needs a
+   congruence in TWO variables at once, which the single-binder [Idcong]
+   cannot express and which cannot be assembled from two one-variable
+   congruences without a cast.  Being unconditionally neutral, its normal
+   form is instead whatever its TYPE dictates, and the existing
+   type-directed machinery supplies it: at a [Pi_irr] (the unit
+   proposition, or a funext Pi) it eta-expands by proof irrelevance and the
+   body [Idcong ... . a1 . a2 . p] is [app_irr] of a neutral, hence neutral
+   again at the smaller inner Id; at [Empty] or a stuck Id, neutrals are
+   already normal.
+   As with [app_rel], the normal representative [C] of the conclusion type
+   is supplied at the construction site -- here it is the normal form of
+   the Id code, computed by the same structural recursion as
+   [NfCode_subst], extended with the Id computation table. *)
+| neet_idcong : forall G l lB A B b t u e C,
+    NfCode G oRel l A ->
+    NfCode (oExtC G oRel l A) oRel lB B ->
+    NfET (oExtC G oRel l A) (iEl oRel lB) (oEl (oExtC G oRel l A) oRel lB B) b ->
+    NfET G (iEl oRel l) (oEl G oRel l A) t ->
+    NfET G (iEl oRel l) (oEl G oRel l A) u ->
+    NfET G (iEl oIrr oL0) (oEl G oIrr oL0 (oIdEq G l A A t u)) e ->
+    TyOk G (iEl oIrr oL0) C ->
+    eqt (sTy G (iEl oIrr oL0))
+        (oEl G oIrr oL0 (oIdcongTy G l lB A B b t u)) C ->
+    NeET G (iEl oIrr oL0) C (oIdcong G l lB A B b t u e)
 
 (* [NfET G i A e] : [e] is an ETA-LONG normal term of the normal type [A].
    The clauses are dispatched by [A]'s head, and the dispatch is exhaustive
@@ -181,8 +268,13 @@ with NfET : term -> term -> term -> term -> Prop :=
 | nfet_ne_empty : forall G e,
     NeET G (iEl oIrr oL0) (oEl G oIrr oL0 (oEmpty G)) e ->
     NfET G (iEl oIrr oL0) (oEl G oIrr oL0 (oEmpty G)) e
-| nfet_ne_var : forall G r l c e,
-    VarT G (iCode l) (oU G r l) c ->
+(* At a type named by a NEUTRAL code, every normal is neutral.  Before the
+   Id fragment "neutral code" meant "variable" and this clause was
+   [nfet_ne_var]; it now dispatches on [NeCode], which additionally covers
+   a stuck [Id].  This is the ONLY place the Id fragment touches [NfET] --
+   the extension adds no normal form except neutrals. *)
+| nfet_ne : forall G r l c e,
+    NeCode G r l c ->
     NeET G (iEl r l) (oEl G r l c) e ->
     NfET G (iEl r l) (oEl G r l c) e
 | nfet_lam_rel : forall G rF lF lG F B t,
@@ -203,12 +295,60 @@ with NfET : term -> term -> term -> term -> Prop :=
 Scheme EnvOk_min := Minimality for EnvOk Sort Prop
   with TyOk_min := Minimality for TyOk Sort Prop
   with NfCode_min := Minimality for NfCode Sort Prop
+  with NeCode_min := Minimality for NeCode Sort Prop
   with VarT_min := Minimality for VarT Sort Prop
   with NeET_min := Minimality for NeET Sort Prop
   with NfET_min := Minimality for NfET Sort Prop.
 
+(* SEVEN conjuncts now, not six: every consumer of [Nf_mutind]
+   (NfTyping.v, NfWk.v, LogRelCore.v) gains an [NeCode] case. *)
 Combined Scheme Nf_mutind from
-  EnvOk_min, TyOk_min, NfCode_min, VarT_min, NeET_min, NfET_min.
+  EnvOk_min, TyOk_min, NfCode_min, NeCode_min, VarT_min, NeET_min, NfET_min.
+
+(* ------------------------------------------------------------------ *)
+(* Syntactic shape lemmas                                               *)
+(*                                                                      *)
+(* RESCUED from src/Pyrosome/Gluing/Dtt/Inj.v (deleted with the rest of  *)
+(* Layer 0.5; design.md section 12e).  [VarT_shape] was the ONLY lemma   *)
+(* in that file with no dependence on the rigid model of Rigid.v -- the  *)
+(* other twenty-odd are stated over [ICode]/[ITy]/[IEnv]/[ISub] and go   *)
+(* with them.  It lives here rather than in NfTyping.v because it is     *)
+(* pure case analysis on [VarT] and needs neither Wf.v nor Eqns.v.       *)
+(* ------------------------------------------------------------------ *)
+
+(* The subject of a [VarT] is an [oHd] or a [wkn]-substituted variable.
+   (Was Inj.v:216.) *)
+Lemma VarT_shape G i A x : VarT G i A x ->
+  (exists G0 i0 A0, x = oHd G0 i0 A0)
+  \/ (exists G0 j B i0 A0 y,
+         x = oExpSubst (oExt G0 j B) G0 (oWkn G0 j B) i0 A0 y).
+Proof. destruct 1; [ left | right ]; eauto 10. Qed.
+
+(* The [NeET] analogue: a neutral is a variable, an application, an
+   [Emptyrec] or an [Idcong].  (New; the old development never needed it
+   because Layer 0.5 did the corresponding work semantically.) *)
+Lemma NeET_shape G i A e : NeET G i A e ->
+  (exists G0 i0 A0, e = oHd G0 i0 A0)
+  \/ (exists G0 j B i0 A0 y,
+         e = oExpSubst (oExt G0 j B) G0 (oWkn G0 j B) i0 A0 y)
+  \/ (exists G0 rF lF lG F B f a, e = oAppRel G0 rF lF lG F B f a)
+  \/ (exists G0 rF lF F B f a, e = oAppIrr G0 rF lF F B f a)
+  \/ (exists G0 rA lA A0 e0, e = oEmptyrec G0 rA lA A0 e0)
+  \/ (exists G0 l lB A0 B b t u e0, e = oIdcong G0 l lB A0 B b t u e0).
+Proof.
+  destruct 1.
+  - destruct (VarT_shape H) as [ H0 | H0 ]; [ left | right; left ]; exact H0.
+  - right; right; left; eauto 10.
+  - right; right; right; left; eauto 10.
+  - right; right; right; right; left; eauto 10.
+  - right; right; right; right; right; eauto 20.
+Qed.
+
+(* A neutral code is a variable or a stuck [Id]. *)
+Lemma NeCode_shape G r l c : NeCode G r l c ->
+  VarT G (iCode l) (oU G r l) c
+  \/ (exists l0 A B t u, c = oIdEq G l0 A B t u).
+Proof. destruct 1; [ left | right .. ]; eauto 10. Qed.
 
 (* ------------------------------------------------------------------ *)
 (* Weakenings                                                           *)
@@ -284,13 +424,22 @@ Proof.
   intros [n [Hn Heq]]; exists n; split; [ apply nfet_ne_empty | ]; assumption.
 Qed.
 
+Lemma HasNe_HasNf_ne G r l c e
+  : NeCode G r l c ->
+    HasNe G (iEl r l) (oEl G r l c) e ->
+    HasNf G (iEl r l) (oEl G r l c) e.
+Proof.
+  intros Hc [n [Hn Heq]]; exists n; split;
+    [ eapply nfet_ne; eassumption | assumption ].
+Qed.
+
+(* The old name, kept as a derived form: a code variable is a neutral code. *)
 Lemma HasNe_HasNf_var G r l c e
   : VarT G (iCode l) (oU G r l) c ->
     HasNe G (iEl r l) (oEl G r l c) e ->
     HasNf G (iEl r l) (oEl G r l c) e.
 Proof.
-  intros Hc [n [Hn Heq]]; exists n; split;
-    [ eapply nfet_ne_var; eassumption | assumption ].
+  intro; apply HasNe_HasNf_ne; apply necode_var; assumption.
 Qed.
 
 (* There is deliberately NO [HasNe_HasNf] at a [Pi_rel] OR a [Pi_irr] type.

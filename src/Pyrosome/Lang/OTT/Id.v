@@ -69,15 +69,19 @@ Ltac wfstep :=
 
 (* ====================================================================== *)
 (* Identity types (Agda Typed.agda:101-108, 109-116).                     *)
-(*   Id A t u : SProp   (A a proof-relevant code in U_{!,l}; t,u : El A)  *)
-(*   Idrefl A t : Id A t t                                                *)
+(*   Id A B t u : SProp   (A,B proof-relevant codes in U_{!,l};            *)
+(*                         t : El A, u : El B — heterogeneous equality)    *)
+(*   Idrefl A t : Id A A t t                                              *)
 (*   transp : transport along a proof-irrelevant predicate                *)
 (* Plus the first-order ℕ-computation rules for Id (Typed.agda:241-250).  *)
 (* ====================================================================== *)
 
 Definition id_injectivity :=
-  [("Id", ["u"; "t"; "A"; "l"; "G"]);
-   ("Idrefl", ["t"; "A"; "l"; "G"])].
+  [("Id", ["u"; "t"; "B"; "A"; "l"; "G"]);
+   ("Idrefl", ["t"; "A"; "l"; "G"]);
+   ("transp", ["s"; "e"; "u"; "t"; "P"; "A"; "l"; "G"]);
+   ("Idsym", ["e"; "u"; "t"; "B"; "A"; "l"; "G"]);
+   ("Idcong", ["e"; "u"; "t"; "b"; "B"; "lB"; "A"; "l"; "G"])].
 
 Derive ott_id
        in (wf_lang_ext (ott_nat ++ ott_base ++ subst_ott ++ ott_info) ott_id)
@@ -85,34 +89,36 @@ Derive ott_id
 Proof.
   setup_lang_interactive.
 
-  (* Id A t u : a code in SProp. *)
+  (* Id A B t u : a code in SProp.  (heterogeneous: t : El A, u : El B) *)
   elab_rule {[r "G" : #"env", "l" : #"lvl",
           "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "B" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
           "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
-          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A")
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "B")
       -----------------------------------------------
-      #"Id" "A" "t" "u" : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
+      #"Id" "A" "B" "t" "u" : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
     ]}%prerule
     (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
   elab_rule {[r "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'", "l" : #"lvl",
           "A" : #"exp" "G'" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G'"] #"rel" "l"),
+          "B" : #"exp" "G'" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G'"] #"rel" "l"),
           "t" : #"exp" "G'" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
-          "u" : #"exp" "G'" (#"info" #"rel" (#"iota" "l")) (#"El" "A")
+          "u" : #"exp" "G'" (#"info" #"rel" (#"iota" "l")) (#"El" "B")
       ----------------------------------------------- ("Id subst")
-      #"exp_subst" "g" (#"Id" "A" "t" "u")
-        = #"Id" (#"exp_subst" "g" "A") (#"exp_subst" "g" "t") (#"exp_subst" "g" "u")
+      #"exp_subst" "g" (#"Id" "A" "B" "t" "u")
+        = #"Id" (#"exp_subst" "g" "A") (#"exp_subst" "g" "B") (#"exp_subst" "g" "t") (#"exp_subst" "g" "u")
       : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
     ]}%prerule
     (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
-  (* Idrefl A t : Id A t t  (a proof, lives in SProp). *)
+  (* Idrefl A t : Id A A t t  (a proof, lives in SProp). *)
   elab_rule {[r "G" : #"env", "l" : #"lvl",
           "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
           "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A")
       -----------------------------------------------
       #"Idrefl" "A" "t"
         : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
-          (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"] (#"Id" ["G" := "G"] ["l" := "l"] "A" "t" "t"))
+          (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"] (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "t"))
     ]}%prerule
     (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
@@ -122,7 +128,7 @@ Proof.
   elab_rule {[r "G" : #"env",
           "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
       ----------------------------------------------- ("Id-Nat-0S")
-      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) #"zero" (#"suc" "t")
+      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"]) #"zero" (#"suc" "t")
         = #"Empty" ["G" := "G"]
       : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
     ]}%prerule
@@ -130,7 +136,7 @@ Proof.
   elab_rule {[r "G" : #"env",
           "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
       ----------------------------------------------- ("Id-Nat-S0")
-      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"suc" "t") #"zero"
+      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"]) (#"suc" "t") #"zero"
         = #"Empty" ["G" := "G"]
       : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
     ]}%prerule
@@ -139,25 +145,174 @@ Proof.
           "m" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"])),
           "n" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
       ----------------------------------------------- ("Id-Nat-SS")
-      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"suc" "m") (#"suc" "n")
-        = #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) "m" "n"
+      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"]) (#"suc" "m") (#"suc" "n")
+        = #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"]) "m" "n"
       : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
     ]}%prerule
     (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
-  (* transp (Typed.agda:109-116): DEFERRED — correct proof, but OOMs here.
-     The structural prover (wfstep, above) fully proves transp's wf_rule:
-       push_rule_no_compute [:| <transp, fully explicit> ]%rule.
-       1:{ apply wf_lang_nil. }  apply wf_term_rule.  all: repeat wfstep.
-       Unshelve. all: try (vm_compute;reflexivity). all: try (repeat wfstep). all: shelve.
-     wfstep decomposes to leaves with NO solve_wf_ctx: tries the compact noconv
-     check (compute_noconv_term_wf) first, falls back to wf_sort_by/wf_args_cons2/
-     wf_term_by'/wf_term_conv, and discharges the snoc-id ty_subst_id conversion
-     via by_reduction (0 remaining goals — verified).  Memory: even with
-     noconv-first the proof peaks at 6.93GB RSS (rocqworker OOM-killed; box has
-     7.6GB total / ~6.9GB available, no swap; adding swap was permission-denied).
-     So it is ~0.2GB over on THIS machine — lands with a little more RAM/swap.
-     Its computation is in any case subsumed by proof irrelevance. *)
+  (* transp (Typed.agda:109-116): transport a proof s : El(P t) along a
+     proof e : Id A A t u to El(P u).  P is a proof-irrelevant predicate
+     (a code in SProp over El A); the result lives in SProp. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "P" : #"exp" (#"ext" "G" (#"El" "A")) (#"info" #"rel" (#"next" #"L0"))
+                       (#"U" ["G" := #"ext" "G" (#"El" "A")] #"irr" #"L0"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u")),
+          "s" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" (#"exp_subst" (#"snoc" #"id" "t") "P"))
+      -----------------------------------------------
+      #"transp" "A" "P" "t" "u" "e" "s"
+        : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+          (#"El" (#"exp_subst" (#"snoc" #"id" "u") "P"))
+    ]}%prerule
+    (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* Idsym: symmetry of the heterogeneous equality.  A proof e : Id A B t u
+     yields a proof of the swapped Id B A u t.  Lives in SProp, so positing it
+     as a term former is coherent by proof irrelevance; it is the flip needed to
+     state the codomain equalities of the structural Π / universe rules. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "B" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "B"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "B" "t" "u"))
+      -----------------------------------------------
+      #"Idsym" "A" "B" "t" "u" "e"
+        : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+          (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                (#"Id" ["G" := "G"] ["l" := "l"] "B" "A" "u" "t"))
+    ]}%prerule
+    (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* Idcong: congruence (aka `ap`).  Generalizes Idrefl from a CLOSED term to a
+     term b with one extra variable — b : El B in the extended context
+     ext G (El A), where the codomain code B may itself depend on the variable.
+     Given endpoints t,u : El A and a proof e : Id A A t u, produce a proof that
+     the two instantiations are (heterogeneously) equal:
+        Id (B[t]) (B[u]) (b[t]) (b[u]).
+     Idrefl A t is the degenerate case b := hd, B := A weakened (both ignore the
+     endpoints), whose congruence proof at t = u is Id A A t t.  As with
+     Idsym/transp this is a posited term former, coherent by proof irrelevance
+     (it lives in SProp); the substituted codomains make the equality
+     heterogeneous, which is exactly why Id was generalized. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl", "lB" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "B" : #"exp" (#"ext" "G" (#"El" "A")) (#"info" #"rel" (#"next" "lB"))
+                       (#"U" ["G" := #"ext" "G" (#"El" "A")] #"rel" "lB"),
+          "b" : #"exp" (#"ext" "G" (#"El" "A")) (#"info" #"rel" (#"iota" "lB")) (#"El" "B"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+      -----------------------------------------------
+      #"Idcong" "A" "B" "b" "t" "u" "e"
+        : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+          (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                (#"Id" ["G" := "G"] ["l" := "lB"]
+                      (#"exp_subst" (#"snoc" #"id" "t") "B")
+                      (#"exp_subst" (#"snoc" #"id" "u") "B")
+                      (#"exp_subst" (#"snoc" #"id" "t") "b")
+                      (#"exp_subst" (#"snoc" #"id" "u") "b")))
+    ]}%prerule
+    (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* ---- Idcong computation: push under each constructor / neutral (Nat frag) ---- *)
+
+  (* suc: cong of (suc n) is the cong of n, transported across Id-Nat-SS
+     (which reduces Id ℕ ℕ (suc _) (suc _) to Id ℕ ℕ _ _).  Pushes under suc. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "n" : #"exp" (#"ext" "G" (#"El" "A")) (#"info" #"rel" (#"iota" #"L0"))
+                       (#"El" ["G" := #"ext" "G" (#"El" "A")] ["r" := #"rel"] ["l" := #"L0"]
+                             (#"Nat" ["G" := #"ext" "G" (#"El" "A")])),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+      ----------------------------------------------- ("Idcong-suc")
+      #"Idcong" "A" (#"Nat") (#"suc" "n") "t" "u" "e"
+        = #"Idcong" "A" (#"Nat") "n" "t" "u" "e"
+      : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+        (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+              (#"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"])
+                    (#"exp_subst" (#"snoc" #"id" "t") (#"suc" "n"))
+                    (#"exp_subst" (#"snoc" #"id" "u") (#"suc" "n"))))
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* zero: a nullary (constant) constructor; there is nothing under it, so cong
+     bottoms out at reflexivity.  Id ℕ ℕ zero zero further reduces to sUnit
+     (Id-Nat-00, in Computations.v), of which Idrefl ℕ zero is an inhabitant. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+      ----------------------------------------------- ("Idcong-zero")
+      #"Idcong" "A" (#"Nat") (#"zero") "t" "u" "e"
+        = #"Idrefl" (#"Nat" ["G" := "G"]) (#"zero" ["G" := "G"])
+      : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+        (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+              (#"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"Nat" ["G" := "G"])
+                    (#"zero" ["G" := "G"]) (#"zero" ["G" := "G"])))
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* variable (neutral base case): cong of the extra variable itself is the
+     given proof.  Here b := hd, B := A weakened along wkn, so both instances
+     collapse to the endpoints and Id (B[t]) (B[u]) (hd[t]) (hd[u]) = Id A A t u,
+     whose proof is e.  This is where the structural recursion bottoms out. *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+      ----------------------------------------------- ("Idcong-var")
+      #"Idcong" "A" (#"exp_subst" #"wkn" "A") #"hd" "t" "u" "e"
+        = "e"
+      : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+        (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+              (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* closed subterm (normal form not mentioning the variable): a term weakened
+     along wkn ignores the extra variable, so both instances are the closed term
+     c and cong bottoms out at Idrefl C c.  This is the general leaf for any
+     type; the literal zero rule above is the corresponding leaf for the ℕ
+     recursion (where the closed subterm appears as the bare literal, not wkn·_). *)
+  elab_rule {[r "G" : #"env", "l" : #"lvl", "lB" : #"lvl",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" "l")) (#"U" ["G" := "G"] #"rel" "l"),
+          "C" : #"exp" "G" (#"info" #"rel" (#"next" "lB")) (#"U" ["G" := "G"] #"rel" "lB"),
+          "c" : #"exp" "G" (#"info" #"rel" (#"iota" "lB")) (#"El" "C"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "u" : #"exp" "G" (#"info" #"rel" (#"iota" "l")) (#"El" "A"),
+          "e" : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+                       (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+                             (#"Id" ["G" := "G"] ["l" := "l"] "A" "A" "t" "u"))
+      ----------------------------------------------- ("Idcong-wkn")
+      #"Idcong" "A" (#"exp_subst" #"wkn" "C") (#"exp_subst" #"wkn" "c") "t" "u" "e"
+        = #"Idrefl" "C" "c"
+      : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+        (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+              (#"Id" ["G" := "G"] ["l" := "lB"] "C" "C" "c" "c"))
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
