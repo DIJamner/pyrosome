@@ -23,7 +23,7 @@ From coqutil Require Import Map.Interface.
 From Utils Require Import Monad Result.
 From Pyrosome.Tools Require Import PosRenaming PosRenamingProperties RenamingBridge.
 From Pyrosome.Tools.EGraph Require Import RenamingCoincide.
-From Pyrosome.Tools.EGraph Require Import AdapterGlue.
+From Pyrosome.Tools.EGraph Require Import AdapterGlue SimplSound.
 From Pyrosome.Theory Require ClosedCore.
 From Stdlib Require Import NArith.
 From Stdlib Require Import Classes.RelationClasses.
@@ -537,6 +537,114 @@ Proof.
   apply Hlift.
   eapply egraph_reducing_equal_sound;
     [ exact Hwf' | exact He1' | exact He2' | exact Hsched | exact Hsucc' ].
+Qed.
+
+(* [Eqb_ok positive] as an instance, so the positive-side statements below
+   elaborate without threading it by hand. *)
+#[local] Instance positive_Eqb_ok_inst : Eqb_ok positive_Eqb := positive_Eqb_ok.
+
+(* ================================================================== *)
+(* Soundness of the SIMPLIFIER [egraph_simpl'].                        *)
+(*                                                                    *)
+(* [egraph_simpl'] never fails visibly: on any internal failure it     *)
+(* returns its input unchanged, so soundness needs no [Is_Success]     *)
+(* premise -- the output is ALWAYS equal to the input.  The proof      *)
+(* mirrors [egraph_reducing_equal'_to_pos] on the way in (forward      *)
+(* renaming + [build_rule_set] soundness), and uses the result-side    *)
+(* reverse lift [reverse_eq_term_lift_result] on the way out, since    *)
+(* the extracted term is produced in the positive world rather than    *)
+(* renamed into it.                                                   *)
+(* ================================================================== *)
+Theorem egraph_simpl'_sound
+  {V} {V_Eqb : Eqb V} {V_Eqb_ok : Eqb_ok V_Eqb} {V_default : WithDefault V}
+  {X} `{analysis V V X}
+  (l : lang V) (rn n en : nat) (c : ctx V) (t : sort V) (e : term V)
+  : wf_lang l ->
+    wf_ctx (Model:=core_model l) c ->
+    wf_term l c e t ->
+    (* The context names must be disjoint from the language symbols, so that
+       [ctx_to_rules c ++ l] is well-formed.  In practice discharged by
+       computation ([solve_ctx_lang_disjoint]). *)
+    all (fun x => fresh x l) (map fst c) ->
+    eq_term l c t e (egraph_simpl' l rn n en c e).
+Proof.
+  intros Hwf Hwfc He Hdisj.
+  unfold egraph_simpl'.
+  cbn [Mbind Mret state_monad].
+  (* Step 1: the two renaming steps the computation performs. *)
+  destruct (rename_lang (Defs.ctx_to_rules c ++ l)
+              {| p_to_v := map.empty; v_to_p := []; next_id := xO xH |})
+    as [Lp r1] eqn:HrL.
+  destruct (rename_term (var_to_con e) r1) as [Ep r2] eqn:HrE.
+  cbn [fst snd].
+  (* Both failure branches return the input unchanged. *)
+  destruct (PositiveInstantiation.build_rule_set rn
+              (PositiveInstantiation.filter_eqn_rules Lp) Lp) as [rs|err] eqn:Hbrs;
+    [ | exact (eq_term_refl He) ].
+  destruct (PositiveInstantiation.egraph_simpl Lp rs rn n en Ep) as [Res|err2] eqn:Hsimpl;
+    [ | exact (eq_term_refl He) ].
+  (* Step 2: forward renaming facts.  [rename_egraph_bridge] takes two
+     renamed terms; we feed it the subject twice (the second run is a
+     bystander computation used only to reach a state where the goal sort
+     is renamed as well). *)
+  destruct (rename_term (var_to_con e) r2) as [Ep2 r3] eqn:HrE2.
+  destruct (rename_sort (sort_var_to_con t) r3) as [Tp r7] eqn:HrT.
+  assert (HwfLcl : wf_lang (Defs.ctx_to_rules c ++ l)) by
+    (rewrite ctx_to_rules_coincide; apply (wf_lang_concat Hwf);
+     apply ClosedCore.ctx_to_rules_wf; first [assumption | typeclasses eauto]).
+  assert (HwfEcl : wf_term (Defs.ctx_to_rules c ++ l) [] (var_to_con e) (sort_var_to_con t)) by
+    (rewrite ctx_to_rules_coincide, var_to_con_is_vtr, sort_var_to_con_is_svtr;
+     apply ClosedCore.wf_term_vtr; first [assumption | typeclasses eauto]).
+  pose proof (rename_lang_correct _ (init_renaming_ok V) HrL) as (Hr1ok & Hg01 & Hbl1 & _).
+  pose proof (rename_term_correct _ Hr1ok HrE) as (Hr2ok & Hg12 & Hbe2 & _).
+  pose proof (rename_term_correct _ Hr2ok HrE2) as (Hr3ok & Hg23 & _ & _).
+  pose proof (rename_sort_correct _ Hr3ok HrT) as (Hr7ok & Hg37 & _ & _).
+  pose proof (@rename_egraph_bridge V _ _ _
+                (Defs.ctx_to_rules c ++ l) (var_to_con e) (var_to_con e) (sort_var_to_con t)
+                _ r1 r2 r3 r3 r7 Lp Ep Ep2 Tp
+                HwfLcl HwfEcl HwfEcl (init_renaming_ok V) HrL HrE HrE2
+                Hr3ok (rename_grows_refl r3) HrT) as Hbridge.
+  destruct Hbridge as (HwfLp & HwfEp & _ & _ & Hbl7 & Hbe7 & _ & Hbt7
+                       & HuL & HuE & _ & HuT).
+  (* Step 3: [sort_of] is fresh in the renamed language, and the built
+     rule_set satisfies the saturation hypotheses. *)
+  assert (Hsof : fresh PosListMap.sort_of Lp).
+  { change PosListMap.sort_of with xH.
+    replace Lp with (fst (rename_lang (Defs.ctx_to_rules c ++ l)
+      {| p_to_v := map.empty; v_to_p := []; next_id := xO xH |}))
+      by (rewrite HrL; reflexivity).
+    apply rename_lang_fresh_xH; [typeclasses eauto | exact (reserved_init V)]. }
+  assert (Hincl : incl (PositiveInstantiation.filter_eqn_rules Lp) Lp)
+    by (intros a Hin; exact (proj1 (proj1 (filter_In _ a _) Hin))).
+  pose proof (@build_rule_set_saturation_hyps Lp (PositiveInstantiation.filter_eqn_rules Lp)
+                rn rs HwfLp Hsof Hincl Hbrs) as Hrs.
+  (* Step 4: the positive-side simplifier soundness. *)
+  pose proof (@egraph_simpl_sound positive PosListMap.positive_Eqb positive_Eqb_ok
+                PosListMap.positive_default
+                TrieMap.trie_map TrieMap.ptree_map_plus (fun A => @TrieMapFold.trie_map_ok A)
+                TrieMap.ptree_map_plus_ok
+                (@FullPosTrie.full_pos_trie_map) (fun A => @FullPosTrie.full_pos_trie_map_ok A)
+                Pos.succ Pos.leb PosListMap.sort_of Pos.lt
+                pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+                (@fpt_spaced_intersect) Lp HwfLp Hsof
+                rs rn n en Ep Res Tp HwfEp Hrs Hsimpl) as Heqp.
+  (* Step 5: the result is bound in [r2] (its constructors are symbols of
+     [Lp]), so the readback at [r2] agrees with the one at [r7]. *)
+  assert (HwfRes : wf_term Lp [] Res Tp)
+    by (exact (eq_term_wf_r HwfLp ltac:(constructor) Heqp)).
+  assert (Hbl2 : lang_bound r2 Lp) by (exact (lang_bound_grows Hg12 Hbl1)).
+  assert (HbRes2 : term_bound r2 Res)
+    by (exact (@term_bound_of_wf V r2 Lp Res Tp Hbl2 HwfLp HwfRes)).
+  assert (Hg27 : rename_grows r2 r7)
+    by (exact (rename_grows_trans Hg23 Hg37)).
+  assert (HbRes7 : term_bound r7 Res) by (exact (term_bound_grows Hg27 HbRes2)).
+  rewrite <- (unrename_term_grows Hg27 HbRes2).
+  (* Step 6: the reverse lift. *)
+  rewrite ctx_to_rules_coincide in HuL.
+  rewrite var_to_con_is_vtr in HuE.
+  rewrite sort_var_to_con_is_svtr in HuT.
+  exact (@reverse_eq_term_lift_result V _ _ _ l c t e r7 Lp Tp Ep Res
+           Hwf Hwfc Hdisj He Hr7ok Hbl7 Hbt7 Hbe7 HbRes7 HwfLp HuL HuE HuT Heqp).
 Qed.
 
 (* TODO: think about variable order for query performance
