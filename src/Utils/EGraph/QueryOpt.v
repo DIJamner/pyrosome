@@ -158,12 +158,15 @@ Section WithMap.
 
   Notation union_find_ok := (union_find_ok lt).
   
-  Lemma force_uf_ok equiv x
-    : union_find_ok equiv x ->
-      union_find_ok (snd (force_uf equiv)) x.
+  Lemma force_uf_ok x
+    : vc force_uf
+        (fun equiv res =>
+           union_find_ok equiv x ->
+           union_find_ok (snd res) x).
   Proof.
     clear idx_succ.
-    unfold force_uf.
+    unfold vc, force_uf.
+    intros equiv.
     revert x equiv.
     enough (forall l x equiv,
                incl l (map.keys (parent equiv)) ->
@@ -188,13 +191,16 @@ Section WithMap.
   Qed.
 
   
-  Lemma force_uf_same_domain equiv l
-    : union_find_ok equiv l ->
-      forall x, Sep.has_key x (snd (force_uf equiv)).(parent _ _ _)
-                <-> Sep.has_key x equiv.(parent _ _ _).
+  Lemma force_uf_same_domain l
+    : vc force_uf
+        (fun equiv res =>
+           union_find_ok equiv l ->
+           forall x, Sep.has_key x (snd res).(parent _ _ _)
+                     <-> Sep.has_key x equiv.(parent _ _ _)).
   Proof.
     clear idx_succ.
-    unfold force_uf.
+    unfold vc, force_uf.
+    intros equiv.
     revert equiv.
     enough (forall l x equiv,
                incl l (map.keys (parent equiv)) ->
@@ -218,14 +224,17 @@ Section WithMap.
     eapply H; cbn; eauto.
   Qed.
   
-  Lemma force_uf_equivalent equiv roots
-    : union_find_ok equiv roots ->
-      forall i1 i2, uf_rel_PER idx (idx_map idx) (idx_map nat)
-                      (snd (force_uf equiv)) i1 i2
-                    <-> uf_rel_PER idx (idx_map idx) (idx_map nat) equiv i1 i2.
+  Lemma force_uf_equivalent roots
+    : vc force_uf
+        (fun equiv res =>
+           union_find_ok equiv roots ->
+           forall i1 i2, uf_rel_PER idx (idx_map idx) (idx_map nat)
+                           (snd res) i1 i2
+                         <-> uf_rel_PER idx (idx_map idx) (idx_map nat) equiv i1 i2).
   Proof.
     clear idx_succ.
-    unfold force_uf.
+    unfold vc, force_uf.
+    intros equiv.
     revert equiv.
     enough (forall l equiv,
                incl l (map.keys (parent equiv)) ->
@@ -283,12 +292,15 @@ Section WithMap.
     intros [db equiv parents epoch wl an log].
     cbn.
     intros [roots Hroots].
+    pose proof (force_uf_ok roots equiv) as Hok.
+    pose proof (force_uf_equivalent roots equiv) as Hequiv.
+    pose proof (force_uf_same_domain roots equiv) as Hdom.
     repeat split; auto.
-    - eexists. eapply force_uf_ok; eauto.
-    - eapply force_uf_equivalent; eauto.
-    - eapply force_uf_equivalent; eauto.
-    - eapply force_uf_same_domain; eauto.
-    - eapply force_uf_same_domain; eauto.
+    - eexists. eapply Hok; eauto.
+    - eapply Hequiv; eauto.
+    - eapply Hequiv; eauto.
+    - eapply Hdom; eauto.
+    - eapply Hdom; eauto.
   Qed.
   
   (*TODO: duplicated*)  
@@ -454,52 +466,58 @@ Section SequentOfStates.
       Proof using. clear. induction l; basic_goal_prep; basic_utils_crush. Qed.
 
       
-      Lemma find_does_not_touch_db a (i : instance X) a0 i0
-        : find a i = (a0, i0) ->
-          db i = db i0.
+      Lemma find_does_not_touch_db a
+        : vc (find a : state (instance X) idx)
+            (fun i res => db i = db (snd res)).
       Proof.
         clear.
+        unfold vc; intro i.
         destruct i; unfold find; cbn.
         case_match; basic_goal_prep;
           basic_utils_crush.
       Qed.
       
-      Lemma canonicalize_does_not_touch_db a (i : instance X) a0 i0
-        : canonicalize a i = (a0, i0) ->
-          db i = db i0.
+      Lemma canonicalize_does_not_touch_db a
+        : vc (canonicalize a : state (instance X) atom)
+            (fun i res => db i = db (snd res)).
       Proof.
         clear.
+        unfold vc; intro i.
         destruct a; cbn.
-        case_match.
-        assert (db i = db i1).
+        destruct (list_Mmap find atom_args i) as [l i1] eqn:Hmap.
+        assert (db i = db i1) as Hi1.
         {
-          revert l i i1 case_match_eqn;
+          revert l i i1 Hmap;
             induction atom_args;
             basic_goal_prep.
           1: basic_utils_crush.
           case_match.
-          eapply find_does_not_touch_db in case_match_eqn0.
-          rewrite  case_match_eqn0; clear  case_match_eqn0.
+          pose proof (find_does_not_touch_db a i) as Hfd.
+          rewrite case_match_eqn in Hfd; cbn [snd] in Hfd.
+          rewrite Hfd; clear Hfd.
           case_match.
           eapply  IHatom_args in case_match_eqn0.
           congruence.
         }
-        case_match.
-        apply find_does_not_touch_db in case_match_eqn0.
-        intros; autorewrite with inversion in *; break; subst.
+        destruct (find atom_ret i1) as [r i0] eqn:Hfind.
+        pose proof (find_does_not_touch_db atom_ret i1) as Hfd.
+        rewrite Hfind in Hfd; cbn [snd] in Hfd.
+        cbn [snd].
         congruence.
       Qed.
 
       
-      Lemma remove_atom_incl (i0 : instance X) a0 i1 u
-        : db_remove a0 i0 = (u, i1) ->
-          incl (db_to_atoms (db i1)) (db_to_atoms (db i0)).
+      Lemma remove_atom_incl a0
+        : vc (db_remove a0 : state (instance X) unit)
+            (fun i0 res =>
+               incl (db_to_atoms (db (snd res))) (db_to_atoms (db i0))).
       Proof using lt symbol_map_ok idx_trie_ok Eqb_symbol_ok Eqb_symbol Eqb_idx_ok
 Eqb_idx.
         clear conclusion_eqs_final live_eqn conclusion_var_in_atoms
           conclusion_eqs_verbose conclusion_atoms conclusion_inst_dedup
           conclusion_inst assumption_atoms assumption_status assumption_val assumption_inst
           idx_zero idx_succ.
+        unfold vc; intro i0.
         unfold db_remove.
         destruct i0; cbn.
         basic_goal_prep;
@@ -585,34 +603,33 @@ Eqb_idx.
         }
       Qed.
         
-      Lemma incl_remove_atoms al (i : instance X)
-        : incl ((db_to_atoms
-                   (db
-                      (snd
-                         (list_Miter
-                            (fun a : atom => @! let a0 <- canonicalize a in (db_remove a0))
-                            al i)))))
-            (db_to_atoms
-               (db
-                  i)).
+      Lemma incl_remove_atoms al
+        : vc (list_Miter
+                (fun a : atom => @! let a0 <- canonicalize a in (db_remove a0))
+                al : state (instance X) unit)
+            (fun i res =>
+               incl (db_to_atoms (db (snd res))) (db_to_atoms (db i))).
       Proof using lt symbol_map_ok idx_trie_ok Eqb_symbol_ok Eqb_symbol Eqb_idx_ok
 Eqb_idx.
         clear conclusion_eqs_final live_eqn conclusion_var_in_atoms
           conclusion_eqs_verbose conclusion_atoms conclusion_inst_dedup
           conclusion_inst assumption_atoms assumption_status assumption_val assumption_inst
           idx_zero idx_succ.
-        revert i; induction al;
-          intros.
+        unfold vc.
+        induction al;
+          intros i.
         { cbn; eapply incl_refl. }
         {
           basic_goal_prep.
           destruct (canonicalize a i) eqn:Hc.
-          eapply canonicalize_does_not_touch_db in Hc.
-          rewrite Hc.
+          pose proof (canonicalize_does_not_touch_db a i) as Hcd.
+          rewrite Hc in Hcd; cbn [snd] in Hcd.
+          rewrite Hcd.
           case_match.
-          apply remove_atom_incl in case_match_eqn.
+          pose proof (remove_atom_incl a0 i0) as Hra.
+          rewrite case_match_eqn in Hra; cbn [snd] in Hra.
           eapply incl_tran; try eassumption.
-          clear case_match_eqn.
+          clear Hra.
           eapply IHal.
         }
       Qed.

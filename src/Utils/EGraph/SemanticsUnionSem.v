@@ -206,22 +206,21 @@ Lemma exec_clause_sound
   (analysis_result : Type) (Hanalysis : analysis idx symbol analysis_result) (m : model symbol)
   (Hm : model_ok symbol m)
   (i : idx_map (domain symbol m))
-  (env : idx_map idx) (c : atom idx symbol) (a_src : idx_map (domain symbol m))
-  (e : Defs.instance idx symbol symbol_map idx_map idx_trie analysis_result) :
-  Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e ->
-  Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i e ->
-  (forall x, In x (c.(atom_ret) :: c.(atom_args)) ->
-     exists v, map.get env x = Some v
-               /\ Sep.has_key v (parent (equiv e))
-               /\ map.get i v = map.get a_src x) ->
-  atom_sound_for_model idx symbol idx_map m a_src c ->
-  match exec_clause idx Eqb_idx idx_zero symbol symbol_map idx_map idx_trie analysis_result env c e with
-  | (_, e') =>
-      Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e'
-      /\ Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i e'
-      /\ (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
-  end.
+  (env : idx_map idx) (c : atom idx symbol) (a_src : idx_map (domain symbol m)) :
+  vc (exec_clause idx Eqb_idx idx_zero symbol symbol_map idx_map idx_trie analysis_result env c)
+    (fun e res =>
+       Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e ->
+       Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i e ->
+       (forall x, In x (c.(atom_ret) :: c.(atom_args)) ->
+          exists v, map.get env x = Some v
+                    /\ Sep.has_key v (parent (equiv e))
+                    /\ map.get i v = map.get a_src x) ->
+       atom_sound_for_model idx symbol idx_map m a_src c ->
+       Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result (snd res)
+       /\ Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i (snd res)
+       /\ (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv (snd res))))).
 Proof.
+  unfold vc; intros e.
   intros Hok Hsound Henv Hatom_src.
   unfold exec_clause.
   cbn [Mbind Mret StateMonad.state_monad].
@@ -337,19 +336,23 @@ Lemma union_extends_keys_sem
   (idx_map : forall A, map.map idx A) (idx_map_ok : forall A, map.ok (idx_map A))
   (idx_trie : forall A, map.map (list idx) A) (analysis_result : Type)
   (Hanalysis : analysis idx symbol analysis_result)
-  (x y : idx) (e_in : Defs.instance idx symbol symbol_map idx_map idx_trie analysis_result)
-  (Hroots_in : exists roots, union_find_ok lt (equiv e_in) roots)
-  (Hkx : Sep.has_key x (parent (equiv e_in)))
-  (Hky : Sep.has_key y (parent (equiv e_in)))
-  (z : idx)
-  (Hz : Sep.has_key z (parent (equiv e_in)))
-  : Sep.has_key z (parent (equiv (snd (Defs.union x y e_in)))).
+  (x y : idx)
+  : vc (Defs.union x y)
+      (fun e_in res =>
+         (exists roots, union_find_ok lt (equiv e_in) roots) ->
+         Sep.has_key x (parent (equiv e_in)) ->
+         Sep.has_key y (parent (equiv e_in)) ->
+         forall z,
+           Sep.has_key z (parent (equiv e_in)) ->
+           Sep.has_key z (parent (equiv (snd res)))).
 Proof.
-  destruct Hroots_in as [roots Hroots].
+  unfold vc; intros e_in.
   pose proof (union_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result x y) as Hus.
   unfold vc in Hus. specialize (Hus e_in).
   destruct (Defs.union x y e_in) as [v_u e_u] eqn:Hu.
   cbn [snd] in Hus |- *.
+  intros Hroots_in Hkx Hky z Hz.
+  destruct Hroots_in as [roots Hroots].
   destruct (Hus (ex_intro _ roots Hroots) Hkx Hky) as
     (_ & Hroots' & Hper & _).
   destruct Hroots' as [roots' Hroots'].
@@ -377,16 +380,20 @@ Lemma union_preserves_egraph_ok_sem
   (idx_map : forall A, map.map idx A) (idx_map_ok : forall A, map.ok (idx_map A))
   (idx_trie : forall A, map.map (list idx) A) (analysis_result : Type)
   (Hanalysis : analysis idx symbol analysis_result)
-  (x y : idx) (e_in : Defs.instance idx symbol symbol_map idx_map idx_trie analysis_result)
-  (Hok_in : Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e_in)
-  (Hkx : Sep.has_key x (parent (equiv e_in)))
-  (Hky : Sep.has_key y (parent (equiv e_in)))
-  : Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result (snd (Defs.union x y e_in)).
+  (x y : idx)
+  : vc (Defs.union x y)
+      (fun e_in res =>
+         Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e_in ->
+         Sep.has_key x (parent (equiv e_in)) ->
+         Sep.has_key y (parent (equiv e_in)) ->
+         Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result (snd res)).
 Proof.
+  unfold vc; intros e_in.
   pose proof (union_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result x y) as Hus.
   unfold vc in Hus. specialize (Hus e_in).
   destruct (Defs.union x y e_in) as [v_u e_u] eqn:Hu.
   cbn [snd] in Hus |- *.
+  intros Hok_in Hkx Hky.
   destruct Hok_in as [Heqok Hwlok Hparok Hdbkok].
   destruct Heqok as [roots Hroots].
   destruct (Hus (ex_intro _ roots Hroots) Hkx Hky) as
@@ -463,18 +470,22 @@ Lemma union_preserves_sound_sem
   (Hanalysis : analysis idx symbol analysis_result) (m : model symbol)
   (Hm : model_ok symbol m)
   (x y : idx)
-  (i0 : idx_map (domain symbol m)) (e_in : Defs.instance idx symbol symbol_map idx_map idx_trie analysis_result)
-  (Hok_in : Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e_in)
-  (Hsnd_in : Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i0 e_in)
-  (Hkx : Sep.has_key x (parent (equiv e_in)))
-  (Hky : Sep.has_key y (parent (equiv e_in)))
-  (Heq_xy : eq_sound_for_model idx symbol idx_map m i0 x y)
-  : Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i0 (snd (Defs.union x y e_in)).
+  (i0 : idx_map (domain symbol m))
+  : vc (Defs.union x y)
+      (fun e_in res =>
+         Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e_in ->
+         Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i0 e_in ->
+         Sep.has_key x (parent (equiv e_in)) ->
+         Sep.has_key y (parent (equiv e_in)) ->
+         eq_sound_for_model idx symbol idx_map m i0 x y ->
+         Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie analysis_result m i0 (snd res)).
 Proof.
+  unfold vc; intros e_in.
   pose proof (union_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result x y) as Hus.
   unfold vc in Hus. specialize (Hus e_in).
   destruct (Defs.union x y e_in) as [v_u e_u] eqn:Hu.
   cbn [snd] in Hus |- *.
+  intros Hok_in Hsnd_in Hkx Hky Heq_xy.
   destruct Hok_in as [Heqok Hwlok Hparok Hdbkok].
   destruct Heqok as [roots Hroots].
   destruct (Hus (ex_intro _ roots Hroots) Hkx Hky) as

@@ -376,14 +376,6 @@ Section WithMap.
       forall default,
       map (fun x => named_list_lookup default (assign_sub a) x) (cv::cargs) <> (v::args).
   Proof.
-    (*
-    revert args acc a.induction cargs;
-      destruct args;
-      unfold passignment_forall,
-      assignment_correct;
-      basic_goal_prep;
-      basic_utils_crush.
-     *)
     Abort.
     
   (*TODO: too strong a statement.
@@ -404,20 +396,6 @@ Section WithMap.
     {
       revert H; case_match; try congruence.
       intros.
-
-      (*
-      Lemma insert_correct
-        : Some l = insert idx Eqb_idx acc a i ->
-          passignment_forall l1 l2 acc ->
-          passignment_forall l1 l2 acc ->
-          
-    
-  Lemma match_clause_correct default cargs cv args v assignment
-    : let sub := assign_sub assignment in
-      match_clause (cargs, cv) args v = Some assignment
-      -> map (fun x => named_list_lookup default sub x) (cv::cargs)
-         = v::args.
-  Proof.*)
       Abort.
   
   Lemma insert_nth_at n val acc acc'
@@ -771,23 +749,29 @@ Section WithMap.
   Qed.
 
   Lemma build_tries_sound (window : nat) (q : rule_set idx symbol symbol_map idx_map)
-    (inst : instance)
     (f : symbol) (n : idx) (clause : list nat * nat)
     (clause_tries : idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
     (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx)
     (q_f : idx_map (list nat * nat)) :
-    map.get (q.(query_clauses idx symbol symbol_map idx_map)) f = Some q_f ->
-    map.get q_f n = Some clause ->
-    map.get (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
-      idx_map idx_map_plus idx_trie analysis_result window q inst)) f = Some clause_tries ->
-    map.get clause_tries n = Some trie_pair ->
-    map.get (fst (fst trie_pair)) assignment = Some tt ->
-    exists args v,
-      atom_in_db (Build_atom f args v) inst.(db)
-      /\ match_clause clause args v = Some assignment.
+    vc (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+          idx_map idx_map_plus idx_trie analysis_result window q)
+      (fun inst res =>
+         map.get (q.(query_clauses idx symbol symbol_map idx_map)) f = Some q_f ->
+         map.get q_f n = Some clause ->
+         map.get (fst res) f = Some clause_tries ->
+         map.get clause_tries n = Some trie_pair ->
+         map.get (fst (fst trie_pair)) assignment = Some tt ->
+         exists args v,
+           atom_in_db (Build_atom f args v) inst.(db)
+           /\ match_clause clause args v = Some assignment).
   Proof.
+    unfold vc. intro inst.
+    destruct (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+      idx_map idx_map_plus idx_trie analysis_result window q inst) as [bt_v bt_s] eqn:Hbt.
+    cbn [fst snd].
     intros Hqf Hclause Hbt_f Hct_n Hfull.
-    unfold build_tries in Hbt_f. cbn [fst] in Hbt_f.
+    unfold build_tries in Hbt. injection Hbt as Hbt_v Hbt_s. subst bt_v.
+    cbn [fst] in Hbt_f.
     rewrite (@intersect_spec _ symbol_map _ symbol_map_plus_ok) in Hbt_f.
     rewrite Hqf in Hbt_f.
     destruct (map.get inst.(db) f) as [ tbl | ] eqn:Htbl.
@@ -893,18 +877,24 @@ Section WithMap.
   Qed.
 
   Lemma build_tries_frontier_subset (window : nat) (q : rule_set idx symbol symbol_map idx_map)
-    (inst : instance)
     (f : symbol) (n : idx)
     (clause_tries : idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
     (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx) :
-    map.get (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
-      idx_map idx_map_plus idx_trie analysis_result window q inst)) f = Some clause_tries ->
-    map.get clause_tries n = Some trie_pair ->
-    map.get (snd (fst trie_pair)) assignment = Some tt ->
-    map.get (fst (fst trie_pair)) assignment = Some tt.
+    vc (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+          idx_map idx_map_plus idx_trie analysis_result window q)
+      (fun inst res =>
+         map.get (fst res) f = Some clause_tries ->
+         map.get clause_tries n = Some trie_pair ->
+         map.get (snd (fst trie_pair)) assignment = Some tt ->
+         map.get (fst (fst trie_pair)) assignment = Some tt).
   Proof.
+    unfold vc. intro inst.
+    destruct (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+      idx_map idx_map_plus idx_trie analysis_result window q inst) as [bt_v bt_s] eqn:Hbt.
+    cbn [fst snd].
     intros Hbt_f Hct_n Hfront.
-    unfold build_tries in Hbt_f. cbn [fst] in Hbt_f.
+    unfold build_tries in Hbt. injection Hbt as Hbt_v Hbt_s. subst bt_v.
+    cbn [fst] in Hbt_f.
     rewrite (@intersect_spec _ symbol_map _ symbol_map_plus_ok) in Hbt_f.
     destruct (map.get (query_clauses idx symbol symbol_map idx_map q) f) as [ q_f | ] eqn:Hqf.
     - destruct (map.get inst.(db) f) as [ tbl | ] eqn:Htbl.
@@ -920,33 +910,38 @@ Section WithMap.
   Qed.
 
   Lemma clause_ptr_atom_in_db
-    (window : nat) (q : rule_set idx symbol symbol_map idx_map) (inst : instance)
+    (window : nat) (q : rule_set idx symbol symbol_map idx_map)
     (query_vars : list idx) (frontier_n : idx)
     (f : symbol) (n : idx) (clause_vars : list idx)
     (q_f : idx_map (list nat * nat)) (clause : list nat * nat)
     (sigma : list idx) :
-    map.get (query_clauses idx symbol symbol_map idx_map q) f = Some q_f ->
-    map.get q_f n = Some clause ->
-    map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
-                    query_vars
-                    (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
-                            idx_map idx_map_plus idx_trie analysis_result window q inst))
-                    frontier_n (Build_erule_query_ptr idx symbol f n clause_vars)))
-            (map fst (filter snd (combine sigma
-               (variable_flags idx Eqb_idx query_vars clause_vars))))
-          = Some tt ->
-    exists args v,
-      atom_in_db (Build_atom f args v) inst.(db)
-      /\ match_clause clause args v
-         = Some (map fst (filter snd (combine sigma
-                   (variable_flags idx Eqb_idx query_vars clause_vars)))).
+    vc (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+          idx_map idx_map_plus idx_trie analysis_result window q)
+      (fun inst res =>
+         map.get (query_clauses idx symbol symbol_map idx_map q) f = Some q_f ->
+         map.get q_f n = Some clause ->
+         map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                         query_vars
+                         (fst res)
+                         frontier_n (Build_erule_query_ptr idx symbol f n clause_vars)))
+                 (map fst (filter snd (combine sigma
+                    (variable_flags idx Eqb_idx query_vars clause_vars))))
+               = Some tt ->
+         exists args v,
+           atom_in_db (Build_atom f args v) inst.(db)
+           /\ match_clause clause args v
+              = Some (map fst (filter snd (combine sigma
+                        (variable_flags idx Eqb_idx query_vars clause_vars))))).
   Proof.
+    unfold vc. intro inst.
+    destruct (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+      idx_map idx_map_plus idx_trie analysis_result window q inst) as [bt_v bt_s] eqn:Hbt.
+    cbn [fst snd].
     intros Hqf Hclause Hhit.
     unfold trie_of_clause in Hhit.
     cbn [fst snd] in Hhit.
     set (proj := map fst (filter snd (combine sigma (variable_flags idx Eqb_idx query_vars clause_vars)))).
-    set (db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
-                            idx_map idx_map_plus idx_trie analysis_result window q inst)).
+    set (db_tries := bt_v).
     destruct (map.get db_tries f) as [ trie_list | ] eqn:Hf.
     - (* Some trie_list case *)
       fold db_tries in Hhit.
@@ -959,17 +954,22 @@ Section WithMap.
         * (* eqb n frontier_n = true, new_ case *)
           fold proj in Hhit.
           assert (Hfull : map.get (fst (fst (total, new_, old_))) proj = Some tt). {
-            apply (build_tries_frontier_subset window q inst f n trie_list (total, new_, old_) proj Hf Hn).
-            exact Hhit.
+            pose proof (build_tries_frontier_subset window q f n trie_list (total, new_, old_) proj) as Hfs.
+            unfold vc in Hfs. specialize (Hfs inst). rewrite Hbt in Hfs. cbn [fst snd] in Hfs.
+            apply Hfs; [ exact Hf | exact Hn | exact Hhit ].
           }
           cbn [fst] in Hfull.
-          pose proof (build_tries_sound window q inst f n clause trie_list (total, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
+          pose proof (build_tries_sound window q f n clause trie_list (total, new_, old_) proj q_f) as Hsnd.
+          unfold vc in Hsnd. specialize (Hsnd inst). rewrite Hbt in Hsnd. cbn [fst snd] in Hsnd.
+          destruct (Hsnd Hqf Hclause Hf Hn Hfull)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
         * (* eqb n frontier_n = false, total case *)
           fold proj in Hhit.
-          pose proof (build_tries_sound window q inst f n clause trie_list (total, new_, old_) proj q_f Hqf Hclause Hf Hn Hhit)
+          pose proof (build_tries_sound window q f n clause trie_list (total, new_, old_) proj q_f) as Hsnd.
+          unfold vc in Hsnd. specialize (Hsnd inst). rewrite Hbt in Hsnd. cbn [fst snd] in Hsnd.
+          destruct (Hsnd Hqf Hclause Hf Hn Hhit)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
@@ -1072,18 +1072,24 @@ Section WithMap.
   Qed.
 
   Lemma build_tries_old_subset (window : nat) (q : rule_set idx symbol symbol_map idx_map)
-    (inst : instance)
     (f : symbol) (n : idx)
     (clause_tries : idx_map (idx_trie unit * idx_trie unit * idx_trie unit))
     (trie_pair : idx_trie unit * idx_trie unit * idx_trie unit) (assignment : list idx) :
-    map.get (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
-      idx_map idx_map_plus idx_trie analysis_result window q inst)) f = Some clause_tries ->
-    map.get clause_tries n = Some trie_pair ->
-    map.get (snd trie_pair) assignment = Some tt ->
-    map.get (fst (fst trie_pair)) assignment = Some tt.
+    vc (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+          idx_map idx_map_plus idx_trie analysis_result window q)
+      (fun inst res =>
+         map.get (fst res) f = Some clause_tries ->
+         map.get clause_tries n = Some trie_pair ->
+         map.get (snd trie_pair) assignment = Some tt ->
+         map.get (fst (fst trie_pair)) assignment = Some tt).
   Proof.
+    unfold vc. intro inst.
+    destruct (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+      idx_map idx_map_plus idx_trie analysis_result window q inst) as [bt_v bt_s] eqn:Hbt.
+    cbn [fst snd].
     intros Hbt_f Hct_n Hfront.
-    unfold build_tries in Hbt_f. cbn [fst] in Hbt_f.
+    unfold build_tries in Hbt. injection Hbt as Hbt_v Hbt_s. subst bt_v.
+    cbn [fst] in Hbt_f.
     rewrite (@intersect_spec _ symbol_map _ symbol_map_plus_ok) in Hbt_f.
     destruct (map.get (query_clauses idx symbol symbol_map idx_map q) f) as [ q_f | ] eqn:Hqf.
     - destruct (map.get inst.(db) f) as [ tbl | ] eqn:Htbl.
@@ -1103,33 +1109,38 @@ Section WithMap.
      (old if pos<frontier_pos, new if =, full if >) reduces to a db atom via the
      subset lemmas + build_tries_sound. *)
   Lemma clause_ptr_atom_in_db_sn
-    (window : nat) (q : rule_set idx symbol symbol_map idx_map) (inst : instance)
+    (window : nat) (q : rule_set idx symbol symbol_map idx_map)
     (query_vars : list idx) (frontier_pos pos : nat)
     (f : symbol) (n : idx) (clause_vars : list idx)
     (q_f : idx_map (list nat * nat)) (clause : list nat * nat)
     (sigma : list idx) :
-    map.get (query_clauses idx symbol symbol_map idx_map q) f = Some q_f ->
-    map.get q_f n = Some clause ->
-    map.get (fst (trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
-                    query_vars
-                    (fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
-                            idx_map idx_map_plus idx_trie analysis_result window q inst))
-                    frontier_pos pos (Build_erule_query_ptr idx symbol f n clause_vars)))
-            (map fst (filter snd (combine sigma
-               (variable_flags idx Eqb_idx query_vars clause_vars))))
-          = Some tt ->
-    exists args v,
-      atom_in_db (Build_atom f args v) inst.(db)
-      /\ match_clause clause args v
-         = Some (map fst (filter snd (combine sigma
-                   (variable_flags idx Eqb_idx query_vars clause_vars)))).
+    vc (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+          idx_map idx_map_plus idx_trie analysis_result window q)
+      (fun inst res =>
+         map.get (query_clauses idx symbol symbol_map idx_map q) f = Some q_f ->
+         map.get q_f n = Some clause ->
+         map.get (fst (trie_of_clause_sn idx Eqb_idx symbol symbol_map idx_map idx_trie
+                         query_vars
+                         (fst res)
+                         frontier_pos pos (Build_erule_query_ptr idx symbol f n clause_vars)))
+                 (map fst (filter snd (combine sigma
+                    (variable_flags idx Eqb_idx query_vars clause_vars))))
+               = Some tt ->
+         exists args v,
+           atom_in_db (Build_atom f args v) inst.(db)
+           /\ match_clause clause args v
+              = Some (map fst (filter snd (combine sigma
+                        (variable_flags idx Eqb_idx query_vars clause_vars))))).
   Proof.
+    unfold vc. intro inst.
+    destruct (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
+      idx_map idx_map_plus idx_trie analysis_result window q inst) as [bt_v bt_s] eqn:Hbt.
+    cbn [fst snd].
     intros Hqf Hclause Hhit.
     unfold trie_of_clause_sn in Hhit.
     cbn [fst snd] in Hhit.
     set (proj := map fst (filter snd (combine sigma (variable_flags idx Eqb_idx query_vars clause_vars)))).
-    set (db_tries := fst (build_tries idx Eqb_idx idx_succ idx_leb symbol symbol_map symbol_map_plus
-                            idx_map idx_map_plus idx_trie analysis_result window q inst)).
+    set (db_tries := bt_v).
     destruct (map.get db_tries f) as [ trie_list | ] eqn:Hf.
     - (* Some trie_list case *)
       fold db_tries in Hhit.
@@ -1145,11 +1156,14 @@ Section WithMap.
             cbn [fst snd]. exact Hhit.
           }
           assert (Hfull : map.get (fst (fst (full, new_, old_))) proj = Some tt). {
-            apply (build_tries_frontier_subset window q inst f n trie_list (full, new_, old_) proj Hf Hn).
-            exact Hhit'.
+            pose proof (build_tries_frontier_subset window q f n trie_list (full, new_, old_) proj) as Hfs.
+            unfold vc in Hfs. specialize (Hfs inst). rewrite Hbt in Hfs. cbn [fst snd] in Hfs.
+            apply Hfs; [ exact Hf | exact Hn | exact Hhit' ].
           }
           cbn [fst] in Hfull.
-          pose proof (build_tries_sound window q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
+          pose proof (build_tries_sound window q f n clause trie_list (full, new_, old_) proj q_f) as Hsnd.
+          unfold vc in Hsnd. specialize (Hsnd inst). rewrite Hbt in Hsnd. cbn [fst snd] in Hsnd.
+          destruct (Hsnd Hqf Hclause Hf Hn Hfull)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
@@ -1159,11 +1173,14 @@ Section WithMap.
             cbn [fst snd]. exact Hhit.
           }
           assert (Hfull : map.get (fst (fst (full, new_, old_))) proj = Some tt). {
-            apply (build_tries_old_subset window q inst f n trie_list (full, new_, old_) proj Hf Hn).
-            exact Hhit_old.
+            pose proof (build_tries_old_subset window q f n trie_list (full, new_, old_) proj) as Hos.
+            unfold vc in Hos. specialize (Hos inst). rewrite Hbt in Hos. cbn [fst snd] in Hos.
+            apply Hos; [ exact Hf | exact Hn | exact Hhit_old ].
           }
           cbn [fst] in Hfull.
-          pose proof (build_tries_sound window q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hfull)
+          pose proof (build_tries_sound window q f n clause trie_list (full, new_, old_) proj q_f) as Hsnd.
+          unfold vc in Hsnd. specialize (Hsnd inst). rewrite Hbt in Hsnd. cbn [fst snd] in Hsnd.
+          destruct (Hsnd Hqf Hclause Hf Hn Hfull)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
@@ -1172,7 +1189,9 @@ Section WithMap.
           assert (Hhit_full : map.get (fst (fst (full, new_, old_))) proj = Some tt). {
             cbn [fst snd]. exact Hhit.
           }
-          pose proof (build_tries_sound window q inst f n clause trie_list (full, new_, old_) proj q_f Hqf Hclause Hf Hn Hhit_full)
+          pose proof (build_tries_sound window q f n clause trie_list (full, new_, old_) proj q_f) as Hsnd.
+          unfold vc in Hsnd. specialize (Hsnd inst). rewrite Hbt in Hsnd. cbn [fst snd] in Hsnd.
+          destruct (Hsnd Hqf Hclause Hf Hn Hhit_full)
             as [ args [ v [Hdb Hmatch] ] ].
           exists args. exists v.
           exact (conj Hdb Hmatch).
@@ -1301,16 +1320,6 @@ Section WithMap.
         /\ all (atom_sound_for_model m a_src) (write_clauses idx symbol r)
         /\ all (fun p => eq_sound_for_model m a_src (fst p) (snd p))
                (write_unifications idx symbol r).
-
-  (*
-  (*Defined separately for proof convenience.
-    Equivalent to a term using ~ atom_in_egraph
-   *)
-  Definition not_key_in_egraph a (i : instance) :=
-    (map.get i.(db _ _ _ _ _) a.(atom_fn)) <?>
-      (fun tbl => (map.get tbl a.(atom_args)) <?>
-                    (fun r => False)).
-  *)
 
   Definition SomeRel {A B} (R : A -> B -> Prop) ma mb :=
     ma <$> (fun x => mb <$> (R x)).
@@ -1468,11 +1477,7 @@ Section WithMap.
     destruct (empty_sound_for_interpretation m) as [Hok Hsound].
     split; [exact Hok | exists map.empty; exact Hsound].
   Qed.
-  
-  (*
-  Notation rebuild := (rebuild idx Eqb_idx symbol Eqb_symbol symbol_map idx_map idx_trie).
-  *)
-    
+
   (*TODO: move *)
   Lemma get_update_diff K V (mp : map.map K V) {H : map.ok mp} `{WithDefault V} (m : mp) k k' f
     : k <> k' -> map.get (map_update m k f) k'
@@ -6368,10 +6373,13 @@ Section WithMap.
   Qed.
 
   (* Helper: [find] on a root element is the identity on the full instance. *)
-  Lemma find_root_identity (inst : instance) (x : idx)
-    : map.get inst.(equiv).(parent) x = Some x ->
-      find x inst = (x, inst).
+  Lemma find_root_identity (x : idx)
+    : vc (find x)
+        (fun inst res =>
+           map.get inst.(equiv).(parent) x = Some x ->
+           res = (x, inst)).
   Proof.
+    unfold vc; intro inst.
     intro Hroot.
     unfold find, Defs.find.
     cbn.
@@ -6385,11 +6393,14 @@ Section WithMap.
   Qed.
 
   (* Helper: path-compressing [find] preserves root-status of any node z. *)
-  Lemma find_roots_mono (x z : idx) (e : instance)
-    : (exists roots, union_find_ok lt e.(equiv) roots) ->
-      map.get e.(equiv).(parent) z = Some z ->
-      map.get (snd (Defs.find x e)).(equiv).(parent) z = Some z.
+  Lemma find_roots_mono (x z : idx)
+    : vc (find x)
+        (fun e res =>
+           (exists roots, union_find_ok lt e.(equiv) roots) ->
+           map.get e.(equiv).(parent) z = Some z ->
+           map.get (snd res).(equiv).(parent) z = Some z).
   Proof.
+    unfold vc; intro e.
     intros [roots Hok] Hz.
     unfold Defs.find.
     destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
@@ -6416,11 +6427,14 @@ Section WithMap.
   (* Helper: path-compressing [find] preserves the existence of a uf_ok witness. *)
   (* Helper: list_Mmap of find preserves root-status of any node z. *)
   (* Helper: [find] returns a value that is a root in the result union-find. *)
-  Lemma find_returns_root (x : idx) (e : instance)
-    : (exists roots, union_find_ok lt e.(equiv) roots) ->
-      Sep.has_key x e.(equiv).(parent) ->
-      map.get (snd (Defs.find x e)).(equiv).(parent) (fst (Defs.find x e)) = Some (fst (Defs.find x e)).
+  Lemma find_returns_root (x : idx)
+    : vc (find x)
+        (fun e res =>
+           (exists roots, union_find_ok lt e.(equiv) roots) ->
+           Sep.has_key x e.(equiv).(parent) ->
+           map.get (snd res).(equiv).(parent) (fst res) = Some (fst res)).
   Proof.
+    unfold vc; intro e.
     intros [roots Hok] Hkey.
     unfold Defs.find.
     destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
@@ -6437,17 +6451,21 @@ Section WithMap.
   (* Internal helper: two consecutive finds of the same node x give the same rep cv2 = cv. *)
   (* Helper: [union v v] preserves root-status of any node z. *)
   (* Helper: [list_Mmap find] on a list of root elements is the identity. *)
-  Lemma list_Mmap_find_roots_identity (xs : list idx) (inst : instance)
-    : all (fun x => map.get inst.(equiv).(parent) x = Some x) xs ->
-      list_Mmap find xs inst = (xs, inst).
+  Lemma list_Mmap_find_roots_identity (xs : list idx)
+    : vc (list_Mmap find xs)
+        (fun inst res =>
+           all (fun x => map.get inst.(equiv).(parent) x = Some x) xs ->
+           res = (xs, inst)).
   Proof.
-    induction xs as [| x xs' IH]; intro Hall.
+    unfold vc.
+    induction xs as [| x xs' IH]; intros inst Hall.
     - (* base *) reflexivity.
     - (* step *) cbn [all] in Hall. destruct Hall as [Hx Hxs'].
       cbn [list_Mmap Mbind StateMonad.state_monad fst snd].
-      rewrite (find_root_identity inst x Hx).
+      pose proof (find_root_identity x) as Hfri. unfold vc in Hfri.
+      rewrite (Hfri inst Hx).
       cbn [fst snd].
-      rewrite (IH Hxs').
+      rewrite (IH inst Hxs').
       reflexivity.
   Qed.
 
@@ -6587,8 +6605,10 @@ Section WithMap.
   Proof.
     unfold vc, Defs.union.
     intros e_in roots Hok Hrv Hrv1 Hneq Hr0.
-    pose proof (find_root_identity e_in v Hrv) as Hdfv.
-    pose proof (find_root_identity e_in v1 Hrv1) as Hdfv1.
+    pose proof (find_root_identity v) as Hdfv0. unfold vc in Hdfv0.
+    pose proof (Hdfv0 e_in Hrv) as Hdfv.
+    pose proof (find_root_identity v1) as Hdfv10. unfold vc in Hdfv10.
+    pose proof (Hdfv10 e_in Hrv1) as Hdfv1.
     cbn [Mbind StateMonad.state_monad].
     rewrite Hdfv. cbn [fst snd].
     rewrite Hdfv1. cbn [fst snd].
@@ -8887,32 +8907,9 @@ Section WithMap.
         eapply PER_clo_trans.
         - apply PER_clo_sym. exact Hper_ret_dbr2.
         - exact Hper_ret_dbr. }
-      (* a_ret' is a root in e_dbr: find_returns_root gives root in e_canon,
-         but e_dbr and e_canon have the same PER so roots are the same there.
-         Actually we need map.get e_dbr.equiv.parent a_ret' = Some a_ret'.
-         Use: find_returns_root gives root in e_canon; HPER_canon gives PER-iff.
-         Two things: (1) a_ret' is root in e_canon (Hroot_ret'), (2) x_canonical
-         is root in e_dbr (Hroot_xc_dbr), apply roots_uf_rel_eq with e_dbr. *)
-      (* BUT: Hroot_ret' is in e_canon, not e_dbr. We need it in e_dbr.
-         find_root_identity: if root in e_dbr, find a_ret' e_dbr = (a_ret', e_dbr).
-         Alternatively: use roots_uf_rel_eq on e_dbr with Huf_dbr.
-         We need: map.get e_dbr.equiv.parent a_ret' = Some a_ret'.
-         Hroot_ret' : map.get e_canon.equiv.parent a_ret' = Some a_ret'
-         (a_ret' is root in e_canon).
-         The key-iff from HPER_canon doesn't directly give root-iff.
-         Use the iff2 from find_sound' differently. *)
-      (* Alternative: use find_root_identity on e_dbr.
-         a_ret' is the result of find a_ret e_dbr, and find gives the root.
-         So find_returns_root applied to e_dbr gives root in e_dbr directly. *)
-      (* Actually find_returns_root for e_dbr is what we want: it gives
-         map.get (snd (find a_ret e_dbr)).equiv.parent (fst (find a_ret e_dbr)) = Some (fst...)
-         = map.get e_canon.equiv.parent a_ret' = Some a_ret' = Hroot_ret'.
-         But this is in e_canon, not e_dbr. *)
-      (* Use: find_sound' gives Huf_c : union_find_ok lt e_canon.equiv roots_init.
-         Since a_ret' is a root in e_canon (Hroot_ret') and x_canonical is root in
-         e_dbr, and uf_rel_PER e_dbr iff2 uf_rel_PER e_canon:
-         Hper_combined_canon : uf_rel_PER e_canon.equiv a_ret' x_canonical via HPER_canon.
-         x_canonical root in e_canon: find_roots_mono for x_canonical through find a_ret e_dbr. *)
+      (* a_ret' is a root in e_canon (Hroot_ret') and x_canonical is a root in
+         e_dbr; transport x_canonical's rootness to e_canon via find_roots_mono
+         and combine with the PER fact through e_canon. *)
       assert (Hroot_xc_canon : map.get e_canon.(equiv).(parent) x_canonical = Some x_canonical).
       { assert (He_canon_eq : e_canon = snd (find a_ret e_dbr)) by (rewrite Hfind_ret; reflexivity).
         rewrite He_canon_eq.
@@ -10526,18 +10523,19 @@ Section WithMap.
      entries, so the canonicalization pass of rebuild is a no-op on a
      worklist holding only analysis_repair entries. *)
   Lemma list_Mmap_canon_ar l
-    : all (fun ent => exists j, ent = analysis_repair idx j) l ->
-      forall e, list_Mmap (canonicalize_worklist_entry idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result) l e = (l, e).
+    : vc (list_Mmap (canonicalize_worklist_entry idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result) l)
+        (fun e res =>
+           all (fun ent => exists j, ent = analysis_repair idx j) l ->
+           res = (l, e)).
   Proof.
-    induction l as [|a l IH]; intros Hall e.
+    induction l as [|a l IH]; unfold vc; intros e Hall.
     - reflexivity.
     - cbn [all] in Hall. destruct Hall as [ [j Hj] Hall_rest ]. subst a.
       cbn [list_Mmap canonicalize_worklist_entry].
       unfold Mbind, Mret, StateMonad.state_monad.
+      specialize (IH e Hall_rest).
       destruct (list_Mmap (canonicalize_worklist_entry idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result) l e) as [xs e'] eqn:Hlm.
-      pose proof (IH Hall_rest e) as HIH.
-      pose proof (eq_trans (eq_sym Hlm) HIH) as Heq.
-      inversion Heq; subst. reflexivity.
+      inversion IH; subst. reflexivity.
   Qed.
 
   (* MAIN: when the worklist holds only analysis_repair entries (the
@@ -10562,7 +10560,8 @@ Section WithMap.
       + cbn [Mret StateMonad.state_monad snd db worklist].
         split; [intros a; reflexivity | exact I].
       + match goal with |- context[list_Mmap ?f (w::wl') ?st] =>
-          pose proof (list_Mmap_canon_ar (w::wl') Hwl st) as Hcanon end.
+          pose proof (list_Mmap_canon_ar (w::wl')) as Hcanon;
+          unfold vc in Hcanon; specialize (Hcanon st Hwl) end.
         rewrite Hcanon. cbn [Mseq Mbind StateMonad.state_monad].
         assert (Hdedup : all (fun ent => exists j, ent = analysis_repair idx j) (w::wl'))
           by exact Hwl.
@@ -10627,7 +10626,8 @@ Section WithMap.
       + cbn [Mret StateMonad.state_monad snd db worklist].
         reflexivity.
       + match goal with |- context[list_Mmap ?f (w::wl') ?st] =>
-            pose proof (list_Mmap_canon_ar (w::wl') Hwl st) as Hcanon end.
+            pose proof (list_Mmap_canon_ar (w::wl')) as Hcanon;
+            unfold vc in Hcanon; specialize (Hcanon st Hwl) end.
         rewrite Hcanon. cbn [Mseq Mbind StateMonad.state_monad].
         assert (Hdedup : all (fun ent => exists j, ent = analysis_repair idx j) (w::wl'))
           by exact Hwl.
@@ -10652,7 +10652,7 @@ Section WithMap.
      worklist, is still literally present (atom_in_egraph) after rebuild.
      Forward/survival direction only; follows immediately from
      rebuild_preserves_atom_in_db (which gives the biconditional on atom_in_db). *)
-  Lemma rebuild_sound (Pre : idx_map (domain m) -> Prop) n
+  Lemma rebuild_sound n
     : vc (rebuild n)
         (fun e res =>
            egraph_ok e ->
