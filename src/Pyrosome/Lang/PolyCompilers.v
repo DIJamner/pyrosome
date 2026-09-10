@@ -333,9 +333,12 @@ Proof.
       basic_utils_crush.
     all: try use_rule_in_wf.
     all: rewrite ?id_cmp_app.
-    all: rewrite id_compiler_identity_ctx; 
-      basic_core_crush.
-    { eapply wf_sort_by; basic_core_crush.
+    all: rewrite id_compiler_identity_ctx.
+    all: try typeclasses eauto.
+    all: try (solve [safe_invert H5; eauto]).
+    all: try (solve [eauto with lang_core]).
+    { eapply wf_sort_by.
+      1: apply in_or_app; left; exact H.
       eapply id_args_wf; basic_utils_crush.
       typeclasses eauto.
     }
@@ -343,7 +346,8 @@ Proof.
     {
       replace (compile_sort (id_compiler (l ++ l_pre)) s0)
         with s0[/with_names_from n (map var (map fst n))/].
-      { eapply wf_term_by; basic_core_crush.
+      { eapply wf_term_by.
+      1: apply in_or_app; left; exact H.
       eapply id_args_wf; basic_utils_crush.
       typeclasses eauto.
       }
@@ -356,20 +360,24 @@ Proof.
           symmetry.
           eapply id_compiler_identity; eauto.
           1:typeclasses eauto.
-          basic_core_crush.
+          1: solve [eauto with lang_core].
+          safe_invert H5; eassumption.
         }
       }
     }
     {
       assert (wf_lang (l ++ l_pre)) as H' by basic_core_crush.
       erewrite !(proj1 (id_compiler_identity H')); eauto.
+      all: try (solve [safe_invert H5; eassumption]).
       eapply eq_sort_by; eauto.
       basic_utils_crush.
     }
     {
       assert (wf_lang (l ++ l_pre)) as H' by basic_core_crush.
       erewrite !(proj1 (id_compiler_identity H')); eauto.
+      all: try (solve [safe_invert H5; eassumption]).
       erewrite !(proj1 (proj2 (id_compiler_identity H'))); eauto.
+      all: try (solve [safe_invert H5; eassumption]).
       eapply eq_term_by; eauto.
       basic_utils_crush.
     }
