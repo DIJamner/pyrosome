@@ -12,6 +12,53 @@ From Pyrosome.Theory Require Import Core ClosedTerm CutFreeInd.
 (* TODO: theory depending on tools? *)
 From Pyrosome.Tools Require Import AllConstructors.
 
+(* file-local speed helpers.
+   - ar_*: `autorewrite ... in *` spends most of its time trying to rewrite
+     inside the large function-typed (induction-hypothesis) hypotheses; these
+     variants rewrite the goal and the non-arrow hypotheses only.
+   - *_crush1: single-round variants of the crush tactics (the `repeat` in
+     generic_crush always costs one extra no-progress round). *)
+Ltac ar_core :=
+  autorewrite with bool rw_prop inversion utils term lang_core model;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term lang_core model in H
+             end
+         end.
+Ltac ar_term :=
+  autorewrite with bool rw_prop inversion utils term;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term in H
+             end
+         end.
+Ltac ar_utils :=
+  autorewrite with bool rw_prop inversion utils;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils in H
+             end
+         end.
+Ltac core_crush1 :=
+  intuition break; subst; ar_core;
+  intuition unshelve (eauto 7 with utils term lang_core model).
+Ltac term_crush1 :=
+  intuition break; subst; ar_term;
+  intuition unshelve (eauto with bool utils term).
+Ltac utils_crush1 :=
+  intuition break; subst; ar_utils;
+  intuition unshelve (eauto with utils).
+Ltac clear_arrows :=
+  repeat match goal with
+         | H : forall _ : _, _ |- _ => clear H
+         end.
+
 Module Notations.
   Export ClosedTerm.Notations.
 End Notations.
@@ -76,7 +123,7 @@ Section WithVar.
     induction s;
       basic_goal_prep;
       try case_match;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
   
   Lemma named_list_lookup_change_default {A B} `{Eqb_ok A}
@@ -87,7 +134,7 @@ Section WithVar.
   Proof.
     induction s;
       basic_goal_prep; 
-      basic_utils_crush.
+      utils_crush1.
     rewrite H1.
     reflexivity.
   Qed.
@@ -98,7 +145,7 @@ Section WithVar.
   Proof.
     induction s;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
   Hint Rewrite map_fst_named_map : utils.
   
@@ -109,12 +156,12 @@ Section WithVar.
   Proof.
     induction e;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     {
       unfold subst_lookup.
       rewrite lookup_named_map with (f:= vtr).
       apply named_list_lookup_change_default.
-      basic_utils_crush.
+      utils_crush1.
     }
     {
       unfold vtr in *.
@@ -123,7 +170,7 @@ Section WithVar.
       generalize dependent l0;
         induction l0;
         basic_goal_prep;
-        basic_term_crush.
+        term_crush1.
     }
   Qed.
 
@@ -136,7 +183,7 @@ Section WithVar.
     unfold vtr in *.
     induction e;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     eapply term_vtr_subst; eauto.
   Qed.
     
@@ -147,7 +194,7 @@ Section WithVar.
   Proof.
     destruct t;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     eapply args_vtr_subst; eauto.
   Qed.
 
@@ -159,7 +206,7 @@ Section WithVar.
     unfold ctx_to_rules, sort_to_var_rule.
     induction c;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
 
   Context (wfl : wf_lang l).
@@ -196,41 +243,40 @@ Section WithVar.
         basic_goal_prep.
       {
         use_rule_in_wf.
-        basic_core_crush.
-        rewrite !sort_vtr_subst;
-          basic_core_crush.
+        core_crush1.
+        rewrite !sort_vtr_subst by core_crush1.
         eapply eq_sort_subst; eauto.
         2: eapply wf_ctx_lang_monotonicity; eauto.
-        2: subst l'; basic_utils_crush.
+        2: subst l'; utils_crush1.
         eapply eq_sort_lang_monotonicity with (l:=l).
-        1:subst l'; basic_utils_crush.
-        basic_core_crush.
+        1:subst l'; utils_crush1.
+        core_crush1.
       }
       {
         use_rule_in_wf.
         autorewrite with utils lang_core term in *; break.
         eapply sort_con_congruence; eauto.
-        subst l'; basic_utils_crush.
+        subst l'; utils_crush1.
       }
       {
         use_rule_in_wf.
-        basic_core_crush.
-        rewrite !sort_vtr_subst, !term_vtr_subst by basic_core_crush.
+        autorewrite with utils lang_core term in *; break.
+        rewrite !sort_vtr_subst, !term_vtr_subst by core_crush1.
         eapply eq_term_subst; eauto.
         2: eapply wf_ctx_lang_monotonicity; eauto.
-        2: subst l'; basic_utils_crush.
+        2: subst l'; utils_crush1.
         eapply eq_term_lang_monotonicity with (l:=l).
-        1:subst l'; basic_utils_crush.
-        basic_core_crush.
+        1:subst l'; utils_crush1.
+        core_crush1.
       }
       {
         use_rule_in_wf.
         autorewrite with utils lang_core term in *; break.
         eapply term_con_congruence; eauto.
-        1:subst l'; basic_utils_crush.
+        1:subst l'; utils_crush1.
         {
           right.
-          rewrite sort_vtr_subst by basic_core_crush.
+          rewrite sort_vtr_subst by core_crush1.
           f_equal.
           rewrite with_names_from_map_is_named_map.
           reflexivity.
@@ -243,7 +289,7 @@ Section WithVar.
         replace (svtr t) with (svtr t)[/with_names_from ([] : ctx) []/]
         by eauto using sort_subst_nil.
         eapply wf_term_by; eauto with lang_core.
-        subst l'; basic_utils_crush; left.
+        subst l'; utils_crush1; left.
         eapply in_ctx_to_rules; eauto.
       }
       {
@@ -255,16 +301,16 @@ Section WithVar.
       }
       { constructor. }
       {
-        basic_core_crush.
+        core_crush1.
         rewrite <- sort_vtr_subst; eauto.
         erewrite eq_subst_dom_eq_r; eauto with lang_core.
       }
       { constructor. }
       {
-        basic_core_crush.
+        core_crush1.
         rewrite with_names_from_map_is_named_map.
         rewrite <- sort_vtr_subst; eauto.
-        basic_core_crush.
+        core_crush1.
       }
     Qed.
 
@@ -289,16 +335,16 @@ Section WithVar.
   Proof.
     induction e;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     {
       unfold subst_lookup.
       rewrite lookup_named_map with (f:= rtv).
       apply named_list_lookup_change_default.
-      basic_utils_crush.
+      utils_crush1.
     }
     {
       case_match;
-        basic_term_crush.
+        term_crush1.
       {
         assert (fresh n l).
         {
@@ -311,7 +357,7 @@ Section WithVar.
         generalize dependent l0;
           induction l0;
           basic_goal_prep;
-          basic_term_crush.
+          term_crush1.
       }
     }
   Qed.
@@ -326,7 +372,7 @@ Section WithVar.
   Proof.
     induction e;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     eapply term_rtv_subst; eauto.
   Qed.
     
@@ -339,7 +385,7 @@ Section WithVar.
   Proof.
     destruct t;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     eapply args_rtv_subst; eauto.
   Qed.
 
@@ -351,11 +397,11 @@ Section WithVar.
       rtv (vtr e) = e.
   Proof.
     induction e; basic_goal_prep.
-    { case_match; basic_utils_crush. }
+    { case_match; utils_crush1. }
     { case_match; basic_goal_prep.
-      { basic_utils_crush. }
+      { utils_crush1. }
       { f_equal. rewrite map_map.
-        revert H H1; induction l0; basic_goal_prep; basic_utils_crush. } }
+        revert H H1; induction l0; basic_goal_prep; utils_crush1. } }
   Qed.
 
   Lemma srtv_svtr (t : sort V)
@@ -366,7 +412,7 @@ Section WithVar.
     destruct t; basic_goal_prep.
     f_equal.
     rewrite map_map.
-    revert H H0; induction l0; basic_goal_prep; basic_utils_crush.
+    revert H H0; induction l0; basic_goal_prep; utils_crush1.
     apply rtv_vtr; auto.
   Qed.
 
@@ -376,7 +422,7 @@ Section WithVar.
     : In (n, r) (ctx_to_rules c0) -> exists t, r = sort_to_var_rule t /\ In (n, t) c0.
   Proof.
     unfold ctx_to_rules.
-    induction c0; basic_goal_prep; basic_utils_crush.
+    induction c0; basic_goal_prep; utils_crush1.
   Qed.
 
   Context (H_c_disjoint : all (fun x : V => fresh x l) (map fst c)).
@@ -479,7 +525,7 @@ Section WithVar.
           pose proof (wf_lang_implies_ws_noext wfl) as Hwsl;
           assert (Hin_l : In name (map fst l)) by (eapply pair_fst_in; exact Hin);
           assert (Hfn : fresh name c) by (intro Hnc; exact (in_all (fun x => fresh x l) (map fst c) name H_c_disjoint Hnc Hin_l))).
-      1: (assert (Hrtv1 : rtv (Term.con name s1) = Term.con name (map rtv s1)) by (cbn [rtv]; case_match; basic_utils_crush); assert (Hrtv2 : rtv (Term.con name s2) = Term.con name (map rtv s2)) by (cbn [rtv]; case_match; basic_utils_crush); assert (Et : srtv (t[/with_names_from c' s2/]) = t[/with_names_from c' (map rtv s2)/]) by (rewrite sort_rtv_subst; [ rewrite with_names_from_map_is_named_map; reflexivity | erewrite map_fst_with_names_from by (eapply eq_args_length_eq_r; exact Hargs); exact (wf_sort_implies_ws (wf_lang_implies_ws_noext wfl) H1) | exact H_c_disjoint | exact (wf_sort_all_constructors H1) ]); rewrite Hrtv1, Hrtv2, Et; eapply term_con_congruence; [ exact Hin | right; reflexivity | exact wfl | apply IHargs; exact H ]).
+      1: (assert (Hrtv1 : rtv (Term.con name s1) = Term.con name (map rtv s1)) by (cbn [rtv]; case_match; utils_crush1); assert (Hrtv2 : rtv (Term.con name s2) = Term.con name (map rtv s2)) by (cbn [rtv]; case_match; utils_crush1); assert (Et : srtv (t[/with_names_from c' s2/]) = t[/with_names_from c' (map rtv s2)/]) by (rewrite sort_rtv_subst; [ rewrite with_names_from_map_is_named_map; reflexivity | erewrite map_fst_with_names_from by (eapply eq_args_length_eq_r; exact Hargs); exact (wf_sort_implies_ws (wf_lang_implies_ws_noext wfl) H1) | exact H_c_disjoint | exact (wf_sort_all_constructors H1) ]); rewrite Hrtv1, Hrtv2, Et; eapply term_con_congruence; [ exact Hin | right; reflexivity | exact wfl | apply IHargs; exact H ]).
     Qed.
       
   (*
@@ -490,7 +536,7 @@ Section WithVar.
   Proof.
     induction 1;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
     {
       admit (*TODO: mutualize*).
     }
@@ -505,7 +551,7 @@ Section WithVar.
         by eauto using sort_subst_nil.
       eapply wf_term_by; eauto with lang_core.
       Lemma in_sort_vars_as_rules
-        basic_utils_crush.
+        utils_crush1.
   
   Lemma ctx_to_rules_wf c
     : wf_ctx (Model:= core_model l) c ->
@@ -515,7 +561,7 @@ Section WithVar.
     unfold ctx_to_rules, sort_to_var_rule, unclose_sort.
     induction 1;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
     destruct v; basic_goal_prep.
     TODO: need lemma about wf_sort
 

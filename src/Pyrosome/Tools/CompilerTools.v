@@ -60,7 +60,7 @@ Lemma compile_strengthen_term_incl cmp e
                  all_fresh cmp' ->
                  compile cmp' e = compile cmp e.
 Proof.
-  induction e; basic_goal_prep; basic_core_firstorder_crush.
+  induction e; basic_goal_prep; try reflexivity; break.
   erewrite strengthen_named_list_lookup; eauto.
   case_match; basic_goal_prep;[| basic_core_crush].
   case_match; basic_goal_prep;[| basic_core_crush].
@@ -94,7 +94,7 @@ Lemma compile_strengthen_sort_incl cmp e
                  all_fresh cmp' ->
                  compile_sort cmp' e = compile_sort cmp e.
 Proof.
-  induction e; basic_goal_prep; basic_core_crush.
+  induction e; basic_goal_prep; try reflexivity; break.
   erewrite strengthen_named_list_lookup; eauto.
   case_match; basic_goal_prep;[| basic_core_crush].
   case_match; basic_goal_prep;[basic_core_crush|].
@@ -221,7 +221,7 @@ Lemma compile_strengthen_term_incl' ecmp cmp e
                  all_fresh cmp' ->
                  (compile (ecmp ++ cmp') e) = (compile (ecmp ++ cmp) e).
 Proof.
-  induction e; basic_goal_prep; basic_core_firstorder_crush.
+  induction e; basic_goal_prep; try reflexivity; break.
   erewrite strengthen_named_list_lookup'; eauto.
   case_match; basic_goal_prep;[| basic_core_crush].
   case_match; basic_goal_prep;[| basic_core_crush].
@@ -250,7 +250,7 @@ Lemma compile_strengthen_sort_incl' ecmp cmp e
                  all_fresh cmp' ->
                  compile_sort (ecmp++cmp') e = compile_sort (ecmp++cmp) e.
 Proof.
-  induction e; basic_goal_prep; basic_core_crush.
+  induction e; basic_goal_prep; try reflexivity; break.
   erewrite strengthen_named_list_lookup'; eauto.
   case_match; basic_goal_prep;[| basic_core_crush].
   case_match; basic_goal_prep;[basic_core_crush|].

@@ -7,6 +7,23 @@ From Utils Require Import Utils Monad.
 From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
 
+(* Single-round variants of the crush tactics (local to this file): the
+   `repeat` in `generic_crush` re-runs an expensive `intuition` on large
+   contexts even when one round suffices. *)
+Ltac core_crush1 :=
+  let x := autorewrite with bool rw_prop inversion utils term lang_core model in * in
+  let y := eauto 7 with utils term lang_core model in
+  (intuition break; subst; x; intuition unshelve y; break; subst).
+
+Ltac core_fo_crush1 :=
+  let x := autorewrite with bool rw_prop inversion utils term lang_core model in * in
+  let y := eauto 7 with utils term lang_core model in
+  (intuition break; subst; x; firstorder unshelve y; break; subst).
+
+(* Cheap discharge of the impossible branches of the checkers: after
+   `basic_goal_prep` these are almost always `Some _ = None` contradictions. *)
+Ltac bad_branch := solve [congruence | tauto | basic_core_crush].
+
 
 
 Section WithVar.
@@ -80,8 +97,9 @@ Section WithVar.
       all: intros wfl wfc.
       {
         destruct e; destruct fuel; basic_goal_prep.
-        1-3:basic_core_firstorder_crush.
-        revert H; case_match; basic_goal_prep; [|basic_core_crush].
+        1,2:constructor; eapply named_list_lookup_err_in; now eauto.
+        1: core_fo_crush1.
+        revert H; case_match; basic_goal_prep; [|bad_branch].
         (*TODO: Some = default rewrite?*)
         unfold default, option_default in H.
         revert H; case_match; basic_goal_prep; try congruence.
@@ -95,6 +113,7 @@ Section WithVar.
       {
         destruct s; destruct c'; destruct fuel;
           basic_goal_prep;
+          try (exfalso; congruence);
           intuition break;
           autorewrite with rw_prop inversion utils model term lang_core in *;
           try tauto.
@@ -103,11 +122,11 @@ Section WithVar.
           The latter is probably bad.
          *)
         revert H0.
-        case_match; basic_goal_prep; [|basic_core_crush].
+        case_match; basic_goal_prep; [|bad_branch].
         revert H0.
-        case_match; basic_goal_prep; [|basic_core_crush].
+        case_match; basic_goal_prep; [|bad_branch].
         revert H0.
-        case_match; basic_goal_prep; [|basic_core_crush].
+        case_match; basic_goal_prep; [|bad_branch].
         (* TODO: why does this take a long time?
           basic_core_crush. *)
         autorewrite with bool utils model term lang_core in *.
@@ -139,7 +158,7 @@ Section WithVar.
       intros wfl wfc.
       revert c'.
       induction s; destruct c'; basic_goal_prep; [basic_core_crush..|].
-      repeat (revert H0; case_match; basic_goal_prep; [|basic_core_crush]).
+      repeat (revert H0; case_match; basic_goal_prep; [|bad_branch]).
       autorewrite with bool utils model term lang_core in *.
       subst.
       intuition eauto.
@@ -164,12 +183,14 @@ Section WithVar.
     Proof.
       intros wfl wfc.
       
-      destruct t; destruct fuel; basic_goal_prep; basic_core_firstorder_crush.
+      destruct t; destruct fuel; basic_goal_prep;
+        try (exfalso; congruence); basic_core_firstorder_crush.
       
-      revert H; case_match; basic_goal_prep; [|basic_core_crush].
-      destruct r; basic_goal_prep; basic_core_firstorder_crush.
+      revert H; case_match; basic_goal_prep; [|bad_branch].
+      destruct r; basic_goal_prep;
+        try (exfalso; congruence); basic_core_firstorder_crush.
       
-      revert H; case_match; basic_goal_prep; [|basic_core_crush].
+      revert H; case_match; basic_goal_prep; [|bad_branch].
 
       safe_invert H.
       eapply wf_sort_by; eauto with utils.
@@ -195,10 +216,10 @@ Section WithVar.
       intro wfl.
       induction c; basic_goal_prep.
       { basic_core_crush. }
-      revert H; case_match; basic_goal_prep; [|basic_core_crush].
-      revert H; case_match; basic_goal_prep; [|basic_core_crush].
-      revert H; case_match; basic_goal_prep; [|basic_core_crush].
-      basic_core_firstorder_crush.
+      revert H; case_match; basic_goal_prep; [|bad_branch].
+      revert H; case_match; basic_goal_prep; [|bad_branch].
+      revert H; case_match; basic_goal_prep; [|bad_branch].
+      core_fo_crush1.
       eapply compute_noconv_wf_sort_sound; eauto.
     Qed.
 
@@ -237,7 +258,7 @@ Section WithVar.
     Proof.
       intro wfl.
       destruct r; basic_goal_prep.
-      all: repeat (revert H; case_match; basic_goal_prep; [|basic_core_crush]).
+      all: repeat (revert H; case_match; basic_goal_prep; [|bad_branch]).
 
       all:autorewrite with lang_core bool utils in *.
       all:subst.
@@ -267,10 +288,10 @@ Section WithVar.
   Proof.
     induction l; basic_goal_prep.
     { basic_core_crush. }
-    revert H; case_match; basic_goal_prep; [|basic_core_crush].
-    revert H; case_match; basic_goal_prep; [|basic_core_crush].
-    revert H; case_match; basic_goal_prep; [|basic_core_crush].
-    basic_core_crush.
+    revert H; case_match; basic_goal_prep; [|bad_branch].
+    revert H; case_match; basic_goal_prep; [|bad_branch].
+    revert H; case_match; basic_goal_prep; [|bad_branch].
+    core_crush1.
     eapply compute_noconv_wf_rule_sound; eauto.
   Qed.
 

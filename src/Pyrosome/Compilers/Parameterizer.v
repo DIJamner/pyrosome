@@ -80,14 +80,77 @@ Section WithVar.
           {V_default : WithDefault V}
   (*{V_inf : Infinite V}*).
 
+  (* --- Side-goal discharge (third pass) -------------------------------------
+     Goal-dumping instrumentation of [parameterize_compiler_preserving'] shows
+     that the expensive [core_crush_nm] calls inside [_pcp_ih],
+     [_pcp_h_respectsb_body] and [_pcp_replace_p{sort,term}] are almost always
+     spent on one of a handful of *trivial* residual goals:
+       [incl l x], [incl cmp x0], [wf_lang l], [p_name_fresh_in_cmp cmp],
+       [all_fresh (l ++ l_base)], [all_fresh l], [Is_true (specs_compatibleb cmp)]
+     each derivable from a single hypothesis by one projection.  The crush pays
+     a context-wide [autorewrite ... in *] plus [intuition]'s tauto solver
+     (~0.5s and ~0.3s respectively on this ~35-hypothesis context) for each.
+     [_pcp_side] discharges exactly these shapes in microseconds; every use is
+     [first [ _pcp_side | ... | core_crush_nm ]] so anything else is unaffected. *)
+  Lemma _pcp_all_fresh_head A (l1 l2 : @NamedList.named_list V A)
+    : all_fresh (l1++l2) -> all_fresh l1.
+  Proof.
+    induction l1; basic_goal_prep; basic_utils_crush.
+  Qed.
+
+  Ltac _pcp_side_hyps :=
+    repeat match goal with
+           | H : _ /\ _ |- _ => destruct H
+           | H : Is_true (_ && _) |- _ => apply andb_prop_elim in H; destruct H
+           end.
+
+  Ltac _pcp_side :=
+    intros; _pcp_side_hyps;
+    first
+      [ eassumption
+      | match goal with
+        | H : incl (_ :: ?l) ?m |- incl ?l ?m =>
+            let a := fresh "a" in let Ha := fresh "Ha" in
+            intros a Ha; apply H; right; exact Ha
+        end
+      | match goal with
+        | H : wf_lang (?r :: ?l) |- wf_lang ?l => exact (wf_lang_tail [r] l H)
+        end
+      | match goal with
+        | H : all_fresh (?l ++ _) |- all_fresh ?l =>
+            exact (_pcp_all_fresh_head _ _ _ H)
+        end
+      | match goal with
+        | H : all_fresh (_ :: ?l) |- all_fresh ?l => exact (proj2 H)
+        end
+      | match goal with
+        | H : all ?P (_ :: ?l) |- all ?P ?l => exact (proj2 H)
+        end ].
+
   (* Section-local: cap [basic_core_crush]'s leaf [eauto] depth at 5
      (upstream uses 7).  Bisecting the file shows every proof closes
      at depth <=5, so the deeper search is wasted work.
      Section-local; reverts at [End WithVar]. *)
+  (* Section-local: try the (cheap) leaf [eauto] alone before paying for a
+     full [generic_crush] round.  Profiling shows the leaf [eauto] is ~3% of
+     this file's cost while the [autorewrite ... in *] and [intuition] that
+     precede it are ~95%; a large fraction of the crush callsites are
+     goal-closing ones that [eauto] discharges on its own. *)
   Ltac basic_core_crush ::=
     let x := autorewrite with bool rw_prop inversion utils term lang_core model in * in
     let y := eauto 5 with utils term lang_core model in
-    generic_crush x y.
+    first [ solve [ _pcp_side ] | solve [ unshelve y ] | generic_crush x y ].
+
+  Ltac basic_term_crush ::=
+    let x := autorewrite with bool rw_prop inversion utils term in * in
+    let y := eauto with bool utils term in
+    first [ solve [ _pcp_side ] | solve [ unshelve y ] | generic_crush x y ].
+
+  Ltac basic_utils_crush ::=
+    let x := autorewrite with bool rw_prop inversion utils in * in
+    let y := eauto with utils in
+    first [ solve [ _pcp_side ] | solve [ unshelve y ] | generic_crush x y ].
+
 
   (* Section-local: an [intuition]-free crush variant.  Profiling on
      this file showed [intuition]'s [Tauto.t_tauto_intuit] /
@@ -107,9 +170,24 @@ Section WithVar.
         | H : False |- _ => destruct H
         | |- _ /\ _ => split
         end
-      | progress (autorewrite with bool rw_prop inversion utils term lang_core model in *)
+      | progress (autorewrite with bool rw_prop inversion utils term lang_core in *)
       | progress subst
       | solve [unshelve eauto 5 with utils term lang_core model] ].
+
+  (* Section-local: [basic_core_crush] with [model] dropped from the
+     *rewrite* databases (it stays in the leaf [eauto] databases).  All 16
+     [model] rewrite rules are [Model]-generic inversion lemmas whose side
+     condition is [solve [typeclasses eauto]]; resolving the [Model] instance
+     makes them by far the most expensive rules in the rewrite set, and
+     profiling shows [autorewrite ... in *] is ~64% of the cost of
+     [parameterize_compiler_preserving'].  Used at the callsites whose goals
+     are about compilers and contexts rather than [eq_args]/[eq_subst]
+     inversion, so that the [model] rules have nothing to fire on; the few
+     callsites that do need them keep [basic_core_crush]. *)
+  Ltac core_crush_nm :=
+    let x := autorewrite with bool rw_prop inversion utils term lang_core in * in
+    let y := eauto 5 with utils term lang_core model in
+    first [ solve [ _pcp_side ] | solve [ unshelve y ] | generic_crush x y ].
 
   Notation named_list := (@named_list V).
   Notation named_map := (@named_map V).
@@ -866,8 +944,8 @@ Section WithVar.
       apply negb_prop_intro.
       intro H.
       apply p_name_fresh with (x:=x).
-      revert H; unfold Is_true; case_match;
-        basic_utils_crush.
+      (* explicit so the proof term does not pick up [f_inj] from the section *)
+      exact (proj1 (eqb_prop_iff _ _ _) H).
     Qed.
 
     (*TODO: move to Renaming?*)
@@ -1390,26 +1468,26 @@ Section WithVar.
    eq_args l_plus (pctx None c) (pctx None c') (parameterize_args p_name pl None s1)
      (parameterize_args p_name pl None s2)).
   Proof.
-    apply cut_ind; eauto; try typeclasses eauto; basic_goal_prep;
-      [ (* eq_sort_by — H_no_sort_eqns rules out sort eq rules. *)
+    apply cut_ind; eauto; try typeclasses eauto; basic_goal_prep.
+    1: (* eq_sort_by — H_no_sort_eqns rules out sort eq rules. *)
         destruct (no_sort_eqns l) eqn:H';
           [ unfold no_sort_eqns in *; rewrite forallb_forall in H';
             apply H' in H; cbn in *; congruence
-          | simpl in *; tauto ]
-      | (* sort_con_congruence *)
+          | simpl in *; tauto ].
+    1: (* sort_con_congruence *)
         _pcp_rule_wf;
         _pcp_ctx_fresh c' (sort_rule c' args);
         p_name_lift_in H;
         eapply sort_con_congruence; subst l_plus; basic_utils_crush;
-        apply named_list_lookup_none_iff in H3; rewrite <- H3; eauto
-      | (* eq_sort_trans *)
+        apply named_list_lookup_none_iff in H3; rewrite <- H3; eauto.
+    1: (* eq_sort_trans *)
         apply sort_names_equal in H, H1;
         rewrite H in *; rewrite H1 in *;
-        eauto using eq_sort_trans
-      | (* eq_sort_sym *)
+        eauto using eq_sort_trans.
+    1: (* eq_sort_sym *)
         apply sort_names_equal in H; rewrite H in *;
-        eauto using eq_sort_sym
-      | (* term_eq_subst (term_eq_rule application) *)
+        eauto using eq_sort_sym.
+    1: (* term_eq_subst (term_eq_rule application) *)
         eapply in_all in H_p_name_l; eauto; cbn in *;
         use_rule_in_wf;
         autorewrite with lang_core utils term in *; break;
@@ -1430,8 +1508,8 @@ Section WithVar.
            | pure_fast_core_crush ];
         rewrite H8 in *;
         eapply eq_term_subst; [| eapply H1; eauto | eauto];
-        subst l_plus; eapply eq_term_by; basic_utils_crush
-      | (* term_con_congruence *)
+        subst l_plus; eapply eq_term_by; basic_utils_crush.
+    1: (* term_con_congruence *)
         assert (named_list_lookup_err pl name = None)
           by (autorewrite with term in H3;
               eapply con_fresh_iff_sort_fresh in H;
@@ -1451,22 +1529,22 @@ Section WithVar.
             rewrite CutElim.fresh_with_names_from; eauto;
             eapply @eq_args_length_eq_r with (Model:=core_model l); eapply H0
           | basic_utils_crush
-          | rewrite H4; apply H1; eauto ]
-      | (* eq_term_var *)
-        pure_fast_core_crush
-      | (* eq_term_trans *)
-        eauto using eq_term_trans
-      | (* eq_term_sym *)
-        eauto using eq_term_sym
-      | (* eq_term_conv *)
+          | rewrite H4; apply H1; eauto ].
+    1: (* eq_term_var *)
+        pure_fast_core_crush.
+    1: (* eq_term_trans *)
+        eauto using eq_term_trans.
+    1: (* eq_term_sym *)
+        eauto using eq_term_sym.
+    1: (* eq_term_conv *)
         eapply eq_term_conv; eauto;
           [ eapply H2; eauto;
             apply sort_names_equal in H; congruence
           | eapply H0; eauto;
-            apply sort_names_equal in H; congruence ]
-      | (* eq_subst_nil *)
-        pure_fast_core_crush
-      | (* eq_subst_cons *)
+            apply sort_names_equal in H; congruence ].
+    1: (* eq_subst_nil *)
+        pure_fast_core_crush.
+    1: (* eq_subst_cons *)
         unfold constructors_of_ctx in *;
         basic_goal_prep;
         autorewrite with rw_prop inversion utils lang_core term model in *; break;
@@ -1476,10 +1554,10 @@ Section WithVar.
           [| eapply eq_subst_name_fresh_r_from_ctx; eauto
            | pure_fast_core_crush ];
         eapply H2; eauto;
-        destruct t; basic_goal_prep; intuition eauto
-      | (* eq_args_nil *)
-        pure_fast_core_crush
-      | (* eq_args_cons *)
+        destruct t; basic_goal_prep; intuition eauto.
+    1: (* eq_args_nil *)
+        pure_fast_core_crush.
+    1: (* eq_args_cons *)
         unfold constructors_of_ctx in *;
         basic_goal_prep;
         autorewrite with utils lang_core term model in *; break;
@@ -1493,7 +1571,7 @@ Section WithVar.
              pure_fast_core_crush ];
         cbn in *; autorewrite with term model utils in *;
         eapply H2; eauto;
-        destruct t; cbn in *; intuition ].
+        destruct t; cbn in *; intuition .
   Qed.
   
   Lemma parameterize_preserving'_Some
@@ -1566,7 +1644,7 @@ Section WithVar.
       erewrite !parameterize_term_subst with (mn:=(named_list_lookup_err pl name)),
           !parameterize_sort_subst with (mn:=(named_list_lookup_err pl name)).
       
-      3,5,7: use_rule_in_wf; basic_core_crush.
+      3,5,7: use_rule_in_wf; core_crush_nm.
       2,3,4:enough (fresh p_name c'); 
       try (unfold fresh in *;
            (erewrite !eq_subst_dom_eq_l
@@ -1586,7 +1664,7 @@ Section WithVar.
           eapply eq_subst_ctx_monotonicity; eauto.
           {
             eapply parameterize_preserving'_None; eauto.
-            1: use_rule_in_wf; basic_core_crush.
+            1: use_rule_in_wf; core_crush_nm.
             {
               p_name_lift_in H;
                 now eauto.
@@ -1603,7 +1681,7 @@ Section WithVar.
           cbn.
           specialize H1 with (p:=(n,b)).
           eapply H1; eauto.
-          { use_rule_in_wf; basic_core_crush. }
+          { use_rule_in_wf; core_crush_nm. }
           {
             p_name_lift_in H;
               now eauto.
@@ -1619,7 +1697,7 @@ Section WithVar.
         subst l_plus.
         epose proof (in_or_app _ l_base _ (or_introl H)).
         use_rule_in_wf.
-        basic_core_crush.
+        core_crush_nm.
       }
     }
     {
@@ -1644,7 +1722,7 @@ Section WithVar.
         2:{
           basic_utils_crush.
           2: eapply @eq_args_length_eq_r with (Model:=core_model l); eauto.
-          use_rule_in_wf; basic_core_crush.
+          use_rule_in_wf; core_crush_nm.
         }
         1:case_match; cbn;eauto.
         {
@@ -1671,7 +1749,7 @@ Section WithVar.
           eapply eq_args_ctx_monotonicity; eauto.
           {
             eapply parameterize_preserving'_None; eauto.
-            { use_rule_in_wf; basic_core_crush. }
+            { use_rule_in_wf; core_crush_nm. }
             {
               p_name_lift_in H;
                 now eauto.
@@ -1689,7 +1767,7 @@ Section WithVar.
         {
           cbn in *.
           eapply H1; eauto.
-          { use_rule_in_wf; basic_core_crush. }
+          { use_rule_in_wf; core_crush_nm. }
           {
             p_name_lift_in H;
               now eauto.
@@ -1703,7 +1781,7 @@ Section WithVar.
       }
     }
     (* eq_term_var *)
-    1: basic_core_crush.
+    1: core_crush_nm.
     (* eq_term_trans *)
     1: specialize H0 with (p:=(n,b));
        specialize H2 with (p:=(n,b));
@@ -1720,7 +1798,7 @@ Section WithVar.
        cbn; constructor; constructor;
        eapply wf_term_var;
        replace p_sort [/[] /] with p_sort;
-         [ basic_core_crush | symmetry; apply sort_subst_nil ].
+         [ core_crush_nm | symmetry; apply sort_subst_nil ].
     {
       specialize H0 with (p:=(n0,b0)).
       cbn -[insert] in *.
@@ -1734,7 +1812,7 @@ Section WithVar.
               with (c':=(name,t)::c')
                    (s1:=(name,e1)::s1)
                    (s2:=(name,e2)::s2); eauto.
-            1: basic_core_crush.
+            1: core_crush_nm.
             basic_utils_crush.
           }
           {
@@ -1749,7 +1827,7 @@ Section WithVar.
             eapply wf_term_var.
             basic_utils_crush.
           }
-          rewrite closed_sort_subst; basic_core_crush.
+          rewrite closed_sort_subst; core_crush_nm.
         }
       }
       {
@@ -1784,7 +1862,7 @@ Section WithVar.
        cbn; constructor; constructor;
        eapply wf_term_var;
        replace p_sort [/with_names_from [] [] /] with p_sort;
-         [ basic_core_crush | symmetry; apply sort_subst_nil ].
+         [ core_crush_nm | symmetry; apply sort_subst_nil ].
     {
       specialize H0 with (p:=(n0,b0)).
       cbn -[insert] in *.
@@ -1798,7 +1876,7 @@ Section WithVar.
               with (c':=(name,t)::c')
                    (s1:=e1::s1)
                    (s2:=e2::s2); eauto.
-            1: basic_core_crush.
+            1: core_crush_nm.
             basic_utils_crush.
           }
           {
@@ -1813,7 +1891,7 @@ Section WithVar.
             eapply wf_term_var.
             basic_utils_crush.
           }
-          rewrite closed_sort_subst; basic_core_crush.
+          rewrite closed_sort_subst; core_crush_nm.
         }
       }
       {
@@ -2256,8 +2334,8 @@ Section WithVar.
         apply wf_lang_concat; eauto.
         apply IHwf_lang_ext; basic_goal_prep; basic_utils_crush.
       }
-      unfold parameterize_lang, no_sort_eqns in *.
-      basic_utils_crush.
+      all: unfold parameterize_lang, no_sort_eqns in *.
+      all: basic_utils_crush.
     }      
   Qed.
   
@@ -2969,7 +3047,7 @@ Section WithVar.
       2:{
         basic_utils_crush.
         assert (ws_compiler (tgt_Model:=core_model tgt) cmp)
-          by basic_core_crush.
+          by core_crush_nm.
         symmetry in H_lookup; apply named_list_lookup_err_in in H_lookup.
         eapply in_all in H6; eauto.
         cbn in *; eauto.
@@ -2980,7 +3058,7 @@ Section WithVar.
         eapply preserving_args_length in H3; eauto.
         rewrite H_lookup in H3.
         basic_goal_prep;
-          basic_core_crush.
+          core_crush_nm.
         erewrite <- wf_args_length_eq; eauto.
       }
       2:{
@@ -2988,7 +3066,7 @@ Section WithVar.
         rewrite H_lookup in H3.
         case_match;
           basic_goal_prep;
-          basic_core_crush.
+          core_crush_nm.
         all:erewrite <- wf_args_length_eq; eauto.
       }
       case_match;
@@ -3006,7 +3084,7 @@ Section WithVar.
           eapply preserving_args_length in H3; eauto.
           rewrite H_lookup in H3.
           basic_goal_prep;
-            basic_core_crush.
+            core_crush_nm.
           erewrite <- wf_args_length_eq; eauto.
         }
         f_equal; try reflexivity.
@@ -3045,7 +3123,7 @@ Section WithVar.
       2:{
         basic_utils_crush.
         assert (ws_compiler (tgt_Model:=core_model tgt) cmp)
-          by basic_core_crush.
+          by core_crush_nm.
         symmetry in H_lookup; apply named_list_lookup_err_in in H_lookup.
         eapply in_all in H6; eauto.
         cbn in *; eauto.
@@ -3056,7 +3134,7 @@ Section WithVar.
         eapply preserving_args_length in H3; eauto.
         rewrite H_lookup in H3.
         basic_goal_prep;
-          basic_core_crush.
+          core_crush_nm.
         erewrite <- wf_args_length_eq; eauto.
       }
       2:{
@@ -3064,7 +3142,7 @@ Section WithVar.
         rewrite H_lookup in H3.
         case_match;
           basic_goal_prep;
-          basic_core_crush.
+          core_crush_nm.
         all:erewrite <- wf_args_length_eq; eauto.
       }
       case_match;
@@ -3082,7 +3160,7 @@ Section WithVar.
         eapply preserving_args_length in H3; eauto.
         rewrite H_lookup in H3.
         basic_goal_prep;
-          basic_core_crush.
+          core_crush_nm.
         erewrite <- wf_args_length_eq; eauto.
       }
         f_equal; try reflexivity.
@@ -3218,7 +3296,7 @@ Section WithVar.
       eapply strengthening_sort; eauto.
       {
         eapply strengthen_preserving_compiler; eauto;
-          basic_core_crush.
+          core_crush_nm.
       }
       {
         unfold parameterize_compiler.
@@ -3264,7 +3342,7 @@ Section WithVar.
     intros until c.
     induction 1;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush_nm.
     {
       destruct mn; cbn; eauto.
       basic_utils_crush.
@@ -3487,25 +3565,76 @@ Section WithVar.
      rewrites a [compile_sort/compile] of a parameterized item into the
      corresponding [parameterize_X (compile X)] form, discharging the
      equality with [compile_parameterize_commute]. *)
-  Ltac _pcp_replace_psort cmp_v t :=
+  (* The context inside [parameterize_compiler_preserving'] carries two very
+     large hypotheses -- the induction hypothesis [IHpreserving_compiler_ext]
+     and the [compiler_respects_parameterization] premise [H_respectsb].  The
+     crushes below spend most of their time in [autorewrite ... in *] and
+     [eauto], both of which scale with the context, so we drop those two
+     hypotheses first.  Every use is guarded by
+     [first [ solve [light; script] | script ]], so if the lighter context is
+     not enough the original script still runs unchanged. *)
+  (* Most of the cost of the [_pcp_*] tactics below was the fallback
+     [core_crush_nm] on their side goals.  Instrumentation shows those side
+     goals are always one of [all_fresh l], [wf_ctx l c], [wf_sort l _ t] or
+     [wf_term l _ e _] for the *head rule* of the current induction case, all of
+     which follow from inverting [wf_lang ((n,r)::l)] twice.  Doing that
+     directly avoids ~14 context-wide [autorewrite ... in *] runs. *)
+  Ltac _pcp_side2 :=
+    match goal with
+    | Hw : wf_lang (_ :: _) |- _ =>
+        let Hc := fresh "Hhd" in
+        pose proof Hw as Hc; inversion Hc; subst;
+        match goal with
+        | Hr : wf_rule (_ ++ []) _ |- _ =>
+            rewrite app_nil_r in Hr; inversion Hr; subst
+        end;
+        first [ eassumption | eauto using wf_lang_ext_all_fresh ]
+    end.
+
+  (* Cheap-first replacement for the bare [core_crush_nm]/[basic_utils_crush]
+     side-goal discharges inside [parameterize_compiler_preserving'].  The goals
+     there are (per instrumentation) [all_fresh (l ++ l_base)], [wf_lang tgt],
+     [p_name_fresh_in_cmp cmp], [wf_ctx l _] and the already-available
+     [eq_sort]/[eq_term] hypothesis, all solved by [_pcp_side]/[_pcp_side2]. *)
+  Ltac _pcp_cheap :=
+    first [ solve [ _pcp_side ] | solve [ _pcp_side2 ] | core_crush_nm ].
+
+  Ltac _pcp_light IH Hresp := try clear IH; try clear Hresp.
+  Ltac _pcp_light_ih IH := try clear IH.
+
+  Ltac _pcp_replace_psort IH Hresp cmp_v t :=
     replace (let pcmp := parameterize_compiler p_name tgt_spec src_spec cmp_v ++ id_compiler l_base
              in compile_sort pcmp (parameterize_sort p_name src_spec t))
       with (parameterize_sort p_name tgt_spec (compile_sort cmp_v t))
-      by (symmetry; pure_fast_core_crush; cbn in *;
-          eapply compile_parameterize_commute; eauto; basic_core_crush).
+      by (first [ solve [ _pcp_light IH Hresp; symmetry; break; cbn in *;
+                          eapply compile_parameterize_commute; eauto;
+                          first [ _pcp_side | solve [_pcp_side2] | core_crush_nm ] ]
+                | solve [ _pcp_light IH Hresp; symmetry; pure_fast_core_crush; cbn in *;
+                          eapply compile_parameterize_commute; eauto;
+                          first [ _pcp_side | solve [_pcp_side2] | core_crush_nm ] ]
+                | symmetry; pure_fast_core_crush; cbn in *;
+                  eapply compile_parameterize_commute; eauto;
+                  first [ _pcp_side | solve [_pcp_side2] | core_crush_nm ] ]).
 
-  Ltac _pcp_replace_pterm cmp_v e :=
+  Ltac _pcp_replace_pterm IH Hresp cmp_v e :=
     replace (let pcmp := parameterize_compiler p_name tgt_spec src_spec cmp_v ++ id_compiler l_base
              in compile pcmp (parameterize_term p_name src_spec e))
       with (parameterize_term p_name tgt_spec (compile cmp_v e))
-      by (symmetry; pure_fast_core_crush; cbn in *;
-          eapply compile_parameterize_commute; eauto; basic_core_crush).
+      by (first [ solve [ _pcp_light IH Hresp; symmetry; break; cbn in *;
+                          eapply compile_parameterize_commute; eauto;
+                          first [ _pcp_side | solve [_pcp_side2] | core_crush_nm ] ]
+                | solve [ _pcp_light IH Hresp; symmetry; pure_fast_core_crush; cbn in *;
+                          eapply compile_parameterize_commute; eauto;
+                          first [ _pcp_side | solve [_pcp_side2] | core_crush_nm ] ]
+                | symmetry; pure_fast_core_crush; cbn in *;
+                  eapply compile_parameterize_commute; eauto;
+                  first [ _pcp_side | solve [_pcp_side2] | core_crush_nm ] ]).
 
   (* The [case_match] / [H_respectsb] dispatch shared by the sort and term
      cases, parameterized over the compiler [cmp_v], the local context [c_v],
      the strengthened compiler [x0_v], and the rule constructor [r]
      (e.g. [sort_rule c args] or [term_rule c args t]). *)
-  Ltac _pcp_h_respectsb cmp_v c_v x0_v H_resp rule_v :=
+  Ltac _pcp_h_respectsb_body cmp_v c_v x0_v H_resp rule_v :=
     case_match;
     [ break; cbn in *; break;
       replace (compile_ctx cmp_v c_v) with (compile_ctx x0_v c_v);
@@ -3522,8 +3651,13 @@ Section WithVar.
           [ basic_utils_crush
           | right; intuition eauto;
             apply named_list_lookup_none_iff; eauto ]
-        | cbn; basic_core_crush .. ]
+        | cbn; first [ _pcp_side | solve [_pcp_side2] | core_crush_nm ] .. ]
       | autorewrite with utils lang_core in *; break; basic_utils_crush ] ].
+
+  Ltac _pcp_h_respectsb IH cmp_v c_v x0_v H_resp rule_v :=
+    first [ solve [ _pcp_light_ih IH;
+                    _pcp_h_respectsb_body cmp_v c_v x0_v H_resp rule_v ]
+          | _pcp_h_respectsb_body cmp_v c_v x0_v H_resp rule_v ].
 
   (* The 4 rule-kind cases of [parameterize_compiler_preserving'] each
      discharge the same three FIXED facts about [tgt] (they don't depend on
@@ -3535,7 +3669,8 @@ Section WithVar.
   Lemma cond_no_sort_eqns_tgt
     : Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt) ->
       Is_true (no_sort_eqns tgt).
-  Proof.
+  (* pinned so the discharged signature matches the original proof's *)
+  Proof using V V_Eqb V_Eqb_ok.
     unfold syntactic_parameterization_conditions'; intro Hb; basic_utils_crush.
   Qed.
 
@@ -3562,7 +3697,7 @@ Section WithVar.
      explicitly to avoid bare-name resolution in a tactic body. *)
   Ltac _pcp_wf_ctx H :=
     revert H; clear; cbn; intros; basic_goal_prep;
-    unfold compile_ctx; basic_core_crush.
+    unfold compile_ctx; core_crush_nm.
 
   (* [map fst] of a parameterized context, used (identically) in the sort_rule and
      term_rule case openings to rewrite the context-name list. *)
@@ -3586,30 +3721,127 @@ Section WithVar.
   (* The induction-hypothesis discharge, identical in all 4 rule-kind cases
      of [parameterize_compiler_preserving'].  Must be a tactic (it refers to
      [IHpreserving_compiler_ext]). *)
-  Ltac _pcp_ih IH :=
-    eapply IH; eauto;
-    basic_goal_prep; basic_core_crush.
+  Ltac _pcp_ih IH Hresp :=
+    first [ solve [ eapply IH; clear IH; try clear Hresp; eauto;
+                    basic_goal_prep; first [ _pcp_side | solve [_pcp_side2] | core_crush_nm ] ]
+          | eapply IH; eauto;
+            basic_goal_prep; first [ _pcp_side | solve [_pcp_side2] | core_crush_nm ] ].
 
   (* The two [inductive_implies_semantic] premises of [parameterize_preserving'],
      identical across all 4 cases. *)
-  Ltac _pcp_inductive_semantic :=
+  Ltac _pcp_inductive_semantic_body :=
     autorewrite with lang_core model utils in *;
     break;
     eapply inductive_implies_semantic; auto; cycle 2; eauto with lang_core.
 
+  Ltac _pcp_inductive_semantic IH Hresp :=
+    first [ solve [ _pcp_light IH Hresp; _pcp_inductive_semantic_body ]
+          | _pcp_inductive_semantic_body ].
+
   (* The [compile_strengthen_sort_incl] side of the strengthen block, byte-for-byte
      identical in the term_rule / sort_eq / term_eq cases (no auto-name dependence). *)
-  Ltac _pcp_strengthen_incl :=
+  Ltac _pcp_strengthen_incl_body :=
     autorewrite with lang_core utils term in *;
     symmetry;
     eapply compile_strengthen_sort_incl; intuition eauto;
     eauto with lang_core term model utils;
     try (eapply all_fresh_compiler;
          [ eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core
-         | basic_core_crush ]);
+         | core_crush_nm ]);
     try (eapply all_constructors_sort_from_wf; eauto;
          eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core).
 
+  Ltac _pcp_strengthen_incl IH Hresp :=
+    first [ solve [ _pcp_light IH Hresp; _pcp_strengthen_incl_body ]
+          | _pcp_strengthen_incl_body ].
+
+  (* The [fresh (sort_name (compile_sort ...))] obligation of
+     [parameterize_preserving'] is discharged by the *same* ~50-line argument in
+     the term_rule, sort_eq_rule and term_eq_rule cases of
+     [parameterize_compiler_preserving'] below.  Each copy re-ran two
+     context-wide crushes plus [use_rule_in_wf] on the (very large) induction
+     context.  Proved once here on a minimal context instead; the cases invoke
+     it via [_pcp_fresh_sort_name]. *)
+  Lemma sort_name_in_constructors_of_sort (t : sort)
+    : In (sort_name t) (constructors_of_sort t).
+  Proof. destruct t; cbn; auto. Qed.
+
+  Lemma fresh_sort_name_compile_sort srcl cmp0 n r t
+    : wf_lang srcl ->
+      all_fresh cmp0 ->
+      Is_true (specs_compatibleb cmp0) ->
+      pl_is_ordered src_spec srcl ->
+      preserving_compiler_ext tgt [] cmp0 srcl ->
+      In (n, r) srcl ->
+      named_list_lookup_err src_spec n = None ->
+      wf_sort srcl (get_ctx r) t ->
+      In (sort_name t) (constructors_of_rule r) ->
+      fresh (sort_name (compile_sort cmp0 t)) tgt_spec.
+  Proof.
+    intros Hwfs Hfc Hcompat Hord Hpres Hin Hlook Hwft Hcon.
+    pose proof Hin as Hin2.
+    destruct t as [n0 s]; cbn [sort_name] in Hcon.
+    assert (exists args' t', In (n0, sort_case args' t') cmp0) as Hsc
+        by (inversion Hwft; subst; eapply sort_case_in_cmp; eauto).
+    destruct Hsc as [args' [t' Hsc]].
+    pose proof Hsc as Hsc2.
+    unfold specs_compatibleb in Hcompat.
+    autorewrite with lang_core model term utils in Hcompat.
+    eapply in_all in Hcompat; [| exact Hsc].
+    destruct t' as [v l0].
+    eapply all_fresh_named_list_lookup_err_in in Hsc2; eauto.
+    cbn in *.
+    rewrite <- Hsc2.
+    revert Hcompat; case_match; basic_goal_prep.
+    2:{ basic_utils_crush. }
+    enough (fresh n0 src_spec).
+    {
+      symmetry in case_match_eqn.
+      eapply all_fresh_named_list_lookup_err_in in case_match_eqn; eauto.
+      eapply pair_fst_in in case_match_eqn.
+      unfold fresh in *; eauto.
+    }
+    assert (dependency srcl n n0) as Hdep.
+    {
+      eapply dep_direct.
+      unfold direct_dependency.
+      eapply all_fresh_named_list_lookup_err_in in Hin2; eauto.
+      2: core_crush_nm.
+      rewrite <- Hin2.
+      exact Hcon.
+    }
+    unfold pl_is_ordered in Hord.
+    eapply in_all in Hord; eauto.
+    cbn in *.
+    eapply Hord in Hdep.
+    eapply Hdep.
+    symmetry in Hlook.
+    eapply named_list_lookup_none_iff in Hlook; eauto.
+  Qed.
+
+  (* Callsite wrapper: [srcl_v]/[n_v] are the source language and rule name of
+     the current induction case, [rv] its source rule. *)
+  Ltac _pcp_fresh_sort_name srcl_v n_v rv :=
+    case_match;
+    [ exact I
+    | assert (In (n_v, rv) srcl_v) as Hin_rule
+        by (match goal with H : incl (_ :: _) srcl_v |- _ => apply H end; now left);
+      eapply fresh_sort_name_compile_sort with (srcl := srcl_v) (n := n_v) (r := rv);
+      [ eassumption
+      | eassumption
+      | eassumption
+      | eassumption
+      | eassumption
+      | exact Hin_rule
+      | eassumption
+      | match goal with
+        | Hw : wf_lang srcl_v |- _ =>
+            pose proof (rule_in_wf _ _ Hw Hin_rule) as Hwfr;
+            rewrite app_nil_r in Hwfr;
+            cbn [get_ctx]; inversion Hwfr; subst; assumption
+        end
+      | cbn [constructors_of_rule]; rewrite ?in_app_iff;
+        auto using sort_name_in_constructors_of_sort ] ].
   Lemma parameterize_compiler_preserving' cmp src (H_ordered_src: pl_is_ordered src_spec src)
     : wf_lang tgt ->
       Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt) ->
@@ -3626,7 +3858,7 @@ Section WithVar.
         (parameterize_lang src_spec src).
   Proof.
     intros wft H_b H_respectsb H_ord H H0.
-    rewrite compiler_respects_parameterizationb_spec in *;[|basic_core_crush].
+    rewrite compiler_respects_parameterizationb_spec in *;[|core_crush_nm].
     unfold compiler_respects_parameterization in *.
     intros H1 H2 H3.
     assert(
@@ -3649,7 +3881,7 @@ Section WithVar.
     {
       exists (*src_spec,*) src, cmp.
       intuition eauto using incl_refl.
-      eapply strengthen_preserving_compiler in H; auto; basic_core_crush.
+      eapply strengthen_preserving_compiler in H; auto; core_crush_nm.
     }
     revert H1 H2 H3.
     clear H_respectsb H_ordered_src.
@@ -3673,7 +3905,7 @@ Section WithVar.
       {
         eapply CompilerDefs.preserving_compiler_sort; eauto.
         {
-          _pcp_ih IHpreserving_compiler_ext.
+          _pcp_ih IHpreserving_compiler_ext H_respectsb.
         }
         cbn -[parameterize_ctx parameterize_compiler].
         pose proof H as Hpres.
@@ -3709,14 +3941,16 @@ Section WithVar.
             { _pcp_cond. }
             {
               
-              eapply inductive_implies_semantic; cycle 6;
-                eauto;
-                basic_core_crush.
+              first [ solve [ _pcp_light IHpreserving_compiler_ext H_respectsb;
+                              eapply inductive_implies_semantic; cycle 6;
+                              eauto; core_crush_nm ]
+                    | eapply inductive_implies_semantic; cycle 6;
+                      eauto; core_crush_nm ].
             }
             {
               _pcp_wf_ctx H2.
             }
-            _pcp_h_respectsb cmp c x0 H_respectsb (sort_rule c args).
+            _pcp_h_respectsb IHpreserving_compiler_ext cmp c x0 H_respectsb (sort_rule c args).
           }
           {
             eapply parameterize_preserving'; eauto.
@@ -3724,16 +3958,16 @@ Section WithVar.
               apply wf_lang_concat; eauto.
               eapply parameterize_lang_preserving''; eauto.
             }
-            5:{ eapply eq_sort_refl; basic_core_crush. }
+            5:{ eapply eq_sort_refl; core_crush_nm. }
             all: break; cbn in *.
             { _pcp_cond. }
             { _pcp_cond. }
             { _pcp_cond. }
             {
-              _pcp_inductive_semantic.
+              _pcp_inductive_semantic IHpreserving_compiler_ext H_respectsb.
             }
             {
-              _pcp_inductive_semantic.
+              _pcp_inductive_semantic IHpreserving_compiler_ext H_respectsb.
             }
             {
               unfold syntactic_parameterization_conditions' in *.
@@ -3744,7 +3978,7 @@ Section WithVar.
           }
         }
         {
-          basic_core_crush.
+          _pcp_cheap.
         }
       }
       {
@@ -3761,7 +3995,7 @@ Section WithVar.
       {
         eapply CompilerDefs.preserving_compiler_term; eauto.
         {
-          _pcp_ih IHpreserving_compiler_ext.
+          _pcp_ih IHpreserving_compiler_ext H_respectsb.
         }
         cbn -[parameterize_ctx parameterize_compiler].
         pose proof H as Hpres.
@@ -3792,99 +4026,55 @@ Section WithVar.
             
             { _pcp_cond. }
             {
-              eapply inductive_implies_semantic; cycle 6;
-                eauto with utils lang_core model;
-                basic_core_crush.
+              first [ solve [ _pcp_light IHpreserving_compiler_ext H_respectsb;
+                              eapply inductive_implies_semantic; cycle 6;
+                              eauto with utils lang_core model;
+                              core_crush_nm ]
+                    | eapply inductive_implies_semantic; cycle 6;
+                      eauto with utils lang_core model;
+                      core_crush_nm ].
             }
             {
               _pcp_wf_ctx H2.
             }
-            _pcp_h_respectsb cmp c x0 H_respectsb (term_rule c args t).
+            _pcp_h_respectsb IHpreserving_compiler_ext cmp c x0 H_respectsb (term_rule c args t).
           }
           {
             change (compile_sort (map (fun p : V * compiler_case V => (fst p, parameterize_ccase p_name tgt_spec src_spec p)) cmp ++ id_compiler l_base)
                         (parameterize_sort p_name src_spec t))
               with (let pcmp := parameterize_compiler p_name tgt_spec src_spec cmp ++ id_compiler l_base
                     in compile_sort pcmp (parameterize_sort p_name src_spec t)).
-            _pcp_replace_psort cmp t.
+            _pcp_replace_psort IHpreserving_compiler_ext H_respectsb cmp t.
             eapply parameterize_preserving'; eauto.
             {
               apply wf_lang_concat; eauto.
               eauto using parameterize_lang_preserving''.
             }
-            5:{ eapply eq_term_refl; basic_core_crush. }
+            5:{ eapply eq_term_refl; core_crush_nm. }
             all: break; cbn in *.
             { _pcp_cond. }
             { _pcp_cond. }
             { _pcp_cond. }
             {
-              _pcp_inductive_semantic.
+              _pcp_inductive_semantic IHpreserving_compiler_ext H_respectsb.
             }
             {
-              _pcp_inductive_semantic.
+              _pcp_inductive_semantic IHpreserving_compiler_ext H_respectsb.
             }
             {
               replace (compile_sort cmp t)
                 with (compile_sort x0 t).
               {
-                unfold syntactic_parameterization_conditions' in *.
-                basic_utils_crush.
-                case_match; basic_utils_crush.
-                use_rule_in_wf.
-                autorewrite with lang_core model term utils in H2.
-                break.
-                inversion H23; subst.
-                (*TODO: names off by 1*)
-                unfold specs_compatibleb in Hincl_src.
-                autorewrite with lang_core model term utils in Hincl_src.
-                eapply sort_case_in_cmp in H24; eauto.
-                break.
-                eapply in_all in Hincl_src; eauto.
-                cbn in *.
-                eapply all_fresh_named_list_lookup_err_in in H24;
-                  eauto.
-                rewrite <- H24.
-                destruct x2; cbn.
-                revert Hincl_src; case_match;
-                  basic_goal_prep.
-                2:{
-                  basic_utils_crush.
-                } 
-                enough (fresh n0 src_spec).
-                {
-                  symmetry in case_match_eqn0.
-                  eapply all_fresh_named_list_lookup_err_in in case_match_eqn0; eauto.
-                  eapply pair_fst_in in case_match_eqn0.
-                  unfold fresh in *; eauto.
-                }
-                
-                assert (dependency x n n0) as Hdep.
-                {
-                  eapply dep_direct.
-                  unfold direct_dependency.
-                  eapply all_fresh_named_list_lookup_err_in in H12; eauto.
-                  2: basic_core_crush.
-                  rewrite <- H12.
-                  cbn.
-                  clear.
-                  basic_utils_crush.
-                }
-                unfold pl_is_ordered in H_ordered_src.
-                eapply in_all in H_ordered_src; eauto.
-                cbn in *.
-                eapply H_ordered_src in Hdep.
-                eapply Hdep.
-                symmetry in case_match_eqn.
-                eapply named_list_lookup_none_iff in case_match_eqn; eauto.
+              _pcp_fresh_sort_name x n (term_rule c args t).
               }
               {
-                _pcp_strengthen_incl.
+                _pcp_strengthen_incl IHpreserving_compiler_ext H_respectsb.
               }
             }
           }
         }
         {
-          basic_core_crush.
+          _pcp_cheap.
         }
       }
       {
@@ -3895,7 +4085,7 @@ Section WithVar.
       cbn -[parameterize_ctx parameterize_compiler].
       eapply CompilerDefs.preserving_compiler_sort_eq; eauto.
       {
-        _pcp_ih IHpreserving_compiler_ext.
+        _pcp_ih IHpreserving_compiler_ext H_respectsb.
       }
       cbn -[parameterize_ctx parameterize_compiler].
       pose proof H as Hpres.
@@ -3911,92 +4101,44 @@ Section WithVar.
                         (parameterize_sort p_name src_spec ?t))
             with (let pcmp := parameterize_compiler p_name tgt_spec src_spec cmp ++ id_compiler l_base
                   in compile_sort pcmp (parameterize_sort p_name src_spec t)).
-          _pcp_replace_psort cmp t1.
-          _pcp_replace_psort cmp t2.
+          _pcp_replace_psort IHpreserving_compiler_ext H_respectsb cmp t1.
+          _pcp_replace_psort IHpreserving_compiler_ext H_respectsb cmp t2.
           eapply parameterize_preserving'; auto.
             {
               apply wf_lang_concat; eauto.
               eapply parameterize_lang_preserving''; eauto.
             }
-            5:{ basic_core_crush. }
+            5:{ _pcp_cheap. }
             all: break; cbn in *.
             { _pcp_cond. }
             { _pcp_cond. }
             { _pcp_cond. }
             {
-              _pcp_inductive_semantic.
+              _pcp_inductive_semantic IHpreserving_compiler_ext H_respectsb.
             }
             {
-              _pcp_inductive_semantic.
+              _pcp_inductive_semantic IHpreserving_compiler_ext H_respectsb.
             }
             {
               replace (compile_sort cmp t1)
                 with (compile_sort x0 t1).
               {
-                unfold syntactic_parameterization_conditions' in *.
-                basic_utils_crush.
-                case_match; basic_utils_crush.
-                use_rule_in_wf.
-                autorewrite with lang_core model term utils in H8.
-                break.
-                inversion H19; subst.
-                (*TODO: names off by 1*)
-                unfold specs_compatibleb in Hincl_src.
-                autorewrite with lang_core model term utils in Hincl_src.
-                eapply sort_case_in_cmp in H21; eauto.
-                break.
-                eapply in_all in Hincl_src; eauto.
-                cbn in *.
-                eapply all_fresh_named_list_lookup_err_in in H21;
-                  eauto.
-                rewrite <- H21.
-                destruct x2; cbn.
-                revert Hincl_src; case_match;
-                  basic_goal_prep.
-                2:{
-                  basic_utils_crush.
-                }
-                enough (fresh n0 src_spec).
-                {
-                  symmetry in case_match_eqn0.
-                  eapply all_fresh_named_list_lookup_err_in in case_match_eqn0; eauto.
-                  eapply pair_fst_in in case_match_eqn0.
-                  unfold fresh in *; eauto.
-                }
-                
-                assert (dependency x n n0) as Hdep.
-                {
-                  eapply dep_direct.
-                  unfold direct_dependency.
-                  eapply all_fresh_named_list_lookup_err_in in H11; eauto.
-                  2: basic_core_crush.
-                  rewrite <- H11.
-                  cbn.
-                  clear.
-                  basic_utils_crush.
-                }
-                unfold pl_is_ordered in H_ordered_src.
-                eapply in_all in H_ordered_src; eauto.
-                cbn in *.
-                eapply H_ordered_src in Hdep.
-                eapply Hdep.
-                symmetry in case_match_eqn.
-                eapply named_list_lookup_none_iff in case_match_eqn; eauto.
+              _pcp_fresh_sort_name x n (sort_eq_rule c t1 t2).
               }
               {
-                _pcp_strengthen_incl.
+                _pcp_strengthen_incl IHpreserving_compiler_ext H_respectsb.
               }
             }
           }
         {
-          basic_core_crush.
+          _pcp_cheap.
         }
     }
     {
       cbn -[parameterize_ctx parameterize_compiler].
       eapply CompilerDefs.preserving_compiler_term_eq; eauto.
       {
-        _pcp_ih IHpreserving_compiler_ext.
+        _pcp_ih IHpreserving_compiler_ext H_respectsb.
       }
       cbn -[parameterize_ctx parameterize_compiler].
       pose proof H as Hpres.
@@ -4012,86 +4154,38 @@ Section WithVar.
                         (parameterize_sort p_name src_spec ?t))
             with (let pcmp := parameterize_compiler p_name tgt_spec src_spec cmp ++ id_compiler l_base
                   in compile_sort pcmp (parameterize_sort p_name src_spec t)).
-          _pcp_replace_psort cmp t.
-          _pcp_replace_pterm cmp e1.
-          _pcp_replace_pterm cmp e2.
+          _pcp_replace_psort IHpreserving_compiler_ext H_respectsb cmp t.
+          _pcp_replace_pterm IHpreserving_compiler_ext H_respectsb cmp e1.
+          _pcp_replace_pterm IHpreserving_compiler_ext H_respectsb cmp e2.
           eapply parameterize_preserving'; auto.
             {
               apply wf_lang_concat; eauto.
               eapply parameterize_lang_preserving''; eauto.
             }
-            5:{ basic_core_crush. }
+            5:{ _pcp_cheap. }
             all: break; cbn in *.
             { _pcp_cond. }
             { _pcp_cond. }
             { _pcp_cond. }
             {
-              _pcp_inductive_semantic.
+              _pcp_inductive_semantic IHpreserving_compiler_ext H_respectsb.
             }
             {
-              _pcp_inductive_semantic.
+              _pcp_inductive_semantic IHpreserving_compiler_ext H_respectsb.
             }
             {
               replace (compile_sort cmp t)
                 with (compile_sort x0 t).
               {
-                unfold syntactic_parameterization_conditions' in *.
-                basic_utils_crush.
-                case_match; basic_utils_crush.
-                use_rule_in_wf.
-                autorewrite with lang_core model term utils in H8.
-                break.
-                inversion H21; subst.
-                (*TODO: names off by 1*)
-                unfold specs_compatibleb in Hincl_src.
-                autorewrite with lang_core model term utils in Hincl_src.
-                eapply sort_case_in_cmp in H22; eauto.
-                break.
-                eapply in_all in Hincl_src; eauto.
-                cbn in *.
-                eapply all_fresh_named_list_lookup_err_in in H22;
-                  eauto.
-                rewrite <- H22.
-                destruct x2; cbn.
-                revert Hincl_src; case_match;
-                  basic_goal_prep.
-                2:{
-                  basic_utils_crush.
-                }  
-                enough (fresh n0 src_spec).
-                {
-                  symmetry in case_match_eqn0.
-                  eapply all_fresh_named_list_lookup_err_in in case_match_eqn0; eauto.
-                  eapply pair_fst_in in case_match_eqn0.
-                  unfold fresh in *; eauto.
-                }
-                
-                assert (dependency x n n0) as Hdep.
-                {
-                  eapply dep_direct.
-                  unfold direct_dependency.
-                  eapply all_fresh_named_list_lookup_err_in in H11; eauto.
-                  2: basic_core_crush.
-                  rewrite <- H11.
-                  cbn.
-                  clear.
-                  basic_utils_crush.
-                }
-                unfold pl_is_ordered in H_ordered_src.
-                eapply in_all in H_ordered_src; eauto.
-                cbn in *.
-                eapply H_ordered_src in Hdep.
-                eapply Hdep.
-                symmetry in case_match_eqn.
-                eapply named_list_lookup_none_iff in case_match_eqn; eauto.
+              _pcp_fresh_sort_name x n (term_eq_rule c e1 e2 t).
               }
               {
-                _pcp_strengthen_incl.
+                _pcp_strengthen_incl IHpreserving_compiler_ext H_respectsb.
               }
             }
           }
         {
-          basic_core_crush.
+          _pcp_cheap.
         }
     }
     Unshelve.

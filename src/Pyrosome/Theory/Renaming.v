@@ -30,6 +30,66 @@ Definition Injective {A B : Type} (f : A -> B) := forall a a', f a = f a' -> a =
 Definition Injective_on {A B : Type} (S : A -> Prop) (f : A -> B) :=
   forall a a', S a -> S a' -> f a = f a' -> a = a'.
 
+(* ---- file-local speedup tactics ----
+   `autorewrite ... in *` spends most of its time attempting rewrites inside
+   the large function-typed (induction-hypothesis) hypotheses, which are never
+   usefully rewritten.  These variants rewrite in the goal and in the
+   non-arrow hypotheses only.  Also, the shared `generic_crush` is a `repeat`,
+   so it always pays one extra no-progress round; the `*_crush1` variants do a
+   single round. *)
+Ltac ar_core_flat :=
+  autorewrite with bool rw_prop inversion utils term lang_core model;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term lang_core model in H
+             end
+         end.
+Ltac ar_term_flat :=
+  autorewrite with bool rw_prop inversion utils term;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term in H
+             end
+         end.
+Ltac ar_utils_flat :=
+  autorewrite with bool rw_prop inversion utils;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils in H
+             end
+         end.
+
+Ltac ar_narrow :=
+  autorewrite with utils term;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with utils term in H
+             end
+         end.
+Ltac core_crush1_narrow :=
+  intuition break; subst; ar_narrow;
+  intuition unshelve (eauto 4 with utils term lang_core model).
+Ltac core_crush1 :=
+  intuition break; subst; ar_core_flat;
+  intuition unshelve (eauto 7 with utils term lang_core model).
+Ltac core_crush1_lo :=
+  intuition break; subst; ar_core_flat;
+  intuition unshelve (eauto 4 with utils term lang_core model).
+Ltac term_crush1 :=
+  intuition break; subst; ar_term_flat;
+  intuition unshelve (eauto with utils term).
+Ltac utils_crush1 :=
+  intuition break; subst; ar_utils_flat;
+  intuition unshelve (eauto with utils).
+
 Section Injective.
   Context (A B : Type)
     {Eqb_A : Eqb A}
@@ -95,9 +155,9 @@ Section Injective.
   Lemma rename_distr_subst e s
     : rename e[/s/] = (rename e) [/rename_subst s/].
   Proof.
-    induction e; basic_goal_prep; basic_term_crush.
+    induction e; basic_goal_prep; term_crush1.
     revert H.
-    induction l; basic_goal_prep; basic_term_crush.
+    induction l; basic_goal_prep; term_crush1.
   Qed.
   
   #[local] Hint Rewrite rename_distr_subst : term.
@@ -165,47 +225,36 @@ Section Injective.
           H : In _ l |- _ => 
             eapply in_map in H
         end.
-    {
-      eapply eq_sort_by.
-      exact H.
-    }
-    all: basic_core_crush.
-    {
-      eapply eq_sort_trans; eauto.
-    }
-    {
-      eapply eq_sort_sym; eauto.
-    }
-    {
-      eapply eq_term_by.
-      exact H.
-    }
-    {
-      eapply eq_term_trans; eauto.
-    }
-    {
-      eapply eq_term_sym; eauto.
-    }
-    {
-      eapply wf_sort_by; eauto.
-      exact H.
-    }
-    {
-      eapply wf_term_by; eauto.
-      exact H.
-    }
-    {
-      eapply wf_term_var; eauto.
-      eapply in_map in H.
-      exact H.
-    }
-    {
-      intro.
-      apply H.
-      eapply injective_in.
-      unfold rename_ctx in *.
-      rewrite !map_map in *; simpl in *; auto.
-    }
+    (* The `In` premises are in the context already: pass them explicitly
+       instead of letting `eauto` search for them, and name the
+       transitivity/symmetry lemmas rather than searching for them.  This
+       avoids running the (expensive, depth-7) `intuition unshelve eauto`
+       of a full crush on most of the 22 cases. *)
+    all: try (solve [eapply eq_sort_by; exact H]).
+    all: try (solve [eapply eq_term_by; exact H]).
+    all: try (solve [eapply wf_sort_by;
+                     [exact H | eauto 3 with utils term lang_core model]]).
+    all: try (solve [eapply wf_term_by;
+                     [exact H | eauto 3 with utils term lang_core model]]).
+    all: try (solve [eapply wf_term_var; eapply in_map in H; exact H]).
+    all: try (solve [eapply eq_sort_trans; eauto 2]).
+    all: try (solve [eapply eq_sort_sym; eauto 2]).
+    all: try (solve [eapply eq_term_trans; eauto 2]).
+    all: try (solve [eapply eq_term_sym; eauto 2]).
+    all: try (solve [constructor; eauto 3 with utils term lang_core model]).
+    all: try (solve [eauto 4 with utils term lang_core model]).
+    (* remaining cases: rewrite with the distributivity lemmas first, then
+       apply the constructor directly (no `intuition`/depth-7 search) *)
+    all: core_crush1_narrow.
+    all: try (solve [eapply wf_term_by;
+                     [exact H | eauto 3 with utils term lang_core model]]).
+    (* wf_ctx_cons: fresh / wf_ctx / wf_sort; only the freshness side
+       condition needs injectivity of f *)
+    all: constructor.
+    all: try (solve [eauto 2 with utils term lang_core model]).
+    all: intro; apply H; eapply injective_in;
+         unfold rename_ctx in *;
+         rewrite !map_map in *; simpl in *; auto.
   Qed.
 
   (*TODO: move to Lists.v*)  
@@ -225,7 +274,7 @@ Section Injective.
       induction l2;
       destruct l1;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     change ((g c :: map g l1)) with (map g (c::l1)).
     eauto.
   Qed.
@@ -237,8 +286,13 @@ Section Injective.
   Proof.
     destruct r;
       basic_goal_prep;
-      basic_core_crush.
-    all: try eapply rename_mono; auto.
+      safe_invert H;
+      constructor.
+    all: destruct (rename_mono l)
+      as (Hmes & Hmet & Hmss & Hmws & Hmwt & Hmwa & Hmwc).
+    all: try (solve [apply Hmwc; assumption]).
+    all: try (solve [apply Hmws; assumption]).
+    all: try (solve [apply Hmwt; assumption]).
     all: unfold rename_ctx;
       rewrite !map_map;
       simpl.
@@ -249,18 +303,19 @@ Section Injective.
   Lemma rename_lang_mono l
     : wf_lang l -> wf_lang (rename_lang l).
   Proof.
-    induction l; basic_goal_prep;
-      basic_core_crush.
-    2: eauto using rename_rule_mono.
-    clear H1.
-    unfold rename_lang.
+    induction l; basic_goal_prep.
+    1: solve [unfold rename_lang; simpl; constructor].
+    inversion H as [| l' n' r' Hfresh Hwfl Hwfr]; subst; clear H.
+    rewrite app_nil_r in Hfresh, Hwfr.
+    constructor.
+    3:{ rewrite app_nil_r. apply rename_rule_mono. exact Hwfr. }
+    2:{ apply IHl. exact Hwfl. }
+    rewrite app_nil_r.
     unfold fresh in *.
-    intro H'; apply H0.
-    basic_utils_crush.
-    rewrite in_map_iff in H'; break.
-    simpl in *.
-    apply f_inj in H1; subst.
-    eapply pair_fst_in; eauto.
+    unfold rename_lang; rewrite map_map; simpl.
+    rewrite <- map_map with (f := fst) (g := f).
+    intro Hin; apply Hfresh.
+    eapply injective_in; eassumption.
   Qed.
 
   Lemma rename_lang_mono_ext l_pre l

@@ -9,6 +9,28 @@ From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
 
+(* ---- file-local speedup tactics ----
+   `autorewrite ... in *` spends most of its time attempting rewrites inside
+   large function-typed (induction-hypothesis) hypotheses, which are never
+   usefully rewritten; these variants rewrite in the goal and the non-arrow
+   hypotheses only.  Also, the shared `generic_crush` is a `repeat`, so it
+   always pays one extra no-progress round; `core_crush1` does one round. *)
+Ltac ar_core_flat :=
+  autorewrite with bool rw_prop inversion utils term lang_core model;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term lang_core model in H
+             end
+         end.
+Ltac core_crush1 :=
+  intuition break; subst; ar_core_flat;
+  intuition unshelve (eauto 7 with utils term lang_core model).
+Ltac core_crush1_lo :=
+  intuition break; subst; ar_core_flat;
+  intuition unshelve (eauto 4 with utils term lang_core model).
+
 
 Section WithVar.
   Context (V : Type)
@@ -118,7 +140,12 @@ Section TermsAndRules.
             elab_ctx c ec ->
             wf_ctx l ec).
  Proof using.
-   apply elab_ind; basic_goal_prep; basic_core_crush.
+   apply elab_ind; basic_goal_prep.
+   (* cheap structural pass first: most cases are just the corresponding
+      well-formedness constructor applied to the IHs *)
+   all: try (solve [constructor; eauto 3 with utils term lang_core model]).
+   all: try (solve [eauto 3 with utils term lang_core model]).
+   all: core_crush1.
  Qed.
 
  Definition elab_sort_implies_wf := proj1 elab_implies_wf.
@@ -160,7 +187,9 @@ Section TermsAndRules.
    : elab_rule r er ->
      wf_rule l er.
  Proof using.
-   destruct 1; basic_goal_prep; basic_core_crush.
+   destruct 1; basic_goal_prep.
+   all: try (solve [constructor; eauto 3 with utils term lang_core model]).
+   all: core_crush1.
  Qed.
 
 (* TODO: do I need this?
@@ -192,7 +221,7 @@ Section Extension.
       fresh n l ->
       fresh n el.
   Proof.
-    induction 1; basic_goal_prep; basic_core_crush.
+    induction 1; basic_goal_prep; core_crush1.
   Qed.
   Local Hint Resolve elab_lang_preserves_fresh : lang_core.
   
@@ -202,7 +231,9 @@ Section Extension.
     : elab_lang_ext l el ->
       wf_lang_ext l_pre el.
   Proof using.
-    induction 1; basic_goal_prep; basic_core_crush.
+    induction 1; basic_goal_prep.
+    all: try (solve [constructor; eauto 3 with utils term lang_core model]).
+    all: core_crush1.
   Qed.
   Hint Resolve elab_lang_implies_wf : lang_core.
   
@@ -217,18 +248,28 @@ Section Extension.
       elab_lang_ext (nth_tail n l) (nth_tail n el).
   Proof.
     revert el n el'.
-    induction l; destruct el; basic_goal_prep; basic_core_crush.
+    induction l; destruct el; basic_goal_prep.
+    (* the three degenerate cases are contradictions; discharge them by hand
+       rather than with a full crush *)
+    1,2: solve [destruct n; simpl in H; congruence].
+    1: solve [rewrite nth_tail_nil in H0; congruence].
     {
       destruct n.
       {
         rewrite <-!as_nth_tail in *.
-        basic_goal_prep;
-          basic_core_crush.
-        constructor; basic_core_crush.
+        clear IHl.
+        basic_goal_prep.
+        (* just invert the two equations instead of running a full
+           `autorewrite ... in *` over every hint base *)
+        safe_invert H.
+        safe_invert H0.
+        constructor.
+        all: try eassumption.
+        all: core_crush1.
       }
       {
         rewrite !nth_tail_S_cons in *.
-        eapply IHl; basic_core_crush.
+        eapply IHl; core_crush1.
       }
     }
   Qed.
@@ -267,15 +308,17 @@ Local Lemma elab_lang_mono l' l
            elab_ctx l' c ec).
 Proof using.
   intros.
-  apply elab_ind; basic_goal_prep; basic_core_crush.
+  apply elab_ind; basic_goal_prep.
+  all: try (solve [constructor; eauto 3 with utils term lang_core model]).
+  all: try (solve [eauto 3 with utils term lang_core model]).
+  (* the two remaining cases (conv / implicit arg) need the lang-monotonicity
+     lemmas, which are not in the hint db: name them directly *)
   {
-    eapply elab_term_conv; basic_core_crush.
-    (*TODO: add to db?*)
+    eapply elab_term_conv; [ eassumption |].
     eauto using eq_sort_lang_monotonicity.
   }
   {
-    constructor; basic_core_crush.
-    (*TODO: add to db?*)
+    constructor; [ eassumption |].
     eauto using wf_term_lang_monotonicity.
   }
 Qed.

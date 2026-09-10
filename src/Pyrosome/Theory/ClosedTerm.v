@@ -16,6 +16,25 @@ From Pyrosome.Theory Require Term.
 From Pyrosome Require Import Tools.AllConstructors.
 Import SumboolNotations.
 
+(* ---- file-local speedup tactics ----
+   `autorewrite ... in *` spends most of its time attempting rewrites inside
+   function-typed (induction-hypothesis) hypotheses, which are never usefully
+   rewritten, so this variant rewrites in the goal and the non-arrow
+   hypotheses only.  And the shared `generic_crush` is a `repeat`, so it
+   always pays one extra no-progress round; `term_crush1` does one round. *)
+Ltac ar_term_flat :=
+  autorewrite with bool rw_prop inversion utils term;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term in H
+             end
+         end.
+Ltac term_crush1 :=
+  intuition break; subst; ar_term_flat;
+  intuition unshelve (eauto with bool utils term).
+
 Section WithVar.
   Context (V : Type).
 
@@ -91,11 +110,11 @@ Section WithEqb.
 Proof.
   induction e;
     basic_goal_prep;
-    Term.basic_term_crush.
+    term_crush1.
   revert H;
     induction l;
     basic_goal_prep;
-    Term.basic_term_crush.
+    term_crush1.
 Qed.
 
 (*TODO: there is definitely an easier way to prove this
@@ -108,26 +127,27 @@ Proof.
   induction a;
     destruct b;
     basic_goal_prep;
-    Term.basic_term_crush.
+    term_crush1.
   destruct (eqb n v) eqn:Hn;
     basic_goal_prep;
-    Term.basic_term_crush.
+    term_crush1.
   revert l0 H; induction l;
     destruct l0;
     basic_goal_prep;
-    Term.basic_term_crush.
+    term_crush1.
   destruct (term_eqb a t) eqn:Ha;
     basic_goal_prep;
-    Term.basic_term_crush.
-  2: solve [eauto using term_eqb_refl].
+    term_crush1.
+  all: subst.
+  all: try (solve [exfalso; apply Ha; apply term_eqb_refl]).
   specialize (IHl l0).
   case_match;
     basic_goal_prep;
-    Term.basic_term_crush.
+    term_crush1.
   specialize (H0 t).
   revert H0; case_match;
     basic_goal_prep;
-    Term.basic_term_crush.
+    term_crush1.
 Qed.
 
 
@@ -161,23 +181,23 @@ Section WithArgs.
   Proof.
     induction e;
       basic_goal_prep;
-      Term.basic_term_crush.
+      term_crush1.
     all: case_match;
-      Term.basic_term_crush.
+      term_crush1.
     f_equal.
     generalize dependent l.
     induction l;
       basic_goal_prep;
-      Term.basic_term_crush.
+      term_crush1.
     {
       (*TODO: make incl_app_inv a rewrite rule*)
       apply incl_app_inv in H1.
-      Term.basic_term_crush.
+      term_crush1.
     }
     {
       (*TODO: make incl_app_inv a rewrite rule*)
       apply incl_app_inv in H1.
-      Term.basic_term_crush.
+      term_crush1.
     }
   Qed.
 

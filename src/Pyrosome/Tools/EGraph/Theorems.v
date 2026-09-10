@@ -347,12 +347,12 @@ Section WithVar.
       revert args2;
         induction args;
         destruct args2;
-        basic_goal_prep;
-        basic_utils_crush.
+        cbn [map all2]; intros; try tauto.
       { exists []; eauto. }
       {
-        eapply IHargs in H1; break; subst.
-        safe_invert H0.
+        break.
+        eapply IHargs in H0; break; subst.
+        safe_invert H.
         exists (e2::x); eauto.
       }
     Qed.
@@ -364,12 +364,12 @@ Section WithVar.
       revert args2;
         induction args;
         destruct args2;
-        basic_goal_prep;
-        basic_utils_crush.
+        cbn [map all2]; intros; try tauto.
       { exists []; eauto. }
       {
-        eapply IHargs in H1; break; subst.
-        safe_invert H0.
+        break.
+        eapply IHargs in H0; break; subst.
+        safe_invert H.
         exists (e1::x); eauto.
       }
     Qed.
@@ -444,8 +444,21 @@ Section WithVar.
       end.
 
 
+    (* Targeted replacement for [use_rule_in_wf; basic_core_crush] when the
+       remaining goal is the rule context's well-formedness. *)
+    Ltac wf_ctx_from_rule :=
+      use_rule_in_wf;
+      lazymatch goal with
+      | H : wf_rule _ (sort_rule _ _) |- _ => safe_invert H
+      | H : wf_rule _ (term_rule _ _ _) |- _ => safe_invert H
+      end;
+      rewrite ?List.app_nil_r in *;
+      eassumption.
+
     Instance lang_model_ok : model_ok _ lang_model.
-    Proof.
+    (* Pin the discharged section variables to the original proof's set so the
+       constant's arity is unchanged for callers using @lang_model_ok. *)
+    Proof using V V_Eqb V_Eqb_ok sort_of l sort_of_fresh wfl.
       unfold lang_model.
       constructor; cbn in *.
       { apply lang_model_eq_PER. }
@@ -497,8 +510,7 @@ Section WithVar.
           eapply in_all_fresh_same in H4; try apply H5; eauto with lang_core.
           safe_invert H4.
           apply all2_model_eq_eq_args; eauto.
-          use_rule_in_wf.
-          basic_core_crush.          
+          wf_ctx_from_rule.
         }
         {
           exfalso.
@@ -593,7 +605,7 @@ Section WithVar.
           eapply eq_sort_sym.
           eapply sort_con_congruence; eauto.
           eapply all2_model_eq_eq_args; eauto.
-          use_rule_in_wf; basic_core_crush.
+          wf_ctx_from_rule.
         }
         {
           pose proof H0.
@@ -629,7 +641,7 @@ Section WithVar.
                    end.
             lang_model_simp.
             eapply all2_model_eq_eq_args; eauto.
-            use_rule_in_wf; basic_core_crush.
+            wf_ctx_from_rule.
           }          
         }
       }
@@ -652,10 +664,15 @@ Section WithVar.
         }
       }
       {
-        destruct 1; econstructor; basic_core_crush.
-        eapply eq_sort_refl.
-        eapply eq_term_wf_sort; eauto with lang_core.
-        eapply eq_term_refl; eauto.
+        destruct 1 as [e t H | f args t H | f args e t H].
+        {
+          apply lm_eq_sorts.
+          (* term_sorts_eq rather than eq_term_wf_sort: the latter would pull
+             V_default into the discharged section variables. *)
+          exact (term_sorts_eq wfl ltac:(constructor) H H).
+        }
+        { apply lm_eq_sorts; eapply eq_sort_trans; [eapply eq_sort_sym; exact H | exact H]. }
+        { eapply lm_eq_terms; eapply eq_term_trans; [eapply eq_term_sym; exact H | exact H]. }
       }
     Qed.
 
@@ -800,13 +817,14 @@ Section WithVar.
     Lemma wf_args_from_wf_subst c s c'
       : wf_subst l c s c' -> wf_args l c (map snd s) c'.
     Proof.
-      induction 1;
-        basic_goal_prep;
-        basic_core_crush.
-      rewrite <- combine_map_fst_is_with_names_from.
-      erewrite <- wf_subst_dom_eq; eauto.
-      unfold fresh.
-      basic_utils_crush.
+      induction 1.
+      { constructor. }
+      { cbn [map snd].
+        constructor; [|exact IHwf_subst].
+        rewrite <- combine_map_fst_is_with_names_from.
+        erewrite <- wf_subst_dom_eq by eassumption.
+        rewrite combine_map_fst_snd.
+        assumption. }
     Qed.
     Hint Resolve wf_args_from_wf_subst : lang_core.
 
@@ -827,8 +845,10 @@ Section WithVar.
         forall n s, e = con n s ->
         exists c' args t', In (n, term_rule c' args t') l.
     Proof.
-      induction 1; basic_goal_prep;
-        basic_core_crush.
+      induction 1; intros n' s' Heq.
+      { safe_invert Heq; eauto. }
+      { eauto. }
+      { discriminate Heq. }
     Qed.
     
     Lemma wf_scon_rule_in c t
@@ -836,8 +856,8 @@ Section WithVar.
         forall n s, t = scon n s ->
         exists c' args, In (n, sort_rule c' args) l.
     Proof.
-      induction 1; basic_goal_prep;
-        basic_core_crush.
+      induction 1; intros n' s' Heq.
+      safe_invert Heq; eauto.
     Qed.
     
     (*
@@ -895,9 +915,10 @@ Section WithVar.
                             /\ wf_args l c args c'.
     Proof using.
       clear succ lt_succ V_default lt lt_asymmetric lt_trans.
-      induction 1;
-        basic_goal_prep;
-        basic_core_crush.
+      induction 1; intros f' args'' Heq.
+      { safe_invert Heq; do 3 eexists; split; eassumption. }
+      { eauto. }
+      { discriminate Heq. }
     Qed.
     
     Lemma wf_term_con_inv c f args t
@@ -1416,7 +1437,7 @@ Section WithVar.
         pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
         assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad Mret].
         eapply vc_bind.
@@ -1649,7 +1670,7 @@ Section WithVar.
         exists i. split; [apply extending_sound_refl; auto|].
         (* result id is named_list_lookup default r n; extract interpretation
              via args_in_instance_in *)
-          assert (Hafc : all_fresh c) by basic_core_crush.
+          assert (Hafc : all_fresh c) by (eapply wf_ctx_all_fresh; eassumption).
           assert (Hafr : all_fresh r).
           { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
           assert (Hlen_cs : length c = length s) by (eapply wf_args_length_eq; eauto).
@@ -1768,7 +1789,7 @@ Section WithVar.
         apply Hincl in Hrule.
         assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad].
         unfold Mret. cbn [StateMonad.state_monad fst snd].
@@ -2717,7 +2738,7 @@ Section WithVar.
               | exact Hcong ]. }
           (* establish t'[/with_names_from c' s/] is well-scoped sort *)
           assert (ws_sort (map fst c') t') as Hwst'.
-          { eapply wf_sort_implies_ws; eauto with lang_core.
+          { apply (wf_sort_implies_ws (wf_lang_implies_ws_noext Hwf)).
             eapply term_rule_in_sort_wf; eauto. }
           (* fix the sort to t[/sg/] *)
           eapply eq_term_conv; [exact Hchain|].
@@ -3009,7 +3030,7 @@ Section WithVar.
                 eapply eq_term_conv; [ exact Heqe | exact Hsorteq ]
               | exact Hcong ]. }
           assert (ws_sort (map fst c') t') as Hwst'.
-          { eapply wf_sort_implies_ws; eauto with lang_core.
+          { apply (wf_sort_implies_ws (wf_lang_implies_ws_noext Hwf)).
             eapply term_rule_in_sort_wf; eauto. }
           assert (wf_sort l [] (t'[/with_names_from c' s[/sg/]/])) as Hwss.
           { eapply (eq_term_wf_sort (l:=l) (c:=[]) Hwf ltac:(constructor) Hcong). }
@@ -3480,7 +3501,7 @@ Section WithVar.
                 eapply eq_term_conv; [ exact Heqe | exact Hsorteq ]
               | exact Hcong ]. }
           assert (ws_sort (map fst c') t') as Hwst'.
-          { eapply wf_sort_implies_ws; eauto with lang_core.
+          { apply (wf_sort_implies_ws (wf_lang_implies_ws_noext Hwf)).
             eapply term_rule_in_sort_wf; eauto. }
           exists e_out.
           split; [solve [reflexivity | exact Hgxe]|].
@@ -4229,7 +4250,7 @@ Section WithVar.
         pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
         assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad Mret].
         eapply vc_bind.
@@ -4273,7 +4294,7 @@ Section WithVar.
         unfold open_roots_post.
         intros Huf Hdbr Hsub.
         split; [apply roots_env_refl; auto|].
-        assert (Hafc : all_fresh c) by basic_core_crush.
+        assert (Hafc : all_fresh c) by (eapply wf_ctx_all_fresh; eassumption).
         assert (Hafr : all_fresh r).
         { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
         assert (Hex_x : exists x_n, In (n, x_n) r).
@@ -4358,7 +4379,7 @@ Section WithVar.
         apply Hincl in Hrule.
         assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad].
         unfold Mret. cbn [StateMonad.state_monad fst snd].
@@ -4503,7 +4524,7 @@ Section WithVar.
         pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
         assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad Mret].
         eapply vc_bind.
@@ -4539,7 +4560,7 @@ Section WithVar.
         unfold open_egraph_post.
         intros Hok Hsub.
         split; [exact Hok|]. split; [auto|].
-        assert (Hafc : all_fresh c) by basic_core_crush.
+        assert (Hafc : all_fresh c) by (eapply wf_ctx_all_fresh; eassumption).
         assert (Hafr : all_fresh r).
         { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
         assert (Hex_x : exists x_n, In (n, x_n) r).
@@ -4620,7 +4641,7 @@ Section WithVar.
         apply Hincl in Hrule.
         assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad].
         unfold Mret. cbn [StateMonad.state_monad fst snd].
@@ -4735,7 +4756,7 @@ Section WithVar.
         pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
         assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad Mret].
         eapply vc_bind.
@@ -4929,7 +4950,7 @@ Section WithVar.
         apply Hincl in Hrule.
         assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad].
         unfold Mret. cbn [StateMonad.state_monad fst snd].
@@ -5231,7 +5252,7 @@ Section WithVar.
         pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
         assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad Mret].
         eapply vc_bind.
@@ -5279,7 +5300,7 @@ Section WithVar.
         split; [exact Hok|].
         split; [exact Hcov|].
         split; [auto|].
-        assert (Hafc : all_fresh c) by basic_core_crush.
+        assert (Hafc : all_fresh c) by (eapply wf_ctx_all_fresh; eassumption).
         assert (Hafr : all_fresh r).
         { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
         assert (Hex_x : exists x_n, In (n, x_n) r).
@@ -5362,7 +5383,7 @@ Section WithVar.
         apply Hincl in Hrule.
         assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad].
         unfold Mret. cbn [StateMonad.state_monad fst snd].
@@ -5474,7 +5495,7 @@ Section WithVar.
         pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
         assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad Mret].
         eapply vc_bind.
@@ -5523,7 +5544,7 @@ Section WithVar.
         split; [exact Hok|].
         split; [exact Hpke|].
         split; [auto|].
-        assert (Hafc : all_fresh c) by basic_core_crush.
+        assert (Hafc : all_fresh c) by (eapply wf_ctx_all_fresh; eassumption).
         assert (Hafr : all_fresh r).
         { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
         assert (Hex_x : exists x_n, In (n, x_n) r).
@@ -5604,7 +5625,7 @@ Section WithVar.
         apply Hincl in Hrule.
         assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad].
         unfold Mret. cbn [StateMonad.state_monad fst snd].
@@ -6420,7 +6441,7 @@ Section WithVar.
         pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
         assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad Mret].
         eapply vc_bind.
@@ -6496,7 +6517,7 @@ Section WithVar.
         unfold open_atomtree_post.
         intros Huf Hdbr Hsub.
         split; [apply roots_env_refl; auto|].
-        assert (Hafc : all_fresh c) by basic_core_crush.
+        assert (Hafc : all_fresh c) by (eapply wf_ctx_all_fresh; eassumption).
         assert (Hafr : all_fresh r).
         { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
         assert (Hex_x : exists x_n, In (n, x_n) r).
@@ -6631,7 +6652,7 @@ Section WithVar.
         pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
         assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad Mret].
         eapply vc_bind.
@@ -6727,7 +6748,7 @@ Section WithVar.
         unfold open_newatom_post.
         intros Huf Hdbr Hsub.
         split; [apply roots_env_refl; auto|].
-        assert (Hafc : all_fresh c) by basic_core_crush.
+        assert (Hafc : all_fresh c) by (eapply wf_ctx_all_fresh; eassumption).
         assert (Hafr : all_fresh r).
         { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
         assert (Hex_x : exists x_n, In (n, x_n) r).
@@ -6856,7 +6877,7 @@ Section WithVar.
         apply Hincl in Hrule.
         assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad].
         unfold Mret. cbn [StateMonad.state_monad fst snd].
@@ -6979,7 +7000,7 @@ Section WithVar.
         apply Hincl in Hrule.
         assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
-          basic_core_crush. }
+          eapply wf_lang_ext_all_fresh; exact Hwf. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad].
         unfold Mret. cbn [StateMonad.state_monad fst snd].

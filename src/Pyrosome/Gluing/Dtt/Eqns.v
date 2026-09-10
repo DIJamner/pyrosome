@@ -85,7 +85,7 @@ Proof.
   pose proof (rule_in_wf (l_pre := []) _ _ ott_dtt_wf
                 (named_list_lookup_err_in _ _ (eq_sym Hlook))) as Hr.
   rewrite app_nil_r in Hr.
-  destruct r; cbn in *; inversion Hr; subst; assumption.
+  clear Hlook; destruct r; cbn [Rule.get_ctx]; inversion Hr; subst; assumption.
 Qed.
 
 Ltac wf_subst_solve :=
@@ -102,7 +102,17 @@ Ltac wf_subst_solve :=
 Ltac estep nm :=
   eredex_steps_with ott_dtt nm;
   first [ solve [ wf_subst_solve ]
-        | exact (ott_dtt_rule_ctx_wf nm eq_refl) ].
+        | (* giving the rule explicitly (and proving the lookup equation by
+             [vm_compute]) keeps the unifier and the kernel from reducing the
+             70-rule lookup with the default conversion machinery *)
+          let v := eval vm_compute in (named_list_lookup_err ott_dtt nm) in
+          lazymatch v with
+          | Some ?r =>
+              let H := fresh "Hlook" in
+              assert (named_list_lookup_err ott_dtt nm = Some r) as H
+                  by (vm_compute; reflexivity);
+              exact (ott_dtt_rule_ctx_wf nm H)
+          end ].
 
 (* Instantiating a term rule's congruence. *)
 Lemma ott_dtt_cong_inst (name : string) c' args t' (s1 s2 : list term)
@@ -129,8 +139,13 @@ Ltac eq_args_solve :=
    into the hole, so the reduction actually fires instead of getting stuck
    on an uninstantiated evar. *)
 Ltac cong_step nm s1 s2 :=
-  refine (ott_dtt_cong_inst (named_list_lookup_err_in ott_dtt nm eq_refl)
-            (s1 := s1) (s2 := s2) _);
+  let v := eval vm_compute in (named_list_lookup_err ott_dtt nm) in
+  lazymatch v with
+  | Some ?r =>
+      refine (ott_dtt_cong_inst
+                (named_list_lookup_err_in ott_dtt nm (t := r) eq_refl)
+                (s1 := s1) (s2 := s2) _)
+  end;
   eq_args_solve.
 
 (* Instantiating a SORT rule's congruence -- the same thing one level up.
@@ -147,8 +162,13 @@ Proof.
 Qed.
 
 Ltac scong_step nm s1 s2 :=
-  refine (ott_dtt_sort_cong_inst (named_list_lookup_err_in ott_dtt nm eq_refl)
-            (s1 := s1) (s2 := s2) _);
+  let v := eval vm_compute in (named_list_lookup_err ott_dtt nm) in
+  lazymatch v with
+  | Some ?r =>
+      refine (ott_dtt_sort_cong_inst
+                (named_list_lookup_err_in ott_dtt nm (t := r) eq_refl)
+                (s1 := s1) (s2 := s2) _)
+  end;
   eq_args_solve.
 
 Lemma sSub_cong G1 G2 G1' G2'

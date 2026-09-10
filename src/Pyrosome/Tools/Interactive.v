@@ -28,9 +28,12 @@ Proof.
   rewrite fresh_nil in *.
   intuition auto.
   induction H3; basic_goal_prep; eauto with lang_core.
+  (* [basic_core_crush] here costs ~5.5s, almost all of it in the [eauto]
+     leaf of [intuition].  The three subgoals are each a hypothesis modulo
+     reassociating [(l ++ [(v,r)]) ++ l_pre = l ++ (v,r)::l_pre]. *)
   constructor;
-    basic_core_crush.
-  rewrite <- app_assoc; cbn; eauto.
+    [ rewrite <- app_assoc; cbn [app] | idtac | rewrite <- app_assoc; cbn [app] ];
+    assumption.
 Qed.
 
 

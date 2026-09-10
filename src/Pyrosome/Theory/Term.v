@@ -54,6 +54,25 @@ Ltac basic_term_firstorder_crush :=
           let y := eauto with utils term in
                   generic_firstorder_crush x y.
 
+(* ---- file-local speedup tactics (new names; nothing outside this file uses
+   them).  `autorewrite ... in *` spends most of its time attempting rewrites
+   inside function-typed (induction-hypothesis) hypotheses, which are never
+   usefully rewritten, so these variants rewrite in the goal and the
+   non-arrow hypotheses only.  And `generic_crush` is a `repeat`, so it always
+   pays one extra no-progress round; `term_crush1` does a single round. *)
+Ltac ar_term_flat :=
+  autorewrite with bool rw_prop inversion utils term;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term in H
+             end
+         end.
+Ltac term_crush1 :=
+  intuition break; subst; ar_term_flat;
+  intuition unshelve (eauto with bool utils term).
+
 Section WithVar.
   Context (V : Type).
 
@@ -179,11 +198,11 @@ Section WithEqb.
 Proof.
   induction e;
     basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
   revert H;
     induction l;
     basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
 Qed.
 
 (*TODO: there is definitely an easier way to prove this
@@ -196,31 +215,32 @@ Proof.
   induction a;
     destruct b;
     basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
   {
     case_match;
-      basic_term_crush.
+      term_crush1.
   }
   {
     destruct (eqb n v) eqn:Hn;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     revert l0 H; induction l;
       destruct l0;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     destruct (term_eqb a t) eqn:Ha;
       basic_goal_prep;
-      basic_term_crush.
-    2: solve [eauto using term_eqb_refl].
+      term_crush1.
+    all: subst.
+    all: try (solve [exfalso; apply Ha; apply term_eqb_refl]).
     specialize (IHl l0).
     case_match;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     specialize (H0 t).
     revert H0; case_match;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
   }
 Qed.
 
@@ -234,9 +254,9 @@ Proof.
     simpl.
   destruct (eqb v v0) eqn:Hv;
     simpl;
-    basic_term_crush.
+    term_crush1.
   case_match; basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
 Qed.
   
 Fixpoint term_var_map (f : V -> term) (e : term) : term :=
@@ -345,7 +365,7 @@ Hint Rewrite term_subst_nil : term.
 
 Lemma named_map_subst_nil s : named_map (term_subst []) s = s.
 Proof.
-  induction s; basic_goal_prep;basic_term_crush.
+  induction s; basic_goal_prep;term_crush1.
 Qed.
 Hint Rewrite named_map_subst_nil : term.
 
@@ -354,8 +374,8 @@ Lemma subst_lookup_map s1 s2 n
           term_subst s1 (subst_lookup s2 n) = subst_lookup (named_map (term_subst s1) s2) n.
 Proof.
   induction s2; basic_goal_prep;
-  basic_term_crush.
-  case_match; basic_term_crush.
+  term_crush1.
+  case_match; term_crush1.
 Qed.
 Hint Rewrite subst_lookup_map : term.
   
@@ -365,11 +385,11 @@ Lemma term_subst_assoc : forall s1 s2 a,
     = term_subst (subst_cmp s1 s2) a.
 Proof.
   induction a; basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
   generalize dependent l;
     induction l;
     basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
 Qed.
 Hint Rewrite term_subst_assoc : term.
 
@@ -377,11 +397,11 @@ Lemma subst_lookup_id A (c : named_list A) n
   : subst_lookup (id_subst c) n = var n.
 Proof.
   induction c; basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
   (*TODO: get rid of need for symmetry*)
   case_match; symmetry in case_match_eqn;
     basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
 Qed.
 Hint Rewrite subst_lookup_id : term.
 
@@ -390,12 +410,12 @@ Lemma term_subst_id
     term_subst (id_subst c) a = a.
 Proof.
   induction a; basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
   f_equal.
   generalize dependent l;
     induction l;
     basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
 Qed.
 Hint Rewrite term_subst_id : term.
 
@@ -405,11 +425,13 @@ Lemma term_strengthen_subst s a n e
     term_subst ((n,e)::s) a = term_subst s a.
 Proof.
   induction a; basic_goal_prep; try case_match;
-    basic_term_crush.
-
+    term_crush1.
+  (* the var case is a contradiction between `In n0 (map fst s)` and
+     `fresh n s`; discharge it directly *)
+  all: try (solve [subst; exfalso; apply H0; exact H]).
   generalize dependent l.
   induction l; basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
 Qed.
 
 
@@ -419,7 +441,7 @@ Lemma ws_term_subst_lookup args s n
     ws_term args (subst_lookup s n).
 Proof.
   induction s; basic_goal_prep; try case_match;
-    basic_term_crush.
+    term_crush1.
 Qed.
 Hint Resolve ws_term_subst_lookup : term.
   
@@ -429,11 +451,11 @@ Lemma term_well_scoped_subst args s a
       ws_term args (term_subst s a).
 Proof.
   induction a; basic_goal_prep; try case_match;
-    basic_term_crush.
+    term_crush1.
 
   generalize dependent l.
   induction l; basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
 Qed.
   Local Hint Resolve term_well_scoped_subst : term.
 
@@ -479,7 +501,7 @@ Lemma sort_subst_assoc : forall s1 s2 a,
     = sort_subst (subst_cmp s1 s2) a.
 Proof.
   destruct a; basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
   (* TODO: the automation should get this *)
   erewrite subst_assoc; eauto.
   typeclasses eauto.
@@ -491,7 +513,7 @@ Lemma sort_subst_id
     sort_subst (id_subst c) a = a.
 Proof.
   destruct a; basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
 Qed.
 
 
@@ -501,7 +523,7 @@ Lemma sort_strengthen_subst s a n e
     sort_subst ((n,e)::s) a = sort_subst s a.
 Proof.
   destruct a; basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
   (* TODO: the automation should get this *)
   erewrite strengthen_subst; eauto.
   typeclasses eauto.
@@ -513,7 +535,7 @@ Lemma sort_well_scoped_subst args s a
       ws_sort args (sort_subst s a).
 Proof.
   destruct a; basic_goal_prep; try case_match;
-    basic_term_crush.
+    term_crush1.
   (* TODO: the automation should get this *)
   change (ws_args ?c ?a) with (well_scoped c a) in *.
   eapply well_scoped_subst; eauto.
@@ -550,7 +572,7 @@ Proof.
   induction c';
     destruct s;
     basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
 Qed.
 
 Lemma well_scoped_change_args A `{Substable term A} (a:A) args args'

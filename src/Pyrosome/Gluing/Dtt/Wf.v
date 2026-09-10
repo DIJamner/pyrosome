@@ -395,13 +395,32 @@ Ltac norm_wf_hyps :=
 (* As in the STLC development, except for [norm_wf_hyps] and the fact that
    [exp] has THREE indices, so the final step is [repeat split] rather than a
    single [split]. *)
+(* [ott_dtt] is [all_fresh] (it is well formed), so the rule a name belongs to
+   is recovered by a single LOOKUP.  The previous script turned the [In _
+   ott_dtt] hypothesis into the 70-way disjunction and destructed it, paying a
+   [discriminate] against every rule of the language; this pays one
+   [vm_compute] of the lookup instead. *)
+Lemma all_fresh_ott_dtt : all_fresh ott_dtt.
+Proof. exact (wf_lang_ext_all_fresh ott_dtt_wf). Qed.
+
+Ltac rule_of_name :=
+  match goal with
+  | [ Hin : In ?x ott_dtt |- _ ] =>
+      lazymatch x with
+      | (?n, ?r) =>
+          let Hl := fresh "Hl" in
+          assert (Some r = named_list_lookup_err ott_dtt n) as Hl
+              by exact (proj2 (all_fresh_named_list_lookup_err_in
+                                 ott_dtt n r all_fresh_ott_dtt) Hin);
+          vm_compute named_list_lookup_err in Hl;
+          inversion Hl; subst; clear Hl Hin
+      end
+  end.
+
 Ltac sort_inv H :=
   inversion H; subst;
   match goal with
-  | [ Hin : In _ ott_dtt |- _ ] =>
-      vm_compute in Hin;
-      repeat (destruct Hin as [Hin|Hin]); try discriminate;
-      inversion Hin; subst; clear Hin
+  | [ Hin : In _ ott_dtt |- _ ] => rule_of_name
   end;
   repeat match goal with
          (* [Model.wf_args] must be QUALIFIED here: with the OTT/Lang imports

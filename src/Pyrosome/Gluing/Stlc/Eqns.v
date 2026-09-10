@@ -31,6 +31,14 @@ Import Core.Notations.
    leaves exactly this goal (headed by the rule's own, unsubstituted context)
    whenever the built substitution doesn't already settle it via
    [cleanup_auto_elab]. *)
+(* Generic: a well-formed rule has a well-formed context.  Proved once, over a
+   VARIABLE rule, so the [inversion] below runs on a tiny goal; the previous
+   script did [cbn in *] (unfolding the 70-rule language inside the lookup
+   hypothesis) and then an [inversion] per rule shape on that big context. *)
+Lemma wf_rule_get_ctx (l : lang string) r
+  : wf_rule l r -> wf_ctx (Model := core_model l) (Rule.get_ctx r).
+Proof. destruct r; inversion 1; assumption. Qed.
+
 Lemma stlc_unit_rule_ctx_wf n r
   : named_list_lookup_err stlc_unit n = Some r ->
     wf_ctx (Model := core_model stlc_unit) (Rule.get_ctx r).
@@ -38,8 +46,9 @@ Proof.
   intro Hlook.
   pose proof (rule_in_wf (l_pre := []) _ _ stlc_unit_wf
                 (named_list_lookup_err_in _ _ (eq_sym Hlook))) as Hr.
+  clear Hlook.
   rewrite app_nil_r in Hr.
-  destruct r; cbn in *; inversion Hr; subst; assumption.
+  exact (wf_rule_get_ctx Hr).
 Qed.
 
 Ltac wf_subst_solve :=

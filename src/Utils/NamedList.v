@@ -11,6 +11,22 @@ Open Scope list.
 From Utils Require Import Base Booleans Eqb Lists Pairs.
 
 
+(* Single-round variant of [basic_utils_crush] (which is a [repeat] of
+   intuition/autorewrite/eauto).  Most call sites below converge in one
+   round, and the repeated [autorewrite ... in *] / [intuition] dominate
+   this file's compile time. *)
+Ltac utils_crush1 :=
+  intuition break; subst;
+  autorewrite with bool rw_prop inversion utils in *;
+  intuition (unshelve eauto with utils).
+(* Leaner still: only the [utils] rewrite db.  The [bool]/[rw_prop]/[inversion]
+   dbs are what make [autorewrite ... in *] expensive here, and most sites do
+   not need them. *)
+Ltac utils_crush1u :=
+  intuition break; subst;
+  autorewrite with utils in *;
+  intuition (unshelve eauto with utils).
+
 Section __.
   Context (S : Type)
     {EqbS : Eqb S}
@@ -41,12 +57,14 @@ Section __.
     Lemma named_list_lookup_prop_correct (d : A) l s a
       :  named_list_lookup_prop d l s a <-> named_list_lookup d l s = a.
     Proof.
-      induction l;
-        basic_goal_prep;
-        basic_utils_crush.
-      destruct (eqb s s0) eqn:Heqb;
-        basic_goal_prep;
-        basic_utils_crush.
+      induction l; basic_goal_prep; [ reflexivity | ].
+      eqb_case s s0; cbn.
+      - split;
+          [ intros [[_ ?]|[? _]]; [ assumption | congruence ]
+          | intros ?; left; split; [ reflexivity | assumption ] ].
+      - rewrite IHl; split;
+          [ intros [[? _]|[_ ?]]; [ congruence | assumption ]
+          | intros ?; right; split; assumption ].
     Qed.
     
     Definition fresh n (nl : named_list) : Prop :=
@@ -81,10 +99,10 @@ Section __.
       : Some t = named_list_lookup_err c n -> In (n,t) c.
     Proof using EqbS_ok.
       induction c; basic_goal_prep.
-      { basic_utils_crush. }
+      { utils_crush1. }
       {
         destruct (eqb n s) eqn:Heq;
-          basic_utils_crush.
+          utils_crush1.
       }
     Qed.
 
@@ -99,9 +117,18 @@ Section __.
     Lemma all_fresh_named_list_lookup_err_in c n (t : A)
       : all_fresh c -> Some t = named_list_lookup_err c n <-> In (n,t) c.
     Proof using EqbS_ok.
-      induction c; basic_goal_prep.
-      - basic_utils_crush.  
-      - destruct (eqb n s) eqn:Heq; basic_utils_crush.
+      induction c as [| [s v] c IHc]; basic_goal_prep.
+      - split; [ intros H'; discriminate | intros [] ].
+      - destruct H as [Hfr Hall]; specialize (IHc Hall).
+        eqb_case n s; cbn.
+        + split.
+          * intros Heq; injection Heq as ?; subst; left; reflexivity.
+          * intros [Heq|Hin];
+              [ injection Heq; intros; subst; reflexivity
+              | exfalso; apply Hfr; eapply pair_fst_in; eassumption ].
+        + rewrite IHc; split.
+          * intros Hin; right; exact Hin.
+          * intros [Heq|Hin]; [ injection Heq; intros; subst; congruence | exact Hin ].
     Qed.
 
     
@@ -117,7 +144,15 @@ Section __.
     Lemma in_all_fresh_same (a b : A) l s
       : all_fresh l -> In (s,a) l -> In (s,b) l -> a = b.
     Proof.  
-      induction l; basic_goal_prep; basic_utils_crush.
+      induction l as [| [s0 a0] l IHl]; basic_goal_prep; [ contradiction | ].
+      destruct H as [Hfr Hall].
+      destruct H0 as [Heq1|Hin1]; destruct H1 as [Heq2|Hin2].
+      - injection Heq1 as ? ?; injection Heq2 as ? ?; subst; reflexivity.
+      - injection Heq1 as ? ?; subst; exfalso;
+          apply Hfr; eapply pair_fst_in; eassumption.
+      - injection Heq2 as ? ?; subst; exfalso;
+          apply Hfr; eapply pair_fst_in; eassumption.
+      - eauto.
     Qed.
 
     
@@ -135,13 +170,13 @@ Section __.
       : ~ In n (map fst l) -> ~(in_once n e l).
     Proof using .
       induction l; basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1u.
     Qed.
 
     Lemma all_fresh_in_once n (e : A) l
       : all_fresh l -> (In (n,e) l) <-> in_once n e l.
     Proof.
-      induction l; basic_goal_prep; basic_utils_crush.
+      induction l; basic_goal_prep; utils_crush1u.
     Qed.
 
     
@@ -177,7 +212,7 @@ Section __.
       : all_fresh (l1++(s,a)::l2) ->
         all_fresh (l1++l2).
     Proof.
-      induction l1; basic_goal_prep; basic_utils_crush.
+      induction l1; basic_goal_prep; utils_crush1u.
     Qed.
 
 
@@ -189,7 +224,7 @@ Section __.
     Proof.
       unfold freshb.
       unfold fresh.
-      basic_utils_crush.
+      utils_crush1.
     Qed.
     
     Lemma freshb_spec x (l : named_list) 
@@ -197,7 +232,7 @@ Section __.
     Proof.
       unfold freshb.
       unfold fresh.
-      basic_utils_crush.
+      utils_crush1.
     Qed.
 
 
@@ -214,14 +249,14 @@ Section __.
     Lemma use_compute_all_fresh (l : named_list)
       : Is_true (all_freshb l) -> all_fresh l.
     Proof.
-      induction l; basic_goal_prep; basic_utils_crush.
+      induction l; basic_goal_prep; utils_crush1.
     Qed.
 
     
     Lemma all_freshb_spec (l : named_list)
       : Is_true (all_freshb l) <-> all_fresh l.
     Proof.
-      induction l; basic_goal_prep; basic_utils_crush.
+      induction l; basic_goal_prep; utils_crush1.
       apply freshb_spec; eauto.
     Qed.
 
@@ -266,13 +301,13 @@ Section __.
     Lemma map_fst_with_names_from (c : named_list A) (l : list B)
       : length c = length l -> map fst (with_names_from c l) = map fst c.
     Proof.
-      revert l; induction c; destruct l; basic_goal_prep; basic_utils_crush.
+      revert l; induction c; destruct l; basic_goal_prep; utils_crush1.
     Qed.
 
     Lemma in_named_map (f : A -> B) l n x
       : In (n,x) l -> In (n, f x) (named_map f l).
     Proof.
-      induction l; basic_goal_prep; basic_utils_crush.
+      induction l; basic_goal_prep; utils_crush1u.
     Qed.
 
     Lemma combine_map_fst_is_with_names_from (c : named_list A) (s : list B)
@@ -280,13 +315,13 @@ Section __.
     Proof.
       revert s; induction c; destruct s;
         basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1u.
     Qed.
 
     Lemma named_map_length (f : A -> B) l
       : length (named_map f l) = length l.
     Proof.
-      induction l; basic_goal_prep; basic_utils_crush.
+      induction l; basic_goal_prep; utils_crush1u.
     Qed.
 
   End WithAB.
@@ -305,7 +340,7 @@ Section __.
   Lemma all_fresh_tail {A} (l1 l2: named_list A)
     : all_fresh (l1++l2) -> all_fresh l2.
   Proof.
-    induction l1; basic_goal_prep; basic_utils_crush.
+    induction l1; basic_goal_prep; utils_crush1u.
   Qed.
 
   
@@ -314,7 +349,7 @@ Section __.
   Lemma all_fresh_conflict_impossible {A} (l1 l2: named_list A) n a1 a2
     : all_fresh (l1++l2) -> In (n,a1) l1 -> In (n,a2) l2 -> False.
   Proof.
-    induction l1; basic_goal_prep; basic_utils_crush.
+    induction l1; basic_goal_prep; utils_crush1u.
     (*TODO: what later-proven lemma is missing here? (should be automatic)*)
     eapply fresh_notin in H5.
     basic_utils_crush.
@@ -340,9 +375,9 @@ Section __.
     : None = named_list_lookup_err l s <-> fresh s l.
   Proof.
     induction l.
-    1: basic_goal_prep; basic_utils_crush.
+    1: basic_goal_prep; utils_crush1.
     break; simpl.
-    case_match; basic_goal_prep; basic_utils_crush.
+    case_match; basic_goal_prep; utils_crush1.
   Qed.
 
   (* Note: does not error out on bad inputs *)
@@ -419,7 +454,7 @@ Lemma pair_fst_in_exists:
 Proof.
   induction l;
     basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1u.
   apply IHl in H0; break.
   exists x; eauto.
 Qed.

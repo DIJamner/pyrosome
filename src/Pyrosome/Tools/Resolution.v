@@ -14,13 +14,26 @@ Import CompilerDefs.Notations.
 
 From Stdlib Require derive.Derive.
 
+(* File-local single-round crush variants: the shared [generic_crush] is a
+   [repeat], which always pays one extra no-progress round. *)
+Local Ltac generic_crush1 rewrite_tac hint_auto :=
+  intuition break; subst; rewrite_tac; intuition unshelve hint_auto.
+Local Ltac utils_crush1 :=
+  let x := autorewrite with bool rw_prop inversion utils in * in
+  let y := eauto with utils in
+  generic_crush1 x y.
+Local Ltac core_crush1 :=
+  let x := autorewrite with bool rw_prop inversion utils term lang_core model in * in
+  let y := eauto 7 with utils term lang_core model in
+  generic_crush1 x y.
+
 (*TODO: move to utils*)
 Lemma all_app A (P : A -> Prop) l1 l2
   : all P (l1++l2) <-> all P l1 /\ all P l2.
 Proof.
   induction l1; 
     basic_goal_prep;
-    basic_core_crush.
+    utils_crush1.
 Qed.
 #[local] Hint Rewrite all_app : utils.
 
@@ -62,10 +75,10 @@ Section WithVar.
     Proof.
       induction db;
         basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
       eqb_case n v0;
         basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
     Qed.
     Hint Resolve fresh_insert : lang_core.
 
@@ -76,10 +89,10 @@ Section WithVar.
     Proof.
       induction db;
         basic_goal_prep;
-        basic_core_crush.
+        core_crush1.
       eqb_case n v.
       all:basic_goal_prep;
-        basic_core_crush.
+        core_crush1.
     Qed.
     Hint Resolve all_fresh_insert : lang_core.
 
@@ -94,10 +107,10 @@ Section WithVar.
       intros HP_app HPv.
       induction db;
         basic_goal_prep;
-        basic_core_crush.
+        utils_crush1.
       eqb_case v v0.
       all: basic_goal_prep.
-      all: basic_core_crush.
+      all: utils_crush1.
     Qed.    
     
     Fixpoint merge_dbs (db1 db2 : named_list (list A)) :=
@@ -151,7 +164,7 @@ Section WithVar.
   Proof.    
     induction l;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
   Qed.
 
   Lemma wf_lang_sound_db l_pre l
@@ -161,7 +174,7 @@ Section WithVar.
     unfold lang_db_sound.
     induction 1;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
     apply lang_to_db_fresh; eauto.
   Qed.
 
@@ -201,9 +214,9 @@ Section WithVar.
     intro Hdb.
     induction l;
       basic_goal_prep.
-    1: basic_core_crush.
+    1: core_crush1.
     unfold rule_wf_in_db in *.
-    revert H; case_match; [|basic_core_crush].
+    revert H; case_match; [|core_crush1].
     symmetry in case_match_eqn.
     apply named_list_lookup_err_in in case_match_eqn.
     pose proof H1 as H1'.
@@ -230,10 +243,10 @@ Section WithVar.
     unfold lang_db_sound.
     induction db;
       basic_goal_prep.
-    1:basic_core_crush.
+    1:core_crush1.
     eqb_case n v.
     all: basic_goal_prep.
-    all: basic_core_crush.
+    all: core_crush1.
   Qed.
 
   
@@ -246,16 +259,17 @@ Section WithVar.
     revert db2.
     induction db1;
       basic_goal_prep.
-    1:basic_core_crush.
+    1:utils_crush1.
     break.
     unshelve
       let H := open_constr:(_) in
       specialize (IHdb1 (insert_db v l db2)
                     ltac:(intuition eauto) H).
-    all: basic_core_crush.
+    2:{ exact IHdb1. }
+    split; [ apply all_fresh_insert; eauto | ].
     apply all_insert; eauto.
     basic_goal_prep;
-      basic_core_crush.
+      utils_crush1.
   Qed.
 
   Lemma empty_lang_db_sound : lang_db_sound [].
@@ -286,7 +300,7 @@ Section WithVar.
     revert l2; induction l1;
       destruct l2;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     unfold fresh in *.
     congruence.
   Qed.
@@ -297,7 +311,7 @@ Section WithVar.
   Proof.
     induction l0;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
 
   
@@ -307,7 +321,7 @@ Section WithVar.
   Proof.
     induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     rewrite map_app.
     congruence.
   Qed.
@@ -447,7 +461,7 @@ Section WithVar.
     erewrite compile_strengthen_sort_incl;
       auto;
       try eassumption;
-      basic_core_crush.
+      core_crush1.
   Qed.
 
   Definition empty_cmp_dbP := exist _ _ empty_cmp_db_sound.
@@ -620,10 +634,10 @@ Section WithVar.
     unfold cmp_db_sound.
     induction db;
       basic_goal_prep.
-    1:basic_core_crush.
+    1:core_crush1.
     eqb_case n v.
     all: basic_goal_prep.
-    all: basic_core_crush.
+    all: core_crush1.
   Qed. 
   
   Lemma cmp_db_append_sound db1 db2
@@ -635,16 +649,17 @@ Section WithVar.
     revert db2.
     induction db1;
       basic_goal_prep.
-    1:basic_core_crush.
+    1:utils_crush1.
     break.
     unshelve
       let H := open_constr:(_) in
       specialize (IHdb1 (insert_db v l db2)
                     ltac:(intuition eauto) H).
-    all: basic_core_crush.
+    2:{ exact IHdb1. }
+    split; [ apply all_fresh_insert; eauto | ].
     apply all_insert; eauto.
     basic_goal_prep;
-      basic_core_crush.
+      utils_crush1.
   Qed.
 
   (*
@@ -677,10 +692,10 @@ Section WithVar.
       induction src;
       destruct cmp;
       basic_goal_prep;
-      basic_core_crush.
+      utils_crush1.
     all:destruct r;
       basic_goal_prep;
-      basic_core_crush.
+      utils_crush1.
   Qed.
 
   (* TODO: move to AllConstructors *)
@@ -745,7 +760,7 @@ Section WithVar.
     revert H; clear;
       induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
     
   Lemma all_constructors_sortb_spec Pb P t
@@ -760,7 +775,7 @@ Section WithVar.
     rewrite Prw.
     induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     { rewrite <- all_constructorsb_spec; eauto. }
     { rewrite all_constructorsb_spec; eauto. }      
   Qed.
@@ -774,7 +789,7 @@ Section WithVar.
     intro Prw.
     induction c;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     { rewrite <- all_constructors_sortb_spec; eauto. }
     { rewrite all_constructors_sortb_spec; eauto. }      
   Qed.
@@ -785,7 +800,7 @@ Section WithVar.
   Proof.
       induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
     
   Lemma all_constructors_ruleb_spec Pb (P : V -> Prop) (r : rule)
@@ -820,7 +835,7 @@ Section WithVar.
       !IHl.
     1:reflexivity.
     basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
 
   
@@ -831,7 +846,7 @@ Section WithVar.
   Proof.
     induction 1;
       basic_goal_prep;
-      basic_core_crush.
+      utils_crush1.
   Qed.
 
   Lemma wf_cmp_sound_db tgt cmp_pre src cmp
@@ -847,7 +862,7 @@ Section WithVar.
     induction 1;
       basic_goal_prep;
       try tauto;
-      autorewrite with utils bool lang_core term model in *.
+      autorewrite with utils bool in *.
     all: unfold wf_entry.
     all: basic_goal_prep.
     all: intuition eauto using cmp_to_db_fresh with lang_core.
@@ -899,10 +914,10 @@ Section WithVar.
         {
           apply cmp_db_append_sound; eauto.
           apply wf_cmp_sound_db; eauto.
-          basic_utils_crush.
+          utils_crush1.
         }
         {
-          basic_utils_crush.
+          utils_crush1.
         }
       Qed.
      

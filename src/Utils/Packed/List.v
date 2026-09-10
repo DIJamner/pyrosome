@@ -630,51 +630,60 @@ Section __.
    Qed.
    Local Hint Rewrite false_eq_to_Is_true : bool.
 
+   (* Helpers making the 32x32-constructor case analysis below cheap:
+      they peel one field comparison off a boolean-equality test. *)
+   Lemma eqb_case_helper T `{Eqb_ok T} (a b : T) (P Q : Prop)
+     : (a = b -> P) -> (a <> b -> Q) -> if eqb a b then P else Q.
+   Proof.
+     intros HP HQ; pose proof (eqb_spec a b) as Hs.
+     destruct (eqb a b); [apply HP | apply HQ]; exact Hs.
+   Qed.
+
+   Lemma eqb_andb_case_helper T `{Eqb_ok T} (a b : T) (c : bool) (P Q : Prop)
+     : (a = b -> if c then P else Q) ->
+       (a <> b -> Q) ->
+       if eqb a b && c then P else Q.
+   Proof.
+     intros HP HQ; pose proof (eqb_spec a b) as Hs.
+     destruct (eqb a b); cbn; [apply HP | apply HQ]; exact Hs.
+   Qed.
+
+   Ltac plist_eqb_step :=
+     first [ eapply eqb_andb_case_helper | eapply eqb_case_helper ];
+     [ typeclasses eauto
+     | intro
+     | let Hne := fresh "Hne" in
+       let Hc := fresh "Hc" in
+       intro Hne; intro Hc; safe_invert Hc; congruence ].
+
    Instance block_list_Eqb_ok : Eqb_ok block_list_Eqb.
    Proof.
      intro x; induction x;
        destruct b; cbn;
-       try congruence.
-     all: case_match.
-     all:autorewrite with utils bool in *.
-     all: basic_goal_prep; subst.
-     all: try reflexivity.
-     {
-       intro Hcong; safe_invert Hcong.
-       intuition auto.
-     }
-     {
-       f_equal.
-       specialize (IHx b).
-       destruct (eqb x b) eqn:Hb; cbn in *; tauto.
-     }
-     {
-       intro Hcong; safe_invert Hcong.
-       intuition auto.
-       specialize (IHx b).
-       destruct (eqb b b) eqn:Hb; cbn in *; tauto.
-     }
+       try change (block_list_beq (eqb (A:=A))) with (eqb (A:=block_list));
+       try (let Hc := fresh in intro Hc; discriminate Hc);
+       repeat plist_eqb_step.
+     (* blist_base: all fields equal *)
+     1: subst; reflexivity.
+     (* blist_cons: the recursive tail *)
+     specialize (IHx b).
+     destruct (eqb x b);
+       [ subst; reflexivity
+       | let Hc := fresh "Hc" in intro Hc; safe_invert Hc; congruence ].
    Qed.   
    
    Instance plist_Eqb : Eqb plist := plist_beq (eqb (A:=_)).
 
    Instance plist_Eqb_ok : Eqb_ok plist_Eqb.
    Proof.
-     intros x y; destruct x, y;
-       cbn.
-     1: reflexivity.
-     all: try (intro Hcong; safe_invert Hcong).
-     all: change (block_list_beq (eqb (A:=A)))
-       with (eqb (A:=block_list)) in *.
-     all: case_match.
-     all:autorewrite with utils bool in *.
-     all: basic_goal_prep; subst.
-     all: try reflexivity.
-     all: try(intro Hcong; safe_invert Hcong;
-              intuition now auto).
+     intros x y; destruct x, y; cbn;
+       try change (block_list_beq (eqb (A:=A))) with (eqb (A:=block_list));
+       try (let Hc := fresh in intro Hc; discriminate Hc);
+       repeat plist_eqb_step.
+     all: subst; reflexivity.
    Qed.
-     
- End Eqb.
+   
+End Eqb.
  
 (*TODO:
  Lemma block_of_list_to_list b

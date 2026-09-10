@@ -691,6 +691,48 @@ Qed.
    case costs one rule rather than a 32-way disjunction of all of them --
    [rule_pin], src/Pyrosome/Gluing/Dtt/ModelStruct.v. *)
 
+(* [rule_pin]'s [inversion H; subst] on the [ceq_args] premise is run once
+   per argument of the rule, on the FULLY PINNED (hence large) rule context
+   and argument lists: it was 87% of the two dispatchers below.  The two
+   lemmas here are that same inversion, proved ONCE at abstract indices, so
+   each use is a single [apply] of a closed lemma; [peel_ceq_args] replaces
+   the [repeat inversion] loop and [rule_pin'] replaces [rule_pin]. *)
+Lemma ceq_args_nil_dest (P : Type) s1 s2
+  : ceq_args (CM := DttCM) [] s1 s2 -> (s1 = [] -> s2 = [] -> P) -> P.
+Proof. intros H k; inversion H; subst; apply k; reflexivity. Qed.
+
+Lemma ceq_args_cons_dest (P : Type) n t c' s1 s2
+  : ceq_args (CM := DttCM) ((n, t) :: c') s1 s2 ->
+    (forall e1 es1 e2 es2, s1 = e1 :: es1 -> s2 = e2 :: es2 ->
+       ceq_args (CM := DttCM) c' es1 es2 ->
+       ceq_term (CutTModel := DttCM) t [/with_names_from c' es2 /] e1 e2 -> P) -> P.
+Proof.
+  intros H k; inversion H; subst; eapply k;
+    [ reflexivity | reflexivity | eassumption | eassumption ].
+Qed.
+
+Ltac peel_ceq_args :=
+  repeat lazymatch goal with
+    | [ H : ceq_args (_ :: _) _ _ |- _ ] =>
+        apply (ceq_args_cons_dest H); clear H;
+        intros ?e1 ?es1 ?e2 ?es2 ?Hl1 ?Hl2 ?Hargs ?Hhd
+    | [ H : ceq_args [] _ _ |- _ ] =>
+        apply (ceq_args_nil_dest H); clear H; intros ?Hn1 ?Hn2
+    end.
+
+(* [injection] instead of [safe_invert]'s [inversion]: the looked-up rule is
+   a concrete (large) value, and [injection] peels the [Some]/[term_*_rule]
+   constructors without building an inversion principle for it. *)
+Ltac pin_lookup' :=
+  match goal with
+  | [ Hin : In _ ott_dtt |- _ ] =>
+      apply ott_dtt_lookup_of_in in Hin; vm_compute in Hin;
+      injection Hin; clear Hin; intros; subst
+  end.
+
+Ltac rule_pin' :=
+  pin_lookup'; peel_ceq_args; subst; cbn [ceq_term ceq_sort DttCM] in *.
+
 Lemma subst_cong_obligation
   : forall c' name args t s1 s2,
     In (name, term_rule c' args t) ott_dtt ->
@@ -703,7 +745,7 @@ Proof.
   intros c' name args t s1 s2 Hin Hname Hargs.
   destruct Hname
     as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]]]];
-    rule_pin.
+    rule_pin'.
   - (* emp *) apply cong_emp.
   - (* ext *) apply cong_ext; assumption.
   - (* id *) apply cong_id; assumption.
@@ -973,7 +1015,7 @@ Proof.
   destruct Hname
     as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->
        ]]]]]]]]]]]];
-    rule_pin.
+    rule_pin'.
   - (* id_left *) eapply by_id_left; eassumption.
   - (* id_right *) eapply by_id_right; eassumption.
   - (* cmp_assoc *) eapply by_cmp_assoc; eassumption.

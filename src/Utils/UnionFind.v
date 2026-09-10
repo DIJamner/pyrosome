@@ -63,6 +63,43 @@ Section __.
      scripts rely on are unchanged.  The [::=] redefinition is inside
      [Section __] and reverts when the section closes, so no other file is
      affected. *)
+
+  (* ---------------------------------------------------------------
+     File-local rewrite database [uf_rw].
+
+     Profiling ([Show Ltac Profile] over the whole file) attributes >90%
+     of this file's compile time to the single [autorewrite with bool
+     rw_prop inversion utils in *] inside [basic_utils_crush], and that
+     cost is linear in the number of rules in the databases (measured:
+     ~0.3s per rule per file-wide no-op pass).  Most of [bool], [rw_prop]
+     and the named-list/sublist half of [utils] never fire anywhere in
+     this file, so they are pure matching overhead on ~1400 calls.
+
+     [uf_rw] is a section-local database holding the rules this file
+     actually needs, declared with the same side-condition tactics as
+     their upstream counterparts.  It is #[local] and declared inside
+     [Section __], so it is invisible to every other file, and the
+     existing [utils]/[bool]/... declarations are untouched.  The few
+     goals that need a rule outside [uf_rw] use [basic_utils_crush_full]
+     below.
+     --------------------------------------------------------------- *)
+  #[local] Hint Rewrite invert_eq_cons_cons invert_eq_some_some
+    invert_eq_some_none invert_eq_none_some invert_reflexivity pair_equal_spec : uf_rw.
+  #[local] Hint Rewrite map_keys_empty emp_inv ptsto_inv ptsto_inv_applied
+    emp_iff not1_has_key : uf_rw.
+  #[local] Hint Rewrite sep_emp_r sep_emp_l seps_tl seps_emp_hd sep_seps_l
+    sep_seps_r map_split_singleton_r map_split_singleton_l and1_eq_l and1_eq_r
+    sep_lift_r seps_Uiff1_cons_sep map_get_singleton and1_emp_r using typeclasses eauto : uf_rw.
+  #[local] Hint Rewrite @Properties.map.split_empty_l
+    @Properties.map.split_empty_r @Interface.map.get_empty
+    @Interface.map.get_put_same : uf_rw.
+  #[local] Hint Rewrite @Interface.map.get_put_diff using congruence : uf_rw.
+  #[local] Hint Rewrite inb_is_In using solve[typeclasses eauto] : uf_rw.
+  #[local] Hint Rewrite List.in_app_iff incl_cons : uf_rw.
+  #[local] Hint Rewrite eqb_ineq_false using (try typeclasses eauto; (left || right); assumption) : uf_rw.
+  #[local] Hint Rewrite eqb_refl_true using solve[typeclasses eauto] : uf_rw.
+  #[local] Hint Rewrite Is_true_true eq_false_to_Is_true : uf_rw.
+  #[local] Hint Rewrite or_False False_or not_False not_True : uf_rw.
   Ltac generic_crush rewrite_tac hint_auto ::=
     repeat (intuition break; subst; rewrite_tac;
             repeat (break; subst);
@@ -75,9 +112,28 @@ Section __.
      keeps using the deeper variant via [basic_utils_crush_deep] below.
      Section-local. *)
   Ltac basic_utils_crush ::=
+    let x := autorewrite with uf_rw in * in
+    let y := eauto 4 with utils in
+    generic_crush x y.
+
+  (* Fallback for the handful of goals that genuinely need a rewrite rule
+     that is not in [uf_rw]; identical to the upstream [basic_utils_crush]
+     but with the depth-4 leaf [eauto] used by the rest of this file. *)
+  Local Ltac basic_utils_crush_full :=
     let x := autorewrite with bool rw_prop inversion utils in * in
     let y := eauto 4 with utils in
     generic_crush x y.
+
+
+  (* Same narrowing for [seprewrite] (Sep.v). *)
+  Local Ltac seprewrite_full :=
+    sep_isolate;
+    autorewrite with bool rw_prop inversion utils in *;
+    unfold sep_app in *.
+  Ltac seprewrite ::=
+    sep_isolate;
+    autorewrite with uf_rw in *;
+    unfold sep_app in *.
 
   Ltac basic_utils_crush_deep :=
     let x := autorewrite with bool rw_prop inversion utils in * in
@@ -251,6 +307,7 @@ Section __.
       basic_utils_crush.
   Qed.
   Hint Rewrite uf_order_empty : utils.
+  #[local] Hint Rewrite uf_order_empty : uf_rw.
 
   Lemma uf_order_has_key_l m k1 k2
     : uf_order m k1 k2 ->
@@ -620,6 +677,7 @@ Section __.
                              (in_before l j i \/ j = k))).
 
   Hint Rewrite Properties.map.split_empty_l : utils.
+  #[local] Hint Rewrite Properties.map.split_empty_l : uf_rw.
 
   Lemma and1_lift_l P (Q : idx_map -> Prop)
     : Uiff1 (and1 (fun _ => P) Q) (sep (lift P) Q).
@@ -634,6 +692,7 @@ Section __.
     { autorewrite with utils in *; subst; auto. }
   Qed.
   Hint Rewrite and1_lift_l : utils.
+  #[local] Hint Rewrite and1_lift_l : uf_rw.
 
   Definition exists1 {A B} (f : A -> B -> Prop) :=
     fun m => exists x, f x m.
@@ -645,6 +704,7 @@ Section __.
     firstorder idtac.
   Qed.
   Hint Rewrite and1_exists_r : utils.
+  #[local] Hint Rewrite and1_exists_r : uf_rw.
 
   
   Lemma sep_exists_r A (P : idx_map -> Prop) Q
@@ -654,6 +714,7 @@ Section __.
     firstorder idtac.
   Qed.
   Hint Rewrite sep_exists_r : utils.
+  #[local] Hint Rewrite sep_exists_r : uf_rw.
   
   Lemma sep_exists_l A (P : idx_map -> Prop) Q
     : Uiff1 (sep (exists1 Q) P) (exists1 (fun x : A => sep (Q x) P)).
@@ -662,8 +723,10 @@ Section __.
     firstorder idtac.
   Qed.
   Hint Rewrite sep_exists_l : utils.
+  #[local] Hint Rewrite sep_exists_l : uf_rw.
 
   Hint Rewrite nth_error_nil : utils.
+  #[local] Hint Rewrite nth_error_nil : uf_rw.
   
   Lemma in_before_empty A (i j : A)
     : in_before [] i j <-> False.
@@ -673,12 +736,14 @@ Section __.
     basic_utils_crush.
   Qed.
   Hint Rewrite in_before_empty : utils.
+  #[local] Hint Rewrite in_before_empty : uf_rw.
 
 
   Lemma unfold_exists1 A B (P : A -> B -> Prop) m
     : exists1 P m = exists x, P x m.
   Proof. reflexivity. Qed.
   Hint Rewrite unfold_exists1 : utils.
+  #[local] Hint Rewrite unfold_exists1 : uf_rw.
 
   
   Lemma in_before_app A x x0 (i j : A)
@@ -742,16 +807,19 @@ Section __.
     }
   Qed.
   Hint Rewrite in_before_app : utils.
+  #[local] Hint Rewrite in_before_app : uf_rw.
 
   
   Lemma iff_or_exact_cancel_l A B
     : (A <-> A \/ B) <-> (B -> A).
   Proof. intuition idtac. Qed.
   Hint Rewrite iff_or_exact_cancel_l : utils.
+  #[local] Hint Rewrite iff_or_exact_cancel_l : uf_rw.
 
   Lemma not_or_iff A B : ~ (A \/ B) <-> ~ A /\ ~ B.
   Proof. intuition idtac. Qed.
   Hint Rewrite not_or_iff : utils.
+  #[local] Hint Rewrite not_or_iff : uf_rw.
 
   (*TODO: move to Sep.v*)
   #[export] Instance seps_Uiff1_app_mor:
@@ -768,6 +836,7 @@ Section __.
 
   (*TODO: ove to Sep.v*)
   Hint Rewrite sep_lift_l : utils.
+  #[local] Hint Rewrite sep_lift_l : uf_rw.
 
   
   Lemma split_has_key_l a (x x0 : idx_map) (k:idx)
@@ -815,6 +884,7 @@ Section __.
   Qed.
 
   Hint Rewrite @Properties.map.fold_empty : utils.
+  #[local] Hint Rewrite @Properties.map.fold_empty : uf_rw.
 
   (*
   Lemma map_keys_fold_disjoint (m : idx_map) m'
@@ -1044,9 +1114,9 @@ Section __.
       : Uimpl1 (sep (mem_order i l1) (mem_order i l2)) (mem_order i (l1++l2)).
     Proof.
       unfold mem_order.
-      seprewrite.
+      seprewrite_full.
       rewrite !sep_to_seps.
-      seprewrite.
+      seprewrite_full.
       cbn [app].
       sep_focus' [0;2] [0].
       {
@@ -1056,7 +1126,7 @@ Section __.
       }
       
       cbv [seps_Uimpl1 seps].
-      seprewrite.
+      seprewrite_full.
       cbv [Uimpl1 sep and1].
       basic_goal_prep.
       split.
@@ -1092,6 +1162,7 @@ Section __.
     Lemma has_key_empty (i : idx) : has_key i (map.empty : idx_map) <-> False.
     Proof. unfold has_key; basic_utils_crush. Qed.
     Hint Rewrite has_key_empty : utils.
+    #[local] Hint Rewrite has_key_empty : uf_rw.
 
     
     Lemma mem_order_empty i :  mem_order i [] map.empty.
@@ -1126,6 +1197,7 @@ Section __.
         basic_utils_crush.
     Qed.
     Hint Rewrite has_key_put : utils.
+    #[local] Hint Rewrite has_key_put : uf_rw.
     
     Lemma in_before_cons x (i i0 j0 : idx)
       :  i <> i0 ->
@@ -1164,15 +1236,15 @@ Section __.
     Proof.
       intros Hneq Hnin.
       unfold mem_order.
-      seprewrite.
+      seprewrite_full.
       rewrite !sep_to_seps.
       (*    rewrite and1_comm.
     rewrite distribute_not_has_key_seps.*)
-      seprewrite.
+      seprewrite_full.
       sep_focus' (@nil nat) [0].
       {
         cbv [seps_Uimpl1 seps].
-        seprewrite.
+        seprewrite_full.
         cbv [Uimpl1 lift emp].
         intuition idtac.
       }
@@ -1181,7 +1253,7 @@ Section __.
       {
         rewrite Uimpl1_and1_l.
         cbv [seps_Uimpl1 seps].
-        seprewrite.
+        seprewrite_full.
         cbv [Uimpl1 lift emp].
         unfold sep; intros.
         basic_goal_prep.
@@ -1194,7 +1266,7 @@ Section __.
       }
       {
         cbv [seps_Uimpl1 seps].
-        seprewrite.
+        seprewrite_full.
         cbv [Uimpl1 lift emp and1].
         unfold sep; intros.
         basic_goal_prep.
@@ -1325,6 +1397,7 @@ Section __.
       }
     Qed.
     Hint Rewrite sep_empty : utils.
+    #[local] Hint Rewrite sep_empty : uf_rw.
 
     
     (* TODO: move to *)
@@ -1335,6 +1408,7 @@ Section __.
       basic_utils_crush.
     Qed.
     Hint Rewrite seps_empty : utils.
+    #[local] Hint Rewrite seps_empty : uf_rw.
     
     Lemma seps_empty' m
       : seps (mem:=idx_map) [] m <-> emp m.
@@ -1343,6 +1417,7 @@ Section __.
       basic_utils_crush.
     Qed.
     Hint Rewrite seps_empty' : utils.
+    #[local] Hint Rewrite seps_empty' : uf_rw.
 
     (*TODO: rename the other one*)
     Lemma empty_forest_rooted : forest [] map.empty.
@@ -1748,6 +1823,7 @@ Section __.
     Qed.
 
     Hint Rewrite Properties.map.put_put_same : utils.
+    #[local] Hint Rewrite Properties.map.put_put_same : uf_rw.
     Lemma tree_put r i j
       : tree j r ->
         tree j (map.put r i j).
@@ -1777,7 +1853,9 @@ Section __.
     Hint Resolve tree_put : utils.
 
     Hint Rewrite map.get_remove_same : utils.
+    #[local] Hint Rewrite map.get_remove_same : uf_rw.
     Hint Rewrite map.get_remove_diff using congruence : utils.
+    #[local] Hint Rewrite map.get_remove_diff using congruence : uf_rw.
     
     Lemma disjoint_put_remove (x x0 : idx_map) i j
       : map.disjoint x x0 ->
@@ -1949,9 +2027,9 @@ Section __.
       unfold forest.
       revert m; induction l;
         basic_goal_prep;
-        seprewrite.
+        seprewrite_full.
       {
-        seprewrite.
+        seprewrite_full.
         basic_utils_crush.
       }
       {
@@ -1968,7 +2046,7 @@ Section __.
           exists x0, x; basic_utils_crush.
           1: eapply Properties.map.split_comm; eauto.
           rewrite sep_to_seps'.
-          seprewrite.
+          seprewrite_full.
           sep_isolate.
           rewrite <- ptsto_inv.
           unfold and1,sep_app in *.
@@ -1984,7 +2062,7 @@ Section __.
           eapply IHl in H4; eauto.
           rewrite sep_to_seps' in *.
           cancel_prep' H4.
-          seprewrite.
+          seprewrite_full.
           rewrite (seps_permutation _ _ _ _ _ _ _ (Permutation_app_comm _ _)).
           reflexivity.
         }
@@ -2231,7 +2309,7 @@ Section __.
                   basic_utils_crush.
                   apply eqb_boolspec;eauto.
                 }       
-                basic_utils_crush.
+                basic_utils_crush_full.
               }
               instantiate (1:= (map.put x0 i j)).
               eapply Properties.map.split_comm.
@@ -2524,6 +2602,7 @@ Section __.
     Qed.
 
     Hint Rewrite map.get_remove_same Properties.map.put_remove_same : utils.
+    #[local] Hint Rewrite map.get_remove_same Properties.map.put_remove_same : uf_rw.
 
     
     Lemma tree_singleton j : tree j (map.singleton j j).
@@ -2535,6 +2614,7 @@ Section __.
     Hint Resolve tree_singleton : utils.
 
     Hint Rewrite map.get_remove_diff using congruence : utils.
+    #[local] Hint Rewrite map.get_remove_diff using congruence : uf_rw.
     
     Lemma split_put_remove (i i0 : idx) f x x0
       : Some i0 = map.get f i ->
@@ -2572,7 +2652,9 @@ Section __.
       unfold map.singleton; basic_utils_crush.
     Qed.
     Hint Rewrite get_singleton_same : utils.
+    #[local] Hint Rewrite get_singleton_same : uf_rw.
     Hint Rewrite map_keys_in' : utils.
+    #[local] Hint Rewrite map_keys_in' : uf_rw.
     
     Definition reachable (m : idx_map) := equivalence_closure (fun i j => map.get m i = Some j).
     
@@ -2692,6 +2774,7 @@ Section __.
     Lemma negb_true : negb true = false.
     Proof. reflexivity. Qed.
     Hint Rewrite negb_true : utils.
+    #[local] Hint Rewrite negb_true : uf_rw.
     
     Lemma forest_has_key_tree i f l j
       : map.get f i = Some j ->
@@ -2731,7 +2814,7 @@ Section __.
         replace (eqb x1 a) with false;
           cbn.
         2:{
-          basic_utils_crush.
+          basic_utils_crush_full.
         }
         clear IHl; unfold and1 in *.
         intuition eauto.
@@ -2801,8 +2884,10 @@ Section __.
         basic_utils_crush.
     Qed.
     Hint Rewrite reachable_empty : utils.
+    #[local] Hint Rewrite reachable_empty : uf_rw.
 
     Hint Rewrite has_key_empty : utils.
+    #[local] Hint Rewrite has_key_empty : uf_rw.
 
     Add Parametric Relation m : idx (reachable m)
         reflexivity proved by (eq_clo_refl _)
@@ -3552,6 +3637,7 @@ Section __.
       unfold map.singleton; basic_utils_crush.
     Qed.
     Hint Rewrite get_singleton_diff using eassumption : utils.
+    #[local] Hint Rewrite get_singleton_diff using eassumption : uf_rw.
 
     
     Lemma parent_rel_put_new (m : idx_map) (i j k l : idx)
@@ -3571,6 +3657,7 @@ Section __.
         basic_utils_crush.
     Qed.
     Hint Rewrite parent_rel_empty : utils.
+    #[local] Hint Rewrite parent_rel_empty : uf_rw.
     
     Lemma forest_ptsto_parent i f
       : forest_ptsto i f ->
@@ -3774,7 +3861,7 @@ Section __.
         {
           exists x;
           basic_goal_prep;
-            basic_utils_crush.
+            basic_utils_crush_full.
           eapply in_all in H5; eauto.
         }            
         exists (a :: x);
@@ -3981,6 +4068,7 @@ Section __.
         | case_match]; intuition fail.
     Qed.
     Hint Rewrite has_key_putmany : utils.
+    #[local] Hint Rewrite has_key_putmany : uf_rw.
 
     (*TODO: move to coqutil *)
     Lemma remove_put m (i j : idx)
@@ -3992,6 +4080,7 @@ Section __.
         basic_utils_crush.
     Qed.
     Hint Rewrite remove_put : utils.
+    #[local] Hint Rewrite remove_put : uf_rw.
     
     Lemma remove_none (m : idx_map) (i:idx)
       : map.get m i = None -> (map.remove m i) = m.
@@ -4014,7 +4103,7 @@ Section __.
         basic_utils_crush.
       {
         destruct (inb i l) eqn:Hinb;
-          basic_utils_crush.
+          basic_utils_crush_full.
         { safe_invert H0; tauto. }
         {
           rewrite removeb_not_In; eauto.
@@ -4986,6 +5075,7 @@ Section __.
       : MkUF r p mr n = MkUF r' p' mr' n' <-> r = r' /\ p = p' /\ mr = mr' /\ n = n'.
     Proof. prove_inversion_lemma. Qed.
     Hint Rewrite union_find_inversion : inversion.
+    #[local] Hint Rewrite union_find_inversion : uf_rw.
       
     Lemma find_preserves_ok uf l uf' j i
       : union_find_ok uf l ->
@@ -5757,3 +5847,4 @@ End __.
 Arguments UnionFind.find {idx}%_type_scope {Eqb_idx idx_map rank_map} pat x.
 Arguments parent {idx}%_type_scope {idx_map rank_map} u.
 Arguments union_find_ok {idx}%_type_scope {idx_map} {rank_map} lt uf l%_list_scope.
+

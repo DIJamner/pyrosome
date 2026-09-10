@@ -12,6 +12,19 @@ From Pyrosome.Compilers Require Import Compilers CompilerFacts
 Import Core.Notations.
 Import PositiveInstantiation.
 
+(* Single-round variants of the crush tactics (local to this file): the
+   `repeat` in `generic_crush` re-runs an expensive `intuition` on large
+   contexts even when one round suffices. *)
+Ltac utils_crush1 :=
+  let x := autorewrite with bool rw_prop inversion utils in * in
+  let y := eauto with utils in
+  (intuition break; subst; x; intuition unshelve y; break; subst).
+
+Ltac core_crush1 :=
+  let x := autorewrite with bool rw_prop inversion utils term lang_core model in * in
+  let y := eauto 7 with utils term lang_core model in
+  (intuition break; subst; x; intuition unshelve y; break; subst).
+
 
 Section __.
   
@@ -90,7 +103,7 @@ Section __.
         induction H1;
         inversion 2;
         basic_goal_prep;
-        basic_core_crush.
+        core_crush1.
       {
         case_match; cbn in *; try tauto.
         eapply egraph_sound; eauto.
@@ -124,7 +137,7 @@ Section __.
       safe_invert H2.
       use_rule_in_wf.
       eapply in_all_fresh_same in H8;[ | clear H8; eauto with lang_core ..].
-      basic_core_crush.
+      core_crush1.
       eapply sort_con_congruence; eauto; try typeclasses eauto.
       eapply eq_args_oracle_sound; eauto.
     Qed.
@@ -173,7 +186,7 @@ Section __.
         1,2:constructor;
         eapply named_list_lookup_err_in; now eauto.
         1: now safe_invert H.
-        case_match; basic_goal_prep; [|basic_core_crush].
+        case_match; basic_goal_prep; [|solve [congruence | basic_core_crush]].
         (*TODO: Some = default rewrite?*)
         unfold default, option_default in H.
         case_match; basic_goal_prep; try congruence.
@@ -190,6 +203,7 @@ Section __.
       {
         destruct s; destruct c'; destruct fuel;
           basic_goal_prep;
+          try (exfalso; congruence);
           intuition break;
           autorewrite with rw_prop inversion utils model term lang_core in *;
           try tauto.
@@ -197,7 +211,8 @@ Section __.
           What about rewriting matches to existential or?
           The latter is probably bad.
          *)
-        repeat (case_match; basic_goal_prep; [|basic_core_crush]).
+        repeat (case_match; basic_goal_prep;
+                [|solve [congruence | basic_core_crush]]).
         (* TODO: why does this take a long time?
           basic_core_crush. *)
         autorewrite with bool utils model term lang_core in *.
@@ -242,7 +257,8 @@ Section __.
       intros wfl wfc.
       revert c'.
       induction s; destruct c'; basic_goal_prep; [basic_core_crush..|].
-      repeat (revert H0; case_match; basic_goal_prep; [|basic_core_crush]).
+      repeat (revert H0; case_match; basic_goal_prep;
+              [|solve [congruence | basic_core_crush]]).
       autorewrite with bool utils model term lang_core in *.
       subst.
       intuition eauto.
@@ -415,14 +431,12 @@ Section __.
     induction l; basic_goal_prep.
     { basic_core_crush. }
     unfold true_or, Some_or in *.
-    revert H; case_match; basic_goal_prep; [|basic_core_crush].
-    revert H; case_match; basic_goal_prep; [|basic_core_crush].
-    revert H; case_match; basic_goal_prep; [|basic_core_crush].
-    revert H; case_match; basic_goal_prep; [|basic_core_crush].
+    do 4 (revert H; case_match; basic_goal_prep;
+          [|solve [tauto | congruence | basic_core_crush]]).
     all: repeat match goal with H : _ |- _ => apply left_eq_to_Is_Some in H end.
     symmetry in case_match_eqn0.
     autorewrite with bool utils in *; try typeclasses eauto.
-    basic_core_crush.
+    core_crush1.
     eapply compute_wf_rule_sound; eauto using wf_lang_concat_hd.
     eapply wf_lang_concat_iff; intuition auto.
   Qed.
@@ -478,7 +492,12 @@ Section __.
       revert cmp; induction src;
         repeat (basic_goal_prep;
                 case_match);
-        basic_utils_crush;
+        break; subst;
+        autorewrite with rw_prop inversion in *;
+        rewrite ?eq_true_to_Is_true, ?eqb_prop_iff in *;
+        try typeclasses eauto;
+        break; subst;
+        try solve [eauto with utils lang_core];
         autorewrite with lang_core in *;
         constructor; intuition eauto;
         repeat match goal with H : _ |- _ => apply left_eq_to_Is_Some in H end.
@@ -490,7 +509,7 @@ Section __.
         2:eauto using wf_lang_concat.
         1:apply core_model_ok ; eauto; typeclasses eauto.
         eapply compiler_append; eauto; try typeclasses eauto;
-          basic_core_crush.
+          try apply incl_refl; try solve [eauto using wf_lang_concat].
         eapply all_fresh_compiler; eauto with lang_core.
       }
       {
@@ -501,7 +520,7 @@ Section __.
         2:eauto using wf_lang_concat.
         1:apply core_model_ok ; eauto; typeclasses eauto.
         eapply compiler_append; eauto; try typeclasses eauto;
-          basic_core_crush.
+          try apply incl_refl; try solve [eauto using wf_lang_concat].
         eapply all_fresh_compiler; eauto with lang_core.
       }
       {
@@ -513,7 +532,7 @@ Section __.
         3,5,6,7,9,10,11: eauto.
         all: try eauto using wf_lang_concat.
         all:eapply compiler_append; eauto; try typeclasses eauto;
-            basic_core_crush.
+          try apply incl_refl; try solve [eauto using wf_lang_concat].
         all:eapply all_fresh_compiler; eauto with lang_core.
       }
       {
@@ -535,7 +554,7 @@ Section __.
         3,5,6,7,9,10,11: eauto.
         all: try eauto using wf_lang_concat.
         all:eapply compiler_append; eauto; try typeclasses eauto;
-            basic_core_crush.
+          try apply incl_refl; try solve [eauto using wf_lang_concat].
         all:eapply all_fresh_compiler; eauto with lang_core.
       }
     Qed.
@@ -566,9 +585,9 @@ Section __.
     intros.
     eapply compute_preserving_compiler_sound; eauto.
     all: try (apply cmp_wf_in_db_correct with (db:=proj1_sig db_cmp);
-              [typeclasses eauto|apply (proj2_sig db_cmp) | basic_utils_crush]).
+              [typeclasses eauto|apply (proj2_sig db_cmp) | utils_crush1]).
     all: try (apply lang_wf_in_db_correct with (db:=proj1_sig db);
-              [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush]).
+              [typeclasses eauto|apply (proj2_sig db) | utils_crush1]).
     all: rewrite case_match_eqn2; exact I.
   Qed.
 

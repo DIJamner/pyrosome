@@ -598,7 +598,7 @@ Section MapIntersectList.
       eauto.
     destruct a, acc;
       basic_goal_prep;
-      basic_utils_crush.
+      eauto.
     all: rewrite gather_tries_no_short_None3; eauto.
   Qed.
   
@@ -701,8 +701,8 @@ Section MapIntersectList.
       unfold id.
       basic_goal_prep.
       destruct o, o0, o1, o2, o3, o4, (option_all (rev l0)), (option_all (rev l1)), (option_all (rev l2));
-        clear l0 l1 l2;
-        basic_goal_prep.
+        clear l0 l1 l2.
+      all: cbn.
       all: rewrite <- ?app_assoc.
       all: reflexivity.
     }
@@ -977,9 +977,9 @@ Section MapIntersectList.
     revert acc.
     induction i;
       basic_goal_prep;
-      basic_utils_crush.
+      try reflexivity.
     all: rewrite IHi.
-    all: basic_utils_crush.
+    all: rewrite ?negb_involutive; reflexivity.
   Qed.
   
   (*TODO: problem! the reversal is forgotten here!
@@ -1206,8 +1206,7 @@ it's dependent on the length of i. use flip_by_length (could be backwards?)
   Proof.
     revert is_rev l0.
     induction t1;
-      basic_goal_prep;
-      basic_utils_crush.    
+      basic_goal_prep.
     all: rewrite ?gather_tries_rev;
                  unfold rev3;
                  rewrite ?hfin3_to_tuple_un_k, ?hfin3_tuple_inverse';
@@ -1233,7 +1232,7 @@ it's dependent on the length of i. use flip_by_length (could be backwards?)
       basic_goal_prep;
       rewrite ?option_map2_Some_r in *;
       cbv [id] in *;
-      autorewrite with utils in *;
+      rewrite ?option_all_rev, ?option_map_option_map, ?app_nil_r in *;
       erewrite option_map_ext in *
         by (basic_goal_prep; rewrite app_nil_r; reflexivity).
     all: rewrite !split_map in *; cbn in *.
@@ -1249,7 +1248,7 @@ it's dependent on the length of i. use flip_by_length (could be backwards?)
       basic_goal_prep;
       rewrite ?option_map2_Some_r in *;
       cbv [id] in *;
-      autorewrite with utils in *;
+      rewrite ?app_nil_r in *;
       try erewrite option_map_ext in *
         by (basic_goal_prep; rewrite app_nil_r; reflexivity);
       rewrite ?split_map in *; cbn in *;
@@ -1382,7 +1381,7 @@ it's dependent on the length of i. use flip_by_length (could be backwards?)
       rewrite !Mbind_option_map;
       basic_goal_prep.
     all:repeat (case_match; cbn; auto;
-              autorewrite with utils in *;
+              rewrite ?app_nil_r in *;
               try rewrite !list_intersect_rev, !negb_involutive in *;
               rewrite ?map_elts_wf_rev, ?rev_involutive).
     all: try now (eapply tree'_tuple_right_elts_wf; eauto).
@@ -1415,7 +1414,7 @@ it's dependent on the length of i. use flip_by_length (could be backwards?)
       rewrite !Mbind_option_map;
       basic_goal_prep.
     all:repeat (case_match; cbn; auto;
-              autorewrite with utils in *;
+              rewrite ?app_nil_r in *;
               try rewrite !list_intersect_rev, !negb_involutive in *;
               rewrite ?map_elts_wf_rev, ?rev_involutive).
     all: try now (eapply tree'_tuple_right_elts_wf; eauto).
@@ -1447,7 +1446,7 @@ it's dependent on the length of i. use flip_by_length (could be backwards?)
       rewrite !Mbind_option_map;
       basic_goal_prep.
     all:repeat (case_match; cbn; auto;
-              autorewrite with utils in *;
+              rewrite ?app_nil_r in *;
               try rewrite !list_intersect_rev, !negb_involutive in *;
                 rewrite ?map_elts_wf_rev, ?rev_involutive).
     all: rewrite ? elts_intersect_rev in *; try congruence.
@@ -1469,7 +1468,7 @@ it's dependent on the length of i. use flip_by_length (could be backwards?)
     change list_intersect' with list_intersect'_pre_cbv.
     revert hd is_rev tl.
     induction x; destruct hd; intros;
-      basic_utils_crush.
+      try reflexivity.
     all: cbn [get'].
     all: try rewrite list_intersect'_get1 by auto.
     all: try rewrite list_intersect'_get0 by auto.
@@ -1660,7 +1659,7 @@ Proof.
               |- _ =>
                 rewrite H
             end.
-      all:autorewrite with bool utils in *.
+      all: repeat (rewrite ?gNode; rewrite ?gempty).
       all: try congruence.
       all: repeat lazymatch goal with
              | Hi : intersect' ?f ?t0 ?t1 = _,

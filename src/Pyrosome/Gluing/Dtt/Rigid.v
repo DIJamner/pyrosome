@@ -886,17 +886,107 @@ Ltac nrm :=
         else change_no_check (rceq_term t' a' b')
     end.
 
+(* Peeling a [ceq_args] at a concrete rule context with [inversion] is by far
+   the most expensive step of the obligation proofs below: [ott_dtt] has ~70
+   rules, so [decomp] runs it a couple of hundred times, each time building a
+   fresh dependent elimination at a large concrete context.  These three
+   inversion lemmas are proved once, generically, and then merely [apply]ed.
+   The shape is separated from the contents because [ceq_args] is [Type]-valued
+   (so it cannot appear under an [exists]). *)
+Lemma rceq_args_nil_inv s1 s2
+  : ceq_args (CM := RigCM) [] s1 s2 -> s1 = [] /\ s2 = [].
+Proof. intro H; inversion H; auto. Qed.
+
+Lemma rceq_args_cons_shape name t c' s1 s2
+  : ceq_args (CM := RigCM) ((name,t)::c') s1 s2 ->
+    exists x1 l1 x2 l2, s1 = x1::l1 /\ s2 = x2::l2.
+Proof. intro H; inversion H; subst; eauto 6. Qed.
+
+Lemma rceq_args_cons_inv name t c' x1 l1 x2 l2
+  : ceq_args (CM := RigCM) ((name,t)::c') (x1::l1) (x2::l2) ->
+    ceq_args (CM := RigCM) c' l1 l2
+    * rceq_term t[/with_names_from c' l2/] x1 x2.
+Proof. intro H; inversion H; subst; split; assumption. Qed.
+
+(* [ott_dtt] has ~70 rules, but each obligation concerns only the rules of one
+   shape.  Splitting the [In] hypothesis over all 70 disjuncts and refuting the
+   irrelevant ones with [discriminate] builds a 70-way case tree whose branches
+   mention whole rules; both the split and the kernel's re-check of it are
+   expensive (measured: ~3s per obligation).  Restricting the membership to the
+   relevant shape first cuts the tree down to the branches that are actually
+   used, and the [filter] is discharged by a single conversion. *)
+(* [ott_dtt] has no sort equations at all; the same [filter] trick refutes
+   [sort_by_obligation] by one conversion instead of ~70 [discriminate]s. *)
+Lemma ott_dtt_no_sort_eq name c' t1 t2
+  : In (name, sort_eq_rule c' t1 t2) ott_dtt -> False.
+Proof.
+  intro H.
+  assert (H' : In (name, sort_eq_rule c' t1 t2)
+                 (filter
+                    (fun r => match snd r with
+                              | sort_eq_rule _ _ _ => true
+                              | _ => false end) ott_dtt))
+    by (apply filter_In; split; [ exact H | reflexivity ]).
+  cbv [ott_dtt filter snd In] in H'; exact H'.
+Qed.
+
+Lemma in_ott_dtt_sort name c' args
+  : In (name, sort_rule c' args) ott_dtt ->
+    In (name, sort_rule c' args)
+      (filter (fun r => match snd r with sort_rule _ _ => true | _ => false end)
+         ott_dtt).
+Proof. intro H; apply filter_In; split; [ exact H | reflexivity ]. Qed.
+
+Lemma in_ott_dtt_term name c' args t
+  : In (name, term_rule c' args t) ott_dtt ->
+    In (name, term_rule c' args t)
+      (filter (fun r => match snd r with term_rule _ _ _ => true | _ => false end)
+         ott_dtt).
+Proof. intro H; apply filter_In; split; [ exact H | reflexivity ]. Qed.
+
+Lemma in_ott_dtt_term_eq name c' e1 e2 t
+  : In (name, term_eq_rule c' e1 e2 t) ott_dtt ->
+    In (name, term_eq_rule c' e1 e2 t)
+      (filter (fun r => match snd r with term_eq_rule _ _ _ _ => true | _ => false end)
+         ott_dtt).
+Proof. intro H; apply filter_In; split; [ exact H | reflexivity ]. Qed.
+
 Ltac decomp :=
+  try match goal with
+      | [ Hin : In _ ott_dtt |- _ ] =>
+          first [ apply in_ott_dtt_term_eq in Hin
+                | apply in_ott_dtt_term in Hin
+                | apply in_ott_dtt_sort in Hin ]
+      end;
   match goal with
-  | [ Hin : In _ ott_dtt |- _ ] =>
-      vm_compute in Hin;
+  | [ Hin : In _ _ |- _ ] =>
+      cbv [ott_dtt filter snd In] in Hin;
       repeat (destruct Hin as [Hin|Hin]); try discriminate;
-      inversion Hin; subst; clear Hin
+      first [ injection Hin; clear Hin;
+              repeat match goal with [ |- _ = _ -> _ ] => intro end
+            | destruct Hin ]
   end;
+  (* Substitute ONLY the rule context (the one equation whose right-hand side
+     is a literal list of pairs), so that the [ceq_args] peel below runs while
+     the goal's terms are still variables -- peeling rewrites the argument
+     lists once per argument, and doing that against the fully concrete rule
+     statement costs O(args * size of rule). *)
   repeat match goal with
-    | [ H : ceq_args (_::_) _ _ |- _ ] => inversion H; subst; clear H
-    | [ H : ceq_args [] _ _ |- _ ] => inversion H; subst; clear H
+    | [ H : [] = ?x, Ha : ceq_args ?x _ _ |- _ ] => rewrite <- H in Ha
+    | [ H : (_ :: _) = ?x, Ha : ceq_args ?x _ _ |- _ ] => rewrite <- H in Ha
+    | [ H : ?x = [], Ha : ceq_args ?x _ _ |- _ ] => rewrite H in Ha
+    | [ H : ?x = (_ :: _), Ha : ceq_args ?x _ _ |- _ ] => rewrite H in Ha
     end;
+  repeat match goal with
+    | [ H : ceq_args (_::_) _ _ |- _ ] =>
+        let Hs := fresh "Hs" in
+        pose proof (rceq_args_cons_shape H) as Hs;
+        destruct Hs as [? [? [? [? [-> ->] ] ] ] ];
+        apply rceq_args_cons_inv in H; destruct H as [H ?]
+    | [ H : ceq_args [] _ _ |- _ ] =>
+        apply rceq_args_nil_inv in H; destruct H as [-> ->]
+    end;
+  subst;
   cbn [ceq_term ceq_sort RigCM] in *; nrm.
 
 (* [csort_by] is vacuous: [ott_dtt] has no sort equations at all. *)
@@ -907,8 +997,7 @@ Lemma sort_by_obligation
     rceq_sort t1[/with_names_from c' s1/] t2[/with_names_from c' s2/].
 Proof.
   intros c' name t1 t2 s1 s2 Hin Hargs.
-  vm_compute in Hin; repeat (destruct Hin as [Hin|Hin]);
-    first [ discriminate | destruct Hin ].
+  destruct (ott_dtt_no_sort_eq Hin).
 Qed.
 
 (* ---- introduction / elimination for each clause (all by conversion) ---- *)

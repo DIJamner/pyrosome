@@ -3,6 +3,14 @@ From Stdlib Require Import Classes.Morphisms.
 
 From Utils Require Import Utils.
 
+(* File-local single-round variant of basic_utils_crush: the shared
+   generic_crush is a `repeat`, and most call sites here only need one
+   round.  Sites that need the full loop keep basic_utils_crush. *)
+Ltac utils_crush1 :=
+  let x := autorewrite with bool rw_prop inversion utils in * in
+  let y := eauto with utils in
+  (intuition break; subst; x; intuition unshelve y).
+
 Section Closure.
   Context {A : Type}
     (R : A -> A -> Prop).
@@ -29,7 +37,7 @@ Section Closure.
     intros a b c H.
     revert c; induction H;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
   
   (*TODO: rename to supremum?*)
@@ -49,7 +57,7 @@ Section Closure.
   Proof.
     induction 1;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
   
   Lemma transitive_iff_count_step b c
@@ -58,7 +66,7 @@ Section Closure.
     split; basic_goal_prep; eauto using count_step_implies_transitive.
     induction H;
       basic_goal_prep; eexists;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
   
 
@@ -81,24 +89,62 @@ Section Closure.
   Proof.
     induction 1;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
   
+  (* Helper for PER_step below. *)
+  Lemma eq_clo_of_or x y
+    : R x y \/ R y x -> equivalence_closure x y.
+  Proof.
+    intros [Hr | Hr];
+      [ apply eq_clo_base; exact Hr
+      | apply eq_clo_sym; apply eq_clo_base; exact Hr ].
+  Qed.
+
   Lemma PER_step a c
     : PER_closure a c <->
         (exists b, (R a b \/ R b a) /\ equivalence_closure b c)
         /\ (exists b, (R c b \/ R b c) /\ equivalence_closure a b).
   Proof.
-    split; basic_goal_prep.
+    split.
     {
-      induction H; basic_goal_prep.
-      { basic_utils_crush. }
-      { split; eexists; basic_utils_crush. }
-      { split; eexists; basic_utils_crush. }
+      induction 1 as
+        [ x y Hxy
+        | x y z Hxy [[p1 [Hp1 Hp1e]] [p2 [Hp2 Hp2e]]]
+              Hyz [[q1 [Hq1 Hq1e]] [q2 [Hq2 Hq2e]]]
+        | x y Hxy [[r1 [Hr1 Hr1e]] [r2 [Hr2 Hr2e]]] ].
+      {
+        split; [exists y | exists x]; split;
+          [ left; exact Hxy
+          | apply eq_clo_refl
+          | right; exact Hxy
+          | apply eq_clo_refl ].
+      }
+      {
+        assert (equivalence_closure y z) as Hyze
+            by (eapply eq_clo_trans; [apply eq_clo_of_or; exact Hq1 | exact Hq1e]).
+        assert (equivalence_closure x y) as Hxye
+            by (eapply eq_clo_trans; [apply eq_clo_of_or; exact Hp1 | exact Hp1e]).
+        split; [exists p1 | exists q2]; split.
+        - exact Hp1.
+        - eapply eq_clo_trans; [exact Hp1e | exact Hyze].
+        - exact Hq2.
+        - eapply eq_clo_trans; [exact Hxye | exact Hq2e].
+      }
+      {
+        split; [exists r2 | exists r1]; split.
+        - exact Hr2.
+        - apply eq_clo_sym; exact Hr2e.
+        - exact Hr1.
+        - apply eq_clo_sym; exact Hr1e.
+      }
     }
     {
-      basic_utils_crush.
-      all: eapply PER_trans_equiv; basic_utils_crush.
+      intros [[b [Hab Hbc]] _].
+      eapply (proj1 (PER_trans_equiv _ _ Hbc)).
+      destruct Hab as [Hr | Hr];
+        [ apply PER_clo_base; exact Hr
+        | apply PER_clo_sym; apply PER_clo_base; exact Hr ].
     }
   Qed.
   
@@ -139,7 +185,7 @@ Proof.
   {
     intros.
     induction H0; basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   }
 Qed.
 
@@ -151,7 +197,7 @@ Proof.
   unfold subrelation; intros.
   induction H0;
     basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
 Qed.
 
 Definition disjoint {A} P1 P2 : Prop :=
@@ -172,7 +218,7 @@ Proof.
     unfold or2 in *;
       induction 1;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     {
       specialize (H0 b);
         unfold dom, codom in H0.
@@ -195,7 +241,7 @@ Proof.
       intro H'; destruct H' as [H' | H'];
       induction H';
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   }        
 Qed.
 
@@ -205,9 +251,9 @@ Proof.
   intro H.
   induction 1;
     basic_goal_prep;
-    basic_utils_crush.
-  { apply H in H0; basic_utils_crush. }
-  { apply H in H0; basic_utils_crush. }
+    utils_crush1.
+  { apply H in H0; utils_crush1. }
+  { apply H in H0; utils_crush1. }
 Qed.
 
 Lemma iff2_sym A B (R1 R2 : A -> B -> Prop) : iff2 R1 R2 -> iff2 R2 R1.
@@ -240,7 +286,7 @@ Proof.
   unfold Proper, respectful, impl2.
   intros.
   induction H0; basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
 Qed.
 
 Lemma union_clo_equiv_l A (R1 R2 : A -> _)
@@ -251,13 +297,13 @@ Proof.
   split.
   {
     induction 1; basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     eapply equivalence_closure_impl_proper; eauto.
     unfold impl2; intuition eauto.
   }
   {
     induction 1; basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   }
 Qed.
 
@@ -275,7 +321,7 @@ Proof.
   }
   {
     induction 1; basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   }
 Qed.
 
@@ -354,7 +400,7 @@ Add Parametric Relation A (R : A -> A -> Prop) : A (PER_closure R)
 Proof.
   intros ? ? H; induction H;
     basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
 Qed.
 
 #[export] Instance PER_equiv_subrel {A} {R : A -> A -> Prop}
@@ -362,7 +408,7 @@ Qed.
 Proof.
   intros ? ? H; induction H;
     basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
 Qed.
 
 Definition union_closure_PER {A : Type} (R1 R2 : A -> A -> Prop) :=
@@ -375,7 +421,7 @@ Proof.
   unfold impl2;
     repeat intro.
   induction H0; basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
 Qed.
 
 Lemma union_clo_PER_l A (R1 R2 : A -> _)
@@ -386,13 +432,13 @@ Proof.
   split.
   {
     induction 1; basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     eapply PER_closure_impl_proper; eauto.
     unfold impl2; intuition eauto.
   }
   {
     induction 1; basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   }
 Qed.
 
@@ -418,7 +464,7 @@ Proof.
   }
   {
     induction 1; basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   }
 Qed.
 
@@ -448,7 +494,7 @@ Lemma PER_bind A (R1 R2 : A -> A -> Prop)
 Proof.
   intros ? ? ? H.
   induction H; basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
 Qed.
 
 Lemma trans_bind A (R1 R2 : A -> A -> Prop)
@@ -457,7 +503,7 @@ Lemma trans_bind A (R1 R2 : A -> A -> Prop)
 Proof.
   intros ? ? ? H.
   induction H; basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
   etransitivity; try eassumption.
   eapply H0; eauto.
 Qed.
@@ -528,7 +574,7 @@ Proof using.
   clear.
   unfold subrelation.
   intros ? ?; induction 1; basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
 Qed.
 
 Lemma PER_closure_of_trans A (R : A -> A -> Prop)
@@ -537,7 +583,7 @@ Proof using.
   clear.
   unfold iff2; split;
     induction 1; basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
   eapply trans_PER_subrel; eauto.
 Qed.
 
@@ -558,5 +604,5 @@ Proof.
   intros ? ?.
   induction H0;
     basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
 Qed.
