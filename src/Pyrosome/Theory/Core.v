@@ -23,6 +23,11 @@ Ltac basic_core_crush :=
   let x := autorewrite with bool rw_prop inversion utils term lang_core model in * in
   let y := eauto 7 with utils term lang_core model in
       generic_crush x y.
+Ltac core_crush_shallow :=
+  let x := autorewrite with bool rw_prop inversion utils term lang_core model in * in
+  let y := eauto 2 with utils term lang_core model in
+      generic_firstorder_crush x y.
+
 Ltac basic_core_firstorder_crush :=
   let x := autorewrite with bool rw_prop inversion utils term lang_core model in * in
   let y := eauto with utils term lang_core  model in
@@ -553,7 +558,11 @@ Local Hint Resolve wf_ctx_lang_monotonicity : lang_core.
 Lemma wf_rule_lang_monotonicity (l l' : lang) r
   : incl l l' -> wf_rule l r -> wf_rule l' r.
 Proof.
-  inversion 2; basic_goal_prep; basic_core_crush.
+  inversion 2; basic_goal_prep; constructor;
+    solve [ assumption
+          | eapply wf_ctx_lang_monotonicity; eassumption
+          | eapply wf_sort_lang_monotonicity; eassumption
+          | eapply wf_term_lang_monotonicity; eassumption ].
 Qed.
 Local Hint Resolve wf_rule_lang_monotonicity : lang_core.
 
@@ -682,7 +691,11 @@ Hint Resolve wf_ctx_lang_monotonicity_app : lang_core.
 Lemma wf_rule_lang_monotonicity_app (l l' : lang) r
   : wf_rule l r -> wf_rule (l'++ l) r.
 Proof.
-  inversion 1; basic_goal_prep; basic_core_crush.
+  inversion 1; basic_goal_prep; constructor;
+    solve [ assumption
+          | eapply wf_ctx_lang_monotonicity_app; eassumption
+          | eapply wf_sort_lang_monotonicity_app; eassumption
+          | eapply wf_term_lang_monotonicity_app; eassumption ].
 Qed.
 Hint Resolve wf_rule_lang_monotonicity_app : lang_core.
 
@@ -748,6 +761,29 @@ Proof.
 Qed.
 Hint Resolve eq_subst_name_fresh_r_from_ctx : lang_core.
   
+(* Local tactics for the four hard cases of wf_implies_ws. *)
+Ltac ws_from_rule_in_lang :=
+  lazymatch goal with
+  | Hws : ws_lang ?L, Hin : In (_,_) ?L |- _ =>
+      let Hr := fresh "Hr" in
+      pose proof (rule_in_ws _ _ Hws Hin) as Hr;
+      simpl in Hr
+  end;
+  break; split; assumption.
+
+Ltac ws_from_subst :=
+  lazymatch goal with
+  | Hsub : all_fresh ?c' -> _, Hwsc : ws_ctx ?c' |- _ =>
+      specialize (Hsub (ws_all_fresh_ctx _ Hwsc))
+  end;
+  break; split;
+  [ eapply well_scoped_subst; try typeclasses eauto;
+    [ solve [ eassumption | eauto with utils model term ]
+    | erewrite eq_subst_dom_eq_l by eassumption; assumption ]
+  | eapply well_scoped_subst; try typeclasses eauto;
+    [ solve [ eassumption | eauto with utils model term ]
+    | erewrite eq_subst_dom_eq_r by eassumption; assumption ] ].
+
 Local Lemma wf_implies_ws (l : lang)
   : ws_lang l ->
     (forall c t1 t2,
@@ -775,34 +811,16 @@ Local Lemma wf_implies_ws (l : lang)
     /\ (forall c,
            wf_ctx l c -> ws_ctx c).
 Proof using V_Eqb_ok.
-  intros; apply judge_ind; basic_goal_prep;
-    basic_core_firstorder_crush.
-  all:
-    (*TODO: how to automate better/get into crush?
-      Just prove lemmas about each element of each rule_in?
-     *)
-    try match goal with
-        | [H0 : In (_,_) ?l, H1 : all _ (map snd ?l) |- _] =>
-          let H' := fresh in
-          pose proof (in_all_named_list H1 H0) as H';
-            simpl in H'; basic_core_crush
-        | [H : eq_subst _ _ ?c' ?s _|- well_scoped _ _[/?s/]] =>
-          apply well_scoped_subst;    
-            basic_core_crush;
-            replace (map fst s) with (map fst c'); try symmetry;
-              basic_core_crush
-                
-        | [H : eq_subst _ _ ?c' _ ?s |- well_scoped _ _[/?s/]] =>
-          apply well_scoped_subst;    
-            basic_core_crush;
-            replace (map fst s) with (map fst c'); try symmetry;
-              basic_core_crush
-        end.
-  all: specialize (H3 ltac:(basic_core_crush)).
-  all: break.
-  all: eapply well_scoped_subst; try typeclasses eauto;
-    eauto with model;
-    basic_core_crush.
+  intros; apply judge_ind; basic_goal_prep.
+  (* The four cases the crush cannot close on its own are
+     eq_sort_by (1), eq_sort_subst (2), eq_term_subst (6) and eq_term_by (7);
+     they are dispatched explicitly (in decreasing order, so that the
+     goal indices stay valid) and the rest go to a single shallow crush. *)
+  7: ws_from_rule_in_lang.
+  6: ws_from_subst.
+  2: ws_from_subst.
+  1: ws_from_rule_in_lang.
+  all: core_crush_shallow.
 Qed.
 
 Lemma eq_sort_implies_ws_l l c t1 t2
@@ -870,7 +888,11 @@ Lemma wf_rule_implies_ws l r
     wf_rule l r ->
     ws_rule r.
 Proof.
-  inversion 2; basic_goal_prep; basic_core_crush.
+  inversion 2; basic_goal_prep; simpl; repeat split;
+    solve [ assumption
+          | eapply wf_ctx_implies_ws; eassumption
+          | eapply wf_sort_implies_ws; eassumption
+          | eapply wf_term_implies_ws; eassumption ].
 Qed.
 Hint Resolve wf_rule_implies_ws : lang_core.
 
@@ -1034,6 +1056,17 @@ Proof.
 Qed.
 Hint Resolve wf_lang_implies_ws_noext : lang_core.
 
+(* Helper for transporting judgements along context inclusion via the
+   identity substitution; avoids a full crush on the [eq_subst] side goal. *)
+Lemma eq_subst_id_incl (l : lang) c c0
+  : incl c c0 -> eq_subst l c0 c (id_subst c) (id_subst c).
+Proof.
+  intro Hincl.
+  apply eq_subst_refl.
+  apply wf_subst_from_wf_args.
+  apply id_args_wf; exact Hincl.
+Qed.
+
 Local Lemma ctx_mono l
   : wf_lang l ->
     (forall c t1 t2,
@@ -1069,7 +1102,10 @@ Proof using V_Eqb_ok.
   {
     replace t1 with t1[/id_subst c/]; [|basic_core_crush].
     replace t2 with t2[/id_subst c/]; [|basic_core_crush].
-    eapply eq_sort_subst; basic_core_crush.
+    (eapply eq_sort_subst with (c':=c);
+       [ eapply eq_sort_by; eassumption
+       | apply eq_subst_id_incl; assumption
+       | eapply rule_in_ctx_wf; [ eassumption | eassumption | reflexivity ] ]).
   }
   {
     eapply eq_sort_trans; eauto.
@@ -1081,7 +1117,10 @@ Proof using V_Eqb_ok.
     replace t with t[/id_subst c/]; [|basic_core_crush].
     replace e1 with e1[/id_subst c/]; [|basic_core_crush].
     replace e2 with e2[/id_subst c/]; [|basic_core_crush].
-    eapply eq_term_subst; basic_core_crush.
+    (eapply eq_term_subst with (c':=c);
+       [ eapply eq_term_by; eassumption
+       | apply eq_subst_id_incl; assumption
+       | eapply rule_in_ctx_wf; [ eassumption | eassumption | reflexivity ] ]).
   }
   {
     eapply eq_term_trans; eauto.
@@ -1207,41 +1246,65 @@ Local Lemma subst_mono l
            wf_ctx l c -> True).
 Proof.
   intro wfl.
-  apply judge_ind; basic_goal_prep; 
-    try use_rule_in_wf;basic_core_firstorder_crush.
-  {
-    
-    fold_Substable.
-    (*TODO: make this smoother*)
-    unfold apply_subst at 2.
-    unfold substable_subst.
-    rewrite <- subst_assoc; try typeclasses eauto.
-    { basic_core_crush. }
-    {
-      replace (map fst s2) with (map fst c'); 
-        basic_core_crush.
-      symmetry.
-      eauto with lang_core model.
-    }
-  }
-  {
-    fold_Substable.
-    erewrite subst_assoc; try typeclasses eauto; [| basic_core_crush]; fold_Substable.
-    erewrite <- with_names_from_args_subst.
-    econstructor; simpl; fold_Substable; basic_core_crush.
-  }
-  {
-    fold_Substable.
-    
-    erewrite with_names_from_args_subst.
-    (*TODO: make this smoother*)
-    unfold apply_subst at 3.
-    unfold substable_subst.
-    erewrite <- subst_assoc; try typeclasses eauto.
-    (*TODO remove associativity hint?*)
-    - eauto with utils lang_core.
-    - basic_core_crush.
-  }
+  apply judge_ind; basic_goal_prep.
+  all: try exact I.
+  7: (try use_rule_in_wf;basic_core_firstorder_crush).
+  6: (try use_rule_in_wf;basic_core_firstorder_crush).
+  5: (try use_rule_in_wf;basic_core_firstorder_crush).
+  3: (try use_rule_in_wf;basic_core_firstorder_crush).
+  1: (try use_rule_in_wf;basic_core_firstorder_crush).
+  3:{ (lazymatch goal with
+         | Hc : wf_ctx _ ((_,_)::_) |- _ => safe_invert Hc
+         end;
+         break;
+         fold_Substable;
+         constructor;
+         [ erewrite with_names_from_args_subst;
+           unfold apply_subst at 3;
+           unfold substable_subst;
+           erewrite <- subst_assoc; try typeclasses eauto;
+           [ eauto with utils lang_core | basic_core_crush ]
+         | eauto with utils lang_core ]). }
+  2:{ (lazymatch goal with
+        | Hin : In (_, term_rule _ _ _) _ |- _ =>
+            let Hr := fresh "Hr" in
+            pose proof (rule_in_wf _ _ wfl Hin) as Hr;
+            rewrite app_nil_r in Hr;
+            safe_invert Hr
+        end;
+        fold_Substable;
+        erewrite subst_assoc; try typeclasses eauto;
+        [ fold_Substable;
+          erewrite <- with_names_from_args_subst;
+          eapply wf_term_by;
+          [ eassumption
+          | lazymatch goal with
+            | IH : wf_ctx _ _ -> wf_ctx _ _ ->
+                   forall _ _, wf_subst _ _ _ _ -> wf_args _ _ _ _ |- _ =>
+                apply IH; [ assumption | assumption | assumption ]
+            end ]
+        | erewrite map_fst_with_names_from
+            by (eapply wf_args_length_eq; eassumption);
+          eapply wf_sort_implies_ws with (l:=l);
+          [ apply wf_lang_implies_ws_noext; assumption
+          | assumption ] ]). }
+  1: (lazymatch goal with
+        | Hwfc' : wf_ctx _ ((_,_)::_) |- _ => safe_invert Hwfc'
+        end;
+        break;
+        fold_Substable;
+        constructor;
+        [ lazymatch goal with
+          | IH : _ -> _ -> forall _ _ _, eq_subst _ _ _ _ _ -> _ |- _ =>
+              apply IH; assumption
+          end
+        | unfold apply_subst at 2;
+          unfold substable_subst;
+          rewrite <- subst_assoc; try typeclasses eauto;
+          [ eapply eq_term_subst; eassumption
+          | replace (map fst s2) with (map fst c');
+            [ eapply wf_sort_implies_ws; [ eauto with lang_core | eassumption ]
+            | symmetry; eauto with lang_core model ] ] ]).
 Qed.
 
 Definition eq_subst_subst_monotonicity (l : lang) (wfl : wf_lang l)
@@ -1289,6 +1352,7 @@ Proof using V V_Eqb V_Eqb_ok V_default.
   intros; apply judge_ind; basic_goal_prep;
     try use_rule_in_wf;
     intuition eauto with lang_core model.
+
   6:{
     safe_invert H5.
     constructor; intuition eauto with model lang_core.
@@ -1299,7 +1363,19 @@ Proof using V V_Eqb V_Eqb_ok V_default.
     eapply eq_sort_sym.
     eapply eq_sort_subst; eauto with lang_core model.
   }
-  all:basic_core_crush.
+  7: first
+       [ solve
+           [ rewrite app_nil_r in H4; safe_invert H4;
+             eapply wf_sort_subst_monotonicity with (c := c') (s := with_names_from c' s);
+             try eassumption;
+             apply wf_subst_from_wf_args; assumption ]
+       | basic_core_crush ].
+  6: basic_core_crush.
+  5: basic_core_crush.
+  4: basic_core_crush.
+  3: basic_core_crush.
+  2: basic_core_crush.
+  1: basic_core_crush.
 Qed.
 
 Lemma eq_sort_wf_l (l : lang) c t1 t2
@@ -1554,7 +1630,11 @@ Hint Resolve wf_ctx_lang_insert_monotonicity : lang_core.
 Lemma wf_rule_lang_insert_monotonicity (l' l : lang) name r' r
   : wf_rule (l'++l) r -> wf_rule (l'++(name, r') :: l) r.
 Proof.
-  inversion 1; basic_goal_prep; basic_core_crush.
+  inversion 1; basic_goal_prep; constructor;
+    solve [ assumption
+          | eapply wf_ctx_lang_insert_monotonicity; eassumption
+          | eapply wf_sort_lang_insert_monotonicity; eassumption
+          | eapply wf_term_lang_insert_monotonicity; eassumption ].
 Qed.
 Hint Resolve wf_rule_lang_insert_monotonicity : lang_core.
 
@@ -1565,7 +1645,21 @@ Lemma lang_insert_wf (l' l : lang) r s
     wf_lang (l' ++ l) ->
     wf_lang (l' ++ (s,r)::l).
 Proof.
-  induction l'; inversion 3; basic_goal_prep; basic_core_crush.
+  induction l'; inversion 3; basic_goal_prep.
+  1,2: solve [constructor; rewrite ?app_nil_r; assumption].
+  first
+    [ solve
+        [ safe_invert H2;
+          rewrite app_nil_r in H4, H6;
+          apply fresh_app in H4; destruct H4;
+          apply fresh_cons in H; destruct H as [? H];
+          apply fresh_app in H; destruct H;
+          constructor;
+          [ rewrite app_nil_r; apply fresh_app; split;
+            [ assumption | apply fresh_cons; split; [congruence|assumption] ]
+          | apply IHl'; [apply fresh_app; split; assumption | assumption | assumption]
+          | rewrite app_nil_r; apply wf_rule_lang_insert_monotonicity; assumption ] ]
+    | basic_core_crush ].
 Qed.
 Hint Resolve lang_insert_wf : lang_core.
 
@@ -1575,12 +1669,20 @@ Theorem lang_sum_wf (l1 l2 l_pre : lang)
     wf_lang (l2++l_pre) ->
     wf_lang (l1++l2++l_pre).
 Proof.
-  induction l2; inversion 3; basic_goal_prep; basic_core_crush.
-  apply lang_insert_wf; basic_core_crush.
-  (*Not included in auto hints because it could trigger too often.
-    TODO: assess whether this really impacts performance.
-   *)
-  eapply all_fresh_insert_is_fresh; eauto.
+  induction l2; inversion 3; basic_goal_prep.
+  1,2: solve [subst; assumption].
+  first
+    [ solve
+        [ safe_invert H2;
+          apply lang_insert_wf;
+          [ apply fresh_app; split;
+            [ eapply all_fresh_insert_is_fresh; eassumption
+            | rewrite app_nil_r in H4; assumption ]
+          | rewrite app_nil_r in H6; assumption
+          | apply IHl2;
+            [ eapply all_fresh_insert_rest_is_fresh; eassumption
+            | assumption | assumption ] ] ]
+    | basic_core_crush ].
 Qed.
 
 (*TODO: prove strengthened version?
@@ -1681,7 +1783,14 @@ Qed.
 Lemma lang_ext_monotonicity l1 l2 l
   : wf_lang_ext l1 l -> incl l1 l2 -> all_fresh (l ++ l2) -> wf_lang_ext l2 l.
 Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
+  induction 1; basic_goal_prep.
+  1: solve [constructor].
+  break.
+  constructor.
+  1: assumption.
+  2:{ eapply wf_rule_lang_monotonicity; [| eassumption].
+      apply incl_app_app; eauto using incl_refl. }
+  apply IHwf_lang_ext; assumption.
 Qed.
 
 Lemma term_rule_in_sort_wf (l : lang) name c args t
@@ -1716,8 +1825,10 @@ Proof.
   {
     remember (con n s) as e.
     intros t2 wfe; revert t2 wfe Heqe.
-    induction 1; basic_goal_prep;
-      basic_core_firstorder_crush.
+    induction 1; basic_goal_prep.
+  3: (basic_core_firstorder_crush).
+  2: (core_crush_shallow).
+  1: (core_crush_shallow).
     2:{
       (* TODO: include congruence for eq_sort, eq_term as separate procedure
          in tactics?
@@ -1727,7 +1838,12 @@ Proof.
     pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh H) H3 H1) as H'.
     safe_invert H'.
     (*TODO: why is this proof at depth 6? Should be less than that *)
-    eauto 6 with utils model term lang_core.
+    (apply eq_sort_refl;
+       eapply wf_sort_subst_monotonicity;
+       [ eassumption
+       | eapply term_rule_in_sort_wf; eassumption
+       | eapply rule_in_ctx_wf; [ eassumption | eassumption | reflexivity ]
+       | apply wf_subst_from_wf_args; eassumption ]).
   }
   {
     intros; 
@@ -1737,8 +1853,10 @@ Proof.
   {
     remember (var n) as e.
     intros t2 wfe; revert t2 wfe Heqe.
-    induction 1; basic_goal_prep;
-    basic_core_firstorder_crush.
+    induction 1; basic_goal_prep.
+  3: (core_crush_shallow).
+  2: (core_crush_shallow).
+  1: (basic_core_firstorder_crush).
     {
       eapply eq_sort_trans; eauto.
     }

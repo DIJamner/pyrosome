@@ -106,8 +106,10 @@ Section WithVar.
     : Model.eq_args (Model:= core_model l) c c' s1 s2 -> wf_args (Model:= core_model l) c s2 c'.
   Proof.
     induction 1;
-      basic_goal_prep;
-      basic_core_crush.
+      basic_goal_prep.
+    1: constructor.
+    constructor.
+    all: try assumption.
     eapply eq_term_wf_r; eauto.
   Qed.
   Hint Resolve eq_args_implies_wf_r : lang_core.
@@ -119,11 +121,13 @@ Section WithVar.
       /\ (forall c' s1 s2, eq_args c' s1 s2 -> Model.eq_args (Model:= core_model l) c c' s1 s2).
   Proof.
     eapply eq_ind;
-      basic_goal_prep;
-      eauto using  Core.eq_term_sym, Core.eq_term_trans with lang_core.
-    use_rule_in_wf.
-    eapply Core.eq_term_conv; eauto.
-    eapply term_con_congruence; eauto.
+      basic_goal_prep.
+    (* dispatch the one hard case first: otherwise the blanket `eauto` below
+       pays for a failing depth-5 search on it *)
+    all: try (solve [use_rule_in_wf;
+                     eapply Core.eq_term_conv; eauto;
+                     eapply term_con_congruence; eauto]).
+    all: eauto using  Core.eq_term_sym, Core.eq_term_trans with lang_core.
   Qed.
 
   
@@ -135,20 +139,17 @@ Section WithVar.
   Proof.
     eapply cut_ind;
       basic_goal_prep;
-      try use_rule_in_wf;
-      eauto using eq_term_sym, eq_term_trans, eq_term_conv with lang_core.
-    {
-      eapply eq_term_by; eauto.
-      basic_core_crush.
-    }
-    {
-      eapply eq_term_cong; eauto.
-      autorewrite with lang_core utils in *.
-      break.
-      eapply eq_sort_subst; eauto with lang_core.
-      eapply eq_args_implies_eq_subst.
-      eapply Model.eq_args_refl; eauto with lang_core.
-    }
+      try use_rule_in_wf.
+    (* dispatch the two hard cases first: otherwise the blanket `eauto` below
+       pays for a failing depth-5 search on each of them *)
+    all: try (solve [eapply eq_term_by; eauto; basic_core_crush]).
+    all: try (solve [eapply eq_term_cong; eauto;
+                     autorewrite with lang_core utils in *;
+                     break;
+                     eapply eq_sort_subst; eauto with lang_core;
+                     eapply eq_args_implies_eq_subst;
+                     eapply Model.eq_args_refl; eauto with lang_core]).
+    all: eauto using eq_term_sym, eq_term_trans, eq_term_conv with lang_core.
   Qed.
     
   Lemma eq_term_iff t e1 e2

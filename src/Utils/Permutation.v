@@ -7,6 +7,14 @@ Import NatSort.
 
 From Utils Require Import Base Booleans Eqb Lists.
 
+(* File-local single-round variant of basic_utils_crush: the shared
+   generic_crush is a `repeat`, and most call sites here only need one
+   round.  Sites that need the full loop keep basic_utils_crush. *)
+Ltac utils_crush1 :=
+  let x := autorewrite with bool rw_prop inversion utils in * in
+  let y := eauto with utils in
+  (intuition break; subst; x; intuition unshelve y).
+
 Definition nat_permutationb (l1 l2 : list nat) : bool :=
   eqb (sort l1) (sort l2).
 
@@ -16,7 +24,7 @@ Lemma use_nat_permutationb l1 l2
 Proof.
   unfold nat_permutationb;
     basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
   rewrite Permuted_sort with (l:=l1).
   rewrite Permuted_sort with (l:=l2).
   rewrite H.
@@ -64,7 +72,7 @@ Section __.
     {
       induction perm;
         basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
       case_match;
         destruct (PeanoNat.Nat.ltb_spec a (length l)); eauto.
       3:{
@@ -78,7 +86,7 @@ Section __.
       {
         basic_goal_prep.
         f_equal;
-          basic_utils_crush.
+          utils_crush1.
         erewrite nth_error_nth; eauto.
       }
     }
@@ -91,12 +99,12 @@ Section __.
       
       induction l;
         basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
       {
 
         case_match;
           basic_goal_prep;
-          basic_utils_crush.
+          utils_crush1.
         {
           replace (S (length l0)) with (length (l0++[a])).
           2:rewrite length_app; simpl; Lia.lia.
@@ -131,7 +139,7 @@ Section __.
     generalize (@nil A).
     induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     { apply nth_middle. }
     {
       replace (S (length l0)) with (length (l0++[a0])).
@@ -147,9 +155,9 @@ Section __.
   Lemma permute_nil perm : permute [] perm = [].
   Proof.
     unfold permute, remove_all.
-    basic_goal_prep; basic_utils_crush.
+    basic_goal_prep; utils_crush1.
     induction perm;
-      basic_goal_prep; basic_utils_crush.
+      basic_goal_prep; utils_crush1.
     rewrite IHperm.
     destruct a; eauto.
   Qed.
@@ -185,7 +193,7 @@ Section __.
     revert n1 m.
     induction n2;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     all: try Lia.lia.
     {
       rewrite IHn2 in H0; Lia.lia.
@@ -197,7 +205,7 @@ Section __.
       pose proof (eqb_spec n1 m);
         destruct (eqb n1 m);
         basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
       right.
       eapply IHn2.
       Lia.lia.
@@ -213,7 +221,7 @@ Section __.
     : Is_true (Nat.ltb n m) <-> (n < m)%nat.
   Proof.
     rewrite <- PeanoNat.Nat.ltb_lt.
-    basic_utils_crush.
+    utils_crush1.
   Qed.
   #[local] Hint Rewrite is_true_ltb : utils.
 
@@ -225,10 +233,10 @@ Section __.
     generalize 0.
     induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     revert H; case_match;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
 
   Lemma extend_perm_incl perm n
@@ -239,16 +247,16 @@ Section __.
     {
       unfold incl.
       intros.
-      basic_utils_crush.
+      utils_crush1.
       Lia.lia.
     }      
     {
       unfold incl.
       intros.
-      basic_utils_crush.
+      utils_crush1.
       all: try Lia.lia.
       apply In_remove_all in H.
-      basic_utils_crush.
+      utils_crush1.
     }
   Qed.
 
@@ -257,9 +265,9 @@ Section __.
       filter f l = [].
   Proof.
     induction l;
-      basic_goal_prep; basic_utils_crush.
+      basic_goal_prep; utils_crush1.
     case_match;
-      basic_goal_prep; basic_utils_crush.
+      basic_goal_prep; utils_crush1.
     rewrite H in case_match_eqn; eauto.
   Qed.
 
@@ -268,7 +276,7 @@ Section __.
   Proof.
     destruct l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
 
   Lemma remove_all_filter n perm
@@ -290,11 +298,11 @@ Section __.
     generalize 0.
     induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     case_match;
-      basic_utils_crush;
+      utils_crush1;
       case_match;
-        basic_utils_crush; try Lia.lia;
+        utils_crush1; try Lia.lia;
       replace (n0 + S (length l))
           with (S n0 + (length l)) by Lia.lia;
       apply IHl with (n:= S n0); Lia.lia.
@@ -305,7 +313,7 @@ Section __.
     : Is_true (Nat.leb a b) <-> (a <= b)%nat.
   Proof.
     destruct (PeanoNat.Nat.leb_spec a b);
-      basic_utils_crush.
+      utils_crush1.
     Lia.lia.
   Qed.
   Hint Rewrite is_true_nat_leb : utils.
@@ -315,11 +323,11 @@ Section __.
   Proof.
     induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     destruct (g a) eqn:Hg;
     destruct (f a) eqn:Hf;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     {
       rewrite Is_true_implies_eq_true with (b:=f a) by eassumption.
       congruence.
@@ -340,34 +348,34 @@ Section __.
     Local Opaque Nat.leb.
     induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     case_match;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     {
       case_match;
         basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
       etransitivity.
       2: symmetry; apply IHl.
       rewrite filter_filter.
       rewrite filter_ext with (g:=Nat.leb (S n)); eauto.
       basic_goal_prep;
         unfold andb; case_match;
-        basic_utils_crush.
+        utils_crush1.
       Lia.lia.
     }
     {
       case_match;
         basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
       etransitivity.
       2: symmetry; apply IHl.
       rewrite filter_filter.
       rewrite filter_ext with (g:=Nat.leb (S n)); eauto.
       basic_goal_prep;
         unfold andb; case_match;
-        basic_utils_crush.
+        utils_crush1.
       Lia.lia.
     }
   Qed.
@@ -380,17 +388,17 @@ Section __.
     revert n.
     induction perm;
       basic_goal_prep;
-      basic_utils_crush.
-      case_match; basic_utils_crush; try Lia.lia.
+      utils_crush1.
+      case_match; utils_crush1; try Lia.lia.
       {
-        case_match; basic_utils_crush; try Lia.lia.
+        case_match; utils_crush1; try Lia.lia.
         cbn.
         f_equal.
         apply IHperm; eauto.
         safe_invert H; eauto.
       }
       {
-        case_match; basic_utils_crush; try Lia.lia.
+        case_match; utils_crush1; try Lia.lia.
         cbn.
         apply IHperm; eauto.
         safe_invert H; eauto.
@@ -404,10 +412,10 @@ Section __.
   Proof.
     induction perm;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     {
-      case_match; basic_utils_crush; try Lia.lia.
-      case_match; basic_utils_crush; try Lia.lia.
+      case_match; utils_crush1; try Lia.lia.
+      case_match; utils_crush1; try Lia.lia.
       cbn.
       safe_invert H.
       f_equal.
@@ -415,8 +423,8 @@ Section __.
     }
     {
       safe_invert H.
-      case_match; basic_utils_crush; try Lia.lia;
-        case_match; basic_utils_crush; try Lia.lia;
+      case_match; utils_crush1; try Lia.lia;
+        case_match; utils_crush1; try Lia.lia;
         cbn;
         eauto.
       exfalso.
@@ -435,7 +443,7 @@ Section __.
       basic_goal_prep;
       try case_match;
       basic_goal_prep;
-      basic_utils_crush;
+      utils_crush1;
       Lia.lia.
   Qed.
 
@@ -447,10 +455,10 @@ Section __.
   Proof.
     induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     case_match;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
 
   (*TODO: move*)
@@ -465,20 +473,20 @@ Section __.
   Proof.
     induction l;     
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     case_match;
       basic_goal_prep.
     2:{
       symmetry in case_match_eqn.
       apply Bool.negb_sym in case_match_eqn.
-      basic_utils_crush.
+      utils_crush1.
       rewrite filter_true_In; eauto.
       basic_goal_prep;
       basic_utils_crush.
     }
     {
       basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
       Lia.lia.
     }
   Qed.
@@ -489,10 +497,10 @@ Section __.
   Proof.
     induction l;     
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     case_match;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
 
   
@@ -502,10 +510,10 @@ Section __.
   Proof.
     induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     case_match; 
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
   
   Lemma NoDup_max_list_len (P : nat -> Prop) l max_l
@@ -517,11 +525,11 @@ Section __.
     revert P l.
     induction max_l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     {
       destruct l;
       basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
     }
     {
       set (fun x => negb (eqb x a)) as f.
@@ -532,9 +540,9 @@ Section __.
       { apply NoDup_filter; eauto. }
       {
         basic_goal_prep;
-          basic_utils_crush.
+          utils_crush1.
         specialize (H0 x).
-        basic_utils_crush.
+        utils_crush1.
       }
       {
       firstorder eauto.
@@ -544,7 +552,7 @@ Section __.
                     (NoDup_filter _ _ _ H)).
       apply all_filter.
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
       eapply in_all; eauto.
       }
     }
@@ -569,7 +577,7 @@ Section __.
     }
     {      
       basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
     }
   Qed.
 
@@ -586,17 +594,17 @@ Section __.
     Local Opaque Nat.sub.
     induction l;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     case_match;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     {
       rewrite remove_all'_filter_leb.
       rewrite filter_filter.
       rewrite filter_ext with (g:=Nat.leb (S n)); eauto.
       2:basic_goal_prep;
         unfold andb; case_match;
-      basic_utils_crush; Lia.lia.
+      utils_crush1; Lia.lia.
       rewrite IHl; eauto.
       2:{
         replace (S n + length l)
@@ -616,7 +624,7 @@ Section __.
     rewrite filter_ext with (g:= (Nat.leb (S n))).
       2:basic_goal_prep;
         unfold andb; case_match;
-      basic_utils_crush; Lia.lia.
+      utils_crush1; Lia.lia.
       
       rewrite IHl; eauto; try Lia.lia.
       {
@@ -643,28 +651,28 @@ Section __.
   Proof.
     assert (all (fun x => x < n) (filter (fun x : nat => Nat.ltb x n) perm)).
     {
-      induction perm; basic_goal_prep; basic_utils_crush.
-      case_match; basic_goal_prep; basic_utils_crush.
+      induction perm; basic_goal_prep; utils_crush1.
+      case_match; basic_goal_prep; utils_crush1.
     }
     intro Hnd.
     apply List.NoDup_filter with (f:=  (fun x : nat => Nat.ltb x n)) in Hnd.
     revert H Hnd.
     generalize ((filter (fun x : nat => Nat.ltb x n) perm)).
-    induction n;  basic_goal_prep; basic_utils_crush.
+    induction n;  basic_goal_prep; utils_crush1.
     {
-      destruct l; basic_goal_prep; basic_utils_crush; Lia.lia.
+      destruct l; basic_goal_prep; utils_crush1; Lia.lia.
     }
     {
       pose proof (length_filter_elt_NoDup _ n Hnd).
       enough (n >= length  (filter (fun x : nat => negb (eqb x n)) l)) by Lia.lia.
-      eapply IHn; basic_utils_crush.
+      eapply IHn; utils_crush1.
       revert H; clear.
       induction l;
         basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
       case_match;
         basic_goal_prep;
-        basic_utils_crush; try Lia.lia.
+        utils_crush1; try Lia.lia.
     }
   Qed.
      
@@ -685,9 +693,9 @@ Section __.
     assert (all (fun x => x < n)%nat
               (filter (fun x : nat => Nat.ltb x n) perm)).
     {
-      induction perm; basic_goal_prep; basic_utils_crush; try Lia.lia.
+      induction perm; basic_goal_prep; utils_crush1; try Lia.lia.
       case_match;
-        basic_goal_prep; basic_utils_crush; try Lia.lia.
+        basic_goal_prep; utils_crush1; try Lia.lia.
     }
     assert (NoDup (filter (fun x : nat => Nat.ltb x n) perm))
       by eauto using NoDup_filter.
@@ -706,12 +714,12 @@ Section __.
            at 2.
     2:{
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     }
     rewrite length_remove_all'; eauto.
     all: rewrite length_seq; eauto.
     rewrite filter_true_In; try Lia.lia.
-    basic_goal_prep; basic_utils_crush.
+    basic_goal_prep; utils_crush1.
   Qed.
 
   Lemma remove_all_seq_filter' perm n m
@@ -721,10 +729,10 @@ Section __.
     revert m;
       induction n;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     case_match;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
     
   Lemma remove_all_seq_filter perm n
@@ -745,18 +753,34 @@ Section __.
       with (g:= (fun x : nat => (inb x (seq 0 n))))
            at 1.
     2:{
-      basic_goal_prep;
-      basic_utils_crush.
-      destruct (inb a (seq 0 n)) eqn:Hin;
-        basic_utils_crush;
-        try Lia.lia.
+      intro a.
+      pose proof (inb_is_In a (seq 0 n)) as Hiff.
+      rewrite In_seq in Hiff.
+      destruct (inb a (seq 0 n)); cbn in Hiff;
+        destruct (PeanoNat.Nat.ltb_spec a n); try reflexivity.
+      { destruct Hiff as [Hf _]; specialize (Hf I); Lia.lia. }
+      { destruct Hiff as [_ Hf]; exfalso; apply Hf; Lia.lia. }
     }
     intros.
-    apply List.NoDup_app_iff;
-      basic_goal_prep;
-      basic_utils_crush.
-    apply NoDup_filter.
-    apply seq_NoDup.
+    apply List.NoDup_app_iff.
+    assert (forall x,
+               In x (filter (fun x0 : nat => inb x0 (seq 0 n)) perm) ->
+               ~ In x (filter (fun x0 : nat => negb (inb x0 perm)) (seq 0 n)))
+      as Hdisj.
+    {
+      intros x Hin1 Hin2.
+      apply filter_In in Hin1.
+      apply filter_In in Hin2.
+      destruct Hin1 as [Hin1 _]; destruct Hin2 as [_ Hnb].
+      destruct (inb x perm) eqn:Hb; cbn in Hnb; [discriminate|].
+      pose proof (proj2 (inb_is_In x perm) Hin1) as Hin1'.
+      rewrite Hb in Hin1'; exact Hin1'.
+    }
+    split; [| split; [| split] ].
+    - apply NoDup_filter; assumption.
+    - apply NoDup_filter; apply seq_NoDup.
+    - exact Hdisj.
+    - intros x Hin2 Hin1; eapply Hdisj; eassumption.
   Qed.
   
   (* TODO: simplify proof: use the fact that remove_all is equivalent to a filter

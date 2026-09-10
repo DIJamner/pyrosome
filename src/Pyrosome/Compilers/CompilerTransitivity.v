@@ -12,6 +12,22 @@ Import Core.Notations.
 Import CompilerDefs.Notations.
 
  
+(* File-local speed helpers: single-round versions of the crush tactics.
+   `generic_crush` is `repeat (...)`, so it always pays one extra
+   no-progress round; where one round suffices these are ~2x faster. *)
+Ltac core_crush1 :=
+  intuition break; subst;
+  autorewrite with bool rw_prop inversion utils term lang_core model in *;
+  intuition unshelve (eauto 7 with utils term lang_core model).
+Ltac core_fo_crush1 :=
+  intuition break; subst;
+  autorewrite with bool rw_prop inversion utils term lang_core model in *;
+  firstorder unshelve (eauto 7 with utils term lang_core model).
+Ltac utils_crush1 :=
+  intuition break; subst;
+  autorewrite with bool rw_prop inversion utils in *;
+  intuition unshelve (eauto with utils).
+
 Section WithVar.
   Context (V : Type)
     {V_Eqb : Eqb V}
@@ -38,7 +54,7 @@ Section WithVar.
 Lemma compile_subst_combine (cmp : compiler) args s
   : compile_subst cmp (combine args s) = combine args (map (compile cmp) s).
 Proof.
-  revert args; induction s; destruct args; basic_goal_prep; basic_core_crush.
+  revert args; induction s; destruct args; basic_goal_prep; core_crush1.
 Qed.
 
 Section CompileFn.
@@ -56,8 +72,8 @@ Section CompileFn.
     : named_list_lookup_err (compile_cmp cmp') n
       = option_map compile_ccase (named_list_lookup_err cmp' n).
   Proof.
-    induction cmp'; basic_goal_prep; basic_core_firstorder_crush.
-    case_match; basic_core_crush.
+    induction cmp'; basic_goal_prep; core_fo_crush1.
+    case_match; core_crush1.
   Qed.
   Hint Rewrite lookup_cmp_distributes : lang_core.
   
@@ -83,7 +99,7 @@ End CompileFn.
 Lemma all_fresh_named_map A B l (f : A -> B)
   : all_fresh (named_map f l) <-> all_fresh l.
 Proof.
-  induction l; basic_goal_prep; basic_utils_crush.
+  induction l; basic_goal_prep; utils_crush1.
 Qed.
 Hint Rewrite all_fresh_named_map : utils.
 
@@ -94,7 +110,7 @@ Lemma map_fst_combine A B (l1 : list A) (l2 : list B)
 Proof.
   revert l2; induction l1; destruct l2;
     basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
 Qed.
 Hint Rewrite map_fst_combine : utils.
 
@@ -105,7 +121,7 @@ Lemma named_map_combine A B (f : A -> B) l1 l2
 Proof.
   revert l2; induction l1; destruct l2;
     basic_goal_prep;
-    basic_utils_crush.
+    utils_crush1.
 Qed.
 Hint Rewrite named_map_combine : utils.
 
@@ -146,7 +162,7 @@ Lemma compile_term_subst (cmp : compiler) e s
     compile cmp e[/s/] = (compile cmp e)[/compile_subst cmp s/].
 Proof.
   intros allfcmp all_ws.
-  induction e; basic_goal_prep; basic_core_firstorder_crush.
+  induction e; basic_goal_prep; core_fo_crush1.
   case_match; simpl; eauto.
   symmetry in  case_match_eqn.
   apply named_list_lookup_err_in in case_match_eqn.
@@ -167,7 +183,7 @@ Proof.
   (*prove inner induction*)
   clear x x0 H0 H2  case_match_eqn.
   generalize dependent l.
-  induction l; basic_goal_prep; basic_core_crush.
+  induction l; basic_goal_prep; core_crush1.
 Qed.
 Hint Rewrite compile_term_subst : lang_core.
 
@@ -179,9 +195,9 @@ Lemma compile_args_subst cmp e s
     well_scoped (map fst s) e ->
     compile_args cmp e[/s/] = (compile_args cmp e)[/compile_subst cmp s/].
 Proof.
-  induction e; basic_goal_prep; basic_core_crush.
+  induction e; basic_goal_prep; core_crush1.
   fold_Substable.
-  basic_core_crush.
+  core_crush1.
 Qed.
 
 Lemma compile_sort_subst cmp e s
@@ -192,7 +208,7 @@ Lemma compile_sort_subst cmp e s
     compile_sort cmp e[/s/] = (compile_sort cmp e)[/compile_subst cmp s/].
 Proof.
   intros allfcmp all_ws.
-  induction e; basic_goal_prep; basic_core_firstorder_crush.
+  induction e; basic_goal_prep; core_fo_crush1.
   case_match; simpl; eauto.
   symmetry in  case_match_eqn.
   apply named_list_lookup_err_in in case_match_eqn.
@@ -225,7 +241,7 @@ Definition ccase_in_cmp_domain (cmp : compiler) (cc : compiler_case) :=
 Lemma pair_in_map_snd {A B} (a:A) (b:B) l
   : In (a,b) l -> In b (map snd l).
 Proof.
-  induction l; basic_goal_prep; basic_utils_crush.
+  induction l; basic_goal_prep; utils_crush1.
 Qed.
 Hint Resolve pair_in_map_snd : utils.
 
@@ -244,7 +260,7 @@ Lemma compile_cmp_distributes cmp cmp' e
     = (compile cmp (compile cmp' e)).
 Proof.
   intros all_ws_cmp allfr_cmp all_ws_cmp' allfr_cmp' cmp'_in_dom.
-  induction e; basic_goal_prep; basic_core_firstorder_crush.
+  induction e; basic_goal_prep; core_fo_crush1.
   assert (Some (term_case x x0) = named_list_lookup_err cmp' n).
   {
     rewrite all_fresh_named_list_lookup_err_in; eauto.
@@ -254,7 +270,7 @@ Proof.
           = named_list_lookup_err (compile_cmp cmp cmp') n).
   {
     rewrite all_fresh_named_list_lookup_err_in.
-    2: unfold compile_cmp; basic_utils_crush.
+    2: unfold compile_cmp; utils_crush1.
     {
       rewrite all_fresh_named_list_lookup_err_in in H4; eauto.
       unfold compile_cmp.
@@ -262,7 +278,7 @@ Proof.
         with (compile_ccase cmp (term_case x x0)).
       eapply in_named_map; eauto.
     }
-    unfold compile_cmp; basic_core_crush.
+    unfold compile_cmp; core_crush1.
   }
   rewrite <- H5.
   erewrite compile_term_subst; unfold ws_lang;eauto.
@@ -278,7 +294,7 @@ Proof.
     (*nested induction*)
     clear x x0 H1 H2 H4 H5.
     generalize dependent l.
-    induction l; basic_goal_prep; basic_core_crush.
+    induction l; basic_goal_prep; core_crush1.
   }
   {
     assert  (ccase_in_cmp_domain cmp (term_case x x0)).
@@ -308,7 +324,7 @@ Lemma compile_args_cmp_distributes cmp cmp' e
     = (compile_args cmp (compile_args cmp' e)).
 Proof.
   intros all_ws_cmp allfr_cmp all_ws_cmp' allfr_cmp' cmp'_in_dom.
-  induction e; basic_goal_prep; basic_core_crush.
+  induction e; basic_goal_prep; core_crush1.
 Qed.
 Hint Rewrite compile_args_cmp_distributes : lang_core.
 
@@ -326,7 +342,7 @@ Lemma compile_sort_cmp_distributes cmp cmp' e
     = (compile_sort cmp (compile_sort cmp' e)).
 Proof.
   intros all_ws_cmp allfr_cmp all_ws_cmp' allfr_cmp' cmp'_in_dom.
-  destruct e; basic_goal_prep; basic_core_firstorder_crush.
+  destruct e; basic_goal_prep; core_fo_crush1.
   assert (Some (sort_case x x0) = named_list_lookup_err cmp' v).
   {
     rewrite all_fresh_named_list_lookup_err_in; eauto.
@@ -336,7 +352,7 @@ Proof.
           = named_list_lookup_err (compile_cmp cmp cmp') v).
   {
     rewrite all_fresh_named_list_lookup_err_in.
-    2: unfold compile_cmp; basic_utils_crush.
+    2: unfold compile_cmp; utils_crush1.
     {
       rewrite all_fresh_named_list_lookup_err_in in H3; eauto.
       unfold compile_cmp.
@@ -344,7 +360,7 @@ Proof.
         with (compile_ccase cmp (sort_case x x0)).
       eapply in_named_map; eauto.
     }
-    unfold compile_cmp; basic_core_crush.
+    unfold compile_cmp; core_crush1.
   }
   rewrite <- H4.
   erewrite compile_sort_subst; unfold ws_lang;eauto.
@@ -359,7 +375,7 @@ Proof.
       (*nested induction*)
       clear x x0 H1 H0 H3 H4.
       generalize dependent l.
-      induction l; basic_goal_prep; basic_core_crush.
+      induction l; basic_goal_prep; core_crush1.
     }
     now auto.
   }
@@ -391,7 +407,7 @@ Lemma compile_ctx_cmp_distributes cmp cmp' e
     = (compile_ctx cmp (compile_ctx cmp' e)).
 Proof.
   intros all_ws_cmp allfr_cmp all_ws_cmp' allfr_cmp' cmp'_in_dom.
-  induction e; basic_goal_prep; basic_core_crush.
+  induction e; basic_goal_prep; core_crush1.
 Qed.
 Hint Rewrite compile_ctx_cmp_distributes : lang_core.   
 
@@ -417,7 +433,8 @@ Lemma sort_in_preserving_lang_in_cmp cmp_pre tgt cmp src n c' args
     exists t, In (n, sort_case (map fst c') t) cmp.
 Proof.
   induction 1; basic_goal_prep;
-    basic_core_crush.
+    try clear dependent tgt;
+    core_crush1.
 Qed.
 
 Lemma term_in_preserving_lang_in_cmp cmp_pre tgt cmp src n c' args t
@@ -426,7 +443,8 @@ Lemma term_in_preserving_lang_in_cmp cmp_pre tgt cmp src n c' args t
     exists e, In (n, term_case (map fst c') e) cmp.
 Proof.
   induction 1; basic_goal_prep;
-    basic_core_crush.
+    try clear dependent tgt;
+    core_crush1.
 Qed.
 
 
@@ -445,20 +463,20 @@ Lemma wf_in_domain cmp_pre tgt cmp src
 Proof.
   intro pres_cmp.
   apply wf_judge_ind; basic_goal_prep;
-    basic_core_firstorder_crush.
+    core_fo_crush1.
   {
     pose proof (sort_in_preserving_lang_in_cmp _ _ _ pres_cmp H).
     firstorder.
     exists (map fst c').
     exists x.
-    basic_core_crush.
+    core_crush1.
   }
   {
     pose proof (term_in_preserving_lang_in_cmp _ _ _ _ pres_cmp H).
     firstorder.
     exists (map fst c').
     exists x.
-    basic_core_crush.
+    core_crush1.
   }
 Qed.
 
@@ -486,7 +504,7 @@ Lemma wf_ctx_in_domain cmp_pre tgt cmp ir c
     wf_ctx (Model:= core_model ir) c ->
     all (sort_in_cmp_domain cmp) (map snd c).
 Proof.
-  induction 2; basic_goal_prep; basic_core_crush.
+  induction 2; basic_goal_prep; core_crush1.
 Qed.
 Hint Resolve wf_ctx_in_domain : lang_core.
   
@@ -509,7 +527,8 @@ Lemma compiler_map_fst_incl tgt cmp l
 Proof.
   induction 1;
     basic_goal_prep;
-    basic_core_crush.
+    try clear dependent tgt;
+    core_crush1.
 Qed.
 
 (*
@@ -521,7 +540,7 @@ Proof.
   revert cmp.
   induction l;
     basic_goal_prep;
-    basic_core_crush.
+    core_crush1.
   {
     destruct cmp; simpl in *; auto.
     inversion H.
@@ -540,7 +559,7 @@ Lemma all_fresh_compiler tgt cmp l
 Proof.
   induction 1;
     basic_goal_prep;
-    basic_core_crush.
+    core_crush1.
   {
     unfold fresh in *.
     intro; apply H2.
@@ -575,28 +594,34 @@ Theorem preservation_transitivity src ir tgt cmp cmp'
 Proof using V_Eqb_ok.
   intros compile_default wfsrc wfir wftgt sub_default sub_default' pres_cmp pres_cmp'.
   pose proof (inductive_implies_semantic (tgt_Model_ok := core_model_ok wftgt)
-                sub_default sub_default' wfir pres_cmp).
-  firstorder.
+                sub_default sub_default' wfir pres_cmp) as Hsem.
+  destruct Hsem as [Hseq [Hteq [Hsubeq [Hswf [Htwf [Hawf Hcwf]]]]]].
   revert wfsrc.
   induction pres_cmp'; basic_goal_prep; constructor.
   all: rewrite ?invert_wf_lang_cons in *; break; rewrite app_nil_r in *.
   all: eauto.
   all:  erewrite ?compile_ctx_cmp_distributes, ?compile_sort_cmp_distributes, ?compile_cmp_distributes.
   all: eauto with lang_core.
+  (* The seven semantics-preserving hypotheses are large; removing them before
+     the `in *` rewriting below (and re-deriving them afterwards) saves the
+     bulk of this proof's time. *)
+  all: clear Hseq Hteq Hsubeq Hswf Htwf Hawf Hcwf.
+  all: autorewrite with lang_core in *.
   all: pose proof (core_model_ok wfir).
+  all: pose proof (inductive_implies_semantic (tgt_Model_ok := core_model_ok wftgt)
+                     sub_default sub_default' wfir pres_cmp) as Hsem;
+    destruct Hsem as [Hseq [Hteq [Hsubeq [Hswf [Htwf [Hawf Hcwf]]]]]].
   all: try (pose proof pres_cmp' as H'; apply inductive_implies_semantic in H').
   all: try typeclasses eauto.
   all: try reflexivity.
   all: try assumption.
-  all: autorewrite with lang_core model term utils in *.
   all: break.
   all: try intuition eauto with lang_core model utils.
   all: cbn [Model.eq_sort Model.eq_term Model.wf_sort Model.wf_term core_model] in *.
-  1: apply H2; eauto.
-  2: apply H3; eauto.
-  3: apply H; eauto.
-  4: apply H0; eauto.
-  all: apply H'; eauto.
+  all: (apply Hswf + apply Htwf + apply Hseq + apply Hteq + apply H'); eauto.
+  Unshelve.
+  all: destruct H' as [? [? [? [? [? [? Hcwf']]]]]].
+  all: apply Hcwf'; eauto with lang_core model utils.
 Qed.
 Hint Resolve preservation_transitivity : lang_core.
 

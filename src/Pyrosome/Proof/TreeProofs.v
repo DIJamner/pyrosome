@@ -49,8 +49,9 @@ Section WithVar.
         eq_term l c t (con name s1) (con name s2).
     Proof.
       intros.
-      rewrite <- (wf_con_id_args_subst c' s1); [|basic_core_crush..].
-      rewrite <- (wf_con_id_args_subst c' s2); [| basic_core_crush..].
+      assert (all_fresh c') by basic_core_crush.
+      rewrite <- (wf_con_id_args_subst c' s1); [| eauto with lang_core model..].
+      rewrite <- (wf_con_id_args_subst c' s2); [|eauto with lang_core model..].
       subst.
       change (con ?n ?args[/?s/]) with (con n args)[/s/].
       eapply eq_term_subst; eauto.
@@ -367,6 +368,29 @@ Section WithVar.
 
 
     
+
+    Local Lemma check_args_proof_sound (args : list pf)
+      : all (fun p =>
+               (forall t1 t2, check_sort_proof p = Some (t1, t2) -> eq_sort l c t1 t2)
+               /\ (forall t e1 e2, check_proof p = Some (e1, e2, t) -> eq_term l c t e1 e2))
+          args ->
+        forall c' s1 s2,
+          check_args_proof check_proof args c' = Some (s1, s2) ->
+          eq_args l c c' s1 s2.
+    Proof.
+      induction args;
+        basic_goal_prep;
+        repeat case_match';
+        try congruence;
+        basic_goal_prep;
+        autorewrite with bool inversion utils in *;
+        break; subst;
+        try contradiction.
+      1: apply Model.eq_args_nil.
+      apply Model.eq_args_cons; eauto.
+      eapply H2; reflexivity.
+    Qed.
+
     Lemma pf_checker_sound p
       : (forall t1 t2,
         check_sort_proof p = Some (t1, t2) ->
@@ -390,61 +414,30 @@ Section WithVar.
       {
         eapply sort_con_congruence; eauto.
         + basic_core_crush.
-        + clear case_match_eqn.
-          clear l1.
-          revert H n0 l2 l3 case_match_eqn0.
-          induction l0;
-            basic_goal_prep;
-            repeat case_match';
-            try congruence;
-            basic_goal_prep;
-            basic_core_crush.
-          eapply H1; eauto.
+        + eapply check_args_proof_sound; eauto.
       }
       {
         eapply eq_sort_subst.
         + basic_core_crush.
-        + clear case_match_eqn.
-          revert H n0 l1 l2 case_match_eqn0.
-          induction l0;
-            basic_goal_prep;
-            repeat case_match';
-            try congruence;
-            basic_goal_prep;
-            basic_core_crush.
-          eapply H1; eauto.
+        + eapply eq_args_implies_eq_subst; eauto;
+            eapply check_args_proof_sound; eauto.
         + basic_core_crush.
       }
       {
         eapply term_con_congruence; eauto.
         + basic_core_crush.
-        + clear case_match_eqn.
-          revert H n0 l2 l3  case_match_eqn0.
-          induction l0;
-              basic_goal_prep;
-              repeat case_match';
-              try congruence;
-              basic_goal_prep;
-              basic_core_crush.
-          eapply H1; auto.
+        + eapply check_args_proof_sound; eauto.
       }
       {
         eapply eq_term_subst.
         + basic_core_crush.
-        + clear case_match_eqn.
-          revert H n0 l1 l2 case_match_eqn0.
-          induction l0;
-            basic_goal_prep;
-            repeat case_match';
-            try congruence;
-            basic_goal_prep;
-            basic_core_crush.
-          eapply H1; eauto.
+        + eapply eq_args_implies_eq_subst; eauto;
+            eapply check_args_proof_sound; eauto.
         + basic_core_crush.
       }
       { eapply eq_sort_trans; basic_utils_crush. }
       { inversion H. }
-      all: autorewrite with bool inversion rw_prop utils in *.
+      all: autorewrite with bool inversion in *.
       all: intuition subst.
       { eapply eq_term_trans; eauto. }
       { eapply eq_sort_sym; eauto. }

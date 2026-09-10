@@ -9,6 +9,25 @@ From Pyrosome.Tools Require Import Matches.
 From Pyrosome.Proof Require Import TreeProofs.
 Import Core.Notations.
 
+(* ---- file-local speedup tactics ----
+   `autorewrite ... in *` spends most of its time attempting rewrites inside
+   function-typed hypotheses, which are never usefully rewritten, so this
+   variant rewrites in the goal and the non-arrow hypotheses only.  And the
+   shared `generic_crush` is a `repeat`, so it always pays one extra
+   no-progress round; `core_crush1` does a single round. *)
+Ltac ar_core_flat :=
+  autorewrite with bool rw_prop inversion utils term lang_core model;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term lang_core model in H
+             end
+         end.
+Ltac core_crush1 :=
+  intuition break; subst; ar_core_flat;
+  intuition unshelve (eauto 7 with utils term lang_core model).
+
 
 Section WithVar.
   Context (V : Type)
@@ -81,12 +100,17 @@ Proof.
   generalize l'; clear l'; intros.
   case_match; eauto with lang_core.
   basic_goal_prep.
-  case_match; basic_core_crush.
+  case_match.
+  (* the `else` branch is just reflexivity *)
+  all: try (solve [eapply eq_term_refl; eassumption]).
+  core_crush1.
+  subst.
   eapply pf_checker_sound in case_match_eqn; eauto.
   eapply eq_term_conv; eauto.
   eapply term_sorts_eq;
     eauto.
-  basic_core_crush.
+  (* wf_term l c t0 s follows from the checked proof's equation *)
+  eapply eq_term_wf_l; eassumption.
 Qed.
 
 End WithVar.

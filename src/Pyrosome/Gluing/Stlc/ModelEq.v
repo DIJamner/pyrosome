@@ -80,6 +80,9 @@ Proof. inversion 1; subst; eauto 10. Qed.
 
 (* Peel a [Pceq_args] at a concrete rule context down to one [Ceq_term] per
    argument. *)
+(* The per-argument [subst] of the old loop is deferred to the single one at
+   the end (and the caller now pins the rule's context before its terms), so
+   no substitution ever traverses the fully pinned goal more than once. *)
 Ltac dargs H :=
   repeat (apply Pceq_args_cons_inv in H;
           let x1 := fresh "x" in
@@ -87,7 +90,7 @@ Ltac dargs H :=
           let l1 := fresh "l" in
           let l2 := fresh "l" in
           let Hc := fresh "Hc" in
-          destruct H as [x1 [x2 [l1 [l2 [? [? [H Hc]]]]]]]; subst);
+          destruct H as [x1 [x2 [l1 [l2 [? [? [H Hc]]]]]]]);
   apply Pceq_args_nil_inv in H; destruct H as [? ?]; subst.
 
 (* Peeling leaves every sort and term as an unevaluated substitution redex.
@@ -676,8 +679,13 @@ Proof.
     subst name;
     vm_compute in Hl;
     try discriminate Hl;
-    inversion Hl; subst; clear Hl;
+    (* substitute the rule's CONTEXT first and peel the argument lists while
+       [e1]/[e2]/[t] are still variables (so the goal is small), and only
+       then substitute the rule's three big terms. *)
+    injection Hl as Hc' He1 He2 Ht;
+    subst c';
     dargs Hargs;
+    subst;
     norm_ceq.
   all: solve
          [ apply by_id_right; assumption

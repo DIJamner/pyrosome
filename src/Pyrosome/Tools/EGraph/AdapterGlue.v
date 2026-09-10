@@ -437,7 +437,11 @@ Section WithVar.
         as (Hok_assum & i1 & Hsnd_assum & Hfst_sub & Hai1).
       (* Step 3: derive wf_term l c (con name (id_args c)) t *)
       assert (Hwft : wf_term l c (con name (id_args c)) t).
-      { replace t with (t[/id_subst c/]); [| basic_core_crush].
+      (* [basic_core_crush] here spends ~0.9s in [autorewrite ... in *];
+         the side goal is exactly [subst_id]. *)
+      { replace t with (t[/id_subst c/]);
+        [| (clear Hin Hsg Hwfc Hok_assum Hsnd_assum Hfst_sub Hai1;
+            basic_core_crush) ].
         eapply wf_term_by; eauto.
         eapply id_args_wf; eauto with utils. }
       (* Step 4+5: apply add_open_term_sound *)
@@ -3529,7 +3533,8 @@ Section WithVar.
                                 (empty_egraph V_default X)))) = Result.Success tt.
     Proof.
       intro H.
-      cbv -[add_ctx add_open_term add_open_sort rebuild empty_egraph] in H.
+      cbv [rule_to_log_rule QueryOpt.sequent_of_states] in H.
+      cbn [Mbind Mret StateMonad.state_monad fst snd] in H.
       destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X))
         as [sub e_ctx].
       cbn [fst snd] in H |- *.
@@ -3544,7 +3549,8 @@ Section WithVar.
                                 (empty_egraph V_default X)))) = Result.Success tt.
     Proof.
       intro H.
-      cbv -[add_ctx add_open_term add_open_sort rebuild empty_egraph] in H.
+      cbv [rule_to_log_rule QueryOpt.sequent_of_states] in H.
+      cbn [Mbind Mret StateMonad.state_monad fst snd] in H.
       destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X))
         as [sub e_ctx].
       cbn [fst snd] in H |- *.
@@ -3565,8 +3571,8 @@ Section WithVar.
       unfold term_eq_skip in H |- *.
       (* rule_to_log_rule uses (rigid_term_skip l c e1) as a partial application
          (no eta wrapper). cbv leaves rigid_term_skip opaque so it stays small. *)
-      cbv -[add_ctx_gen add_open_term add_open_sort rebuild empty_egraph
-              rigid_term_skip] in H.
+      cbv [rule_to_log_rule QueryOpt.sequent_of_states] in H.
+      cbn [Mbind Mret StateMonad.state_monad fst snd] in H.
       destruct (add_ctx_gen succ sort_of l false false
                   (rigid_term_skip l c e1)
                   c (empty_egraph V_default X))
@@ -3592,8 +3598,8 @@ Section WithVar.
       unfold sort_eq_skip in H |- *.
       (* rule_to_log_rule uses (rigid_sort_skip l c t1) as a partial application
          (no eta wrapper). cbv leaves rigid_sort_skip opaque so it stays small. *)
-      cbv -[add_ctx_gen add_open_term add_open_sort rebuild empty_egraph
-              rigid_sort_skip] in H.
+      cbv [rule_to_log_rule QueryOpt.sequent_of_states] in H.
+      cbn [Mbind Mret StateMonad.state_monad fst snd] in H.
       destruct (add_ctx_gen succ sort_of l false false
                   (rigid_sort_skip l c t1)
                   c (empty_egraph V_default X))

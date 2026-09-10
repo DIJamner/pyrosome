@@ -5063,6 +5063,55 @@ Qed.
    ([Pi_rel]'s is just [U G rel lG]), and [assumption] is conversion-only
    -- it will not instantiate the resulting evars. *)
 
+(* ---- a cheaper [rule_pin] ------------------------------------------
+   [ModelStruct.rule_pin] peels the [ceq_args] premise with [inversion],
+   which builds a fresh dependent elimination at the (large, concrete) rule
+   context once per argument -- the dominant cost of the two dispatchers
+   below.  The peel is done here by three generic lemmas proved once, and
+   the rule's context is pushed into the [ceq_args] hypothesis ONLY (not
+   into the goal), so that the argument lists are rewritten against a small
+   goal.  [pi_rule_pin] is otherwise interchangeable with [rule_pin];
+   everything else in this layer keeps using the shared copy. *)
+Lemma Dceq_args_nil_inv s1 s2
+  : ceq_args (CM := DttCM) [] s1 s2 -> s1 = [] /\ s2 = [].
+Proof. intro H; inversion H; auto. Qed.
+
+Lemma Dceq_args_cons_shape name t c' s1 s2
+  : ceq_args (CM := DttCM) ((name,t)::c') s1 s2 ->
+    exists x1 l1 x2 l2, s1 = x1::l1 /\ s2 = x2::l2.
+Proof. intro H; inversion H; subst; eauto 6. Qed.
+
+Lemma Dceq_args_cons_inv name t c' x1 l1 x2 l2
+  : ceq_args (CM := DttCM) ((name,t)::c') (x1::l1) (x2::l2) ->
+    ceq_args (CM := DttCM) c' l1 l2
+    * Ceq_term t[/with_names_from c' l2/] x1 x2.
+Proof. intro H; inversion H; subst; split; assumption. Qed.
+
+Ltac pi_rule_pin :=
+  match goal with
+  | [ Hin : In _ ott_dtt |- _ ] =>
+      apply ott_dtt_lookup_of_in in Hin; vm_compute in Hin;
+      injection Hin; clear Hin;
+      repeat match goal with [ |- _ = _ -> _ ] => intro end
+  end;
+  repeat match goal with
+    | [ H : [] = ?x, Ha : ceq_args ?x _ _ |- _ ] => rewrite <- H in Ha
+    | [ H : (_ :: _) = ?x, Ha : ceq_args ?x _ _ |- _ ] => rewrite <- H in Ha
+    | [ H : ?x = [], Ha : ceq_args ?x _ _ |- _ ] => rewrite H in Ha
+    | [ H : ?x = (_ :: _), Ha : ceq_args ?x _ _ |- _ ] => rewrite H in Ha
+    end;
+  repeat match goal with
+    | [ H : ceq_args (_::_) _ _ |- _ ] =>
+        let Hs := fresh "Hs" in
+        pose proof (Dceq_args_cons_shape H) as Hs;
+        destruct Hs as [? [? [? [? [-> ->] ] ] ] ];
+        apply Dceq_args_cons_inv in H; destruct H as [H ?]
+    | [ H : ceq_args [] _ _ |- _ ] =>
+        apply Dceq_args_nil_inv in H; destruct H as [-> ->]
+    end;
+  subst;
+  cbn [ceq_term ceq_sort DttCM] in *.
+
 Lemma pi_cong_obligation
   : forall c' name args t s1 s2,
     In (name, term_rule c' args t) ott_dtt ->
@@ -5073,7 +5122,7 @@ Lemma pi_cong_obligation
     Ceq_term t[/with_names_from c' s2/] (con name s1) (con name s2).
 Proof.
   intros c' name args t s1 s2 Hin Hname Hargs.
-  destruct Hname as [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]; rule_pin.
+  destruct Hname as [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]; pi_rule_pin.
   - (* Emptyrec *) eapply cong_Emptyrec; eassumption.
   - (* Pi_rel *)   eapply cong_PiRel; eassumption.
   - (* Pi_irr *)   eapply cong_PiIrr; eassumption.
@@ -5100,7 +5149,7 @@ Proof.
   pose proof (dtt_eqt_by Hin Hargs) as Heq.
   destruct Hname
     as [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | [-> | ->]]]]]]]]];
-    rule_pin.
+    pi_rule_pin.
   - (* Pi_rel subst *)   eapply by_PiRel_subst; eassumption.
   - (* Pi_irr subst *)   eapply by_PiIrr_subst; eassumption.
   - (* lam_rel subst *)  eapply by_LamRel_subst; eassumption.

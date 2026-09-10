@@ -12,6 +12,45 @@ Import Core.Notations.
 From Pyrosome.Compilers Require Import SemanticsPreservingDef.
 From Pyrosome.Compilers Require Export CompilerDefs.
 
+(* File-local "flat" rewriting variants: rewrite the goal and every non-arrow
+   hypothesis, skipping the (universally quantified, never rewritten) induction
+   hypotheses.  The `*_crush_flat` variants additionally do a single round
+   instead of `generic_crush`'s `repeat`. *)
+Ltac ar_utils_flat :=
+  autorewrite with utils;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with utils in H
+             end
+         end.
+Ltac ar_core_flat :=
+  autorewrite with bool rw_prop inversion utils term lang_core model;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term lang_core model in H
+             end
+         end.
+Ltac ar_basic_utils_flat :=
+  autorewrite with bool rw_prop inversion utils;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils in H
+             end
+         end.
+
+Ltac core_crush_flat :=
+  intuition break; subst; ar_core_flat;
+  intuition unshelve (eauto 7 with utils term lang_core model).
+Ltac utils_crush_flat :=
+  intuition break; subst; ar_basic_utils_flat;
+  intuition unshelve (eauto with utils).
+
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
@@ -177,7 +216,7 @@ Lemma fresh_compile_ctx x cmp c
   : fresh x (compile_ctx cmp c) <-> fresh x c.
 Proof.
   induction c; basic_goal_prep;
-    basic_core_crush.
+    basic_utils_crush.
 Qed.
 Hint Rewrite fresh_compile_ctx : lang_core.
 
@@ -196,7 +235,7 @@ Lemma fresh_lang_fresh_cmp cmp l n
     fresh n l -> fresh n cmp.
 Proof.
   induction 1; basic_goal_prep;
-    basic_core_crush.
+    basic_utils_crush.
 Qed.
 Hint Resolve fresh_lang_fresh_cmp : lang_core.
 
@@ -218,15 +257,15 @@ Lemma compile_strengthen_term cmp n cc e
     all_constructors (fun n => In n (map fst cmp)) e ->
     compile ((n,cc)::cmp) e = compile cmp e.
 Proof.
-  induction e; basic_goal_prep; basic_core_crush.
+  induction e; basic_goal_prep; basic_utils_crush.
   destruct (eqb n0 n) eqn:Heq; basic_goal_prep.
-  1: basic_core_crush.
+  1: basic_utils_crush.
   case_match; basic_goal_prep; auto.
   case_match; basic_goal_prep; auto.
   f_equal.
   f_equal.
   generalize dependent l.
-  induction l; basic_goal_prep; basic_core_crush.
+  induction l; basic_goal_prep; basic_utils_crush.
 Qed.
 Hint Rewrite compile_strengthen_term : lang_core.
 
@@ -246,9 +285,9 @@ Lemma compile_strengthen_sort cmp n cc e
     all_constructors_sort (fun n => In n (map fst cmp)) e ->
     compile_sort ((n,cc)::cmp) e = compile_sort cmp e.
 Proof.
-  destruct e; basic_goal_prep; basic_core_crush.
+  destruct e; basic_goal_prep; basic_utils_crush.
   destruct (eqb v n) eqn:Heq; basic_goal_prep.
-  1: basic_core_crush.
+  1: basic_utils_crush.
   case_match; basic_goal_prep; auto.
   case_match; basic_goal_prep; auto.
   f_equal.
@@ -273,8 +312,11 @@ Lemma sort_name_in_cmp cmp src c' args n
     In (n, sort_rule c' args) src ->
     In n (map fst cmp).
 Proof.
-  induction 1;basic_goal_prep;
-    with_rule_in_wf_crush.
+  induction 1; basic_goal_prep; try tauto.
+  all: autorewrite with utils in H4.
+  all: destruct H4 as [[Hn Heq]|Hin].
+  all: try (safe_invert Heq).
+  all: intuition eauto.
 Qed.
 Local Hint Resolve sort_name_in_cmp : lang_core.
 
@@ -283,8 +325,11 @@ Lemma term_name_in_cmp cmp src c' args t n
     In (n, term_rule c' args t) src ->
     In n (map fst cmp).
 Proof.
-  induction 1;basic_goal_prep;
-    with_rule_in_wf_crush.
+  induction 1; basic_goal_prep; try tauto.
+  all: autorewrite with utils in H4.
+  all: destruct H4 as [[Hn Heq]|Hin].
+  all: try (safe_invert Heq).
+  all: intuition eauto.
 Qed.
 Local Hint Resolve term_name_in_cmp : lang_core.
                    
@@ -301,7 +346,7 @@ Local Lemma all_constructors_from_wf cmp src
            all (all_constructors (fun n0 : V => In n0 (map fst cmp))) s).
 Proof.
   intros; apply wf_judge_ind; basic_goal_prep;
-    with_rule_in_wf_crush.
+    intuition eauto with utils term lang_core.
 Qed.
 
 Definition all_constructors_sort_from_wf cmp src (pr : preserving_compiler_plus cmp src)
@@ -322,7 +367,7 @@ Lemma all_constructors_ctx_from_wf cmp src c
     all_constructors_ctx (fun n0 : V => In n0 (map fst cmp)) c.
 Proof.
   induction 2; basic_goal_prep;
-    with_rule_in_wf_crush.
+    intuition eauto with utils term lang_core.
 Qed.
 Hint Resolve all_constructors_ctx_from_wf : lang_core.
 
@@ -368,7 +413,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
       : preserving_compiler_plus cmp ls ->
         ws_compiler cmp.
     Proof.
-      induction 1; basic_goal_prep; basic_core_crush.
+      induction 1; basic_goal_prep;
+        intuition eauto with utils term lang_core model.
       {
         eapply well_scoped_change_args;
           try typeclasses eauto.
@@ -568,12 +614,14 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           /\ (forall c s c', wf_args l c s c' ->
                         compile_args (cmp'++cmp) s = compile_args cmp s).
       Proof.
-        intros; apply wf_judge_ind;
-          basic_goal_prep;
-          basic_core_crush.
+        intros; apply wf_judge_ind.
+        all: basic_goal_prep.
+        all: intuition break; subst.
+        all: intuition (eauto 7 with utils term lang_core model).
         all: pose proof (all_fresh_tail _ _ ltac:(eassumption)).
-        all: repeat case_match; auto;
-            autorewrite with utils term lang_core in *; eauto.
+        all: repeat case_match.
+        all: try (auto; fail).
+        all: try (eauto; fail).
         all: symmetry in case_match_eqn.
         all: symmetry in case_match_eqn0.
         all: try rewrite all_fresh_named_list_lookup_err_in in case_match_eqn by assumption.
@@ -601,8 +649,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         {
           exfalso.
           eapply named_list_lookup_none_iff in case_match_eqn0.
-          pose proof (sort_name_in_cmp _ _ _ H1 H3).
-          basic_utils_crush.
+          rewrite ?fresh_app in case_match_eqn0; break.
+          eapply sort_name_in_cmp in H3; eauto.
         }
         {
           exfalso.
@@ -626,8 +674,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         {
           exfalso.
           eapply named_list_lookup_none_iff in case_match_eqn0.
-          pose proof (term_name_in_cmp _ _ _ _ H1 H3).
-          basic_utils_crush.
+          rewrite ?fresh_app in case_match_eqn0; break.
+          eapply term_name_in_cmp in H3; eauto.
         }
         {
           eapply strengthening_fresh_helper in case_match_eqn0;
@@ -695,16 +743,104 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         | _,_ => False
         end.
     Proof.
-      induction 1;
-        basic_goal_prep;
-        repeat case_match;
-        subst;
-        autorewrite with utils in *;
-        try tauto;
-        intuition (subst;try congruence; eauto with lang_core).
-      all: assert (fresh n cmp) by eauto with lang_core;
-        basic_utils_crush.
+      induction 1.
+      all: basic_goal_prep.
+      all: repeat case_match.
+      all: subst.
+      all: try tauto.
+      all: autorewrite with utils in H5, H6.
+      all: try tauto.
+      all: intuition (subst;try congruence; eauto with lang_core).
+      (* the only remaining goals are contradictions between a freshness
+         hypothesis and a membership one; discharge them directly rather than
+         letting a crush rewrite the whole (large) context. *)
+      all: assert (fresh n cmp) as Hfr by eauto with lang_core.
+      all: exfalso;
+        match goal with
+        | Hf : fresh ?m ?L, Hi : In (?m,_) ?L |- _ =>
+            apply Hf; eapply pair_fst_in; exact Hi
+        end.
     Qed.
+
+      (* Helper lemmas factored out of the case-in-preserving lemmas below,
+         so that the expensive crushes run on small contexts once each
+         instead of on the large induction contexts many times. *)
+      Lemma wf_rule_in_cons l n r name r'
+        : wf_lang ((n,r)::l) ->
+          In (name,r') ((n,r)::l) ->
+          wf_rule l r'.
+      Proof.
+        intros Hwf Hin.
+        autorewrite with utils lang_core in Hwf; break.
+        destruct Hin as [Heq | Hin]; [safe_invert Heq; assumption |].
+        use_rule_in_wf.
+        autorewrite with utils in *.
+        assumption.
+      Qed.
+
+      Lemma fresh_cmp_in_cons cmp l n r
+        : preserving_compiler_plus cmp l ->
+          wf_lang ((n,r)::l) ->
+          fresh n cmp.
+      Proof.
+        intros Hp Hwf.
+        autorewrite with utils lang_core in Hwf; break.
+        eapply fresh_lang_fresh_cmp; eassumption.
+      Qed.
+
+      Lemma all_fresh_cmp_in_cons cmp l n r
+        : preserving_compiler_plus cmp l ->
+          wf_lang ((n,r)::l) ->
+          all_fresh cmp.
+      Proof.
+        intros Hp Hwf.
+        autorewrite with utils lang_core in Hwf; break.
+        eapply all_fresh_compiler; [eassumption|].
+        eauto with lang_core.
+      Qed.
+
+      Lemma all_constructors_ctx_term_rule_in_cons cmp l n r name c0 args0 t0
+        : preserving_compiler_plus cmp l ->
+          wf_lang ((n,r)::l) ->
+          In (name, term_rule c0 args0 t0) ((n,r)::l) ->
+          all_constructors_ctx (fun x : V => In x (map fst cmp)) c0.
+      Proof.
+        intros Hp Hwf Hin.
+        assert (wf_rule l (term_rule c0 args0 t0)) as Hr
+          by (eapply wf_rule_in_cons; eassumption).
+        autorewrite with utils lang_core in Hr; break.
+        eapply all_constructors_ctx_from_wf; eassumption.
+      Qed.
+
+      Lemma all_constructors_sort_term_rule_in_cons cmp l n r name c0 args0 t0
+        : preserving_compiler_plus cmp l ->
+          wf_lang ((n,r)::l) ->
+          In (name, term_rule c0 args0 t0) ((n,r)::l) ->
+          all_constructors_sort (fun x : V => In x (map fst cmp)) t0.
+      Proof.
+        intros Hp Hwf Hin.
+        assert (wf_rule l (term_rule c0 args0 t0)) as Hr
+          by (eapply wf_rule_in_cons; eassumption).
+        autorewrite with utils lang_core in Hr; break.
+        eapply all_constructors_sort_from_wf; eassumption.
+      Qed.
+
+      Lemma all_constructors_ctx_sort_rule_in_cons cmp l n r name c0 args0
+        : preserving_compiler_plus cmp l ->
+          wf_lang ((n,r)::l) ->
+          In (name, sort_rule c0 args0) ((n,r)::l) ->
+          all_constructors_ctx (fun x : V => In x (map fst cmp)) c0.
+      Proof.
+        intros Hp Hwf Hin.
+        assert (wf_rule l (sort_rule c0 args0)) as Hr
+          by (eapply wf_rule_in_cons; eassumption).
+        autorewrite with utils lang_core in Hr; break.
+        eapply all_constructors_ctx_from_wf; eassumption.
+      Qed.
+
+      (* The `(n,r)::l` well-formedness hypothesis is no longer broken apart by
+         the big autorewrite in the two lemmas below (keeping it whole is much
+         cheaper), so the freshness contradictions are discharged explicitly. *)
 
       Lemma sort_case_in_preserving cmp ls name
         : preserving_compiler_plus cmp ls ->
@@ -716,9 +852,16 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
            /\ Model.wf_ctx (compile_ctx cmp c)
            /\ Model.wf_sort (compile_ctx cmp c) t).
       Proof.
-        induction 1;
-          basic_goal_prep;
-          autorewrite with rw_prop inversion utils term lang_core in *;
+        induction 1.
+        1:{ basic_goal_prep; tauto. }
+        all: basic_goal_prep.
+        (* Break the cons-well-formedness hypothesis apart with the single
+           relevant lemma; letting the big autorewrite below do it (by listing
+           H4 in its clause) costs much more. *)
+        all: destruct (proj1 (invert_wf_lang_cons _ _ _ _) H4) as [Hfl [Hwfl Hwfr]];
+          rewrite app_nil_r in Hfl, Hwfr.
+        all:
+          autorewrite with rw_prop inversion utils term lang_core in H5, H6 |- *;
           try assumption;
           try tauto;
           try typeclasses eauto.
@@ -727,42 +870,26 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           { now eauto. }
           {
             exfalso.
-            eapply fresh_lang_fresh_cmp in H4; eauto.
-            exfalso; eauto using pair_fst_in.
+            assert (fresh name cmp) as Hfc
+              by (eapply fresh_lang_fresh_cmp; eassumption).
+            apply Hfc; eauto using pair_fst_in.
           }
-          { exfalso; now eauto using pair_fst_in. }
+          {
+            exfalso.
+            apply Hfl; eauto using pair_fst_in.
+          }
           { now eauto. }
         }
-        { clear H5 H6; solve[basic_core_crush]. }
-        {          
-          autorewrite with rw_prop inversion utils lang_core term in H4.  
-          intuition eauto with lang_core.
-          (*TODO: why is this slow?
-            clear H5 H6; solve[basic_core_crush]. *)
-        }
+        { eapply fresh_cmp_in_cons; eassumption. }
+        { eapply all_fresh_cmp_in_cons; eassumption. }
+        { eapply all_constructors_ctx_sort_rule_in_cons; eassumption. }
         {
-          eapply all_constructors_ctx_from_wf; eauto.
-          autorewrite with utils term model lang_core in *.
-          intuition subst; eauto with lang_core.
-        }
-        {
-          (* TODO: why does this take a long time?
-          basic_core_crush. *)
           break; subst; try tauto.
           now eauto.
         }
-        { clear H5 H6; now basic_core_crush. }
-        { clear H5 H6; now basic_core_crush. }
-        {
-          eapply all_constructors_ctx_from_wf; eauto.
-          intuition subst;
-            autorewrite with utils lang_core term in *;
-            break;
-            subst.
-          all: try assumption.
-          all: try tauto.
-          basic_core_crush.
-        }
+        { eapply fresh_cmp_in_cons; eassumption. }
+        { eapply all_fresh_cmp_in_cons; eassumption. }
+        { eapply all_constructors_ctx_sort_rule_in_cons; eassumption. }
         { break; eauto. }
         { break; eauto. }
       Qed.
@@ -777,83 +904,48 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
            /\ Model.wf_ctx (compile_ctx cmp c)
            /\ Model.wf_term (compile_ctx cmp c) e (compile_sort cmp t)).
       Proof.
-        induction 1;
-          basic_goal_prep;
-          autorewrite with rw_prop inversion utils term lang_core in *;
+        induction 1.
+        1:{ basic_goal_prep; tauto. }
+        all: basic_goal_prep.
+        (* Break the cons-well-formedness hypothesis apart with the single
+           relevant lemma; letting the big autorewrite below do it (by listing
+           H4 in its clause) costs much more. *)
+        all: destruct (proj1 (invert_wf_lang_cons _ _ _ _) H4) as [Hfl [Hwfl Hwfr]];
+          rewrite app_nil_r in Hfl, Hwfr.
+        all:
+          autorewrite with rw_prop inversion utils term lang_core in H5, H6 |- *;
           try assumption;
           try tauto.
-        {
-          break; subst.
-          now eauto.
-        }
-        { clear H5 H6; now basic_core_crush. }
-        { clear H5 H6; now basic_core_crush. }
-        {
-          eapply all_constructors_sort_from_wf; eauto.
-          intuition subst;
-            autorewrite with utils lang_core term in *;
-            break;
-            subst.
-          all: try assumption.
-          all: try tauto.
-          use_rule_in_wf.
-          basic_core_crush.
-        }
-        { clear H5 H6;now basic_core_crush. }
-        { clear H5 H6;now basic_core_crush. }
-        {
-          eapply all_constructors_ctx_from_wf; eauto.
-          intuition subst;
-            autorewrite with utils lang_core term in *;
-            break;
-            subst.
-          all: try assumption.
-          all: try tauto.
-          {
-            basic_core_crush.
-          }
-        }
+        (* 4 main goals (1,8,15,16) interleaved with the side conditions
+           generated by rewriting with the strengthening lemmas. *)
+        { break; subst. now eauto. }
+        { eapply fresh_cmp_in_cons; eassumption. }
+        { eapply all_fresh_cmp_in_cons; eassumption. }
+        { eapply all_constructors_sort_term_rule_in_cons; eassumption. }
+        { eapply fresh_cmp_in_cons; eassumption. }
+        { eapply all_fresh_cmp_in_cons; eassumption. }
+        { eapply all_constructors_ctx_term_rule_in_cons; eassumption. }
         {
           destruct H5; destruct H6; break; subst; try tauto.
           {
             exfalso.
-            eapply fresh_lang_fresh_cmp; eauto.
-            basic_utils_crush.
+            assert (fresh name cmp) as Hfc
+              by (eapply fresh_lang_fresh_cmp; eassumption).
+            apply Hfc; eauto using pair_fst_in.
           }
           {
-            exfalso; basic_core_crush.
+            exfalso; apply Hfl; eauto using pair_fst_in.
           }
           {
             eapply IHpreserving_compiler_plus; eauto.
           }
         }
-        { clear H5 H6;now basic_core_crush. }
-        { clear H5 H6; now basic_core_crush. }
-        {
-          eapply all_constructors_sort_from_wf; eauto.
-          intuition subst;
-            autorewrite with utils lang_core term in *;
-            break;
-            subst.
-          all: try assumption.
-          all: try tauto.
-          all: eauto.
-          all:use_rule_in_wf;
-            basic_core_crush.
-        }
-        { clear H5 H6;now basic_core_crush. }
-        { clear H5 H6;now basic_core_crush. }
-        {
-          eapply all_constructors_ctx_from_wf; eauto.
-          intuition subst;
-            autorewrite with utils lang_core term in *;
-            break;
-            subst.
-          all: try assumption.
-          all: try tauto.
-          all: use_rule_in_wf;
-            basic_core_crush.
-        }
+        { eapply fresh_cmp_in_cons; eassumption. }
+        { eapply all_fresh_cmp_in_cons; eassumption. }
+        { eapply all_constructors_sort_term_rule_in_cons; eassumption. }
+        { eapply fresh_cmp_in_cons; eassumption. }
+        { eapply all_fresh_cmp_in_cons; eassumption. }
+        { eapply all_constructors_ctx_term_rule_in_cons; eassumption. }
         { break; eauto. }
         { break; eauto. }
       Qed.
@@ -875,7 +967,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         apply judge_ind;
           basic_goal_prep.
         {
-          assert (all_fresh cmp) by basic_core_crush.
+          assert (all_fresh cmp) by (eapply all_fresh_compiler; eauto with lang_core).
           lazymatch goal with
             [ Hin : In _ ?ls,
                 Hpres : preserving_compiler_plus _ ?ls,
@@ -889,7 +981,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           erewrite !strengthening_ctx, !strengthening_sort; eauto.
         }
         {
-          autorewrite with utils lang_core in *.
+          autorewrite with utils lang_core.
           { eapply Model.eq_sort_subst; eauto. }
           all: eauto with lang_core term model.
         }
@@ -903,13 +995,13 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           eapply Model.eq_sort_sym; eauto.
         }
         {
-          autorewrite with utils lang_core in *.
+          autorewrite with utils lang_core.
           { eapply Model.eq_term_subst; eauto. }
           all: eauto with lang_core term model utils.
-          all: basic_core_crush.
+          all: core_crush_flat.
         }
         {
-          assert (all_fresh cmp) by basic_core_crush.
+          assert (all_fresh cmp) by (eapply all_fresh_compiler; eauto with lang_core).
           lazymatch goal with
             [ Hin : In _ ?ls,
                 Hpres : preserving_compiler_plus _ ?ls,
@@ -949,9 +1041,9 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
               as H'; inversion H'.
           }
           {
-            assert (all_fresh cmp) by basic_core_crush.
-            assert (wf_ctx ls c') by (use_rule_in_wf; basic_core_crush).
-            autorewrite with utils in *.
+            assert (all_fresh cmp) by (eapply all_fresh_compiler; eauto with lang_core).
+            assert (wf_ctx ls c') by (eapply rule_in_ctx_wf; eauto).
+            ar_utils_flat.
             pose proof (sort_case_in_preserving
                           n  
                           ltac:(eassumption)
@@ -969,7 +1061,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
                 eapply @wf_subst_from_wf_args with (Model:= tgt_Model).
                 eauto.
               }
-              basic_core_crush.
+              (* length (map fst c') = length (map (compile cmp) s) *)
+              rewrite !length_map; eapply wf_args_length_eq; eassumption.
             }
             {
               eapply sort_case_in_preserving; eauto with utils.
@@ -994,14 +1087,15 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
             end.
             inversion H3; subst.
             exfalso; apply case_match_eqn.
-            basic_utils_crush.
+            (* In n (map fst (x1 ++ (n,_) :: cmp)) *)
+            rewrite map_app; apply in_or_app; right; cbn; now left.
           }
         }
         {
           case_match.
           1:case_match.
           {
-            autorewrite with utils in *; [| basic_core_crush..].
+            autorewrite with utils; [| utils_crush_flat..].
             pose proof (term_case_in_preserving
                           n  
                           ltac:(eassumption)
@@ -1022,20 +1116,21 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
                 erewrite <- @with_names_from_compile_ctx with (tgt_Model:= tgt_Model.(premodel)).
                 eapply wf_subst_from_wf_args; eauto.
                 eapply H5; eauto.
-                use_rule_in_wf; basic_core_crush.
+                use_rule_in_wf; (intuition eauto with utils term lang_core model).
               }
               {
-                subst; basic_core_crush.
+                subst; rewrite !length_map;
+                  eapply wf_args_length_eq; eassumption.
               }
             }
             {
               rewrite map_fst_with_names_from.
-              2:basic_core_crush.
-              use_rule_in_wf; basic_core_crush.              
+              2:(eapply wf_args_length_eq; eassumption).
+              use_rule_in_wf; core_crush_flat.              
             }
           }
           {
-            autorewrite with utils in *.
+            ar_utils_flat.
             pose proof (preserving_contradiction _ _ _
                                                  ltac:(eassumption)
                                                         ltac:(eauto with lang_core)
@@ -1061,7 +1156,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
             end.
             inversion H3; subst.
             exfalso; apply case_match_eqn.
-            basic_utils_crush.
+            rewrite map_app; apply in_or_app; right; cbn; now left.
           }
         }
   {
@@ -1087,7 +1182,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         rewrite with_names_from_compile_ctx.
         assumption.
       }
-      basic_core_crush.
+      apply H4; safe_invert H8; assumption.
     }
     rewrite map_fst_with_names_from.
     2:eauto with utils lang_core.
@@ -1098,7 +1193,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
     constructor.
   }
   {
-    autorewrite with model utils lang_core in *;
+    autorewrite with model utils lang_core;
     [| intuition eauto with lang_core term utils..].
     intuition eauto with lang_core term utils.
   }
@@ -1110,13 +1205,18 @@ Qed.
           preserving_compiler_ext [] cmp ls ->
           preserving_compiler_plus cmp ls.
       Proof.
-        intros wfl pc; revert wfl; induction pc;
-          basic_goal_prep; constructor;
-          autorewrite with utils lang_core in *.
+        intros wfl pc; revert wfl; induction pc.
+        all: basic_goal_prep.
+        all: constructor.
+        (* the only `utils` rewrite that fires on H1 is `app_nil_r` *)
+        all: rewrite ?app_nil_r in H1.
+        all: rewrite invert_wf_lang_cons in wfl.
+        all: break.
+        all: rewrite app_nil_r in H4.
+        all: autorewrite with lang_core in H4.
         all: break.
         all: eauto with lang_core utils.
-        all: eapply inductive_implies_semantic';
-          eauto.
+        all: eapply inductive_implies_semantic'; eauto.
       Qed.
 
       Theorem inductive_implies_semantic cmp ls

@@ -7,7 +7,21 @@ From Stdlib Require Import Classes.Morphisms.
 From Stdlib Require Import Sorting.Permutation.
 
 From Utils Require Import Base Booleans Eqb Options Lists ExtraMaps
+
   Permutation.
+
+(* File-local single-round variant of basic_utils_crush: the shared
+   generic_crush is a `repeat`, and most call sites here only need one
+   round.  Sites that need the full loop keep basic_utils_crush. *)
+Ltac utils_crush0 :=
+  break; subst;
+  autorewrite with bool rw_prop inversion utils in *;
+  eauto with utils.
+
+Ltac utils_crush1 :=
+  let x := autorewrite with bool rw_prop inversion utils in * in
+  let y := eauto with utils in
+  (intuition break; subst; x; intuition unshelve y).
 
 
 (*TODO: move A-parameterized things to separate file?*)
@@ -190,7 +204,7 @@ Section __.
     cbv [Uimpl1];
     intros; unfold sep in *;
       break.
-    exists x, x0; basic_utils_crush.
+    exists x, x0; utils_crush1.
   Qed.
 
   #[export] Instance sep_impl1_mor : Proper (Uimpl1 ==> Uimpl1 ==> Uimpl1) sep.
@@ -200,9 +214,12 @@ Section __.
   Qed.
   
   #[export] Instance sep_iff1_mor : Proper (Uiff1 ==> Uiff1 ==> Uiff1) sep.
-  Proof.
+  (* pinned so the discharged signature matches the original proof's *)
+  Proof using A mem mem_ok.
     cbv [Proper Uiff1 respectful].
-    intros; firstorder eauto using sep_impl.
+    intros P1 P2 HP Q1 Q2 HQ m.
+    split; apply sep_impl; cbv [Uimpl1]; intros a Ha;
+      first [ apply HP | apply HQ ]; exact Ha.
   Qed.
   
   Lemma sep_comm_impl P1 P2 : Uimpl1 (sep P1 P2) (sep P2 P1).
@@ -273,7 +290,7 @@ Section __.
   Proof.
     cbv [Proper respectful seps_Uimpl1 Uimpl1].
     basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     simple eapply sep_consequence; eauto.
   Qed.
   
@@ -282,7 +299,7 @@ Section __.
   Proof.
     cbv [Proper respectful seps_Uiff1 Uiff1].
     basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     all: generalize dependent a.
     all:simple eapply sep_consequence; firstorder eauto.
   Qed.
@@ -303,7 +320,7 @@ Section __.
   Proof.
     unfold emp, lift;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
 
   #[local] Hint Rewrite Properties.map.split_empty_l
@@ -316,7 +333,7 @@ Section __.
       basic_goal_prep;
       basic_utils_crush.
     exists a, map.empty.
-    basic_utils_crush.
+    utils_crush1.
   Qed.
   #[local] Hint Rewrite sep_emp_r : utils.
 
@@ -338,7 +355,7 @@ Section __.
   Lemma seps_emp_hd l : seps_Uiff1 (emp::l) l.
   Proof.
     unfold seps_Uiff1; cbn.
-    basic_utils_crush.
+    utils_crush1.
   Qed.
   #[local] Hint Rewrite seps_emp_hd : utils.
 
@@ -347,14 +364,14 @@ Section __.
     : Uiff1 (sep (seps l) P) (seps (P::l)).
   Proof.
     basic_goal_prep.
-    rewrite sep_comm; basic_utils_crush.
+    rewrite sep_comm; utils_crush1.
   Qed.
   #[local] Hint Rewrite sep_seps_l : utils.
   
   Lemma sep_seps_r l P
     : Uiff1 (sep P (seps l)) (seps (P::l)).
   Proof.
-    basic_goal_prep; basic_utils_crush.
+    basic_goal_prep; utils_crush1.
   Qed.
   #[local] Hint Rewrite sep_seps_r : utils.
   
@@ -373,16 +390,16 @@ Section __.
     {
       pose proof H.
       eapply Properties.map.get_split with (k:=i) in H.
-      assert (map.get x i = None) by basic_utils_crush.
+      assert (map.get x i = None) by utils_crush1.
       intuition idtac;
         maps_equal;
-        basic_utils_crush.
+        utils_crush1.
       eapply Properties.map.get_split with (k:=k) in H0.
-      basic_utils_crush.
+      utils_crush1.
       congruence.
     }
     {
-      basic_utils_crush.
+      utils_crush1.
       apply Properties.map.split_comm.
       apply Properties.map.split_undef_put.
       auto.
@@ -403,7 +420,7 @@ Section __.
   Proof.
     unfold not1, has_key;
       case_match;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
 
   
@@ -431,21 +448,25 @@ Section __.
         basic_goal_prep; subst.
     1:rewrite Properties.map.disjoint_putmany_l in H6.
     2:rewrite Properties.map.disjoint_putmany_r in H6.
-    1: exists x1, (map.putmany x2 x0).
-    2: exists (map.putmany x x1), x2.
-    all:basic_goal_prep;
-        basic_utils_crush.
-    all: rewrite ?Properties.map.putmany_assoc; try reflexivity.
+    all:basic_goal_prep.
     {
-      rewrite Properties.map.disjoint_putmany_r.
-      basic_utils_crush.
+      exists x1, (map.putmany x2 x0).
+      split; [split|split].
+      - symmetry; apply Properties.map.putmany_assoc.
+      - rewrite Properties.map.disjoint_putmany_r; split; assumption.
+      - assumption.
+      - exists x2, x0.
+        split; [split; [reflexivity|assumption]|split; assumption].
     }
-    2:{
-      rewrite Properties.map.disjoint_putmany_l.
-      basic_utils_crush.
+    {
+      exists (map.putmany x x1), x2.
+      split; [split|split].
+      - apply Properties.map.putmany_assoc.
+      - rewrite Properties.map.disjoint_putmany_l; split; assumption.
+      - exists x, x1.
+        split; [split; [reflexivity|assumption]|split; assumption].
+      - assumption.
     }
-    all: eexists; eexists;
-      basic_utils_crush.
   Qed.
 
     Lemma sep_concat l1 l2
@@ -454,7 +475,7 @@ Section __.
     revert l2.
     induction l1;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     repeat change (seps (?a :: ?l)) with (sep a (seps l)).
     rewrite sep_assoc.
     rewrite IHl1.
@@ -495,7 +516,7 @@ Section __.
   Proof.
     induction 1;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     {
       rewrite IHPermutation;
         reflexivity.
@@ -644,7 +665,7 @@ Section __.
       basic_goal_prep.
     induction l';
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
     rewrite <- !sep_seps_r; eauto.
     rewrite sep_assoc; eauto.
     rewrite IHl'.
@@ -665,7 +686,7 @@ Section __.
     intro H.
     change (seps (?x::?l)) with (sep x (seps l)).
     intros H' m.
-    basic_utils_crush.
+    utils_crush1.
   Qed.
 
 
@@ -676,10 +697,10 @@ Section __.
   Proof.
     unfold map.singleton.
     split; basic_goal_prep.
-    2:basic_utils_crush.
+    2:utils_crush1.
     pose proof (eqb_spec i j0);
       destruct (eqb i j0);
-      basic_utils_crush.
+      utils_crush1.
   Qed.
   #[local] Hint Rewrite map_get_singleton : utils.
 
@@ -733,7 +754,7 @@ Section __.
       revert m2.
       induction HP;
         basic_goal_prep;
-        basic_utils_crush.
+        utils_crush1.
       {
         destruct H as [m [m' [Ha [Hb ?]]]].
         exists m, m'.

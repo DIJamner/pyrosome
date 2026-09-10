@@ -644,6 +644,14 @@ Section __.
     Definition offset_rectangular_trie_list width cil ptl :=
       all2 (fun c t => Is_true (has_depth' (S (length (filter id c))) t)
                           /\ length c = width) cil ptl.
+    (* Discharges the side conditions of lemmas that need
+       [length cil = length ptl] or [all (fun p => length p = _) cil]
+       from a [rectangular_trie_list] hypothesis; much cheaper than a crush. *)
+    Ltac rect_side :=
+      solve [ unfold rectangular_trie_list in *;
+              first [ eapply all2_len; eassumption
+                    | eapply all2_impl_l; [ intros ? ? ? ? [? ?]; eassumption | eassumption ]
+                    | eapply all2_impl_l; eauto; basic_goal_prep; now intuition eauto ] ].
 
     Definition partition_result_wf width acc :=
       match acc with
@@ -733,8 +741,8 @@ Section __.
       erewrite <- partition_left_inverse with (acc:=partition_tries cil ptl acc);
         eauto with utils.
       erewrite partition_tries_true_lists, partition_tries_false_lists.
-      all: unfold rectangular_trie_list in *;
-        basic_goal_prep; basic_utils_crush.
+      all: first [rect_side | unfold rectangular_trie_list in *;
+        basic_goal_prep; basic_utils_crush].
       all: eapply all2_impl_l; eauto.
       all: basic_goal_prep; intuition eauto.
     Qed.
@@ -1891,7 +1899,7 @@ Section __.
       unfold partition_result_of_lists, part_res_Perm.
       repeat case_match;
         basic_goal_prep;
-        autorewrite with utils in *;
+        rewrite ?split_map, ?pair_equal_spec, ?Permutation_nil_cons_iff, ?Permutation_cons_nil_iff in *;
         intuition (subst; eauto);
         rewrite !combine_fst_snd;
         auto.
@@ -1957,7 +1965,7 @@ Section __.
         by eauto with utils.
       erewrite !partition_tries_false_lists,
         !partition_tries_true_lists;
-        basic_utils_crush.
+        [> basic_goal_prep | first [rect_side | basic_utils_crush] ..].
       
       all: [>| eapply all2_impl_l; eauto; basic_goal_prep; now intuition eauto..].
       apply partition_result_of_lists_Perm.
@@ -2222,7 +2230,7 @@ Inductive SamePermutation {A B}
         destruct cl;
         basic_goal_prep;
         repeat (case_match; basic_goal_prep);
-        basic_utils_crush.
+        first [reflexivity | solve [congruence] | basic_utils_crush].
       {
         apply eq_of_eq_Some.
         rewrite IHl; auto.
@@ -2325,7 +2333,7 @@ Inductive SamePermutation {A B}
           eapply unwrap_all_Some; auto.
         }
         repeat basic_goal_prep.
-        repeat case_match; eapply H3; basic_utils_crush.
+        repeat case_match; eapply H3; first [solve [cbn [unwrap_with_default] in *; eauto] | solve [congruence] | basic_utils_crush].
       }
       Unshelve.
       all: exact xH.
@@ -3093,7 +3101,7 @@ Inductive SamePermutation {A B}
           apply Permutation_filter'.
           rewrite Permutation_app_comm; cbn.
           rewrite Permutation_app_comm with (l:=combine (f_cil' ++ t_cil') (f_ptl' ++ l')); cbn.
-          rewrite !combine_app in *; basic_utils_crush.
+          rewrite !combine_app in *; [> | rect_side ..].
           rewrite Permutation_app_comm.
           rewrite H4.
           rewrite Permutation_app_comm.
@@ -3116,7 +3124,7 @@ Inductive SamePermutation {A B}
           apply Permutation_filter'.
           rewrite Permutation_app_comm; cbn.
           rewrite Permutation_app_comm with (l:=combine (f_cil' ++ t_cil') (f_ptl' ++ l')); cbn.
-          rewrite !combine_app in *; basic_utils_crush.
+          rewrite !combine_app in *; [> | rect_side ..].
           rewrite Permutation_app_comm.
           rewrite H4.
           rewrite Permutation_app_comm.
@@ -3406,7 +3414,7 @@ Inductive SamePermutation {A B}
         2: admit.
         rewrite <- list_Mfoldl_option_map.
         rewrite map_get_leaf_is_unchecked; auto.
-        basic_utils_crush.
+        rewrite all_app; split.
         all: unfold rectangular_trie_list in *; break.
         all: eapply all_all2_r.
         all: eapply all2_impl; eauto.

@@ -4,6 +4,91 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 
+Ltac ar_core :=
+  autorewrite with bool rw_prop inversion utils term lang_core;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term lang_core in H
+             end
+         end.
+Ltac ar_term :=
+  autorewrite with bool rw_prop inversion utils term;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with bool rw_prop inversion utils term in H
+             end
+         end.
+
+Ltac ar_lang_core :=
+  autorewrite with lang_core;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with lang_core in H
+             end
+         end.
+Ltac ar_utils_term_model_lang_core :=
+  autorewrite with utils term lang_core;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with utils term lang_core in H
+             end
+         end.
+
+(* file-local single-round variants of the crush tactics: the `repeat` in
+   generic_crush costs a full extra (no-progress) round, which is pure
+   overhead whenever one round suffices. *)
+Ltac core_crush1 :=
+  intuition break; subst;
+  ar_core;
+  intuition unshelve (eauto 5 with utils term lang_core model).
+Ltac term_crush1 :=
+  intuition break; subst;
+  ar_term;
+  intuition unshelve (eauto with bool utils term).
+(* drop function-typed (induction-hypothesis-like) hypotheses before a
+   heavy `autorewrite ... in *` / `eauto`: they are never rewritten usefully
+   but dominate the cost of scanning the context. *)
+Ltac clear_arrows :=
+  repeat match goal with
+         | H : forall _ : _, _ |- _ => clear H
+         end.
+
+(* `autorewrite ... in *` spends most of its time trying to rewrite inside
+   the (large, never-usefully-rewritten) function-typed hypotheses.  These
+   variants rewrite in the goal and in the non-arrow hypotheses only. *)
+Ltac ar_lang_core_utils :=
+  autorewrite with lang_core utils;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with lang_core utils in H
+             end
+         end.
+Ltac ar_utils_model_term_lang_core :=
+  autorewrite with utils term lang_core;
+  repeat match goal with
+         | H : ?T |- _ =>
+             lazymatch T with
+             | forall _ : _, _ => fail
+             | _ => progress autorewrite with utils term lang_core in H
+             end
+         end.
+
+Ltac utils_crush1 :=
+  intuition break; subst;
+  autorewrite with bool rw_prop inversion utils in *;
+  intuition unshelve (eauto with utils).
+
+
 
 (*TODO: move to Utils*)
 Lemma fresh_with_names_from [V' A B] v (c' : @NamedList.named_list V' A) (s : list B)
@@ -11,7 +96,7 @@ Lemma fresh_with_names_from [V' A B] v (c' : @NamedList.named_list V' A) (s : li
 Proof.
   intros.
   unfold fresh.
-  basic_utils_crush.
+  utils_crush1.
 Qed.
 #[export] Hint Rewrite fresh_with_names_from : utils.
 
@@ -51,7 +136,7 @@ Proof.
   revert c'; induction s;
     destruct c';
     basic_goal_prep;
-    basic_term_crush.
+    term_crush1.
   eapply IHs; eauto.
 Qed.
 Hint Resolve ws_subst_from_ws_args : lang_core.
@@ -63,11 +148,11 @@ Hint Resolve ws_subst_from_ws_args : lang_core.
   Proof.
     induction t;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     generalize dependent l;
       induction l;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
   Qed.
   
   Lemma sort_ws_incl (t:sort) args args'
@@ -77,7 +162,7 @@ Hint Resolve ws_subst_from_ws_args : lang_core.
     generalize dependent l;
       induction l;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     eapply term_ws_incl; eauto.
   Qed.
 
@@ -87,9 +172,9 @@ Hint Resolve ws_subst_from_ws_args : lang_core.
   Proof.
     induction c;
       basic_goal_prep;
-      basic_term_crush.
+      term_crush1.
     all:eapply sort_ws_incl; eauto.
-    all: basic_utils_crush.
+    all: utils_crush1.
   Qed.
   Hint Resolve ws_ctx_in : lang_core.
 
@@ -205,7 +290,7 @@ c |- e1 = e2 : t'
   Proof using V_Eqb_ok.
     simple eapply cut_ind;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
   Qed.
         
   Definition eq_sort_refl_right := proj1 eq_refl_right.
@@ -227,7 +312,7 @@ c |- e1 = e2 : t'
   Proof.
     induction 1;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
   Qed.
   Hint Resolve eq_args_implies_eq_subst : lang_core.
 
@@ -237,7 +322,7 @@ c |- e1 = e2 : t'
   Proof.
     induction 1;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
   Qed.
   #[local] Hint Rewrite eq_subst_map_fst_r using eassumption : lang_core.
 
@@ -246,7 +331,7 @@ c |- e1 = e2 : t'
   Proof.
     induction 1;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
   Qed.
   #[local] Hint Rewrite eq_subst_map_fst_l using eassumption : lang_core.
 
@@ -274,7 +359,7 @@ c |- e1 = e2 : t'
       length s2 = length c'.
   Proof.
     induction 1; basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
   Qed.  
   
   Lemma eq_args_len_eq_l c' s1 s2
@@ -282,7 +367,7 @@ c |- e1 = e2 : t'
       length s1 = length c'.
   Proof.
     induction 1; basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
   Qed.
   
   Section __.
@@ -314,11 +399,11 @@ c |- e1 = e2 : t'
         basic_goal_prep.
       all: try use_rule_in_ws.
       all: basic_goal_prep.
-      all: autorewrite with utils model term lang_core in *.
+      all: ar_utils_model_term_lang_core.
       all: basic_goal_prep.
       all: intuition subst.
       all: try eapply well_scoped_subst; eauto; try typeclasses eauto.
-      all: eauto with utils model term lang_core.
+      all: eauto 3 with utils model term lang_core.
       all: try change (ws_subst ?a ?b) with (well_scoped a b).
       all: try change (ws_args ?a ?b) with (well_scoped a b).
       all: try erewrite eq_subst_map_fst_l by eassumption; eauto.
@@ -326,7 +411,7 @@ c |- e1 = e2 : t'
       all: try eapply ws_subst_from_ws_args.
       all: try eauto using ws_all_fresh_ctx.
       all: try erewrite eq_args_len_eq_r; eauto.
-      basic_utils_crush.
+      utils_crush1.
       erewrite eq_args_len_eq_r; eauto.
     Qed.
 
@@ -424,7 +509,7 @@ c |- e1 = e2 : t'
     intro Hincl.
     eapply cut_ind;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
   Qed.
 
   (*TODO: use Core.in_ctx_wf?*)
@@ -443,7 +528,7 @@ c |- e1 = e2 : t'
     revert c'.
     induction c;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
     constructor; eauto.
     eapply eq_term_var.
     replace (s [/with_names_from c (map var (map fst c)) /]) with s; eauto.
@@ -455,7 +540,7 @@ c |- e1 = e2 : t'
   Lemma cut_id_subst_refl c
     : eq_subst c c (id_subst c) (id_subst c).
   Proof.
-    eapply cut_id_subst_refl'; basic_utils_crush.
+    eapply cut_id_subst_refl'; utils_crush1.
   Qed.
   Hint Resolve cut_id_subst_refl : lang_core.
 
@@ -513,7 +598,7 @@ c |- e1 = e2 : t'
     Proof.
       induction 1;
         basic_goal_prep;
-        basic_core_crush.
+        core_crush1.
       eapply eq_sort_implies_ws_l; eauto.
     Qed.
     Hint Resolve wf_ctx_implies_ws : lang_core.
@@ -544,7 +629,7 @@ c |- e1 = e2 : t'
         rewrite strengthen_subst with (Substable0 := _);
           try typeclasses eauto.
         all: try erewrite eq_subst_map_fst_r by eassumption; eauto.
-        all:basic_core_crush.        
+        all:core_crush1.        
       }
       {
         cbn.
@@ -555,7 +640,7 @@ c |- e1 = e2 : t'
             try typeclasses eauto;
             eauto with lang_core model utils.
           all: autorewrite with utils bool in *; subst.
-          all:basic_core_crush.
+          all:core_crush1.
         }
         {
           change ((named_list_lookup (var ?n) ?s ?n)) with (subst_lookup s n).
@@ -563,7 +648,7 @@ c |- e1 = e2 : t'
             try typeclasses eauto;
             eauto.
           all: try erewrite eq_subst_map_fst_r by eassumption; eauto.
-          all: basic_core_crush.
+          all: core_crush1.
         }
       }
     Qed.
@@ -648,7 +733,7 @@ Section LangMono.
   Proof.
     induction 1;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
   Qed.    
   
   Hint Resolve ctx_lang_mono : lang_core.
@@ -657,7 +742,7 @@ Section LangMono.
   Proof.
     destruct 1;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1.
   Qed.  
 
 End LangMono.
@@ -678,7 +763,7 @@ Lemma wf_lang_implies_ws l
 Proof.
   induction 1;
     basic_goal_prep;
-    basic_core_crush.
+    core_crush1.
 Qed.
 Hint Resolve wf_lang_implies_ws : lang_core.
 
@@ -738,10 +823,10 @@ Section CutDefs.
       eq_subst l c c' s1 s2 -> wf_ctx l c' -> ctx_cut_admissible c' -> eq_subst l c c' s2 s1.
   Proof using .
     induction 2; intros.
-    1:basic_core_crush.
+    1:core_crush1.
     constructor.
     all:basic_goal_prep.
-    1: basic_core_crush.
+    1: core_crush1.
     
     eapply eq_term_conv; eauto using eq_term_sym.
     break.
@@ -760,7 +845,7 @@ Section CutDefs.
       intro wsl.
       induction 1;
         basic_goal_prep;
-        basic_core_crush.
+        core_crush1.
       {
         clear H3.
         unfold sort_cut_admissible in *;
@@ -901,7 +986,7 @@ Section WithLang.
     simple eapply cut_ind.
     all: unfold term_cut_admissible, sort_cut_admissible, subst_cut_admissible, args_cut_admissible.
     all: basic_goal_prep.
-    all: try use_rule_in_wf; autorewrite with lang_core utils in *.
+    all: try use_rule_in_wf; ar_lang_core_utils.
     all: repeat split.
     all: basic_goal_prep.
     all: erewrite ?subst_assoc; try typeclasses eauto;[|shelve..].
@@ -1006,11 +1091,11 @@ Section WithLang.
     all: unfold sort_cut_admissible in *.
     1-3: erewrite subst_assoc; try typeclasses eauto; eauto;
     erewrite ?eq_subst_map_fst_r by eassumption;
-    [|basic_core_crush].
+    [|core_crush1].
     all: fold_Substable.
     1-3: unfold apply_subst at 2 4.
     all: unfold substable_subst.
-    all: autorewrite with lang_core in *.
+    all: ar_lang_core.
     all: break.
     2:{
       fold_Substable.
@@ -1026,17 +1111,17 @@ Section WithLang.
     all: eapply H5; eauto with utils.
     all: fold_Substable.
     all: rewrite <- !Substable.with_names_from_args_subst.
-    all: autorewrite with lang_core in *.
+    all: ar_lang_core.
     2: eapply eq_subst_sym';    
       intuition eauto using eq_subst_refl_right, eq_subst_sym', ctx_lang_mono.
     all: eapply eq_args_implies_eq_subst;
       intuition eauto using eq_subst_refl_right, eq_subst_sym', ctx_lang_mono.
     Unshelve.
+    all: clear_arrows.
     all: rewrite ?map_fst_with_names_from.
     all: erewrite ?eq_subst_map_fst_r by eassumption.
     all: erewrite ?eq_subst_map_fst_l by eassumption.
-    all: autorewrite with lang_core in *.
-    all: eauto with lang_core.
+    all: eauto 3 with lang_core.
     all: try erewrite eq_args_len_eq_r; intuition eauto with lang_core.
   Qed.
   End WithCtx.
@@ -1134,7 +1219,7 @@ Proof.
   unfold lang_cut_admissible.
   induction 1;
     basic_goal_prep;
-    basic_core_crush.
+    core_crush1.
   eapply rule_admissible.
   4: eauto.
   all: eauto.
@@ -1192,7 +1277,7 @@ Section WithLang.
   Proof using V_Eqb_ok wfl_core wfc_core.
     simple eapply cut_ind;
       basic_goal_prep;
-      autorewrite with utils term model lang_core in *.
+      ar_utils_term_model_lang_core.
     all: eauto using
            sort_con_congruence,
         Core.eq_sort_trans, Core.eq_sort_sym,

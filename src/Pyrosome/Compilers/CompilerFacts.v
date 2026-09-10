@@ -15,6 +15,28 @@ Import Core.Notations.
 Import CompilerDefs.Notations.
 
  
+(* File-local speed helpers: single-round versions of the crush tactics.
+   `generic_crush` is `repeat (...)`, so it always pays one extra
+   no-progress round; where one round suffices these are ~2x faster. *)
+Ltac core_crush1 :=
+  intuition break; subst;
+  autorewrite with bool rw_prop inversion utils term lang_core model in *;
+  intuition unshelve (eauto 7 with utils term lang_core model).
+Ltac core_fo_crush1 :=
+  intuition break; subst;
+  autorewrite with bool rw_prop inversion utils term lang_core model in *;
+  firstorder unshelve (eauto 7 with utils term lang_core model).
+(* leaner still: the `model` rewrite base and hint db are unused by the
+   `strengthening` cases below. *)
+Ltac core_crush1_nm :=
+  intuition break; subst;
+  autorewrite with bool rw_prop inversion utils term lang_core in *;
+  intuition unshelve (eauto 7 with utils term lang_core).
+Ltac utils_crush1 :=
+  intuition break; subst;
+  autorewrite with bool rw_prop inversion utils in *;
+  intuition unshelve (eauto with utils).
+
 Section WithVar.
   Context (V : Type)
     {V_Eqb : Eqb V}
@@ -49,7 +71,7 @@ Section WithVar.
     3:eapply wf_term_lang_monotonicity; now eauto.
     4:eapply eq_sort_lang_monotonicity; now eauto.
     5:eapply eq_term_lang_monotonicity; now eauto.
-    all:basic_core_firstorder_crush.
+    all:core_fo_crush1.
   Qed.
   #[local] Hint Resolve preserving_compiler_embed : auto_elab.
 
@@ -62,7 +84,7 @@ Section WithVar.
     revert b;
       induction a;
       basic_goal_prep;
-      basic_utils_crush.
+      utils_crush1.
   Qed.
 
   Lemma elab_compiler_prefix_implies_elab cmp_pre (target : lang)
@@ -71,8 +93,8 @@ Section WithVar.
       preserving_compiler_ext (tgt_Model:=core_model target) cmp_pre cmp src ->
       preserving_compiler_ext (tgt_Model:=core_model target) [] (cmp++cmp_pre) (src++src_pre).
   Proof using.
-    induction 2; basic_goal_prep; basic_core_firstorder_crush.
-    all: constructor; basic_core_crush.
+    induction 2; basic_goal_prep; try assumption.
+    all: constructor; rewrite ?app_nil_r; eauto.
   Qed.
 
   Lemma preserving_compiler_monotonicity cmp_pre (tgt : lang) cmp src src_pre cmp_pre'
@@ -162,7 +184,7 @@ Section WithVar.
     apply named_list_lookup_err_in in H1.
     apply H in H1.
     basic_goal_prep.
-    basic_utils_crush.
+    utils_crush1.
   Qed.    
 
   Lemma named_list_lookup_incl A (l1 l2 : named_list A) n r
@@ -194,13 +216,15 @@ Section WithVar.
                          compile_args cmp' s = compile_args cmp s).
   Proof.
     intros.
-    (*assert (all_fresh cmp) by basic_core_crush.*)
+    (*assert (all_fresh cmp) by core_crush1.*)
     apply wf_judge_ind;
       basic_goal_prep;
-      basic_core_crush.
+      core_crush1_nm.
     (*all: pose proof (all_fresh_tail _ _ ltac:(eassumption)).*)
-    all: repeat case_match; auto;
-      autorewrite with rw_prop inversion utils term lang_core in *; eauto.
+    all: repeat case_match.
+    all: auto.
+    all: autorewrite with inversion in *.
+    all: eauto.
     all: repeat lazymatch goal with
            | H_incl : incl ?cmp _,
                H : named_list_lookup_err ?cmp _ = Some _ |- _ =>
@@ -218,7 +242,7 @@ Section WithVar.
       eapply sort_name_in_cmp; auto;[|eauto].
       eapply strengthen_preserving_compiler; auto.
       4:eassumption.
-      all: basic_goal_prep; basic_core_crush.
+      all: basic_goal_prep; core_crush1.
     }
     {
       symmetry in case_match_eqn0.
@@ -228,7 +252,7 @@ Section WithVar.
       eapply term_name_in_cmp; auto;[|eauto].
       eapply strengthen_preserving_compiler; auto.
       4:eassumption.
-      all: basic_goal_prep; basic_core_crush.
+      all: basic_goal_prep; core_crush1.
     }
   Qed.
   
@@ -254,7 +278,8 @@ Section WithVar.
       exists (args : list V) (t : sort), In (n, sort_case args t) cmp.
   Proof.
     induction 1;basic_goal_prep;
-      with_rule_in_wf_crush.
+      try clear dependent tgt;
+      core_crush1.
   Qed.
   Local Hint Resolve sort_case_in_cmp : lang_core.
 
@@ -269,9 +294,9 @@ Section WithVar.
   Proof.
     intros ? ? ?.
     induction e;
-      basic_goal_prep; basic_core_crush.
+      basic_goal_prep; core_crush1.
     case_match;
-      basic_utils_crush.
+      utils_crush1.
     {
       symmetry in case_match_eqn.
       eapply all_fresh_named_list_lookup_err_in in case_match_eqn; eauto.
@@ -283,7 +308,7 @@ Section WithVar.
       f_equal.
       revert H2 H5.
       induction l;
-        basic_goal_prep; basic_core_crush.
+        basic_goal_prep; core_crush1.
     }
     {
       symmetry in case_match_eqn.
@@ -304,7 +329,7 @@ Section WithVar.
     destruct t;
       basic_goal_prep.
     case_match;
-      basic_utils_crush.
+      utils_crush1.
     {
       symmetry in case_match_eqn.
       eapply all_fresh_named_list_lookup_err_in in case_match_eqn; eauto.
@@ -316,7 +341,7 @@ Section WithVar.
       f_equal.
       revert H4.
       induction l;
-        basic_goal_prep; basic_core_crush; eauto using compile_strengthen_incl.
+        basic_goal_prep; core_crush1; eauto using compile_strengthen_incl.
     }
     {
       symmetry in case_match_eqn.

@@ -31,6 +31,15 @@ Ltac match_some_satisfying :=
       destruct e eqn:Hsat; cbn [Is_Some_satisfying] in *; try tauto
   end.
 
+(* Single-round variants of the generic crush tactics, for use in this file.
+   [basic_utils_crush] is [repeat (intuition break; subst; autorewrite ...;
+   intuition unshelve eauto with utils)]; most call sites here only need one
+   round, and the repeated [autorewrite ... in *] dominates the cost. *)
+Ltac utils_crush1 :=
+  intuition break; subst;
+  autorewrite with bool rw_prop inversion utils in *;
+  intuition (unshelve eauto with utils).
+
 Section WithMap.
   Context
     (idx : Type)
@@ -394,6 +403,9 @@ Section WithMap.
       passignment_ex (cv::cargs) (v::args) acc ->
       passignment_ex (cv::cargs) (v::args) passignment.
   Proof.
+    (* The partial script below is kept for reference only; the lemma is
+       [Abort]ed (the statement is too strong), so running it costs >1s of
+       compile time for nothing.
     revert args; induction cargs;
       destruct args;
       unfold passignment_forall,
@@ -404,6 +416,7 @@ Section WithMap.
     {
       revert H; case_match; try congruence.
       intros.
+    *)
 
       (*
       Lemma insert_correct
@@ -1430,8 +1443,12 @@ Section WithMap.
   Proof.
     constructor; cbn; eauto.
     1:apply empty_forest_rooted.
-    all: basic_goal_prep; basic_utils_crush.
-    rewrite has_key_empty in H; eauto; tauto.
+    (* Four small goals; all follow from [map.get map.empty = None] /
+       [has_key _ empty -> False].  Doing it explicitly avoids four
+       [intuition]s over the (large) section context. *)
+    all: basic_goal_prep; rewrite ?map.get_empty in *;
+      try discriminate;
+      rewrite has_key_empty in H; eauto; tauto.
   Qed.
   
   Theorem empty_sound_for_interpretation m
@@ -1442,7 +1459,7 @@ Section WithMap.
     split.
     { constructor; cbn; auto.
       - exists []; cbn; apply union_find_empty_ok.
-      - intros; basic_utils_crush.
+      - intros; utils_crush1.
       - intros a Hin.
         unfold atom_in_db in Hin.
         rewrite map.get_empty in Hin. cbn in Hin. tauto. }
@@ -1454,12 +1471,12 @@ Section WithMap.
       try tauto;
       try congruence.
     exfalso; eapply PER_empty; try eassumption.
-    basic_goal_prep; basic_utils_crush.
+    basic_goal_prep; utils_crush1.
   Qed.
   
   Lemma has_key_empty A k
     : Sep.has_key k (map.empty : idx_map A) <-> False.
-  Proof. clear idx_succ. unfold Sep.has_key; basic_utils_crush. Qed.
+  Proof. clear idx_succ. unfold Sep.has_key; utils_crush1. Qed.
   Hint Rewrite has_key_empty : utils.
   
   Theorem empty_sound m : egraph_sound_for_model m (empty_egraph idx_zero analysis_result).
@@ -1564,14 +1581,9 @@ Section WithMap.
       all2 R2 l1 l2.
   Proof using.
     clear.
-    unfold iff2;
-      intro Hr.
-    revert l2;
-      induction l1;
-      destruct l2;
-      basic_goal_prep;
-      basic_utils_crush.
-    firstorder.
+    unfold iff2; intro Hr.
+    revert l2; induction l1; destruct l2; cbn [all2]; [tauto|tauto|tauto|].
+    intros [H1 H2]; split; [ apply Hr; exact H1 | apply IHl1; exact H2 ].
   Qed.
 
   (*TODO: move*)
@@ -1579,9 +1591,9 @@ Section WithMap.
     : (forall a b, R a b -> S a b) -> all2 R l1 l2 -> all2 S l1 l2.
   Proof using.
     clear.
-    intro.
-    revert l2; induction l1; destruct l2;
-      basic_goal_prep; basic_utils_crush.
+    intro Himpl.
+    revert l2; induction l1; destruct l2; cbn [all2]; [tauto|tauto|tauto|].
+    intros [H1 H2]; split; [ apply Himpl; exact H1 | apply IHl1; exact H2 ].
   Qed.
 
   Lemma all2_Is_Some_satisfying_l A B (R : A -> B -> Prop) l1 l2
@@ -1589,9 +1601,15 @@ Section WithMap.
         <-> option_all l1 <$> (fun l1' => all2 R l1' l2).
   Proof.
     clear idx_succ idx_zero.
+    (* Fully explicit case analysis: the generic crush spends most of its time
+       in [intuition] over the (large) induction hypothesis. *)
     revert l2; induction l1; destruct l2;
-      basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush;
-      eapply IHl1; eauto.
+      cbn [all2 option_all Is_Some_satisfying]; try tauto.
+    { destruct a as [x|]; cbn [Is_Some_satisfying]; try tauto.
+      destruct (option_all l1); cbn [Is_Some_satisfying all2]; tauto. }
+    { rewrite (IHl1 l2).
+      destruct a as [x|]; destruct (option_all l1);
+        cbn [Is_Some_satisfying all2]; tauto. }
   Qed.
 
   Lemma all2_Is_Some_satisfying_r A B (R : A -> B -> Prop) l1 l2
@@ -1600,8 +1618,12 @@ Section WithMap.
   Proof.
     clear idx_succ idx_zero.
     revert l1; induction l2; destruct l1;
-      basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush;
-      eapply IHl2; eauto.
+      cbn [all2 option_all Is_Some_satisfying]; try tauto.
+    { destruct a as [x|]; cbn [Is_Some_satisfying]; try tauto.
+      destruct (option_all l2); cbn [Is_Some_satisfying all2]; tauto. }
+    { rewrite (IHl2 l1).
+      destruct a as [x|]; destruct (option_all l2);
+        cbn [Is_Some_satisfying all2]; tauto. }
   Qed.
 
   Lemma args_rel_interpretation m interp e
@@ -1840,22 +1862,22 @@ Section WithMap.
     : UnionFind.find u x = (u', i0) ->
       (next idx (idx_map idx) (idx_map nat) u)
       = (next idx (idx_map idx) (idx_map nat) u').
-  Proof.
+  (* pinned so the discharged signature matches the original proof's *)
+  Proof using idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero idx_map.
     unfold UnionFind.find.
     destruct u.
     cbn.
     case_match; cbn; try congruence.
     {
       eqb_case i x.
-      { basic_goal_prep; basic_utils_crush. }
+      { intros Heq; inversion Heq; subst; reflexivity. }
       {
         case_match; cbn; try congruence.
-        basic_goal_prep.
-        basic_utils_crush.
+        intros Heq; inversion Heq; subst; reflexivity.
       }
     }
     {
-      basic_goal_prep; basic_utils_crush.
+      intros Heq; inversion Heq; subst; reflexivity.
     }
   Qed.
   
@@ -2199,10 +2221,8 @@ Section WithMap.
     : all2 R l1 l2 = all2 (fun a b => R b a) l2 l1.
   Proof using.
     clear.
-    revert l2; induction l1;
-      destruct l2;
-      basic_goal_prep;
-      basic_utils_crush.
+    revert l2; induction l1; destruct l2; cbn [all2]; try reflexivity.
+    f_equal; apply IHl1.
   Qed.
 
   Instance eq_sound_for_model_Symmetric i : Symmetric (eq_sound_for_model m i).
