@@ -46,18 +46,19 @@ alone, on the 7GB build box with no other Coq process running.
 
 | Definition | Method | Time | Result | Issue / localized culprit |
 |---|---|---|---|---|
-| type_casing_wf | | | PENDING | |
-| target_multilanguage_wf | | | PENDING | |
+| type_casing_wf | auto_elab (as-is) | 257.4s | Qed | tactic 229.6s + Qed 27.8s; computational pathway not needed |
+| source_multilanguage_wf | prove_by_lang_db | 3.8s | Qed | added in this stage |
+| target_multilanguage_wf | prove_by_lang_db | 12.2s | Qed | added in this stage |
 
 ## Stage E: TrecTerms.v
 
 | Definition | Method | Time | Result | Issue / localized culprit |
 |---|---|---|---|---|
-| trec_star_case_wf | | | PENDING | |
-| trec_bool_case_wf | | | PENDING | |
-| trec_func_case_sort_wf | | | PENDING | |
-| trec_func_case_wf | | | PENDING | |
-| trec_boundaries_wf | | | PENDING | |
+| trec_star_case_wf | solve_elab_term_or_sort | 20.9s | Qed | |
+| trec_bool_case_wf | solve_elab_term_or_sort | 22.2s | Qed | |
+| trec_func_case_sort_wf | solve_elab_term_or_sort | 24.0s | Qed | |
+| trec_func_case_wf | solve_elab_term_or_sort | 108.1s | Qed | tactic 72.0s + Qed 36.1s |
+| trec_boundaries_wf | solve_elab_term_or_sort | 134.2s | Qed | tactic 96.7s + Qed 37.5s |
 
 ## Stage F: SimpleMultilangCompiler.v
 
