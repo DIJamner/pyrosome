@@ -129,8 +129,34 @@ Derive trec_func_case_sort
     as trec_func_case_sort_wf.
 Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed. (* used to be derive_elab_term *)
 
+(* The two wrappers are written so that they are *literally* the compiled image
+   of the boundary rules' right-hand sides:
+   - [#".1"] (the [ttd] direction) mirrors ("ttd func");
+   - [#".2"] (the [dtt] direction) mirrors ("dtt func"), and eagerly checks with
+     [#"bool?"]/[#"mif"] that the untyped value really is a function, so that
+     [#"dtt" (#"->" "A" "B") (#"ret" #"uT"/#"uF")] reduces to [#"Error"].
+   Inside the two [#"Lam"]s, [ty_ovar 1] is the domain type and [ty_ovar 0] the
+   codomain; the two [#"lambda"]-bound pair variables hold the recursive
+   [typerec] results for those two types.                                     *)
 Definition trec_func_case_unelab :=
-  {{e #"ret" (#"Lam" (#"ret" (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0})) (#"ret" (#"Lam" (#"ret" (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0})) (#"pair" (#"ret" (#"lambda" (#"->" {ty_ovar 1} {ty_ovar 0}) (#"ret" (#"ulambda" (#"app" (#".1" (#"ret" {ovar 2})) (#"app" (#"ret" {ovar 1}) (#"app" (#".2" (#"ret" {ovar 3})) (#"ret" {ovar 0})))))))) (#"ret" (#"lambda" #"*" (#"ret" (#"lambda" {ty_ovar 1} (#"app" (#".2" (#"ret" {ovar 2})) (#"uapp" (#"ret" {ovar 1}) (#"app" (#".1" (#"ret" {ovar 3})) (#"ret" {ovar 0})))) ) ))))))))))) }}.
+  {{e #"ret" (#"Lam" (#"ret" (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+     (#"ret" (#"Lam" (#"ret" (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+       (#"pair"
+          (#"ret" (#"lambda" (#"->" {ty_ovar 1} {ty_ovar 0})
+             (#"ret" (#"ulambda"
+                (#"let" (#"app" (#"ret" {ovar 1})
+                                (#"let" (#"ret" {ovar 0})
+                                        (#"app" (#".2" (#"ret" {ovar 4})) (#"ret" {ovar 0}))))
+                        (#"app" (#".1" (#"ret" {ovar 3})) (#"ret" {ovar 0})))))))
+          (#"ret" (#"lambda" #"*"
+             (#"mif" (#"bool?" (#"ret" {ovar 0}))
+                (#"Error" (#"->" {ty_ovar 1} {ty_ovar 0}))
+                (#"ret" (#"lambda" {ty_ovar 1}
+                   (#"let" (#"uapp" (#"ret" {ovar 1})
+                                    (#"let" (#"ret" {ovar 0})
+                                            (#"app" (#".1" (#"ret" {ovar 4})) (#"ret" {ovar 0}))))
+                           (#"app" (#".2" (#"ret" {ovar 3})) (#"ret" {ovar 0}))))))))
+       )))))))) }}.
 Derive trec_func_case
   in ( elab_term target_multilanguage
          [("G", {{s #"env" #"ty_emp"}})]
