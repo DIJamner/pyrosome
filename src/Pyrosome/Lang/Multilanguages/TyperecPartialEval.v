@@ -455,7 +455,8 @@ Admitted.
 *)
 
 Definition target_multilanguage_without_typerec :=
-  prod_ty_subst ++ prod_parameterized ++ (* can we also get rid of these? idt we partially evaluate that away but I think we could *)
+  let_eta_parameterized ++ let_ty_subst ++ let_parameterized ++
+    prod_ty_subst ++ prod_parameterized ++ (* can we also get rid of these? idt we partially evaluate that away but I think we could *)
     polymorphic_interoperating_langs.
 
 Lemma target_multilanguage_without_typerec_wf : wf_lang target_multilanguage_without_typerec.

@@ -27,6 +27,10 @@ alone, on the 7GB build box with no other Coq process running.
 | mif_ty_subst | auto_elab | 16.8s | Qed |  |
 | prod_parameterized_wf | solve_parameterize_wrapper | 6.0s | Qed |  |
 | prod_ty_subst | auto_elab | 33.2s | Qed |  |
+| let_eta_wf | infer_lang_ext_simple_incr + compute_wf_lang | 1.0s + Qed 0.1s | Qed | new: one-rule `("let eta") #"let" "e" (#"ret" #"hd") = "e"` over `let_lang ++ exp_subst ++ value_subst` |
+| let_parameterized_wf | solve_parameterize_wrapper | 3.6s + Qed 0.7s | Qed | new: `parameterize_wrapper let_lang` (`Let.v`'s `let_lang`, unmodified) |
+| let_ty_subst | auto_elab | 6.6s + Qed 1.2s | Qed | new |
+| let_eta_parameterized_wf | parameterize_lang_preserving_ext + `cbv; reflexivity` | Qed 0.8s | Qed | new; no ty_subst lang needed (no new syntax, like `utlc_bool`) |
 
 ## Stage B: InteropLangs.v
 
@@ -48,7 +52,7 @@ alone, on the 7GB build box with no other Coq process running.
 |---|---|---|---|---|
 | type_casing_wf | auto_elab (as-is) | 257.4s | Qed | tactic 229.6s + Qed 27.8s; computational pathway not needed |
 | source_multilanguage_wf | prove_by_lang_db | 3.8s | Qed | added in this stage |
-| target_multilanguage_wf | prove_by_lang_db | 12.2s | Qed | added in this stage |
+| target_multilanguage_wf | prove_by_lang_db | 1.6s + Qed 10.9s | Qed | added in this stage; now also contains `let_eta_parameterized ++ let_ty_subst ++ let_parameterized` |
 
 ## Stage E: TrecTerms.v
 
@@ -62,13 +66,33 @@ alone, on the 7GB build box with no other Coq process running.
 
 ## Stage F: SimpleMultilangCompiler.v
 
+**UPDATE (let-binding change).**  The compiler no longer emits
+`#"app" (#".2" TREC) "e"` with `"e"` an arbitrary expression.  It now
+let-binds the argument:
+
+```
+#"dtt" "G" "A" "e"  |->  #"let" "e" (#"app" (#".2" (#"exp_subst" #"wkn" TREC)) (#"ret" #"hd"))
+#"ttd" "G" "A" "e"  |->  #"let" "e" (#"app" (#".1" (#"exp_subst" #"wkn" TREC)) (#"ret" #"hd"))
+```
+
+The let-bound variable `#"hd"` *is* a value, so `STLC-beta` fires; the
+residual `#"let" "e" (#"ret" #"hd")` is collapsed by a new one-rule language
+`let_eta` (`("let eta") #"let" "e" (#"ret" #"hd") = "e"`).  `let_lang`
+(`Lang/Let.v`) and `let_eta`, both parameterized, plus `let_ty_subst`, were
+added to `target_multilanguage` (stage A rows above).  `boundaries` itself
+was **not** changed.  Consequence: `"dtt star"` and `"ttd star"`, previously
+believed FALSE, are now **Qed**; 7 of 13 equations now go through instead of
+5.  The six `"typerec func"`/`exp_subst` equations still time out
+(re-measured at 400 s each after the change).
+
 | Definition | Method | Time | Result | Issue / localized culprit |
 |---|---|---|---|---|
 | simple_multilang_compiler (inference) | `infer_compiler_simple_autoinj 4 target_multilanguage ...` + `Eval vm_compute` | 24.1s | FAIL | inference produces `{{e #""}}` for the `ttd` case and, for `dtt`, a term with ~10 `#"?#..."` holes in which the `typerec` node has been replaced by the *bool* case of the typerec. Unusable; the compiler is written by hand on top of `trec_boundaries` instead. |
-| simple_multilang_compiler (by hand) | explicit `term_case` over `trec_boundaries` | -- | Qed | `dtt_case_wf` 27.3s, `ttd_case_wf` 26.5s, both `compute_term_wf`; confirms the hand-written cases are the elaboration of `simple_multilang_compiler_def` |
+| simple_multilang_compiler (by hand) | explicit `term_case` over `trec_boundaries` | -- | Qed | (superseded) `dtt_case_wf` 27.3s, `ttd_case_wf` 26.5s |
+| dtt_case_tgt / ttd_case_tgt (let-binding version) | `Derive` + `solve_elab_term_or_sort target_multilanguage` | 102.2s + Qed 43.2s / 135.1s + Qed 43.6s | Qed | the two compiler cases are now *elaborated* from the unelaborated `#"let" ...` body rather than written out; `dtt_case_wf`/`ttd_case_wf` re-check them with `compute_term_wf` (Qed 28.5s / 28.1s) |
 | simple_multilang_compiler (elaboration cross-check) | old `Derive` + `setup_elab_compiler` + `solve_elab_term_or_sort`, equations stubbed by an axiom | 325s | (probe only) | confirms the two `elab_term` goals still go through; only the equations are the problem |
 | simple_multilang_compiler_preserving | `compute_preserving_compiler simple_interoperating_langs` | tactic 0.13s (deferred), `Qed` killed at 913s / RSS 1.31GB | TIMEOUT 913 | tactic returns instantly because `flagged_exact` uses `vm_cast_no_check`; all the work is in `Qed`. Killed once the per-equation runs below showed 8/13 equations cannot be discharged. |
-| simple_multilang_compiler_preserving | assembled from per-equation lemmas | -- | ADMITTED | `(* ISSUE: see STATUS.md *)`; 5 of 13 equations proved, 8 not (below) |
+| simple_multilang_compiler_preserving | assembled from per-equation lemmas | -- | ADMITTED | `(* ISSUE: see STATUS.md *)`; **7 of 13** equations proved after the let-binding change (was 5), 6 not (below) |
 
 ### Per-equation results
 
@@ -81,35 +105,36 @@ conditions discharged), under an Ltac `timeout`.
 
 | Equation | Time | Result | Issue / localized culprit |
 |---|---|---|---|
-| "dtt star" | TIMEOUT 300s | ADMITTED | **Believed genuinely FALSE.** LHS compiles to `app (ret (lambda #"*" (ret #"hd"))) "e"` where `"e"` is a variable of sort `#"exp" #"ty_emp" "G" (#"*" #"ty_emp")`; RHS compiles to `"e"`. `STLC-beta` (SimpleVSTLC.v:39) only fires on `#"app" (#"ret" (#"lambda" ...)) (#"ret" "v")`, i.e. on a *value* argument, and there is no eta/administrative law for `app` applied to an arbitrary expression anywhere in `target_multilanguage`. So the LHS is a normal form distinct from the RHS and the two are not equal. Root cause: `boundaries`' `dtt`/`ttd` take `"e" : #"exp" "G" _` where the compiler needs `"v" : #"val" "G" _`. |
-| "ttd star" | TIMEOUT 300s | ADMITTED | same as "dtt star", through the `.1` projection instead of `.2` |
-| "dtt True" | 32.2s | Qed | |
-| "dtt False" | 31.6s | Qed | |
-| "ttd True" | 31.3s | Qed | |
-| "ttd False" | 31.6s | Qed | |
-| "dtt func" | TIMEOUT 300s; re-run TIMEOUT 900s | ADMITTED | needs the `"typerec func"` rule of `type_casing` (polymorphic `#"All"`/`#"@"` instantiation with the large `A_var` type). Peak RSS ~1.8GB, no OOM -- pure saturation blow-up. |
-| "ttd func" | TIMEOUT 300s; re-run TIMEOUT 900s | ADMITTED | as "dtt func" |
-| "dtt ulambda mismatch" | 31.3s | Qed | only mismatch equation at type `#"bool"`, i.e. the only one reachable via `"typerec bool"` |
-| "dtt uT mismatch" | TIMEOUT 300s; re-run TIMEOUT 900s | ADMITTED | at type `#"->" "A" "B"`, so it needs `"typerec func"`; same wall as "dtt func" |
-| "dtt uF mismatch" | TIMEOUT 300s | ADMITTED | same shape as "dtt uT mismatch" (the 900s re-run was interrupted before reaching it) |
-| "exp_subst dtt" | TIMEOUT 300s | ADMITTED | substitution equation: requires pushing `#"exp_subst"` through the whole `trec_boundaries` term (`"exp_subst typerec"` plus every `exp_subst`/`val_subst` rule of the fragments). Not attempted at 900s. |
+| "dtt star" | before: TIMEOUT 300s -- after: 34.9s + Qed 51.6s | **Qed** | Previously believed genuinely FALSE (`app (ret (lambda ...)) "e"` with `"e"` an expression is a normal form, and `STLC-beta` needs `#"ret" "v"`). The compiler now let-binds `"e"`, so the argument is the *variable* `#"hd"`, `STLC-beta` fires, and `"let eta"` collapses `#"let" "e" (#"ret" #"hd")` to `"e"`. `boundaries` unchanged. |
+| "ttd star" | before: TIMEOUT 300s -- after: 35.2s + Qed 51.5s | **Qed** | as "dtt star", through the `.1` projection instead of `.2` |
+| "dtt True" | before 32.2s -- after 34.8s + Qed 51.9s | Qed | |
+| "dtt False" | before 31.6s -- after 35.0s + Qed 53.1s | Qed | |
+| "ttd True" | before 31.3s -- after 35.6s + Qed 52.0s | Qed | |
+| "ttd False" | before 31.6s -- after 36.2s + Qed 52.2s | Qed | |
+| "dtt func" | TIMEOUT 300s; 900s; after the change TIMEOUT 400s | ADMITTED | unchanged: needs the `"typerec func"` rule of `type_casing` (polymorphic `#"All"`/`#"@"` instantiation with the large `A_var` type). Pure saturation blow-up, no OOM. |
+| "ttd func" | TIMEOUT 300s; 900s | ADMITTED | as "dtt func" |
+| "dtt ulambda mismatch" | before 31.3s -- after 35.7s + Qed 52.3s | Qed | only mismatch equation at type `#"bool"`, i.e. the only one reachable via `"typerec bool"` |
+| "dtt uT mismatch" | TIMEOUT 300s; 900s | ADMITTED | at type `#"->" "A" "B"`, so it needs `"typerec func"`; same wall as "dtt func" |
+| "dtt uF mismatch" | TIMEOUT 300s | ADMITTED | same shape as "dtt uT mismatch" |
+| "exp_subst dtt" | TIMEOUT 300s; after the change TIMEOUT 400s | ADMITTED | substitution equation: requires pushing `#"exp_subst"` through the whole `trec_boundaries` term (`"exp_subst typerec"` plus every `exp_subst`/`val_subst` rule of the fragments), and now also through the `#"let"` node. |
 | "exp_subst ttd" | TIMEOUT 300s | ADMITTED | as "exp_subst dtt" |
 | "dtt star" (value-restricted variant) | 32.2s tactic + 46.6s Qed | Qed (probe) | Confirms the Stage F diagnosis. Same compiled LHS/RHS as "dtt star", with the expression variable `"e"` replaced by `#"ret" #"ty_emp" "G" (#"*" #"ty_emp") "v"` in ctx `[("v", #"val" #"ty_emp" "G" (#"*" #"ty_emp")); ("G", #"env" #"ty_emp")]`; proved by the same `by_reduction_checked`. So the only obstacle to "dtt star" is that `boundaries` gives `dtt`/`ttd` an `#"exp"` argument where `STLC-beta` needs a `#"ret" "v"`. |
 | "ttd star" (value-restricted variant) | 32.2s tactic + 46.9s Qed | Qed (probe) | as above, through the `.1` projection. |
 
-**Summary of the localized issue.** The equations split exactly along which
-`typerec` rule they need: everything that reduces via `"typerec star"` or
-`"typerec bool"` proves in ~31s; everything that needs `"typerec func"` times out
-at 900s; the two `exp_subst` equations time out at 300s; and the two `star`
-equations are not merely slow but appear to be false, because the compiler turns
-`#"dtt" #"*" "e"` into a beta-redex whose argument is an expression rather than a
-value. Fixing the two `star` rows probably means changing `boundaries` so that
-`dtt`/`ttd` take a `#"val"`, not an `#"exp"` (and then `"dtt star"`/`"ttd star"`
-become `#"dtt" #"*" (#"ret" "v") = #"ret" "v"`, which does follow by `STLC-beta`).
+**Summary of the localized issue (updated).** The equations still split exactly
+along which `typerec` rule they need: everything that reduces via
+`"typerec star"` or `"typerec bool"` proves in ~35 s (plus ~52 s at `Qed`);
+everything that needs `"typerec func"` times out (300 s, 900 s, and 400 s after
+the change); the two `exp_subst` equations still time out.  The two `star`
+equations are **no longer a definitional problem**: let-binding the compiler's
+argument (rather than weakening `boundaries` to take a `#"val"`) made both of
+them provable, at the price of adding `let_lang` + a one-rule `let_eta` to the
+target multilanguage.  The remaining 6 failures are pure e-graph saturation
+cost, not soundness.
 
 ## Stage G: PolyBoundaries.v
 
-PolyBoundaries.v now compiles end to end (14m31s total).  The whole file builds as-is (with `Derive ... SuchThat ... As` modernized to
+PolyBoundaries.v now compiles end to end (14m31s originally; ~21m after the let-binding change, which adds two `solve_elab_term_or_sort` elaborations and two more `by_reduction_checked` equations).  The whole file builds as-is (with `Derive ... SuchThat ... As` modernized to
 `Derive ... in ... as`, and `PolyCompilerLangs`/`PolyCompilersCPS` added to the
 imports so `stlc_parameterized` and friends resolve).  No fallback was needed
 for any of the original definitions.
@@ -126,9 +151,9 @@ for any of the original definitions.
 | dtt_forall_partial_eval_term_wf | Derive + solve_elab_term_or_sort | tactic 12.5s + Qed 15.3s | Qed | |
 | ttd_forall_partial_eval_term_wf | Derive + solve_elab_term_or_sort | tactic 2.3s + Qed 15.3s | Qed | |
 | trec_boundaries_poly_wf | Derive + solve_elab_term_or_sort | tactic 97.4s + Qed 32.7s | Qed | new in this stage: `trec_boundaries` re-elaborated at a *general* type environment `"D"` (the Stage-E one lives at `#"ty_emp"`), needed to build the poly compiler cases |
-| poly_multilang_compiler (by hand) | explicit `term_case` over `trec_boundaries_poly` | `poly_dtt_case_wf` 26.0s, `poly_ttd_case_wf` 26.2s (`compute_term_wf`) | Qed | the two cases are `#"app" ... (#".2"/#".1" ... trec_boundaries_poly) "e"`, i.e. the elaboration of `poly_multilang_compiler_def` at general `"D"` |
+| poly_dtt_case_tgt / poly_ttd_case_tgt (let-binding version) | `Derive` + `solve_elab_term_or_sort target_multilanguage` | 126.9s + Qed 38.6s / 135.1s + Qed 37.7s | Qed | same let-binding change as stage F, at general `"D"`: `#"let" "e" (#"app" (#".2"/#".1" (#"exp_subst" #"wkn" trec)) (#"ret" #"hd"))`; `poly_dtt_case_wf`/`poly_ttd_case_wf` re-check with `compute_term_wf` (Qed 27.3s / 28.4s) |
 | poly_multilang_compiler_preserving | `compute_preserving_compiler polymorphic_interoperating_langs` | tactic returns immediately (deferred); killed at `Qed` after 1500s, RSS ~1.0GB | TIMEOUT 1500 | tactic is `flagged_exact`/`vm_cast_no_check`, so all the work is at `Qed` |
-| poly_multilang_compiler_preserving | assembled from per-equation lemmas | -- | ADMITTED | `(* ISSUE: see STATUS.md *)`; 5 of 13 equations proved, 8 not (below) |
+| poly_multilang_compiler_preserving | assembled from per-equation lemmas | -- | ADMITTED | `(* ISSUE: see STATUS.md *)`; **7 of 13** equations proved after the let-binding change (was 5), 6 not (below) |
 
 **Prefix compiler.**  The source language is `boundaries_parameterized`, whose
 ambient prefix (from `boundaries_parameterized_wf`) is the parameterized
@@ -151,27 +176,27 @@ forced at tactic time), under an Ltac `timeout 240`.
 
 | Equation | Time | Result | Issue / localized culprit |
 |---|---|---|---|
-| "dtt star" | TIMEOUT 240s | ADMITTED | **Believed genuinely FALSE**, same root cause as Stage F: the LHS compiles to `#"app" (#"ret" (#"lambda" #"*" (#"ret" #"hd"))) "e"` with `"e"` an arbitrary *expression*, and `STLC-beta` only fires on a `#"ret" "v"` argument. Task-0 probe (Stage F table) shows the value-restricted variant proves in ~32s, so the obstacle is the `#"exp"`/`#"val"` mismatch in `boundaries`, not the e-graph. |
-| "ttd star" | TIMEOUT 240s | ADMITTED | as "dtt star", through the `#".1"` projection |
-| "dtt True" | tactic 32s + Qed 48s | Qed | |
-| "dtt False" | tactic 32s + Qed 48s | Qed | |
-| "ttd True" | tactic 32s + Qed 48s | Qed | |
-| "ttd False" | tactic 32s + Qed 48s | Qed | |
+| "dtt star" | before: TIMEOUT 240s -- after: 33.9s + Qed 51.0s | **Qed** | fixed by the let-binding change (see Stage F); `boundaries_parameterized` unchanged |
+| "ttd star" | before: TIMEOUT 240s -- after: 34.8s + Qed 51.0s | **Qed** | as "dtt star", through the `#".1"` projection |
+| "dtt True" | before 32s+48s -- after 34.1s + Qed 52.5s | Qed | |
+| "dtt False" | before 32s+48s -- after 35.1s + Qed 51.6s | Qed | |
+| "ttd True" | before 32s+48s -- after 34.2s + Qed 52.1s | Qed | |
+| "ttd False" | before 32s+48s -- after 34.7s + Qed 51.5s | Qed | |
 | "dtt func" | TIMEOUT 240s | ADMITTED | needs the `"typerec func"` rule of `type_casing`; same saturation wall as Stage F (which also failed at 900s) |
 | "ttd func" | TIMEOUT 240s | ADMITTED | as "dtt func" |
-| "dtt ulambda mismatch" | tactic 32s + Qed 48s | Qed | the only mismatch equation at type `#"bool"`, i.e. reachable via `"typerec bool"` |
+| "dtt ulambda mismatch" | before 32s+48s -- after 34.5s + Qed 52.2s | Qed | the only mismatch equation at type `#"bool"`, i.e. reachable via `"typerec bool"` |
 | "dtt uT mismatch" | TIMEOUT 240s | ADMITTED | at type `#"->" "A" "B"`, so it needs `"typerec func"` |
 | "dtt uF mismatch" | TIMEOUT 240s | ADMITTED | as "dtt uT mismatch" |
 | "exp_subst dtt" | TIMEOUT 240s | ADMITTED | pushing `#"exp_subst"` through the whole `trec_boundaries_poly` term |
 | "exp_subst ttd" | TIMEOUT 240s | ADMITTED | as "exp_subst dtt" |
 
-**Summary.**  The poly compiler splits *exactly* as the simple one did: the five
-equations that reduce through `"typerec star"`/`"typerec bool"` prove in ~32s
-(plus ~48s at `Qed`),
-the six that need `"typerec func"` or `exp_subst` saturate, and the two `star`
-equations are believed false for the `#"exp"` vs `#"val"` reason.  Generalizing
-the type environment from `#"ty_emp"` to `"D"` did not change which equations
-work; it only made the `typerec` term ~1.4x more expensive to elaborate.
+**Summary (updated).**  The poly compiler splits *exactly* as the simple one
+does: after the let-binding change the seven equations that reduce through
+`"typerec star"`/`"typerec bool"` (including both `star` equations) prove in
+~34 s plus ~52 s at `Qed`, and the six that need `"typerec func"` or
+`exp_subst` still saturate.  Generalizing the type environment from `#"ty_emp"`
+to `"D"` did not change which equations work; it only made the `typerec` term
+~1.4x more expensive to elaborate.
 
 ## Stage H: TyperecPartialEval.v
 
@@ -201,7 +226,7 @@ G), `Compilers.SemanticsPreservingDef` and `Compilers.CompilerFacts` added,
 | sml_semantics_preserving | `Compilers.inductive_implies_semantic` | <1s | Qed | new; modulo `simple_multilang_compiler_preserving` |
 | eq_sort_sml_implies_eq_sort_tml | `proj1 sml_semantics_preserving` | <1s | Qed | modulo `simple_multilang_compiler_preserving` |
 | partial_eval_preserves_equality | -- | -- | ADMITTED | unchanged statement; proof retained in a comment. It was already incomplete (`1-2: admit`, the `dtt`/`ttd` cases), and it opens with the *same* `unshelve`/`destruct` enumeration over `source_multilanguage` as `can_eliminate_typerec`, preceded by `vm_compute in H`, so it cannot be run on this box either. |
-| target_multilanguage_without_typerec_wf | prove_by_lang_db | | Qed | |
+| target_multilanguage_without_typerec_wf | prove_by_lang_db | | Qed | updated to include `let_eta_parameterized ++ let_ty_subst ++ let_parameterized`, since the compiled `dtt`/`ttd` now contain a `#"let"` node |
 | partial_eval_wf_in_no_typerec_lang | -- | -- | ADMITTED | not attempted; see below |
 
 ### `eq_sort_sml_implies_eq_sort_tml` (goal 2, done)

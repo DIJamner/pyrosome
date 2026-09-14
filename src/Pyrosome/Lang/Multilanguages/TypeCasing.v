@@ -154,7 +154,8 @@ Definition source_multilanguage :=
 Hint Unfold source_multilanguage : auto_elab. 
 
 Definition target_multilanguage :=
-  prod_ty_subst ++ prod_parameterized ++
+  let_eta_parameterized ++ let_ty_subst ++ let_parameterized ++
+    prod_ty_subst ++ prod_parameterized ++
     type_casing ++
     polymorphic_interoperating_langs.
 Hint Unfold target_multilanguage : auto_elab.

@@ -39,10 +39,12 @@ Local Notation compiler :=
    documentation: the two target terms below are its elaboration.      *)
 Definition simple_multilang_compiler_def : compiler :=
     match # from boundaries with
-    | {{e #"dtt" "G" "A" "e"}} => {{e @"app" @("D" := #"ty_emp")
-                                      (#".2" {trec_boundaries_unelab}) "e" }}
-    | {{e #"ttd" "G" "A" "e"}} => {{e @"app" @("D" := #"ty_emp")
-                                      (#".1" {trec_boundaries_unelab}) "e" }}
+    | {{e #"dtt" "G" "A" "e"}} =>
+        {{e #"let" "e" (#"app" (#".2" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+                               (#"ret" #"hd")) }}
+    | {{e #"ttd" "G" "A" "e"}} =>
+        {{e #"let" "e" (#"app" (#".1" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+                               (#"ret" #"hd")) }}
     end.
 
 (* ------------------------------------------------------------------ *)
@@ -50,23 +52,43 @@ Definition simple_multilang_compiler_def : compiler :=
 
    NOTE (stage F, see STATUS.md): the computational route
    [infer_compiler_simple_autoinj 4 target_multilanguage ...] does NOT work
-   here -- it returns [{{e #""}}] for the "ttd" case and a term full of
-   [#"?#..."] holes (with the [typerec] node replaced by the bool case) for
-   the "dtt" case.  So the cases are written out by hand on top of
+   here.  So the two cases are elaborated individually, on top of
    [trec_boundaries], the already-elaborated typerec term from TrecTerms.v.
-   [dtt_case_wf]/[ttd_case_wf] below check that this is the right term.     *)
 
-Definition dtt_case_tgt :=
-  {{e #"app" #"ty_emp" "G" (#"*" #"ty_emp") "A"
-       (#".2" #"ty_emp" "G" (#"->" #"ty_emp" "A" (#"*" #"ty_emp"))
-              (#"->" #"ty_emp" (#"*" #"ty_emp") "A") {trec_boundaries})
-       "e" }}.
+   NOTE (let-binding change): the compiled body binds the source argument
+   ["e"] with [#"let"] and applies the boundary function to [#"ret" #"hd"].
+   A variable is a value, so [STLC-beta] now fires, which is what makes the
+   ["dtt star"]/["ttd star"] equations provable (via the ["let eta"] rule).  *)
 
-Definition ttd_case_tgt :=
-  {{e #"app" #"ty_emp" "G" "A" (#"*" #"ty_emp")
-       (#".1" #"ty_emp" "G" (#"->" #"ty_emp" "A" (#"*" #"ty_emp"))
-              (#"->" #"ty_emp" (#"*" #"ty_emp") "A") {trec_boundaries})
-       "e" }}.
+Definition dtt_case_unelab :=
+  {{e #"let" "e" (#"app" (#".2" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+                         (#"ret" #"hd")) }}.
+
+Derive dtt_case_tgt
+  in ( elab_term target_multilanguage
+         [("e", {{s #"exp" #"ty_emp" "G" (#"*" #"ty_emp")}});
+          ("A", {{s #"ty" #"ty_emp"}});
+          ("G", {{s #"env" #"ty_emp"}})]
+         dtt_case_unelab
+         dtt_case_tgt
+         {{s #"exp" #"ty_emp" "G" "A"}}
+     ) as dtt_case_tgt_wf.
+Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed.
+
+Definition ttd_case_unelab :=
+  {{e #"let" "e" (#"app" (#".1" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+                         (#"ret" #"hd")) }}.
+
+Derive ttd_case_tgt
+  in ( elab_term target_multilanguage
+         [("e", {{s #"exp" #"ty_emp" "G" "A"}});
+          ("A", {{s #"ty" #"ty_emp"}});
+          ("G", {{s #"env" #"ty_emp"}})]
+         ttd_case_unelab
+         ttd_case_tgt
+         {{s #"exp" #"ty_emp" "G" (#"*" #"ty_emp")}}
+     ) as ttd_case_tgt_wf.
+Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed.
 
 Definition simple_multilang_compiler : compiler :=
   [("ttd", term_case ["e"; "A"; "G"] ttd_case_tgt);
@@ -128,17 +150,19 @@ Definition c_dtt_star := Eval vm_compute in gctx "dtt star".
 Definition s_dtt_star := Eval vm_compute in gsrt "dtt star".
 Definition l_dtt_star := Eval vm_compute in glhs "dtt star".
 Definition r_dtt_star := Eval vm_compute in grhs "dtt star".
-(* ISSUE: see STATUS.md -- FALSE (see STATUS.md): compiles to [app (ret (lambda #"*" (ret #"hd"))) "e"] with "e" an arbitrary exp; STLC-beta needs a [#"ret" "v"] argument, so the LHS is a normal form distinct from "e". *)
+(* Provable since the compiler let-binds "e": the beta-redex now has a value
+   (the variable [#"hd"]) as its argument, and ["let eta"] collapses the
+   residual [#"let" "e" (#"ret" #"hd")] back to ["e"]. *)
 Lemma eq_dtt_star : eq_term target_multilanguage c_dtt_star s_dtt_star l_dtt_star r_dtt_star.
-Admitted.
+Proof. unfold c_dtt_star, s_dtt_star, l_dtt_star, r_dtt_star. by_reduction_checked. Qed.
 
 Definition c_ttd_star := Eval vm_compute in gctx "ttd star".
 Definition s_ttd_star := Eval vm_compute in gsrt "ttd star".
 Definition l_ttd_star := Eval vm_compute in glhs "ttd star".
 Definition r_ttd_star := Eval vm_compute in grhs "ttd star".
-(* ISSUE: see STATUS.md -- FALSE (see STATUS.md): same as "dtt star", via the other projection. *)
+(* As "dtt star", via the other projection. *)
 Lemma eq_ttd_star : eq_term target_multilanguage c_ttd_star s_ttd_star l_ttd_star r_ttd_star.
-Admitted.
+Proof. unfold c_ttd_star, s_ttd_star, l_ttd_star, r_ttd_star. by_reduction_checked. Qed.
 
 Definition c_dtt_True := Eval vm_compute in gctx "dtt True".
 Definition s_dtt_True := Eval vm_compute in gsrt "dtt True".
@@ -224,11 +248,13 @@ Lemma eq_exp_subst_ttd : eq_term target_multilanguage c_exp_subst_ttd s_exp_subs
 Admitted.
 
 (* ------------------------------------------------------------------ *)
-(* ISSUE: see STATUS.md, Stage F.  8 of the 13 boundary equations are not
-   discharged: "dtt star" and "ttd star" appear to be genuinely FALSE under
-   this compiler, and the six [typerec func] / [exp_subst] equations time
-   out.  The theorem is therefore admitted; the five equations that do go
-   through are proved above.                                             *)
+(* ISSUE: see STATUS.md, Stage F.  6 of the 13 boundary equations are not
+   discharged: the six [typerec func] / [exp_subst] equations still time out
+   (re-measured at 400s after the let-binding change).  "dtt star" and
+   "ttd star", previously believed false, are now Qed thanks to the
+   let-binding in the compiler plus the "let eta" rule.  The theorem is
+   therefore still admitted; the seven equations that do go through are
+   proved above.                                                         *)
 Lemma simple_multilang_compiler_preserving
   : preserving_compiler_ext (tgt_Model := core_model target_multilanguage)
       interoperating_langs_compiler simple_multilang_compiler boundaries.
