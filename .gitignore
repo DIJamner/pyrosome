@@ -17,3 +17,4 @@ _CoqProject
 .Makefile.coq.d
 .coq-native
 **/.DS_Store*.timing
+*.timing
