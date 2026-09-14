@@ -282,22 +282,23 @@ G), `Compilers.SemanticsPreservingDef` and `Compilers.CompilerFacts` added,
 | func_partial_eval_term_wf | Derive + solve_elab_term_or_sort | tactic 28.6s + Qed 18.2s | Qed | |
 | no_sort_eqns_in_sml | `apply I` | 0s | Qed | |
 | ty_eq_sort_lemma | manual enumeration | 2.3s + Qed 2.4s | Qed | unchanged |
-| ty_inversion_lemma' | cut-free induction | 19.7s + Qed 8.4s | Qed | unchanged |
+| ty_inversion_lemma' | cut-free induction + **cheap lang inversion** | 0.002s + Qed 0.05s | Qed | **re-proved this session**; was 19.7s + 8.4s |
 | ty_inversion_lemma | -- | <1s | Qed | unchanged |
-| compiled_types_are_simple | cut-free induction | 18.6s + Qed 7.9s | Qed | unchanged |
-| can_eliminate_typerec | cut-free induction | 193s for the enumeration, then OOM | ADMITTED | **Out of memory, not wrong.** The `unshelve (repeat (destruct H; ...))` enumeration over the `In`-membership in `source_multilanguage` alone takes 193s and peaks at ~6.5GB RSS; the `1-2: simpl in H14; apply ty_inversion_lemma in H14; ...` step that follows then pushes the process past the 7GB ceiling and it is `Killed`.  A probe that replaces the `1-2:` block by a no-op still peaks at 6.93GB, so the enumeration itself is what does not fit; the hypothesis names (`H14`, `H1`, `H2`, `H3`, `H9`, `H19`) are still present and unchanged, i.e. this is *not* library name drift.  Proof retained verbatim in a comment. |
+| compiled_types_are_simple | cut-free induction + **cheap lang inversion** | 0.01s + Qed 0.06s | Qed | **re-proved this session**; was 18.6s + 7.9s |
+| can_eliminate_typerec | cut-free induction + **cheap lang inversion** + `ats_subst` | 0.05s + Qed 0.1s | **Qed** | **CLOSED this session** (was ADMITTED/OOM). No enumeration at all; peak RSS for the *whole file* is now 941MB. Axiom-free (`Print Assumptions`: closed under the global context). |
 | target_multilanguage_wf | -- | -- | moved | now proved in stage D (`TypeCasing.v`) |
 | source_multilanguage_wf | -- | -- | moved | now proved in stage D (`TypeCasing.v`) |
 | no_sort_eqns_in_tml | `apply I` | 0s | Qed | `no_sort_eqns target_multilanguage` really does compute to `true` |
 | ty_env_eq_sort_lemma_tml | manual enumeration | | Qed | unchanged |
-| ty_inversion_lemma_tml | -- | -- | ADMITTED (statement fixed) | Statement corrected, proof not attempted (see below) |
+| ty_inversion_lemma_tml | cut-free induction + **cheap lang inversion**, generalized to `sort_name t = "ty"` | 0.006s + Qed 0.02s | **Qed** | **CLOSED this session** (was ADMITTED). Statement as corrected in the previous session, unchanged. Axiom-free. |
 | interop_preserving_tml | `preserving_compiler_embed` + `compute_incl` | <1s | Qed | new |
 | source_multilanguage_compiler_preserving | `CompilerFacts.compiler_append` | <1s | Qed | new; modulo `simple_multilang_compiler_preserving` (stage F) |
 | sml_semantics_preserving | `Compilers.inductive_implies_semantic` | <1s | Qed | new; modulo `simple_multilang_compiler_preserving` |
 | eq_sort_sml_implies_eq_sort_tml | `proj1 sml_semantics_preserving` | <1s | Qed | modulo `simple_multilang_compiler_preserving` |
 | partial_eval_preserves_equality | -- | -- | ADMITTED | unchanged statement; proof retained in a comment. It was already incomplete (`1-2: admit`, the `dtt`/`ttd` cases), and it opens with the *same* `unshelve`/`destruct` enumeration over `source_multilanguage` as `can_eliminate_typerec`, preceded by `vm_compute in H`, so it cannot be run on this box either. |
 | target_multilanguage_without_typerec_wf | prove_by_lang_db | | Qed | updated to include `let_eta_parameterized ++ let_ty_subst ++ let_parameterized`, since the compiled `dtt`/`ttd` now contain a `#"let"` node |
-| partial_eval_wf_in_no_typerec_lang | -- | -- | ADMITTED | not attempted; see below |
+| partial_eval_wf_in_no_typerec_lang | -- | -- | ADMITTED (statement fixed) | `all_typerecs_simple e` added as a hypothesis (the old statement is false); proof not attempted -- it now depends on `partial_eval_preserves_equality`, see below |
+| compiled_partial_eval_wf | corollary | <1s | Qed | new; the intended use of the previous row, with `all_typerecs_simple` discharged by `can_eliminate_typerec` |
 
 ### `eq_sort_sml_implies_eq_sort_tml` (goal 2, done)
 
@@ -320,7 +321,7 @@ than `Is_Success`); the explicit `compiler_append` route does.
 Everything in this chain is `Qed` **modulo `simple_multilang_compiler_preserving`,
 which is `Admitted` in stage F.**
 
-### `ty_inversion_lemma_tml` (goal 3, statement fixed, proof not attempted)
+### `ty_inversion_lemma_tml` (goal 3) -- statement (previous session); **now Qed**
 
 By computation, the term rules of `target_multilanguage` whose result sort is
 `#"ty" _` are exactly
@@ -353,8 +354,11 @@ lemma is stated at an arbitrary `ty_env`.  The wf-ness conjuncts on `a`/`b` were
 dropped (a weakening) because they are not needed by any caller --- the lemma has
 no callers in this file.
 
-The proof is *not* attempted, for the same resource reason as
-`can_eliminate_typerec`: it needs the cut-free `In`-enumeration over
+SUPERSEDED: the proof is now **Qed** (see "The cheap language inversion"
+below); the recommended shape suggested here -- generalising the induction to
+`sort_name t = "ty"` -- is exactly what was done (`ty_inversion_lemma_tml'`).
+The original note, for the record: the proof was *not* attempted, for the same
+resource reason as `can_eliminate_typerec`: it needs the cut-free `In`-enumeration over
 `target_multilanguage`, which is strictly larger than `source_multilanguage`
 (whose enumeration already costs 193s / 6.5GB).  There is no soundness obstacle:
 `no_sort_eqns target_multilanguage` computes to `true`, so the sort-equality side
@@ -363,38 +367,157 @@ case of `wf_term_cut_ind` is closable by `sort_names_equal` exactly as in
 generalise the induction to `sort_name t = "ty"` rather than `t = {{s #"ty" D}}`,
 so that the conversion case is a one-liner.
 
-### `partial_eval_preserves_equality` (goal 4, not advanced)
+### The cheap language inversion (this session) -- the Stage H blocker is gone
 
-Not advanced: the proof cannot be *run* on this box (see the table), so the two
-`dtt`/`ttd` cases could not be worked on.  The plan in the task is still the
-right one --- by `ty_inversion_lemma` the scrutinee type is `*`, `bool` or an
-arrow, and `elim_typerec` replaces `typerec` by the corresponding `type_casing`
-case, so each case should be `eredex_steps_with type_casing "typerec star" /
-"typerec bool" / "typerec func"` under `term_cong`, with an inner induction on
-the type for the arrow case (mirroring `meta_typerec`'s recursion) --- but it is
-blocked behind making the enumeration fit in memory.
+The dominant cost in this file used to be the cut-free `In`-membership
+enumeration (`unshelve (repeat (destruct H; [> first [...] | ..]); destruct H)`)
+over a whole language: 193s and ~6.5GB for `source_multilanguage`, which OOMed
+the 7GB box.  It has been replaced throughout by a *reflective* inversion, built
+from three ingredients (all in `TyperecPartialEval.v`, in the block after
+`Ltac invert_wf_args`):
 
-### `partial_eval_wf_in_no_typerec_lang` (goal 5, not attempted)
+1. `in_lang_lookup : all_fresh l -> In (n,r) l -> named_list_lookup_err l n = Some r`
+   (a one-line corollary of `Utils.NamedList.all_fresh_named_list_lookup_err_in`),
+   plus `sml_all_fresh` / `tml_all_fresh` by `compute_all_fresh`.  Once `n` is a
+   *concrete* name, `vm_compute` on the lookup recovers the rule's context,
+   argument list and sort in milliseconds.
+2. A boolean `forallb` check over the language, discharged once by
+   `vm_compute; reflexivity`, that bounds which names can occur:
+   `sml_ty_names` (result sort `#"ty"` implies the name is `"*"`, `"bool"` or
+   `"->"`) and `tml_ty_names` (result sort name `"ty"` implies one of the seven
+   names listed above).
+3. `subst_sort_name_nil` (`t[/s/] = scon n [] -> t = scon n []`), so that the
+   substituted result sort of the cut-free rule case can be read back.
 
-Left `Admitted. (* ISSUE: see STATUS.md *)`.  The statement as written is false:
-it claims that for *any* well-typed target term `e`, `elim_typerec e` is
-well-typed in `target_multilanguage_without_typerec`.  But `elim_typerec` only
-removes a `#"typerec"` node when its type argument is a *simple* type (`meta_typerec`
-falls through to `| _ => mu` otherwise, leaving the `#"typerec"` in place), so a
-term containing `#"typerec" D G "A" ...` with a type *variable* or an `#"All"`
-type is unchanged and still mentions `#"typerec"`, which is not a constructor of
-`target_multilanguage_without_typerec`.  It should therefore be stated either
-with `all_typerecs_simple e` as an extra hypothesis, or --- better, matching how
-it will be used --- for compiled source terms, i.e. `e = compile
-(simple_multilang_compiler ++ interoperating_langs_compiler) e0` with `e0` well
-typed in `source_multilanguage`, so that `can_eliminate_typerec` supplies
-`all_typerecs_simple`.
+So each induction case does a *name* case split over 3 (resp. 7, resp. 2)
+candidates instead of a membership enumeration over hundreds of rules.
 
-### Resource note
+Measured effect (whole-file build, `make TIMING=1`, nothing else running):
 
-The dominant cost in this file is the cut-free `In`-membership enumeration
-(`unshelve (repeat (destruct H; [> first [...] | ..]); destruct H)`) over a whole
-language: 193s and ~6.5GB for `source_multilanguage`.  Any further progress on
-stage H needs that enumeration replaced by something cheaper (e.g. a computed
-`named_list_lookup` on the rule name, or a reflective inversion principle)
-before the remaining lemmas can even be attempted.
+| | before | after |
+|---|---|---|
+| `TyperecPartialEval.vo` | 3m00s, OOM on `can_eliminate_typerec` at 7GB | **2m21s, peak RSS 941MB** |
+| `ty_inversion_lemma'` | 19.7s + Qed 8.4s | 0.002s + Qed |
+| `compiled_types_are_simple` | 18.6s + Qed 7.9s | 0.01s + Qed |
+| `can_eliminate_typerec` | 193s then Killed (>7GB) | 0.05s + Qed |
+| `ty_inversion_lemma_tml` | not attempted | 0.006s + Qed |
+
+Almost all of the remaining 2m21s is the two unchanged manual enumerations
+`ty_eq_sort_lemma` (2.3s+2.6s) and `ty_env_eq_sort_lemma_tml` (17.0s+19.9s) --
+which are over *sort* rules and were never the blocker -- plus
+`func_partial_eval_term_wf` (32.1s + Qed 19.9s) and the `prove_by_lang_db` Qeds.
+
+### `all_typerecs_simple` restated (this session)
+
+`all_typerecs_simple` selected its `#"typerec"` case with a nested *pattern
+match* on the head name, so `all_typerecs_simple (con n s)` was irreducible when
+`n` was a variable -- exactly the situation the cheap inversion leaves you in.
+It is now
+
+```
+Definition typerec_mu_ok (n : string) (s : list term) : Prop :=
+  if eqb n "typerec"
+  then match s with [_;_;_;_;mu;_;_] => is_simple_type mu | _ => True end
+  else True.
+
+Fixpoint all_typerecs_simple (program : term) : Prop :=
+  match program with
+  | var _ => True
+  | con n s => typerec_mu_ok n s /\ all all_typerecs_simple s
+  end.
+```
+
+which is *stronger* than the old one (it recurses into every argument of a
+`#"typerec"` node, not just `e1`,`e2`,`e3`) and, crucially, reduces under a
+`eqb n "typerec" = false` hypothesis.  `is_simple_type` is unchanged.
+
+### How `can_eliminate_typerec` is proved now
+
+Two supporting reflective notions, `typerecs_are_var e` (every `#"typerec"`
+node's type argument is a *variable*) and `typerec_mu_vars e` (the list of those
+variables), and one substitution lemma
+
+```
+Lemma ats_subst (b : term) (s : subst)
+  : Is_true (typerecs_are_var b) ->
+    all (fun p => all_typerecs_simple (snd p)) s ->
+    all (fun m => is_simple_type (term_subst_lookup s m)) (typerec_mu_vars b) ->
+    all_typerecs_simple b[/s/].
+```
+
+Then one `vm_compute`d fact about the *compiler*,
+
+```
+Lemma cmp_cases_ok : forallb cmp_case_ok
+  (simple_multilang_compiler ++ interoperating_langs_compiler) = true.
+```
+
+where `cmp_case_ok (n, term_case _ b)` says `typerecs_are_var b` and, unless
+`n` is `"dtt"` or `"ttd"`, `typerec_mu_vars b = []`.  In the induction, the
+generic case therefore instantiates `ats_subst` with an empty
+`typerec_mu_vars`, and the two boundary cases instantiate it with `["A"]`,
+whose image is `compile CMP A` with `A` the source type argument -- simple by
+`compiled_types_are_simple`.  Nothing needs to look at the shape of the other
+compiler bodies, and no language is ever enumerated.
+
+### `partial_eval_preserves_equality` (goal 4) -- still ADMITTED, but no longer for memory reasons
+
+The memory wall is gone: the proof skeleton can now be *run*.  What blocks it is
+no longer resources but missing infrastructure, and the shape of the generic
+(non-`dtt`/`ttd`) case has changed as a result of the cheap inversion: because
+the rule name stays a *variable*, the old per-rule tactic
+`setup_eq_goal ...; solve_eq_goal` (which `vm_compute`s the compiler case for a
+concrete name) no longer applies.  The generic case has to be done uniformly
+instead, which needs three lemmas that do not exist yet:
+
+1. `elim_typerec (b[/s/]) = b[/named_map elim_typerec s/]` whenever `b` contains
+   no `#"typerec"` (provable by `term_ind_all`, as `ats_subst` is);
+2. `named_map elim_typerec (combine_r_padded args l) =
+    combine_r_padded args (map elim_typerec l)` (needs
+    `elim_typerec default = default`);
+3. a substitution congruence `wf_term l c' b t -> eq_subst l [] c' s1 s2 ->
+   eq_term l [] t[/s2/] b[/s1/] b[/s2/]` applied to the compiler case body `b`,
+   whose well-typedness comes from `source_multilanguage_compiler_preserving`
+   (itself modulo the Stage F `simple_multilang_compiler_preserving` admit).
+
+The two boundary cases are unchanged from the previous session's plan: by
+`ty_inversion_lemma` the scrutinee type is `#"*"`, `#"bool"` or an arrow, and
+the arrow case is `eredex_steps_with type_casing "typerec func"` followed by the
+identity `func_partial_eval_term[...]` plus the inner induction on the simple
+type.  Guided steps only -- whole-goal `by_reduction` saturates (Stage F).
+
+Left `Admitted. (* ISSUE: see STATUS.md *)`, proof skeleton retained in a
+comment.
+
+### `partial_eval_wf_in_no_typerec_lang` (goal 5) -- statement fixed, still ADMITTED
+
+The statement now carries the missing hypothesis:
+
+```
+forall t e, Core.wf_term target_multilanguage [] e t ->
+            all_typerecs_simple e ->
+            Core.wf_term target_multilanguage_without_typerec [] (elim_typerec e) t.
+```
+
+(the old statement is false: `meta_typerec` falls through to `| _ => mu` at a
+non-simple type, so `elim_typerec` leaves such a `#"typerec"` in place).  The
+corollary `compiled_partial_eval_wf`, which is the form the theorem is meant to
+be used in, is **Qed**: it discharges `all_typerecs_simple` with
+`can_eliminate_typerec`.
+
+The theorem itself was not attempted, for a *structural* reason rather than a
+resource one.  Running the cut-free induction on
+`Core.wf_term target_multilanguage [] e t`, the non-`typerec` constructor case
+must re-apply the same rule in the smaller language at the sort
+`t[/with_names_from c' (map elim_typerec s)/]`, whereas the goal's sort is
+`t[/with_names_from c' s/]`.  Those two sorts are only *equal up to
+`eq_sort`*, and the bridge between them is precisely
+`partial_eval_preserves_equality` (goal 4) applied to each argument.  So goal 5
+is downstream of goal 4 and should be attempted after it; the transfer of rules
+from `target_multilanguage` to `target_multilanguage_without_typerec` is the
+easy part (a `vm_compute`d `incl` check of the same reflective kind used above,
+i.e. `forallb (fun p => inb p target_multilanguage_without_typerec) ...`).
+The residual risk flagged in the previous session -- that `eq_sort` in the
+bigger language cannot be transferred to the sublanguage -- is still open; the
+fallback is to weaken the conclusion to well-typedness in `target_multilanguage`
+itself.
