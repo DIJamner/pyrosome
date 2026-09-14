@@ -69,6 +69,16 @@ Definition polymorphic_interoperating_langs :=
     exp_parameterized ++ val_parameterized ++ ty_env_lang.
 
 
+Lemma simple_interoperating_langs_wf : wf_lang simple_interoperating_langs.
+Proof. prove_by_lang_db. Qed.
+#[local] Definition simple_interoperating_langs_entry := lang_entry simple_interoperating_langs_wf.
+#[export] Hint Resolve simple_interoperating_langs_entry : wf_lang_db.
+
+Lemma polymorphic_interoperating_langs_wf : wf_lang polymorphic_interoperating_langs.
+Proof. prove_by_lang_db. Qed.
+#[local] Definition polymorphic_interoperating_langs_entry := lang_entry polymorphic_interoperating_langs_wf.
+#[export] Hint Resolve polymorphic_interoperating_langs_entry : wf_lang_db.
+
 Local Notation compiler := (compiler string).
 
 Definition interoperating_langs_compiler_def : compiler :=

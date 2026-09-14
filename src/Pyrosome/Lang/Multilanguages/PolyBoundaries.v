@@ -67,12 +67,7 @@ Qed.
   lang_entry boundaries_parameterized_wf.
 #[export] Hint Resolve boundaries_parameterized_entry : wf_lang_db.
 
-Lemma polymorphic_interoperating_langs_wf :
-  wf_lang polymorphic_interoperating_langs.
-Proof. prove_by_lang_db. Qed.
-#[local] Definition polymorphic_interoperating_langs_entry :=
-  lang_entry polymorphic_interoperating_langs_wf.
-#[export] Hint Resolve polymorphic_interoperating_langs_entry : wf_lang_db.
+(* polymorphic_interoperating_langs_wf moved to Stage B (InteropLangs.v) *)
 
 (* Lemma boundaries_parameterized_wf_2 : *)
 (*   wf_lang (boundaries_parameterized ++ polymorphic_interoperating_langs). *)

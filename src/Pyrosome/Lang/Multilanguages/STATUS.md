@@ -9,38 +9,38 @@ alone, on the 7GB build box with no other Coq process running.
 
 | Definition | Method | Time | Result | Issue / localized culprit |
 |---|---|---|---|---|
-| typed_bool_parameterized_wf | solve_parameterize_wrapper | | PENDING | |
-| typed_bool_ty_subst | | | PENDING | |
-| stlc_ty_subst | | | PENDING | |
-| star_type_parameterized_wf | | | PENDING | |
-| error_t_parameterized_wf | | | PENDING | |
-| star_type_ty_subst | | | PENDING | |
-| error_t_ty_subst | | | PENDING | |
-| utlc_parameterized_wf | | | PENDING | |
-| utlc_ty_subst | | | PENDING | |
-| untyped_bool_parameterized_wf | | | PENDING | |
-| untyped_bool_ty_subst | | | PENDING | |
-| boolhuh_parameterized_wf | | | PENDING | |
-| boolhuh_ty_subst | | | PENDING | |
-| utlc_bool_parameterized_wf | | | PENDING | |
-| mif_parameterized_wf | | | PENDING | |
-| mif_ty_subst | | | PENDING | |
-| prod_parameterized_wf | | | PENDING | |
-| prod_ty_subst | | | PENDING | |
+| typed_bool_parameterized_wf | solve_parameterize_wrapper | 4.0s | Qed | |
+| typed_bool_ty_subst | auto_elab | 20.3s | Qed |  |
+| stlc_ty_subst | auto_elab | 13.3s | Qed |  |
+| star_type_parameterized_wf | solve_parameterize_wrapper | 2.5s | Qed |  |
+| error_t_parameterized_wf | solve_parameterize_wrapper | 2.4s | Qed |  |
+| star_type_ty_subst | auto_elab | 1.1s | Qed |  |
+| error_t_ty_subst | auto_elab | 3.5s | Qed |  |
+| utlc_parameterized_wf | parameterize_lang_preserving+compute | 5.6s | Qed |  |
+| utlc_ty_subst | auto_elab | 22.3s | Qed |  |
+| untyped_bool_parameterized_wf | parameterize_lang_preserving+compute | 4.0s | Qed |  |
+| untyped_bool_ty_subst | auto_elab | 7.1s | Qed |  |
+| boolhuh_parameterized_wf | parameterize_lang_preserving+compute | 11.4s | Qed |  |
+| boolhuh_ty_subst | auto_elab | 11.3s | Qed |  |
+| utlc_bool_parameterized_wf | parameterize_lang_preserving+compute | 10.8s | Qed |  |
+| mif_parameterized_wf | parameterize_lang_preserving+compute | 12.5s | Qed |  |
+| mif_ty_subst | auto_elab | 16.8s | Qed |  |
+| prod_parameterized_wf | solve_parameterize_wrapper | 6.0s | Qed |  |
+| prod_ty_subst | auto_elab | 33.2s | Qed |  |
 
 ## Stage B: InteropLangs.v
 
 | Definition | Method | Time | Result | Issue / localized culprit |
 |---|---|---|---|---|
-| simple_interoperating_langs_wf | | | PENDING | |
-| polymorphic_interoperating_langs_wf | | | PENDING | |
-| interoperating_langs_compiler_preserving | | | PENDING | |
+| simple_interoperating_langs_wf | prove_by_lang_db | 2.0s | Qed | |
+| polymorphic_interoperating_langs_wf | prove_by_lang_db | 4.9s | Qed | |
+| interoperating_langs_compiler_preserving | auto_elab_compiler | 129.0s | Qed | |
 
 ## Stage C: Boundaries.v
 
 | Definition | Method | Time | Result | Issue / localized culprit |
 |---|---|---|---|---|
-| boundaries_wf | | | PENDING | |
+| boundaries_wf | auto_elab | 48.5s | Qed | |
 
 ## Stage D: TypeCasing.v
 
