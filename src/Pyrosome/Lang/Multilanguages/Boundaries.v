@@ -86,10 +86,10 @@ Definition boundaries_def : lang :=
     [:= "G" : #"env",
         "A" : #"ty",
         "B" : #"ty",
-        "v" : #"val" "G" #"*"
+        "e" : #"exp" (#"ext" "G" #"*") #"*"
         ----------------------------------------------- ("dtt func")
-        #"dtt" (#"->" "A" "B") (#"ret" "v") =
-        #"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "A" (#"ret" #"hd"))))) :
+        #"dtt" (#"->" "A" "B") (#"ret" (#"ulambda" "e")) =
+        #"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" (#"ulambda" "e"))) (#"ttd" "A" (#"ret" #"hd"))))) :
         #"exp" "G" (#"->" "A" "B")
     ];
     [:= "G" : #"env",

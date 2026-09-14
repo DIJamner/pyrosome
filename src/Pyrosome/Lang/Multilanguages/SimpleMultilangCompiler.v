@@ -138,6 +138,57 @@ Ltac by_reduction_checked :=
   | ctw_checked
   | vm_compute; exact I ].
 
+(* ------------------------------------------------------------------ *)
+(* Helper lemmas for the two ["exp_subst"] equations.
+
+   Both reduce, after pushing [#"exp_subst"] through [#"let"], [#"app"],
+   [#".1"]/[#".2"] and [#"ret" #"hd"], to
+   [#"exp_subst" "g" {trec_boundaries}[G] = {trec_boundaries}[G']],
+   i.e. to substitution into a term with no free *term* variables.  By
+   ["exp_subst typerec"] that splits into one goal per [typerec] case.  The
+   [#"*"] and [#"bool"] cases are small and go through; the [#"->"] case does
+   not (see STATUS.md).                                                    *)
+
+Notation SUBST_CTX :=
+  [("g", {{s #"sub" #"ty_emp" "G'" "G"}});
+   ("G'", {{s #"env" #"ty_emp"}});
+   ("G", {{s #"env" #"ty_emp"}})].
+
+Definition star_case_ty :=
+  {{e #"prod" #"ty_emp" (#"->" #"ty_emp" (#"*" #"ty_emp") (#"*" #"ty_emp"))
+              (#"->" #"ty_emp" (#"*" #"ty_emp") (#"*" #"ty_emp")) }}.
+
+Lemma star_case_subst
+  : eq_term target_multilanguage SUBST_CTX
+      {{s #"exp" #"ty_emp" "G'" {star_case_ty} }}
+      {{e #"exp_subst" #"ty_emp" "G'" "G" "g" {star_case_ty} {trec_star_case} }}
+      trec_star_case[/[("G", {{e "G'"}})]/].
+Proof. Time by_reduction_checked. Qed.
+
+Definition bool_case_ty :=
+  {{e #"prod" #"ty_emp" (#"->" #"ty_emp" (#"bool" #"ty_emp") (#"*" #"ty_emp"))
+              (#"->" #"ty_emp" (#"*" #"ty_emp") (#"bool" #"ty_emp")) }}.
+
+Lemma bool_case_subst
+  : eq_term target_multilanguage SUBST_CTX
+      {{s #"exp" #"ty_emp" "G'" {bool_case_ty} }}
+      {{e #"exp_subst" #"ty_emp" "G'" "G" "g" {bool_case_ty} {trec_bool_case} }}
+      trec_bool_case[/[("G", {{e "G'"}})]/].
+Proof. Time by_reduction_checked. Qed.
+
+Definition func_case_ty :=
+  Eval vm_compute in (match trec_func_case_sort with scon _ (t::_) => t | _ => default end).
+
+(* ISSUE: see STATUS.md -- TIMEOUT 900s.  This is the one leaf of the two
+   ["exp_subst"] equations that does not go through; the two above take 3s. *)
+Lemma func_case_subst
+  : eq_term target_multilanguage SUBST_CTX
+      trec_func_case_sort[/[("G", {{e "G'"}})]/]
+      (con "exp_subst" [trec_func_case; func_case_ty;
+                        {{e "g"}}; {{e "G"}}; {{e "G'"}}; {{e #"ty_emp"}}])
+      trec_func_case[/[("G", {{e "G'"}})]/].
+Admitted. (* ISSUE: see STATUS.md *)
+
 Definition CMP := simple_multilang_compiler ++ interoperating_langs_compiler.
 
 Definition brule (n:string) := named_list_lookup (Rule.sort_rule [] []) boundaries n.
@@ -196,7 +247,8 @@ Definition c_dtt_func := Eval vm_compute in gctx "dtt func".
 Definition s_dtt_func := Eval vm_compute in gsrt "dtt func".
 Definition l_dtt_func := Eval vm_compute in glhs "dtt func".
 Definition r_dtt_func := Eval vm_compute in grhs "dtt func".
-(* ISSUE: see STATUS.md -- TIMEOUT: by_reduction times out at 300s and at 900s (needs the "typerec func" rule). *)
+(* ISSUE: see STATUS.md -- the e-graph now TERMINATES (65s) but reports the two
+   sides unequal; it no longer saturates forever.  See STATUS.md, stage F. *)
 Lemma eq_dtt_func : eq_term target_multilanguage c_dtt_func s_dtt_func l_dtt_func r_dtt_func.
 Admitted.
 
@@ -204,7 +256,8 @@ Definition c_ttd_func := Eval vm_compute in gctx "ttd func".
 Definition s_ttd_func := Eval vm_compute in gsrt "ttd func".
 Definition l_ttd_func := Eval vm_compute in glhs "ttd func".
 Definition r_ttd_func := Eval vm_compute in grhs "ttd func".
-(* ISSUE: see STATUS.md -- TIMEOUT: by_reduction times out at 300s and at 900s (needs the "typerec func" rule). *)
+(* ISSUE: see STATUS.md -- the e-graph now TERMINATES (65s) but reports the two
+   sides unequal; it no longer saturates forever.  See STATUS.md, stage F. *)
 Lemma eq_ttd_func : eq_term target_multilanguage c_ttd_func s_ttd_func l_ttd_func r_ttd_func.
 Admitted.
 
@@ -235,7 +288,8 @@ Definition c_exp_subst_dtt := Eval vm_compute in gctx "exp_subst dtt".
 Definition s_exp_subst_dtt := Eval vm_compute in gsrt "exp_subst dtt".
 Definition l_exp_subst_dtt := Eval vm_compute in glhs "exp_subst dtt".
 Definition r_exp_subst_dtt := Eval vm_compute in grhs "exp_subst dtt".
-(* ISSUE: see STATUS.md -- TIMEOUT: by_reduction times out at 300s (pushing exp_subst through the whole trec_boundaries term). *)
+(* ISSUE: see STATUS.md -- localized to [func_case_subst] above (the [#"->"]
+   case of the typerec); the [#"*"] and [#"bool"] cases are proved above. *)
 Lemma eq_exp_subst_dtt : eq_term target_multilanguage c_exp_subst_dtt s_exp_subst_dtt l_exp_subst_dtt r_exp_subst_dtt.
 Admitted.
 
@@ -243,7 +297,7 @@ Definition c_exp_subst_ttd := Eval vm_compute in gctx "exp_subst ttd".
 Definition s_exp_subst_ttd := Eval vm_compute in gsrt "exp_subst ttd".
 Definition l_exp_subst_ttd := Eval vm_compute in glhs "exp_subst ttd".
 Definition r_exp_subst_ttd := Eval vm_compute in grhs "exp_subst ttd".
-(* ISSUE: see STATUS.md -- TIMEOUT: by_reduction times out at 300s (pushing exp_subst through the whole trec_boundaries term). *)
+(* ISSUE: see STATUS.md -- localized to [func_case_subst] above, as "exp_subst dtt". *)
 Lemma eq_exp_subst_ttd : eq_term target_multilanguage c_exp_subst_ttd s_exp_subst_ttd l_exp_subst_ttd r_exp_subst_ttd.
 Admitted.
 

@@ -44,7 +44,7 @@ alone, on the 7GB build box with no other Coq process running.
 
 | Definition | Method | Time | Result | Issue / localized culprit |
 |---|---|---|---|---|
-| boundaries_wf | auto_elab | 48.5s | Qed | |
+| boundaries_wf | auto_elab | 48.5s | Qed | **SOURCE CHANGE (this session, user decision).** The `"dtt func"` rule's premise `"v" : #"val" "G" #"*"` was replaced by `"e" : #"exp" (#"ext" "G" #"*") #"*"` and `"v"` by `#"ulambda" "e"` on both sides.  Rationale: with an arbitrary `"v"` the rule overlaps `"dtt uT mismatch"` / `"dtt uF mismatch"`, so the source proves `#"Error" (#"->" "A" "B") = #"ret" (#"lambda" ...)`, which no compiler can preserve into a target whose `#"Error"` is inert.  Re-derives with `auto_elab` unchanged. |
 
 ## Stage D: TypeCasing.v
 
@@ -61,8 +61,43 @@ alone, on the 7GB build box with no other Coq process running.
 | trec_star_case_wf | solve_elab_term_or_sort | 20.9s | Qed | |
 | trec_bool_case_wf | solve_elab_term_or_sort | 22.2s | Qed | |
 | trec_func_case_sort_wf | solve_elab_term_or_sort | 24.0s | Qed | |
-| trec_func_case_wf | solve_elab_term_or_sort | 108.1s | Qed | tactic 72.0s + Qed 36.1s |
-| trec_boundaries_wf | solve_elab_term_or_sort | 134.2s | Qed | tactic 96.7s + Qed 37.5s |
+| trec_func_case_wf | solve_elab_term_or_sort | see below | Qed | **TERM CHANGED (this session).** New shape, below. |
+| trec_boundaries_wf | solve_elab_term_or_sort | see below | Qed | re-derived over the new `trec_func_case`; whole `TrecTerms.v` rebuild is now **7m15s** (was ~5m) |
+
+### New `trec_func_case_unelab` (this session)
+
+The two components of the `#"pair"` are now written so that they are *literally*
+the compiled image of the two boundary rules' right-hand sides, i.e. let-shaped,
+and the `#".2"` (the `dtt`) component eagerly checks that the untyped value
+really is a function:
+
+```
+ret (Lam (ret (lambda P (ret (Lam (ret (lambda P (pair
+  (* .1 : (t1 -> t2) -> *   -- mirrors ("ttd func") *)
+  (ret (lambda (-> {ty_ovar 1} {ty_ovar 0})
+     (ret (ulambda
+        (let (app (ret {ovar 1}) (let (ret {ovar 0}) (app (.2 (ret {ovar 4})) (ret {ovar 0}))))
+             (app (.1 (ret {ovar 3})) (ret {ovar 0})))))))
+  (* .2 : * -> (t1 -> t2)   -- mirrors ("dtt func"), with the eager check *)
+  (ret (lambda *
+     (mif (bool? (ret {ovar 0}))
+          (Error (-> {ty_ovar 1} {ty_ovar 0}))
+          (ret (lambda {ty_ovar 1}
+             (let (uapp (ret {ovar 1}) (let (ret {ovar 0}) (app (.1 (ret {ovar 4})) (ret {ovar 0}))))
+                  (app (.2 (ret {ovar 3})) (ret {ovar 0}))))))))
+))))))))
+```
+
+with `P = prod (-> {ty_ovar 0} *) (-> * {ty_ovar 0})`.  `trec_func_case_sort` is
+**unchanged** (both components still have the same types).  Note the conditional
+is `#"mif"`, not `#"if"`: `#"bool?"` returns an *untyped* boolean
+(`#"exp" "G" #"*"`, rules `"bool?-true"`/`"bool?-false"` give `#"ret" #"uT"`,
+`"bool?-func"` gives `#"ret" #"uF"`), and `#"mif"` is the eliminator with an
+untyped scrutinee and a typed result (`"mif true"`/`"mif false"`/`"mif func"`/
+`"mif Error"` in `BoolType.v`).  So
+`#"dtt" (#"->" "A" "B") (#"ret" #"uT"/#"uF")` should now reduce to
+`#"Error" (#"->" "A" "B")`, and `#"dtt" (#"->" "A" "B") (#"ret" (#"ulambda" "e"))`
+to the `#"lambda"` wrapper.
 
 ## Stage F: SimpleMultilangCompiler.v
 
@@ -120,6 +155,29 @@ conditions discharged), under an Ltac `timeout`.
 | "exp_subst ttd" | TIMEOUT 300s | ADMITTED | as "exp_subst dtt" |
 | "dtt star" (value-restricted variant) | 32.2s tactic + 46.6s Qed | Qed (probe) | Confirms the Stage F diagnosis. Same compiled LHS/RHS as "dtt star", with the expression variable `"e"` replaced by `#"ret" #"ty_emp" "G" (#"*" #"ty_emp") "v"` in ctx `[("v", #"val" #"ty_emp" "G" (#"*" #"ty_emp")); ("G", #"env" #"ty_emp")]`; proved by the same `by_reduction_checked`. So the only obstacle to "dtt star" is that `boundaries` gives `dtt`/`ttd` an `#"exp"` argument where `STLC-beta` needs a `#"ret" "v"`. |
 | "ttd star" (value-restricted variant) | 32.2s tactic + 46.9s Qed | Qed (probe) | as above, through the `.1` projection. |
+
+### UPDATE (this session: source change + new `trec_func_case`)
+
+After the `Boundaries.v` `"dtt func"` restriction (stage C) and the new
+`trec_func_case` (stage E), the whole chain still builds and **the 7 equations
+that were `Qed` are still `Qed`** (`SimpleMultilangCompiler.v` full rebuild:
+19m57s).  The remaining 6 are still open, but the diagnosis has changed:
+
+| Equation | Before | Now | Evidence |
+|---|---|---|---|
+| "ttd func" | TIMEOUT 400s (saturation never finished) | **FAIL in 65s** | `by_reduction_checked` now *terminates*: the e-graph saturates and the final `vm_compute; exact I` check reports `The term "I" has type "True" while it is expected to have type "False"`, i.e. the two sides are not in the same e-class.  So the let-shaped `#".1"` wrapper removed the saturation blow-up, but something still does not join.  Not localized further: the diagnostic route (`compute_eq_compilation; reduce; hide_implicits; Show`) does not finish -- `Matches.reduce` alone was killed at 600s on this goal. |
+| "dtt func", "dtt uT mismatch", "dtt uF mismatch" | TIMEOUT 300/400/900s | not re-measured | left `Admitted` with the ISSUE marker; the `#"mif"`/`#"bool?"` eager check is in place, so these are expected to behave like "ttd func" (terminate, then either close or report unequal). |
+| "exp_subst dtt", "exp_subst ttd" | TIMEOUT 300/400s | **localized** | split into per-`typerec`-case leaves (the lemmas `star_case_subst` / `bool_case_subst` / `func_case_subst` now in the file), each of the form `#"exp_subst" "g" CASE[G] = CASE[G']` in ctx `[("g", #"sub" #"ty_emp" "G'" "G"); ("G'", #"env"); ("G", #"env")]`.  **`star_case_subst`: Qed, 2.9s tactic + 19.9s Qed.  `bool_case_subst`: Qed, 2.9s + 19.9s.  `func_case_subst`: TIMEOUT 900s** -- `Admitted. (* ISSUE *)`.  So the *only* obstruction to both `#"exp_subst"` equations is pushing `#"exp_subst"` through the (now larger) `#"->"` case of the typerec; the other two cases are cheap.  Next step: split `func_case_subst` itself with `eredex_steps_with` on `"exp_subst ret"` / `"val_subst Lam"` / `"val_subst lambda"` / `"exp_subst pair"` and then `term_cong` down to the two wrappers. |
+
+The intended (unfinished) shape of the two `#"exp_subst"` equations, for the
+record: `"exp_subst let"` (generated for `let_lang`) turns the LHS into
+`#"let" (#"exp_subst" "g" "e") (#"exp_subst" (#"snoc" (#"cmp" #"wkn" "g") #"hd") BODY)`;
+`term_cong` then leaves
+`#"exp_subst" g^ (#"exp_subst" #"wkn" TREC[G]) = #"exp_subst" #"wkn" TREC[G']`,
+which by `"exp_subst_cmp"` + `"wkn_snoc"` becomes
+`#"exp_subst" #"wkn" (#"exp_subst" "g" TREC[G]) = #"exp_subst" #"wkn" TREC[G']`,
+i.e. the helper `#"exp_subst" "g" TREC[G] = TREC[G']`, which `"exp_subst typerec"`
+splits into the three case lemmas above.
 
 **Summary of the localized issue (updated).** The equations still split exactly
 along which `typerec` rule they need: everything that reduces via
@@ -189,6 +247,18 @@ forced at tactic time), under an Ltac `timeout 240`.
 | "dtt uF mismatch" | TIMEOUT 240s | ADMITTED | as "dtt uT mismatch" |
 | "exp_subst dtt" | TIMEOUT 240s | ADMITTED | pushing `#"exp_subst"` through the whole `trec_boundaries_poly` term |
 | "exp_subst ttd" | TIMEOUT 240s | ADMITTED | as "exp_subst dtt" |
+
+### UPDATE (this session)
+
+`PolyBoundaries.v` was **not** edited; it was only rebuilt against the changed
+`boundaries` (stage C) and `trec_func_case`/`trec_boundaries` (stage E), from
+which `boundaries_parameterized`, `boundaries_ty_subst`, `poly_boundaries`,
+`trec_boundaries_poly` and the two compiler cases all re-derive.  The 7 `Qed`
+equations stayed `Qed`; the 6 `Admitted` ones were not re-attempted here (the
+per-equation work was done in stage F, which is the cheaper file to iterate in).
+The stage-F findings port verbatim: the `"typerec func"` equations should now
+terminate rather than saturate, and the two `#"exp_subst"` equations are
+localized to the `#"->"` case of the typerec.
 
 **Summary (updated).**  The poly compiler splits *exactly* as the simple one
 does: after the let-binding change the seven equations that reduce through
