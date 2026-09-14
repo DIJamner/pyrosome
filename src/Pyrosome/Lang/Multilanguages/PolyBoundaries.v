@@ -222,8 +222,12 @@ Fixpoint forall_partial_eval (program : term) : term :=
 (* poly to poly compiler *)
 Definition poly_multilang_compiler_def : compiler :=
   match # from boundaries_parameterized with
-  | {{e #"dtt" "D" "G" "A" "e"}} => {{e #"app" (#".2" {trec_boundaries_unelab}) "e" }}
-  | {{e #"ttd" "D" "G" "A" "e"}} => {{e #"app" (#".1" {trec_boundaries_unelab}) "e" }}
+  | {{e #"dtt" "D" "G" "A" "e"}} =>
+      {{e #"let" "e" (#"app" (#".2" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+                             (#"ret" #"hd")) }}
+  | {{e #"ttd" "D" "G" "A" "e"}} =>
+      {{e #"let" "e" (#"app" (#".1" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+                             (#"ret" #"hd")) }}
     (* we don't need a type variable case, since it's the same as the old compiler! *)
   end.
 (* ------------------------------------------------------------------ *)
@@ -256,17 +260,42 @@ Derive trec_boundaries_poly
      ) as trec_boundaries_poly_wf.
 Proof. Time Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Time Qed.
 
-Definition poly_dtt_case_tgt :=
-  {{e #"app" "D" "G" (#"*" "D") "A"
-       (#".2" "D" "G" (#"->" "D" "A" (#"*" "D"))
-              (#"->" "D" (#"*" "D") "A") {trec_boundaries_poly})
-       "e" }}.
+(* The compiled bodies let-bind the source argument "e" and apply the
+   boundary function to [#"ret" #"hd"], so that [STLC-beta] (which needs a
+   value argument) fires; ["let eta"] then collapses the residual
+   [#"let" "e" (#"ret" #"hd")].  Elaborated individually, as in stage F. *)
 
-Definition poly_ttd_case_tgt :=
-  {{e #"app" "D" "G" "A" (#"*" "D")
-       (#".1" "D" "G" (#"->" "D" "A" (#"*" "D"))
-              (#"->" "D" (#"*" "D") "A") {trec_boundaries_poly})
-       "e" }}.
+Definition poly_dtt_case_unelab :=
+  {{e #"let" "e" (#"app" (#".2" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+                         (#"ret" #"hd")) }}.
+
+Derive poly_dtt_case_tgt
+  in ( elab_term target_multilanguage
+         [("e", {{s #"exp" "D" "G" (#"*" "D")}});
+          ("A", {{s #"ty" "D"}});
+          ("G", {{s #"env" "D"}});
+          ("D", {{s #"ty_env"}})]
+         poly_dtt_case_unelab
+         poly_dtt_case_tgt
+         {{s #"exp" "D" "G" "A"}}
+     ) as poly_dtt_case_tgt_wf.
+Proof. Time Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Time Qed.
+
+Definition poly_ttd_case_unelab :=
+  {{e #"let" "e" (#"app" (#".1" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+                         (#"ret" #"hd")) }}.
+
+Derive poly_ttd_case_tgt
+  in ( elab_term target_multilanguage
+         [("e", {{s #"exp" "D" "G" "A"}});
+          ("A", {{s #"ty" "D"}});
+          ("G", {{s #"env" "D"}});
+          ("D", {{s #"ty_env"}})]
+         poly_ttd_case_unelab
+         poly_ttd_case_tgt
+         {{s #"exp" "D" "G" (#"*" "D")}}
+     ) as poly_ttd_case_tgt_wf.
+Proof. Time Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Time Qed.
 
 Definition poly_multilang_compiler
   : @CompilerDefs.compiler string (Term.term string) (Term.sort string) :=
@@ -327,17 +356,17 @@ Definition pc_dtt_star := Eval vm_compute in pgctx "dtt star".
 Definition ps_dtt_star := Eval vm_compute in pgsrt "dtt star".
 Definition pl_dtt_star := Eval vm_compute in pglhs "dtt star".
 Definition pr_dtt_star := Eval vm_compute in pgrhs "dtt star".
-(* ISSUE: see STATUS.md -- FALSE for the same reason as stage F's "dtt star": the LHS compiles to a beta-redex [#"app" (#"ret" (#"lambda" #"*" (#"ret" #"hd"))) "e"] whose argument is an arbitrary *expression*, while STLC-beta needs a [#"ret" "v"].  `by_reduction_checked` times out at 240s. *)
+(* Provable since the compiler let-binds "e" (see stage F). *)
 Lemma peq_dtt_star : eq_term target_multilanguage pc_dtt_star ps_dtt_star pl_dtt_star pr_dtt_star.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_dtt_star, ps_dtt_star, pl_dtt_star, pr_dtt_star. Time Timeout 1500 by_reduction_checked. Time Qed.
 
 Definition pc_ttd_star := Eval vm_compute in pgctx "ttd star".
 Definition ps_ttd_star := Eval vm_compute in pgsrt "ttd star".
 Definition pl_ttd_star := Eval vm_compute in pglhs "ttd star".
 Definition pr_ttd_star := Eval vm_compute in pgrhs "ttd star".
-(* ISSUE: see STATUS.md -- as "dtt star", through the [#".1"] projection. *)
+(* As "dtt star", through the [#".1"] projection. *)
 Lemma peq_ttd_star : eq_term target_multilanguage pc_ttd_star ps_ttd_star pl_ttd_star pr_ttd_star.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_ttd_star, ps_ttd_star, pl_ttd_star, pr_ttd_star. Time Timeout 1500 by_reduction_checked. Time Qed.
 
 Definition pc_dtt_True := Eval vm_compute in pgctx "dtt True".
 Definition ps_dtt_True := Eval vm_compute in pgsrt "dtt True".
@@ -423,11 +452,11 @@ Lemma peq_exp_subst_ttd : eq_term target_multilanguage pc_exp_subst_ttd ps_exp_s
 Admitted. (* ISSUE: see STATUS.md *)
 
 (* ------------------------------------------------------------------ *)
-(* ISSUE: see STATUS.md, Stage G.  Exactly as in stage F, 5 of the 13
-   equations of [boundaries_parameterized] go through and 8 do not: the two
-   [star] equations are believed genuinely FALSE (the compiler produces a
-   beta-redex applied to an expression rather than a value), and the six
-   [typerec func] / [exp_subst] equations saturate.                       *)
+(* ISSUE: see STATUS.md, Stage G.  Exactly as in stage F, 7 of the 13
+   equations of [boundaries_parameterized] go through and 6 do not: the two
+   [star] equations are now provable (the compiler let-binds its argument,
+   so the beta-redex has a value argument, and "let eta" finishes the job),
+   while the six [typerec func] / [exp_subst] equations still saturate.   *)
 Lemma poly_multilang_compiler_preserving
   : preserving_compiler_ext target_multilanguage
       polymorphic_interoperating_langs_compiler poly_multilang_compiler

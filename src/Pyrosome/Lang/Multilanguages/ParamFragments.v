@@ -15,7 +15,7 @@ Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage wit
 
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
-  Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
+  Tools.EGraph.TypeInference Tools.EGraph.InjRuleGen Tools.Resolution Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
 From Stdlib Require derive.Derive.
@@ -25,6 +25,7 @@ From Pyrosome.Lang Require Import SimpleVSTLC.
 From Pyrosome.Lang Require Import UTLC. 
 From Pyrosome.Lang Require Import BoolType. 
 From Pyrosome.Lang Require Import SimpleVProd.
+From Pyrosome.Lang Require Import Let.
 
 
 (* imports for polymorphism *)
@@ -467,3 +468,90 @@ Proof. auto_elab. Qed.
 #[local] Definition prod_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf prod_ty_subst_wf).
 #[export] Hint Resolve prod_ty_subst_entry : wf_lang_db.
+
+
+(* ------------------------------------------------------------------ *)
+(* The let extension (Let.v) and a one-rule eta law for it.
+
+   These are added to the target multilanguage so that the boundary
+   compiler can let-bind its argument (a variable is a value, so
+   [STLC-beta] fires), and so that [let e (ret hd)] collapses to [e].  *)
+
+Definition let_eta_def : lang :=
+  {[l/subst [exp_subst++value_subst]
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "e" : #"exp" "G" "A"
+      ----------------------------------------------- ("let eta")
+      #"let" "e" (#"ret" #"hd") = "e" : #"exp" "G" "A"
+  ] ]}.
+
+Definition let_eta :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 (let_lang ++ exp_subst ++ value_subst) let_eta_def.
+
+Lemma let_eta_wf : wf_lang_ext (let_lang ++ exp_subst ++ value_subst) let_eta.
+Proof. compute_wf_lang. Qed.
+#[local] Definition let_eta_entry := lang_entry let_eta_wf.
+#[export] Hint Resolve let_eta_entry : wf_lang_db.
+
+Definition let_parameterized := parameterize_wrapper let_lang.
+Lemma let_parameterized_wf
+  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      let_parameterized.
+Proof. solve_parameterize_wrapper let_lang. Qed.
+#[local] Definition let_parameterized_entry :=
+  lang_entry let_parameterized_wf.
+#[export] Hint Resolve let_parameterized_entry : wf_lang_db.
+
+Definition let_ty_subst_def := Eval vm_compute in ty_subst_def_maker let_parameterized [].
+Derive let_ty_subst
+  in (elab_lang_ext (let_parameterized ++
+                                exp_param_substs ++ exp_ty_subst ++
+                                val_param_substs ++ val_ty_subst ++
+                                env_ty_subst ++ ty_subst_lang ++
+                                exp_parameterized ++ val_parameterized ++ ty_env_lang
+                                )
+              let_ty_subst_def let_ty_subst)
+  as let_ty_subst_wf.
+Proof. auto_elab. Qed.
+#[local] Definition let_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf let_ty_subst_wf).
+#[export] Hint Resolve let_ty_subst_entry : wf_lang_db.
+
+(* NOTE: let_eta adds no new syntax, so (like utlc_bool) it needs no ty_subst lang *)
+Definition let_eta_parameterized :=
+    let ps := (elab_param "D" (let_eta ++ let_lang ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps let_eta.
+Local Definition evp'_let_eta : lang :=
+    let ps := (elab_param "D" (let_eta ++ let_lang ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (let_lang ++ exp_ret ++ exp_subst_base ++ value_subst).
+Lemma let_eta_parameterized_wf
+  : wf_lang_ext ((let_parameterized ++ exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      let_eta_parameterized.
+Proof.
+  replace (let_parameterized ++ exp_parameterized ++ val_parameterized) with evp'_let_eta.
+  - eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor
+    | now prove_by_lang_db..
+    | vm_compute; exact I].
+  - cbv; reflexivity.
+Qed.
+#[local] Definition let_eta_parameterized_entry :=
+  lang_entry let_eta_parameterized_wf.
+#[export] Hint Resolve let_eta_parameterized_entry : wf_lang_db.
