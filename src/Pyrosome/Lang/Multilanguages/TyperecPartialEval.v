@@ -95,19 +95,234 @@ Fixpoint is_simple_type (mu : term) : Prop :=
   | _ => False
   end.
 
+(* NOTE (this session): restated so that the "typerec" case is selected by a
+   *boolean* test on the head name rather than by a nested pattern match.  This
+   makes [all_typerecs_simple (con n s)] reducible when [n] is a variable known
+   to be different from "typerec", which is what the cheap (non-enumerating)
+   inversion below needs.  The new definition is also slightly stronger than the
+   old one: it recurses into *every* argument of a [#"typerec"] node, not just
+   [e1], [e2], [e3]. *)
+Definition typerec_mu_ok (n : string) (s : list term) : Prop :=
+  if eqb n "typerec"
+  then match s with
+       | [_;_;_;_;mu;_;_] => is_simple_type mu
+       | _ => True
+       end
+  else True.
+
 Fixpoint all_typerecs_simple (program : term) : Prop :=
   match program with
-  | {{e #"typerec" {D} {G} {mu} {sigma} {e1} {e2} {e3} }} =>
-      is_simple_type mu /\
-        all_typerecs_simple e1 /\ all_typerecs_simple e2 /\ all_typerecs_simple e3
-  | con _ s => all all_typerecs_simple s
   | var _ => True
+  | con n s => typerec_mu_ok n s /\ all all_typerecs_simple s
   end.
 
 Ltac invert_wf_args :=
         match goal with
         | H : ComputeWf.wf_args _ _ _ _ |- _ => inversion H; clear H
         end.
+
+(* ------------------------------------------------------------------ *)
+(* Cheap (reflective) language inversion.                              *)
+(*                                                                     *)
+(* The cut-free induction [wf_term_cut_ind] hands us a hypothesis      *)
+(* [In (name, term_rule c' args t) l].  Destructing that membership    *)
+(* enumerates the whole language (193s / 6.5GB for                     *)
+(* [source_multilanguage], see STATUS.md).  Instead we (a) turn the    *)
+(* membership into a *lookup* equation, which is cheap because the     *)
+(* languages are [all_fresh], and (b) restrict [name] to a handful of  *)
+(* candidates with a boolean [forallb] check over the language,        *)
+(* discharged once and for all by [vm_compute].                        *)
+(* ------------------------------------------------------------------ *)
+
+Local Notation CMP := (simple_multilang_compiler ++ interoperating_langs_compiler).
+
+Lemma in_lang_lookup (l : lang) n (r : rule)
+  : all_fresh l -> In (n,r) l -> named_list_lookup_err l n = Some r.
+Proof.
+  intros Hf Hin. symmetry.
+  apply all_fresh_named_list_lookup_err_in; [ typeclasses eauto | exact Hf | exact Hin ].
+Qed.
+
+Lemma subst_sort_name_nil (t : sort) n sub
+  : t[/sub/] = scon n [] -> t = scon n [].
+Proof.
+  destruct t; cbn; intro H; injection H as ? ?; subst.
+  destruct l; cbn in *; congruence.
+Qed.
+
+(* a strong induction principle for terms *)
+Section TermIndAll.
+  Context (P : term -> Prop)
+    (Hv : forall n, P (var n))
+    (Hc : forall n l, all P l -> P (con n l)).
+  Fixpoint term_ind_all (e : term) : P e :=
+    match e with
+    | var n => Hv n
+    | con n l =>
+        Hc n l ((fix f (l : list term) : all P l :=
+                   match l with
+                   | [] => I
+                   | x::l' => conj (term_ind_all x) (f l')
+                   end) l)
+    end.
+End TermIndAll.
+
+(* every #"typerec" node's type argument is a variable *)
+Fixpoint typerecs_are_var (e : term) : bool :=
+  match e with
+  | var _ => true
+  | con n s =>
+      (if eqb n "typerec"
+       then match s with
+            | [_;_;_;_;var _;_;_] => true
+            | _ => false
+            end
+       else true)
+      && (fix f (l : list term) : bool :=
+            match l with [] => true | x::l' => typerecs_are_var x && f l' end) s
+  end.
+
+(* the variables used as the type argument of some #"typerec" node *)
+Fixpoint typerec_mu_vars (e : term) : list string :=
+  match e with
+  | var _ => []
+  | con n s =>
+      (if eqb n "typerec"
+       then match s with
+            | [_;_;_;_;var m;_;_] => [m]
+            | _ => []
+            end
+       else [])
+      ++ (fix f (l : list term) : list string :=
+            match l with [] => [] | x::l' => typerec_mu_vars x ++ f l' end) s
+  end.
+
+Lemma all_app A (P : A -> Prop) l1 l2 : all P (l1 ++ l2) <-> all P l1 /\ all P l2.
+Proof. induction l1; cbn; tauto. Qed.
+
+Lemma ats_lookup s n
+  : all (fun p => all_typerecs_simple (snd p)) s ->
+    all_typerecs_simple (term_subst_lookup s n).
+Proof.
+  induction s as [| [m e] s IH]; cbn; [ intros _; exact I | ].
+  intros [He Hs]. cbv [term_subst_lookup] in *; cbn.
+  destruct (eqb n m); [ exact He | apply IH; exact Hs ].
+Qed.
+
+(* The key substitution lemma: if every [#"typerec"] node of [b] has a
+   *variable* as its type argument, and every such variable is instantiated by
+   a simple type, then the instance [b[/s/]] has only simple typerecs. *)
+Lemma ats_subst (b : term) (s : subst)
+  : Is_true (typerecs_are_var b) ->
+    all (fun p => all_typerecs_simple (snd p)) s ->
+    all (fun m => is_simple_type (term_subst_lookup s m)) (typerec_mu_vars b) ->
+    all_typerecs_simple b[/s/].
+Proof.
+  revert s. induction b using term_ind_all; intros sub Hv Hs Hm.
+  { cbn. apply ats_lookup; exact Hs. }
+  { cbn [term_subst term_var_map] in *.
+    cbn [typerecs_are_var typerec_mu_vars] in Hv, Hm.
+    apply andb_prop_elim in Hv; destruct Hv as [Hv1 Hv2].
+    apply all_app in Hm; destruct Hm as [Hm1 Hm2].
+    split.
+    { cbv [typerec_mu_ok] in *.
+      destruct (eqb n "typerec"); [ | exact I ].
+      repeat (destruct l as [| ? l]; [ exact I | ]).
+      destruct l; [ | exact I ].
+      cbn in Hv1, Hm1. destruct t3; [ | destruct Hv1 ].
+      cbn. cbn in Hm1. destruct Hm1 as [Hm1 _]. exact Hm1. }
+    { clear Hm1 Hv1.
+      revert Hm2 Hv2. induction l as [|x l IH']; cbn; [ intros; exact I | ].
+      intros Hm2 Hv2. apply andb_prop_elim in Hv2; destruct Hv2 as [Hx Hl].
+      apply all_app in Hm2; destruct Hm2 as [Hmx Hml].
+      destruct H as [Hpx Hpl].
+      split; [ apply Hpx; assumption | apply IH'; assumption ]. } }
+Qed.
+
+Lemma ats_default : all_typerecs_simple (@default term _).
+Proof. vm_compute. tauto. Qed.
+
+Lemma ats_combine (args : list string) (l : list term)
+  : all all_typerecs_simple l ->
+    all (fun p => all_typerecs_simple (snd p)) (combine_r_padded args l).
+Proof.
+  revert l; induction args as [|a args IH]; intros [|x l]; cbn; try tauto.
+  - intros _. split; [ apply ats_default | apply IH; exact I ].
+  - intros [Hx Hl]. split; [ exact Hx | apply IH; exact Hl ].
+Qed.
+
+Lemma all_map A B (Q : B -> Prop) (f : A -> B) l
+  : all (fun x => Q (f x)) l -> all Q (map f l).
+Proof. induction l; cbn; tauto. Qed.
+
+Lemma pargs_all (Q : term -> Prop) (c' : ctx) (s : list term)
+  : WfCutElim.P_args string (fun e (_ : sort) => Q e) s c' -> all Q s.
+Proof.
+  revert s; induction c' as [| [n t] c' IH]; intros [|e s]; cbn; try tauto.
+  intros [H1 H2]; split; [ exact H2 | apply IH; exact H1 ].
+Qed.
+
+(* The reflective statement about the compiler: outside the two boundary
+   cases, no compiler case emits a [#"typerec"] at all. *)
+Definition cmp_case_ok (p : string * @compiler_case string term sort) : bool :=
+  match p with
+  | (n, term_case _ b) =>
+      typerecs_are_var b
+      && (inb n ["dtt";"ttd"] || match typerec_mu_vars b with [] => true | _ => false end)
+  | _ => true
+  end.
+
+Lemma cmp_cases_ok : forallb cmp_case_ok CMP = true.
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma compile_star : compile CMP (con "*" []) = {{e #"*" #"ty_emp" }}.
+Proof. reflexivity. Qed.
+Lemma compile_bool : compile CMP (con "bool" []) = {{e #"bool" #"ty_emp" }}.
+Proof. reflexivity. Qed.
+Lemma compile_arrow a b
+  : compile CMP (con "->" [b;a]) = con "->" [compile CMP b; compile CMP a; con "ty_emp" []].
+Proof. reflexivity. Qed.
+Lemma compile_dtt s
+  : compile CMP (con "dtt" s)
+    = dtt_case_tgt[/combine_r_padded ["e";"A";"G"] (map (compile CMP) s)/].
+Proof. reflexivity. Qed.
+Lemma compile_ttd s
+  : compile CMP (con "ttd" s)
+    = ttd_case_tgt[/combine_r_padded ["e";"A";"G"] (map (compile CMP) s)/].
+Proof. reflexivity. Qed.
+Lemma lookup_A (a b c : term)
+  : term_subst_lookup (combine_r_padded ["e";"A";"G"] [a;b;c]) "A" = b.
+Proof. reflexivity. Qed.
+
+Lemma sml_all_fresh : all_fresh source_multilanguage.
+Proof. compute_all_fresh. Qed.
+
+Lemma sml_lookup n (r:rule)
+  : In (n,r) source_multilanguage -> named_list_lookup_err source_multilanguage n = Some r.
+Proof. apply (in_lang_lookup source_multilanguage n r sml_all_fresh). Qed.
+
+Definition rule_ty_name_ok (p : string * rule) : bool :=
+  match p with
+  | (n, term_rule _ _ (scon "ty" [])) => inb n ["*";"bool";"->"]
+  | _ => true
+  end.
+
+Lemma sml_ty_names : forallb rule_ty_name_ok source_multilanguage = true.
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma sml_ty_rule_name : forall n c' args,
+    In (n, term_rule c' args (scon "ty" [])) source_multilanguage ->
+    n = "*" \/ n = "bool" \/ n = "->".
+Proof.
+  intros n c' args Hin.
+  pose proof sml_ty_names as Hb.
+  rewrite forallb_forall in Hb.
+  specialize (Hb _ Hin).
+  cbv beta iota delta [rule_ty_name_ok] in Hb.
+  apply Is_true_eq_left in Hb.
+  autorewrite with utils in Hb. cbn in Hb.
+  intuition (subst; auto).
+Qed.
 
 Lemma no_sort_eqns_in_sml : Is_true (no_sort_eqns source_multilanguage).
 Proof. apply I. Qed.
@@ -133,16 +348,12 @@ Lemma ty_inversion_lemma' : forall (t : sort) (e : term),
     Core.wf_sort source_multilanguage [] t -> Core.wf_term source_multilanguage [] e t -> t = {{s #"ty" }} -> e = {{e #"*" }}  \/ e = {{e #"bool" }} \/ (exists a b, Core.wf_term source_multilanguage [] a {{s #"ty" }} /\ Core.wf_term source_multilanguage [] b {{s #"ty" }} /\ e = {{e #"->" {a} {b} }} ).
 Proof.
   induction 2 using wf_term_cut_ind.
-  - unshelve (repeat (destruct H0;
-                      [> first [ solve [ injection H0; intros HF; inversion HF ]
-                               | solve [ inversion H0; intros Ht; inversion Ht ]
-                               | shelve ] | .. ]); destruct H0).
-    + inversion H0; intros Ht; rewrite <- H5 in H1; repeat invert_wf_args. eauto. 
-    + inversion H0; intros Ht; rewrite <- H5 in H1; repeat invert_wf_args. eauto. 
-    + inversion H0; intros Ht; rewrite <- H5 in H1; repeat invert_wf_args. 
-      rewrite <- H5 in H2; subst; destruct H2; repeat destruct H1.
-      right. right. eauto. 
-  - inversion H0.
+  - intro Ht. apply subst_sort_name_nil in Ht; subst t.
+    destruct (sml_ty_rule_name H0) as [-> | [-> | ->]];
+      apply sml_lookup in H0; vm_compute in H0;
+      injection H0; intros; subst.
+    all: repeat invert_wf_args; subst; eauto 10.
+  - destruct H0.
   - intros Ht; rewrite Ht in H1.
     apply IHwf_term. 
     + rewrite <- Ht in H1. apply eq_sort_sym in H1. apply ty_eq_sort_lemma in Ht;
@@ -167,19 +378,16 @@ Lemma compiled_types_are_simple :
     is_simple_type (compile (simple_multilang_compiler ++ interoperating_langs_compiler) e).
 Proof.
   induction 1 using wf_term_cut_ind.
-  - unshelve (repeat (destruct H;
-                      [> first [ solve [ injection H; intros HF; inversion HF ]
-                               | solve [ inversion H; intros Ht; inversion Ht ]
-                               | shelve ] | .. ]); destruct H).
-    + inversion H; intros Ht; rewrite <- H4 in H0; repeat invert_wf_args; vm_compute; apply I. 
-    + inversion H; intros Ht; rewrite <- H4 in H0; repeat invert_wf_args; vm_compute; apply I. 
-    + inversion H. intros Ht. rewrite <- H4 in H0. repeat invert_wf_args. subst. destruct H1;  repeat destruct H0. simpl in Ht.
-      cbv [apply_subst] in H2; simpl in H2; cbv [apply_subst] in H1; simpl in H1.
-      apply H1 in Ht.
-      assert (Ht2 : {{s #"ty"}} = {{s #"ty"}}) by reflexivity. 
-      apply H2 in Ht2. 
-      simpl. apply conj; assumption.
-  - inversion H.
+  - intro Ht. apply subst_sort_name_nil in Ht; subst t.
+    destruct (sml_ty_rule_name H) as [-> | [-> | ->]];
+      apply sml_lookup in H; vm_compute in H;
+      injection H; intros; subst; repeat invert_wf_args; subst.
+    + rewrite compile_star; exact I.
+    + rewrite compile_bool; exact I.
+    + rewrite compile_arrow.
+      cbn [is_simple_type]; cbn [WfCutElim.P_args] in H1; destruct H1 as [[_ Pe0] Pe];
+        split; [ apply Pe0 | apply Pe ]; reflexivity.
+  - destruct H.
   - intros Ht; rewrite Ht in H0. apply ty_eq_sort_lemma in H0.
     + apply IHwf_term in H0. apply H0.
     + eapply (eq_sort_wf_l source_multilanguage_wf wf_ctx_nil). apply H0.
@@ -193,27 +401,42 @@ Theorem can_eliminate_typerec :
   forall (t: sort) (e : term),
     Core.wf_term source_multilanguage [] e t ->
     all_typerecs_simple (compile (simple_multilang_compiler ++ interoperating_langs_compiler) e). 
-Admitted. (* ISSUE: see STATUS.md *)
-(* The proof below is correct in structure but exhausts the 7GB box: the
-   cut-free [In]-enumeration over [source_multilanguage] alone costs 193s and
-   ~6.5GB, and the [1-2:] step that follows pushes it over the limit.
 Proof.
   induction 1 using wf_term_cut_ind.
-  - unshelve (repeat (destruct H;
-                      [> first [ solve [ injection H; intros HF; inversion HF ]
-                               | injection H; intros H6 H5 H4 H3; rewrite <- H4 in H1; rewrite <- H4 in H0; cbn [compile]; compute_match (named_list_lookup_err (simple_multilang_compiler ++ interoperating_langs_compiler) name); rewrite <- H3; repeat invert_wf_args; subst; destruct H1; repeat destruct H0; cbn [map combine_r_padded] ]
-                      | .. ]); destruct H).
-    1-2: simpl in H14; apply ty_inversion_lemma in H14; try reflexivity;
-    destruct H14 as [ HStar | [ HBool | HArrow ]];
-        [ rewrite HStar; replace (compile (simple_multilang_compiler ++ interoperating_langs_compiler) {{e #"*"}}) with {{e #"*" #"ty_emp" }} by (vm_compute; reflexivity); cbn -[compile simple_multilang_compiler interoperating_langs_compiler]; repeat apply conj; apply I || assumption
-        | rewrite HBool; replace (compile (simple_multilang_compiler ++ interoperating_langs_compiler) {{e #"bool"}}) with {{e #"bool" #"ty_emp" }} by (vm_compute; reflexivity); cbn -[compile simple_multilang_compiler interoperating_langs_compiler]; repeat apply conj; apply I || assumption
-        | destruct HArrow as [ A [ B [ WfA [ WfB EAB ]]]]; cbn -[compile simple_multilang_compiler interoperating_langs_compiler]; apply compiled_types_are_simple in WfA; try reflexivity; apply compiled_types_are_simple in WfB; try reflexivity; repeat apply conj; try (apply I || assumption || rewrite EAB; apply conj; assumption) ].
-    all: repeat apply conj; try assumption; apply I. Unshelve.
-  - inversion H.
+  - destruct (inb name ["dtt";"ttd"]) eqn:Hd.
+    2:{ (* generic case: the compiler image of this rule has no #"typerec" *)
+      cbn [compile].
+      destruct (named_list_lookup_err CMP name) as [[cargs b|cargs t0]|] eqn:Hl.
+      2,3: apply ats_default.
+      assert (Hin : In (name, term_case cargs b) CMP)
+        by (apply named_list_lookup_err_in; symmetry; exact Hl).
+      pose proof cmp_cases_ok as Hb; rewrite forallb_forall in Hb; specialize (Hb _ Hin).
+      cbv [cmp_case_ok] in Hb.
+      apply andb_prop in Hb; destruct Hb as [Hvar Hmu].
+      apply ats_subst.
+      + apply Is_true_eq_left; exact Hvar.
+      + apply ats_combine, all_map. eapply pargs_all; exact H1.
+      + rewrite Hd in Hmu; cbn in Hmu.
+        destruct (typerec_mu_vars b); [ exact I | discriminate ]. }
+    { (* the two boundary cases: the #"typerec" type argument is the
+         compiled source type, which is simple by compiled_types_are_simple *)
+      apply Is_true_eq_left in Hd; autorewrite with utils in Hd; cbn in Hd.
+      destruct Hd as [ Hd | [Hd | []]]; subst name.
+      all: apply sml_lookup in H; vm_compute in H; injection H; intros; subst.
+      all: repeat invert_wf_args; subst.
+      all: [> rewrite compile_dtt | rewrite compile_ttd ].
+      all: apply ats_subst;
+        [ vm_compute; exact I
+        | apply ats_combine, all_map; eapply pargs_all; exact H1
+        | ].
+      all: cbn [map].
+      all: match goal with |- all _ ?L => replace L with ["A"] by (vm_compute; reflexivity) end.
+      all: cbn [all]; split; [ | exact I ].
+      all: rewrite lookup_A.
+      all: eapply compiled_types_are_simple; [ apply H10 | reflexivity ]. }
+  - destruct H.
   - apply IHwf_term.
 Qed.
-
-*)
 
 (* target_multilanguage_wf is now proved in TypeCasing.v (Stage D). *)
 
@@ -245,6 +468,70 @@ Qed.
    is existentially quantified.  [#"ty_hd"] is listed even though it cannot
    occur at [D = #"ty_emp"]: at a general [D] it is a legitimate closed term of
    sort [#"ty" (#"ty_ext" D')]. *)
+Lemma tml_all_fresh : all_fresh target_multilanguage.
+Proof. compute_all_fresh. Qed.
+
+Lemma tml_lookup n (r:rule)
+  : In (n,r) target_multilanguage -> named_list_lookup_err target_multilanguage n = Some r.
+Proof. apply (in_lang_lookup target_multilanguage n r tml_all_fresh). Qed.
+
+Definition tml_rule_ty_name_ok (p : string * rule) : bool :=
+  match p with
+  | (n, term_rule _ _ (scon sn _)) =>
+      if eqb sn "ty"
+      then inb n ["prod";"*";"bool";"->";"All";"ty_hd";"ty_subst"]
+      else true
+  | _ => true
+  end.
+
+Lemma tml_ty_names : forallb tml_rule_ty_name_ok target_multilanguage = true.
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma tml_ty_rule_name : forall n c' args t,
+    In (n, term_rule c' args t) target_multilanguage ->
+    Parameterizer.sort_name t = "ty" ->
+    In n ["prod";"*";"bool";"->";"All";"ty_hd";"ty_subst"].
+Proof.
+  intros n c' args [sn sargs] Hin Hsn; cbn in Hsn; subst sn.
+  pose proof tml_ty_names as Hb.
+  rewrite forallb_forall in Hb.
+  specialize (Hb _ Hin).
+  apply Is_true_eq_left in Hb.
+  assert (Hb' : Is_true (inb n ["prod";"*";"bool";"->";"All";"ty_hd";"ty_subst"]))
+    by exact Hb.
+  autorewrite with utils in Hb'. exact Hb'.
+Qed.
+
+(* Generalized over the sort's arguments: [target_multilanguage] has no sort
+   equations, so the conversion case of the cut-free induction only preserves
+   the sort *name*. *)
+Lemma ty_inversion_lemma_tml' : forall (t : sort) (e : term),
+    Core.wf_term target_multilanguage [] e t ->
+    Parameterizer.sort_name t = "ty" ->
+    (exists D, e = {{e #"*" {D} }})
+    \/ (exists D, e = {{e #"bool" {D} }})
+    \/ (exists D a b, e = {{e #"->" {D} {a} {b} }})
+    \/ (exists D a b, e = {{e #"prod" {D} {a} {b} }})
+    \/ (exists D a, e = {{e #"All" {D} {a} }})
+    \/ (exists D, e = {{e #"ty_hd" {D} }})
+    \/ (exists D D' g a, e = {{e #"ty_subst" {D} {D'} {g} {a} }}).
+Proof.
+  induction 1 using wf_term_cut_ind.
+  - intro Hsn.
+    assert (Hsn' : Parameterizer.sort_name t = "ty")
+      by (destruct t; exact Hsn).
+    pose proof (tml_ty_rule_name H Hsn') as Hn.
+    cbn in Hn.
+    repeat (destruct Hn as [Hn | Hn]; [ subst name | ]); [ | | | | | | | destruct Hn ].
+    all: apply tml_lookup in H; vm_compute in H; injection H; intros; subst.
+    all: repeat invert_wf_args; subst.
+    all: eauto 12.
+  - destruct H.
+  - intro Hsn. apply IHwf_term.
+    apply (sort_names_equal target_multilanguage_wf no_sort_eqns_in_tml wf_ctx_nil) in H0.
+    rewrite H0; exact Hsn.
+Qed.
+
 Lemma ty_inversion_lemma_tml : forall (e ty_env : term),
     Core.wf_term target_multilanguage [] e {{s #"ty" {ty_env} }} ->
     (exists D, e = {{e #"*" {D} }})
@@ -254,7 +541,9 @@ Lemma ty_inversion_lemma_tml : forall (e ty_env : term),
     \/ (exists D a, e = {{e #"All" {D} {a} }})
     \/ (exists D, e = {{e #"ty_hd" {D} }})
     \/ (exists D D' g a, e = {{e #"ty_subst" {D} {D'} {g} {a} }}).
-Admitted. (* ISSUE: see STATUS.md *)
+Proof.
+  intros e ty_env H. eapply ty_inversion_lemma_tml'; [ exact H | reflexivity ].
+Qed.
 
 (* 
 (* OLD. Doesn't work for typerec because we don't have the inversion lemma and we have stuck terms with typerec *)
@@ -465,12 +754,34 @@ Proof. prove_by_lang_db. Qed.
   lang_entry target_multilanguage_without_typerec_wf.
 #[export] Hint Resolve target_multilanguage_without_typerec_entry : wf_lang_db.
 
+(* STATEMENT FIXED (this session).  The old statement -- without the
+   [all_typerecs_simple] hypothesis -- is false: [elim_typerec] only removes a
+   [#"typerec"] node whose type argument is a *simple* type ([meta_typerec]
+   falls through to [| _ => mu] otherwise), so a term containing
+   [#"typerec" D G "A" ...] at a type variable or an [#"All"] type is left
+   unchanged and still mentions [#"typerec"], which is not a constructor of
+   [target_multilanguage_without_typerec]. *)
 Theorem partial_eval_wf_in_no_typerec_lang : forall (t : sort) (e : term),
     Core.wf_term target_multilanguage [] e t ->
+    all_typerecs_simple e ->
     Core.wf_term
       target_multilanguage_without_typerec
       []
       (elim_typerec e)
       t.
 Admitted. (* ISSUE: see STATUS.md *)
+
+(* The form in which the theorem above is meant to be used: for compiled
+   source terms the [all_typerecs_simple] hypothesis is discharged by
+   [can_eliminate_typerec], which is now Qed. *)
+Corollary compiled_partial_eval_wf : forall (t t' : sort) (e : term),
+    Core.wf_term source_multilanguage [] e t ->
+    Core.wf_term target_multilanguage [] (compile CMP e) t' ->
+    Core.wf_term target_multilanguage_without_typerec []
+      (elim_typerec (compile CMP e)) t'.
+Proof.
+  intros t t' e Hsrc Htgt.
+  apply partial_eval_wf_in_no_typerec_lang; [ exact Htgt | ].
+  eapply can_eliminate_typerec; exact Hsrc.
+Qed.
 
