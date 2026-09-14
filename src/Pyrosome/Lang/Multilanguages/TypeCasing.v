@@ -144,7 +144,7 @@ Derive type_casing
               ) 
                 type_casing_def type_casing)
         as type_casing_wf.
-Proof. auto_elab. Qed. 
+Proof. Timeout 1500 auto_elab. Qed.
 #[local] Definition type_casing_entry :=
   lang_entry (elab_lang_implies_wf type_casing_wf).
 #[export] Hint Resolve type_casing_entry : wf_lang_db.
@@ -158,3 +158,15 @@ Definition target_multilanguage :=
     type_casing ++
     polymorphic_interoperating_langs.
 Hint Unfold target_multilanguage : auto_elab.
+
+Lemma source_multilanguage_wf : wf_lang source_multilanguage.
+Proof. prove_by_lang_db. Qed.
+#[local] Definition source_multilanguage_entry :=
+  lang_entry source_multilanguage_wf.
+#[export] Hint Resolve source_multilanguage_entry : wf_lang_db.
+
+Lemma target_multilanguage_wf : wf_lang target_multilanguage.
+Proof. prove_by_lang_db. Qed.
+#[local] Definition target_multilanguage_entry :=
+  lang_entry target_multilanguage_wf.
+#[export] Hint Resolve target_multilanguage_entry : wf_lang_db.

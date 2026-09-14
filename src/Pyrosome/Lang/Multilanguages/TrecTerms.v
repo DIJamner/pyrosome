@@ -95,7 +95,7 @@ Derive trec_star_case
              )
          }}
      ) as trec_star_case_wf.
-Proof. solve_elab_term_or_sort target_multilanguage. Qed. (* used to be derive_elab_term *)
+Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed. (* used to be derive_elab_term *)
 
 Definition trec_bool_case_unelab :=
   {{e #"pair"
@@ -113,7 +113,7 @@ Derive trec_bool_case
              )
          }}
      ) as trec_bool_case_wf. 
-Proof. solve_elab_term_or_sort target_multilanguage. Qed. (* used to be derive_elab_term *)
+Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed. (* used to be derive_elab_term *)
 
 Derive trec_func_case_sort
   in (elab_sort target_multilanguage
@@ -127,7 +127,7 @@ Derive trec_func_case_sort
         trec_func_case_sort
      )
     as trec_func_case_sort_wf.
-Proof. solve_elab_term_or_sort target_multilanguage. Qed. (* used to be derive_elab_term *)
+Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed. (* used to be derive_elab_term *)
 
 Definition trec_func_case_unelab :=
   {{e #"ret" (#"Lam" (#"ret" (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0})) (#"ret" (#"Lam" (#"ret" (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0})) (#"pair" (#"ret" (#"lambda" (#"->" {ty_ovar 1} {ty_ovar 0}) (#"ret" (#"ulambda" (#"app" (#".1" (#"ret" {ovar 2})) (#"app" (#"ret" {ovar 1}) (#"app" (#".2" (#"ret" {ovar 3})) (#"ret" {ovar 0})))))))) (#"ret" (#"lambda" #"*" (#"ret" (#"lambda" {ty_ovar 1} (#"app" (#".2" (#"ret" {ovar 2})) (#"uapp" (#"ret" {ovar 1}) (#"app" (#".1" (#"ret" {ovar 3})) (#"ret" {ovar 0})))) ) ))))))))))) }}.
@@ -138,7 +138,7 @@ Derive trec_func_case
          trec_func_case
          trec_func_case_sort
      ) as trec_func_case_wf.
-Proof. solve_elab_term_or_sort target_multilanguage. Qed. 
+Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed. 
 
 Definition trec_boundaries_unelab :=
   {{e #"typerec" "A" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
@@ -155,4 +155,4 @@ Derive trec_boundaries
                        (#"->" #"ty_emp" "A" (#"*" #"ty_emp"))
                        (#"->" #"ty_emp" (#"*" #"ty_emp") "A")) }}
             ) as trec_boundaries_wf.
-Proof. solve_elab_term_or_sort target_multilanguage. Qed.
+Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed.
