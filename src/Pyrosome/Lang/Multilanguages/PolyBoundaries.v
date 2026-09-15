@@ -451,34 +451,31 @@ Definition pc_exp_subst_dtt := Eval vm_compute in pgctx "exp_subst dtt".
 Definition ps_exp_subst_dtt := Eval vm_compute in pgsrt "exp_subst dtt".
 Definition pl_exp_subst_dtt := Eval vm_compute in pglhs "exp_subst dtt".
 Definition pr_exp_subst_dtt := Eval vm_compute in pgrhs "exp_subst dtt".
-(* ISSUE: see STATUS.md -- TIMEOUT 240s: pushing [#"exp_subst"] through the whole [trec_boundaries_poly] term. *)
+(* Qed under the value-level typerec: the three boundary cases are constants
+   with one-step substitution rules, so [#"exp_subst"] no longer has to be
+   pushed through the whole typerec body. *)
 Lemma peq_exp_subst_dtt : eq_term target_multilanguage pc_exp_subst_dtt ps_exp_subst_dtt pl_exp_subst_dtt pr_exp_subst_dtt.
-(* NOT RE-RUN this session (the file was not rebuilt under the value-level
-   typerec).  Intended proof: [unfold pc_exp_subst_dtt, ps_exp_subst_dtt, pl_exp_subst_dtt, pr_exp_subst_dtt.
-   by_reduction_checked.] *)
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_exp_subst_dtt, ps_exp_subst_dtt, pl_exp_subst_dtt, pr_exp_subst_dtt. Time Timeout 900 by_reduction_checked. Time Qed.
 
 Definition pc_exp_subst_ttd := Eval vm_compute in pgctx "exp_subst ttd".
 Definition ps_exp_subst_ttd := Eval vm_compute in pgsrt "exp_subst ttd".
 Definition pl_exp_subst_ttd := Eval vm_compute in pglhs "exp_subst ttd".
 Definition pr_exp_subst_ttd := Eval vm_compute in pgrhs "exp_subst ttd".
-(* ISSUE: see STATUS.md -- as "exp_subst dtt". *)
+(* Qed, as "exp_subst dtt". *)
 Lemma peq_exp_subst_ttd : eq_term target_multilanguage pc_exp_subst_ttd ps_exp_subst_ttd pl_exp_subst_ttd pr_exp_subst_ttd.
-(* NOT RE-RUN this session (the file was not rebuilt under the value-level
-   typerec).  Intended proof: [unfold pc_exp_subst_ttd, ps_exp_subst_ttd, pl_exp_subst_ttd, pr_exp_subst_ttd.
-   by_reduction_checked.] *)
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_exp_subst_ttd, ps_exp_subst_ttd, pl_exp_subst_ttd, pr_exp_subst_ttd. Time Timeout 900 by_reduction_checked. Time Qed.
 
 (* ------------------------------------------------------------------ *)
-(* ISSUE: see STATUS.md, Stage G.  Exactly as in stage F, 7 of the 13
-   equations of [boundaries_parameterized] go through and 6 do not: the two
-   [star] equations are now provable (the compiler let-binds its argument,
-   so the beta-redex has a value argument, and "let eta" finishes the job),
-   while the six [typerec func] / [exp_subst] equations still saturate.   *)
+(* ISSUE: see STATUS.md, Stage G.  As in stage F, 9 of the 13 equations of
+   [boundaries_parameterized] go through: the value-level typerec redesign
+   closed both [#"exp_subst"] equations.  The 4 that need ["typerec func"]
+   still TIMEOUT (900s in stage F), because ["typerec func"] instantiates the
+   function case by a type substitution and [boundary_cases] has no
+   ["ty_subst bfunc"] rule that can absorb it.                            *)
 Lemma poly_multilang_compiler_preserving
   : preserving_compiler_ext target_multilanguage
       polymorphic_interoperating_langs_compiler poly_multilang_compiler
       boundaries_parameterized.
-(* NOT RE-RUN this session; intended proof:
-   [compute_preserving_compiler polymorphic_interoperating_langs.] *)
+(* Cannot be assembled: 4 of the 13 equation lemmas above are still
+   Admitted (see STATUS.md, Stage G). *)
 Admitted. (* ISSUE: see STATUS.md *)

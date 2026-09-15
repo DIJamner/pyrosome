@@ -190,6 +190,61 @@ them provable, at the price of adding `let_lang` + a one-rule `let_eta` to the
 target multilanguage.  The remaining 6 failures are pure e-graph saturation
 cost, not soundness.
 
+### UPDATE (value-level `typerec` session, 2026-09-15)
+
+`SimpleMultilangCompiler.v` was rebuilt end to end against the new
+`TypeCasing.v` / `TrecTerms.v` (value-level `typerec`, `boundary_cases`
+constants `bstar`/`bbool`/`bfunc`).  **No breakage**: the compiler definition,
+the two `Derive ... solve_elab_term_or_sort` elaborations, `dtt_case_wf`,
+`ttd_case_wf` (`compute_term_wf`) and all the equation statements compiled
+unchanged.
+
+* First build (everything still `Admitted`): **34m04s**, EXIT 0, peak RSS ~966MB.
+* Rebuild with the two new `exp_subst` proofs: **48m24s**, EXIT 0.
+
+Per-equation re-measurement, all with `by_reduction_checked` in a probe file
+importing the built `SimpleMultilangCompiler.vo`:
+
+| Equation | Time | Result | Note |
+|---|---|---|---|
+| "dtt star", "ttd star", "dtt True", "dtt False", "ttd True", "ttd False", "dtt ulambda mismatch" | unchanged (~35s + ~52s Qed) | Qed | rebuilt as part of the file; no change needed |
+| **"exp_subst dtt"** | **201.1s tactic + 230.8s Qed** (probe); 198.2s + ~227s in-file | **Qed (NEW)** | closed by the value-level redesign: the three cases are now constants whose `val_subst` rules are one-step rewrites, so `#"exp_subst"` no longer has to be pushed through the whole typerec body |
+| **"exp_subst ttd"** | **196.0s + 226.0s Qed** (probe) | **Qed (NEW)** | as above |
+| "dtt func" | TIMEOUT 300s, then TIMEOUT 900s (peak RSS 859MB) | ADMITTED | see root cause below |
+| "ttd func" | TIMEOUT 300s (peak RSS 788MB) | ADMITTED | |
+| "dtt uT mismatch" | TIMEOUT 300s, then TIMEOUT 900s (peak RSS 642MB) | ADMITTED | |
+| "dtt uF mismatch" | TIMEOUT 300s (peak RSS 642MB) | ADMITTED | |
+
+**Root cause of the 4 remaining failures (new diagnosis).**  `"typerec func"`
+rewrites `#"typerec" (#"->" t1 t2) sigma v1 v2 v3` to
+
+```
+#"val_subst" (#"snoc" (#"snoc" #"id" (#"typerec" t1 ...)) (#"typerec" t2 ...))
+             (#"val_ty_subst" (#"ty_snoc" (#"ty_snoc" #"ty_id" t1) t2) v3)
+```
+
+i.e. it *instantiates* the function case `v3 = #"bfunc"` by a **type**
+substitution.  `boundary_cases` has `"val_subst bfunc"` (a term substitution,
+absorbed in one step) and `"ty_subst bstar"` / `"ty_subst bbool"`, but there is
+and can be no `"ty_subst bfunc"` rule that absorbs an *instantiating* type
+substitution -- `#"bfunc"` lives at `#"ty_ext" (#"ty_ext" "D")` precisely so
+that the two type arguments can be filled in.  So the e-graph must unfold
+`"bfunc def"` and push `#"val_ty_subst"` through the whole (large)
+`bfunc_body`, which is exactly the traversal the redesign was meant to avoid.
+The redesign therefore fixed the `exp_subst` equations (term substitution) and
+did **not** fix the `typerec func` equations (type substitution).
+
+The obvious next design step, not attempted here: give `#"bfunc"` the two
+types and the two recursive results as explicit *arguments*
+(`#"bfunc" "t1" "t2" "c1" "c2"`), so that `"typerec func"` produces the
+instantiated constant directly with no substitution to push.  That requires
+changing the generic `"typerec func"` rule of `type_casing`, whose `v3` is an
+arbitrary value.
+
+`simple_multilang_compiler_preserving` therefore stays `Admitted`; it cannot be
+assembled while 4 of the 13 equation lemmas are open.
+`simple_multilang_compiler_entry` is still `cmp_entry` of an admitted lemma.
+
 ## Stage G: PolyBoundaries.v
 
 PolyBoundaries.v now compiles end to end (14m31s originally; ~21m after the let-binding change, which adds two `solve_elab_term_or_sort` elaborations and two more `by_reduction_checked` equations).  The whole file builds as-is (with `Derive ... SuchThat ... As` modernized to
@@ -267,6 +322,29 @@ does: after the let-binding change the seven equations that reduce through
 `exp_subst` still saturate.  Generalizing the type environment from `#"ty_emp"`
 to `"D"` did not change which equations work; it only made the `typerec` term
 ~1.4x more expensive to elaborate.
+
+### UPDATE (value-level `typerec` session, 2026-09-15)
+
+`PolyBoundaries.v` was rebuilt against the value-level `typerec`.  **No
+breakage**: `boundaries_parameterized`, `boundaries_ty_subst`,
+`poly_boundaries`, `lump_cancellation_*`, `trec_boundaries_poly`, the two
+`poly_*_case_tgt` elaborations and `poly_dtt_case_wf` / `poly_ttd_case_wf` all
+re-derive unchanged.  Full build: **55m26s**, EXIT 0, peak RSS ~1.27GB.
+
+The stage-F findings port exactly:
+
+| Equation | Time | Result |
+|---|---|---|
+| the 7 previously-Qed equations | unchanged | Qed |
+| **"exp_subst dtt"** | **200.9s tactic + 230.0s Qed** | **Qed (NEW)** |
+| **"exp_subst ttd"** | **200.9s tactic + 232.1s Qed** | **Qed (NEW)** |
+| "dtt func", "ttd func", "dtt uT mismatch", "dtt uF mismatch" | not re-probed here (stage F is the cheaper file); stage F measured TIMEOUT 900s | ADMITTED |
+
+`poly_multilang_compiler_preserving` stays `Admitted` for the same reason as
+stage F: it cannot be assembled while 4 of the 13 equation lemmas are open.
+Generalizing the type environment from `#"ty_emp"` to `"D"` again made no
+difference to *which* equations work, only to cost (the poly `exp_subst`
+proofs cost the same ~200s + ~230s as the simple ones).
 
 ## Stage H: TyperecPartialEval.v
 
@@ -615,7 +693,30 @@ Elaborated by `infer_lang_ext_simple_incr 10 100 target_multilanguage_pre` +
 `#"let" "e" (#"app" (#".2"/#".1" (#"ret" (#"val_subst" #"wkn" TREC))) (#"ret" #"hd"))`
 (the `#"ret"` is new: `TREC` is a value now, so the projection needs it).
 
-### Stage H: TyperecPartialEval.v
+#### UPDATE (value-level `typerec` session, 2026-09-15)
+
+`PolyBoundaries.v` was rebuilt against the value-level `typerec`.  **No
+breakage**: `boundaries_parameterized`, `boundaries_ty_subst`,
+`poly_boundaries`, `lump_cancellation_*`, `trec_boundaries_poly`, the two
+`poly_*_case_tgt` elaborations and `poly_dtt_case_wf` / `poly_ttd_case_wf` all
+re-derive unchanged.  Full build: **55m26s**, EXIT 0, peak RSS ~1.27GB.
+
+The stage-F findings port exactly:
+
+| Equation | Time | Result |
+|---|---|---|
+| the 7 previously-Qed equations | unchanged | Qed |
+| **"exp_subst dtt"** | **200.9s tactic + 230.0s Qed** | **Qed (NEW)** |
+| **"exp_subst ttd"** | **200.9s tactic + 232.1s Qed** | **Qed (NEW)** |
+| "dtt func", "ttd func", "dtt uT mismatch", "dtt uF mismatch" | not re-probed here (stage F is the cheaper file); stage F measured TIMEOUT 900s | ADMITTED |
+
+`poly_multilang_compiler_preserving` stays `Admitted` for the same reason as
+stage F: it cannot be assembled while 4 of the 13 equation lemmas are open.
+Generalizing the type environment from `#"ty_emp"` to `"D"` again made no
+difference to *which* equations work, only to cost (the poly `exp_subst`
+proofs cost the same ~200s + ~230s as the simple ones).
+
+## Stage H: TyperecPartialEval.v
 
 `#"typerec"` keeps arity 7, so the shape-based lemmas are untouched.
 `comp_t1_type`/`comp_t2_type` become `#"val"` sorts, `"e3"` becomes `"v3"`, and
@@ -657,3 +758,36 @@ Two further notes for whoever picks this up:
   is the new value, and `target_multilanguage_without_typerec` gained
   `boundary_cases`.  `partial_eval_preserves_equality` and
   `partial_eval_wf_in_no_typerec_lang` remain `Admitted` as before.
+
+
+### UPDATE (value-level `typerec` session, 2026-09-15)
+
+`TyperecPartialEval.v` rebuilt against the new `SimpleMultilangCompiler.vo` /
+`PolyBoundaries.vo` with **no source change at all**: **4m13s**, EXIT 0.
+`typerec` still has arity 7 and `meta_typerec`'s arrow case (the substituted
+value `func_partial_eval_term`) was already written for the value-level design
+in the previous session, so nothing broke.
+
+All previously-`Qed` lemmas are still `Qed`, in particular
+`func_partial_eval_term_wf`, `can_eliminate_typerec`, `ty_inversion_lemma_tml`,
+`compiled_types_are_simple`, `eq_sort_sml_implies_eq_sort_tml` and
+`compiled_partial_eval_wf`.  The latter two remain *modulo*
+`simple_multilang_compiler_preserving`, which is still `Admitted` upstream.
+`partial_eval_preserves_equality` and `partial_eval_wf_in_no_typerec_lang`
+remain `Admitted` with their statements unchanged; neither falls out of the
+redesign.
+
+## Summary of this session
+
+| File | Build | Result |
+|---|---|---|
+| `SimpleMultilangCompiler.v` | 34m04s (as-is), then 48m24s (with the two new proofs) | EXIT 0 |
+| `PolyBoundaries.v` | 55m26s | EXIT 0 |
+| `TyperecPartialEval.v` | 4m13s | EXIT 0 |
+
+Boundary equations: **9 of 13 Qed** in each of stages F and G (was 7), the two
+`#"exp_subst"` equations newly closed by the value-level `typerec`.  Both
+whole-compiler theorems (`simple_multilang_compiler_preserving`,
+`poly_multilang_compiler_preserving`) remain `Admitted`; the blocker is the
+four `"typerec func"` equations and the missing `"ty_subst bfunc"` absorption
+(see Stage F above for the full diagnosis and the proposed fix).
