@@ -1301,8 +1301,33 @@ Whole-file build after the session: **4m20s**, EXIT 0, one Coq process, no OOM.
 | TyperecPartialEval.v | `elim_typerec_eq` | **Qed** | Closed under the global context |
 | TyperecPartialEval.v | `partial_eval_preserves_equality` | **Qed** | Closed under the global context |
 | TyperecPartialEval.v | `partial_eval_wf_in_target` | **Qed** | Closed under the global context |
-| TyperecPartialEval.v | `compiled_partial_eval_wf` | Qed | one axiom: `partial_eval_wf_in_no_typerec_lang` |
-| TyperecPartialEval.v | `partial_eval_wf_in_no_typerec_lang` | **Admitted** | conversion case is a conservativity statement (residual goal above) |
+| TyperecPartialEval.v | `compiled_partial_eval_wf` | **Qed** | Closed under the global context |
+| TyperecPartialEval.v | `partial_eval_wf_in_no_typerec_lang` | **Qed** | Closed under the global context |
 
-The only remaining `Admitted` in the folder is
-`partial_eval_wf_in_no_typerec_lang`.
+No `Admitted` remains in the folder.
+
+## 2026-09-15 (later): `partial_eval_wf_in_no_typerec_lang` closed
+
+The residual conservativity goal is now a theorem.  Structure:
+
+1. `Theory/Conservativity.v` (new, general): `eq_conservative_check l l' P`.
+   Given a stratum `P` of sort names such that every rule of `l` whose sort
+   name is in `P` (and every sort rule / sort-eq rule) is in `l'` with a
+   context whose sorts are all in `P` -- decided by `vm_compute` on the
+   boolean `lang_conservative P l l'` -- every `eq_sort l c t t'` is derivable
+   in `l'`, and every `eq_term l c t e1 e2` at a `P`-sort is too.  Proved by
+   `CutFreeInd.cut_ind` (the cut-free presentation has no `wf_ctx` side
+   conditions on rule instances, which is what makes the transfer go through
+   with the same context), converting back to `Core` with `core_iff_cut`.
+2. Instance: `P = {ty_env, env, ty, ty_sub}`, `l = target_multilanguage`,
+   `l' = target_multilanguage_without_typerec`; the check
+   (`tml_conservative_check`) is a `vm_compute`.  Sorts only mention
+   type-level terms, so this gives `eq_sort_conservative_tml`.
+3. `no_typerec` / `stratum_no_typerec` (a closed term well-formed at a
+   type-level sort mentions no `#"typerec"`) / `elim_typerec_no_typerec`
+   (output of the partial evaluator is typerec-free when all typerecs are
+   simple) / `no_typerec_transfer` (typerec-free + wf in the full target =>
+   wf in the sublanguage, by `wf_term_cut_ind`; the conversion case is 2).
+
+`Print Assumptions` on `partial_eval_wf_in_no_typerec_lang` and
+`compiled_partial_eval_wf`: closed under the global context.

@@ -29,6 +29,7 @@ From Pyrosome.Lang.Multilanguages Require Import SimpleBoundaries.
 
 (* for induction on wfness of terms *)
 From Pyrosome.Theory Require Import WfCutElim CutFreeInd.
+From Pyrosome.Theory Require Conservativity.
 
 (* imports for polymorphism *)
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
@@ -1210,6 +1211,352 @@ Qed.
                   wf_sort target_multilanguage_without_typerec [] t' ->
                   eq_sort target_multilanguage_without_typerec [] t t'.
  *)
+(* [partial_eval_wf_in_no_typerec_lang] and [compiled_partial_eval_wf] are
+   stated and proved at the end of the file. *)
+
+
+
+(* ================================================================== *)
+(* Metatheory: the partially evaluated term lives in the typerec-free  *)
+(* sublanguage (modulo conservativity of the sort equality).           *)
+(* ================================================================== *)
+(* ------------------------------------------------------------------ *)
+(* [no_typerec]: a syntactic check that a term mentions no [#"typerec"] *)
+(* ------------------------------------------------------------------ *)
+Fixpoint no_typerec (e : term) : bool :=
+  match e with
+  | var _ => true
+  | con n s =>
+      negb (eqb n "typerec")
+      && (fix f (l : list term) : bool :=
+            match l with [] => true | x::l' => no_typerec x && f l' end) s
+  end.
+
+Lemma no_typerec_unfold n s
+  : no_typerec (con n s) = negb (eqb n "typerec") && forallb no_typerec s.
+Proof.
+  cbn [no_typerec]. f_equal; induction s; cbn; congruence.
+Qed.
+
+Lemma forallb_of_all (f : term -> bool) l
+  : all (fun x => f x = true) l -> forallb f l = true.
+Proof. induction l; cbn; [ reflexivity | ]. intros [H1 H2]. rewrite H1; auto. Qed.
+
+Lemma all_of_forallb (f : term -> bool) l
+  : forallb f l = true -> all (fun x => f x = true) l.
+Proof.
+  induction l; cbn; [ tauto | ].
+  intro H. apply andb_prop in H. destruct H. split; auto.
+Qed.
+
+Lemma no_typerec_lookup (s : subst) n
+  : all (fun p => no_typerec (snd p) = true) s ->
+    no_typerec (term_subst_lookup s n) = true.
+Proof.
+  induction s as [| [m e] s IH]; cbn; [ intros _; reflexivity | ].
+  intros [He Hs]. cbv [term_subst_lookup] in *; cbn.
+  destruct (eqb n m); [ exact He | apply IH; exact Hs ].
+Qed.
+
+Lemma no_typerec_subst (b : term) (s : subst)
+  : no_typerec b = true ->
+    all (fun p => no_typerec (snd p) = true) s ->
+    no_typerec b[/s/] = true.
+Proof.
+  revert s; induction b using term_ind_all; intros sub Hb Hs.
+  { cbn. apply no_typerec_lookup; exact Hs. }
+  rewrite no_typerec_unfold in Hb. apply andb_prop in Hb. destruct Hb as [Hn Hl].
+  change ((con n l)[/sub/]) with (con n (map (term_subst sub) l)).
+  rewrite no_typerec_unfold, Hn; cbn [andb].
+  apply forallb_of_all. apply all_map.
+  apply all_of_forallb in Hl.
+  clear Hn. revert Hl H. induction l as [|x l IHl]; cbn; [ tauto | ].
+  intros [Hx Hl] [Hpx Hpl].
+  split; [ apply Hpx; assumption | apply IHl; assumption ].
+Qed.
+
+(* ------------------------------------------------------------------ *)
+(* Terms at "type-level" sorts contain no typerec                       *)
+(* ------------------------------------------------------------------ *)
+Definition strat_names : list string := ["ty_env";"env";"ty";"ty_sub"].
+
+Definition strat_rule_ok (p : string * rule) : bool :=
+  match snd p with
+  | term_rule c' _ t =>
+      if inb (Parameterizer.sort_name t) strat_names
+      then negb (eqb (fst p) "typerec")
+           && forallb (fun q => inb (Parameterizer.sort_name (snd q)) strat_names) c'
+      else true
+  | _ => true
+  end.
+
+Lemma inb_string_true_iff (n : string) (l : list string) : inb n l = true <-> In n l.
+Proof.
+  induction l as [|a l IH]; cbv [inb] in *; cbn [existsb In] in *.
+  { split; [ discriminate | tauto ]. }
+  pose proof (eqb_spec n a) as Hs; destruct (eqb n a).
+  { cbn [orb]. split; [ intros _; left; symmetry; exact Hs | intros _; reflexivity ]. }
+  cbn [orb]. rewrite IH. split; [ tauto | ].
+  intros [He | He]; [ congruence | exact He ].
+Qed.
+
+Lemma strat_ok : forallb strat_rule_ok target_multilanguage = true.
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma sort_name_subst (t : sort) (s : subst)
+  : Parameterizer.sort_name t[/s/] = Parameterizer.sort_name t.
+Proof. destruct t; reflexivity. Qed.
+
+Lemma pargs_all_named (Q : term -> Prop) (R : string -> Prop) (c' : ctx) (s : list term)
+  : WfCutElim.P_args string (fun e t => R (Parameterizer.sort_name t) -> Q e) s c' ->
+    all (fun p => R (Parameterizer.sort_name (snd p))) c' ->
+    all Q s.
+Proof.
+  revert s; induction c' as [| [n t] c' IH]; intros [|e s]; cbn; try tauto.
+  intros [H1 H2] [Hr Hrs]. split.
+  - apply H2. rewrite sort_name_subst. exact Hr.
+  - apply IH; assumption.
+Qed.
+
+Lemma stratum_no_typerec : forall (e : term) (t : sort),
+    Core.wf_term target_multilanguage [] e t ->
+    In (Parameterizer.sort_name t) strat_names ->
+    no_typerec e = true.
+Proof.
+  induction 1 using wf_term_cut_ind.
+  - rewrite sort_name_subst. intro Hn.
+    pose proof strat_ok as Hb. rewrite forallb_forall in Hb.
+    specialize (Hb _ H). cbn [strat_rule_ok fst snd] in Hb.
+    assert (Hin : inb (Parameterizer.sort_name t) strat_names = true)
+      by (apply inb_string_true_iff; exact Hn).
+    rewrite Hin in Hb.
+    apply andb_prop in Hb. destruct Hb as [Hnm Hc].
+    rewrite no_typerec_unfold, Hnm. cbn [andb].
+    apply forallb_of_all.
+    eapply pargs_all_named with (R := fun m => In m strat_names); [ exact H1 | ].
+    rewrite forallb_forall in Hc.
+    clear - Hc. induction c' as [|p c' IH]; cbn [all]; [ exact I | ].
+    split.
+    + apply inb_string_true_iff. apply Hc. left; reflexivity.
+    + apply IH. intros x Hx. apply Hc. right; exact Hx.
+  - destruct H.
+  - intro Hn. apply IHwf_term.
+    apply (sort_names_equal target_multilanguage_wf no_sort_eqns_in_tml wf_ctx_nil) in H0.
+    rewrite H0; exact Hn.
+Qed.
+
+Ltac in_strat := vm_compute; repeat first [ left; reflexivity | right ].
+
+Lemma simple_type_no_typerec (D : term) (HD : no_typerec D = true)
+  : forall mu, simple_type_at D mu -> no_typerec mu = true.
+Proof.
+  induction mu using term_ind_all; [ intros [] | ].
+  cbn [simple_type_at]. intro Hs.
+  rewrite no_typerec_unfold.
+  pose proof (eqb_spec n "*") as Hn1; destruct (eqb n "*"); [ subst n | ].
+  { destruct l as [|D' [|? ?]]; try contradiction. cbn in Hs. subst D'.
+    cbn [forallb]. rewrite HD. reflexivity. }
+  pose proof (eqb_spec n "bool") as Hn2; destruct (eqb n "bool"); [ subst n | ].
+  { destruct l as [|D' [|? ?]]; try contradiction. cbn in Hs. subst D'.
+    cbn [forallb]. rewrite HD. reflexivity. }
+  pose proof (eqb_spec n "->") as Hn3; destruct (eqb n "->"); [ subst n | ].
+  { destruct l as [|t2 [|t1 [|D' [|? ?]]]]; try contradiction.
+    destruct Hs as [HD' [Hs1 Hs2]]. subst D'.
+    cbn [all] in H. destruct H as [IH2 [IH1 _]].
+    cbn [forallb]. rewrite HD, (IH1 Hs1), (IH2 Hs2). reflexivity. }
+  destruct Hs.
+Qed.
+
+Lemma no_typerec_fpe2 : no_typerec fpe2 = true.
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma meta_typerec_no_typerec (D G sigma e1 e2 e3 : term)
+  (HD : no_typerec D = true) (HG : no_typerec G = true)
+  (Hsg : no_typerec sigma = true)
+  (H1 : no_typerec e1 = true) (H2 : no_typerec e2 = true) (H3 : no_typerec e3 = true)
+  : forall mu, simple_type_at D mu ->
+               no_typerec (meta_typerec D G mu sigma e1 e2 e3) = true.
+Proof.
+  induction mu using term_ind_all; [ intros [] | ].
+  cbn [simple_type_at meta_typerec]. intro Hs.
+  pose proof (eqb_spec n "*") as Hn1; destruct (eqb n "*"); [ exact H1 | ].
+  pose proof (eqb_spec n "bool") as Hn2; destruct (eqb n "bool"); [ exact H2 | ].
+  pose proof (eqb_spec n "->") as Hn3; destruct (eqb n "->"); [ | destruct Hs ].
+  destruct l as [|t2 [|t1 [|D' [|? ?]]]]; try contradiction.
+  destruct Hs as [HD' [Hs1 Hs2]]. subst D'.
+  cbn [all] in H. destruct H as [IH2 [IH1 _]].
+  cbv [MT_func]. apply no_typerec_subst; [ exact no_typerec_fpe2 | ].
+  cbn [all snd].
+  repeat split.
+  - apply IH2; exact Hs2.
+  - apply IH1; exact Hs1.
+  - exact H3.
+  - eapply simple_type_no_typerec; [ exact HD | exact Hs2 ].
+  - eapply simple_type_no_typerec; [ exact HD | exact Hs1 ].
+  - exact Hsg.
+  - exact HG.
+  - exact HD.
+Qed.
+
+Lemma elim_typerec_no_typerec : forall (t : sort) (e : term),
+    Core.wf_term target_multilanguage [] e t ->
+    all_typerecs_simple e ->
+    no_typerec (elim_typerec e) = true.
+Proof.
+  induction 1 using wf_term_cut_ind.
+  - intro Hats.
+    pose proof (eqb_spec name "typerec") as Hn; destruct (eqb name "typerec") eqn:Hnb.
+    2:{
+      assert (Helim : elim_typerec (con name s) = con name (map elim_typerec s))
+        by (cbn [elim_typerec]; rewrite Hnb; reflexivity).
+      rewrite Helim, no_typerec_unfold, Hnb; cbn [negb andb].
+      apply forallb_of_all, all_map.
+      destruct Hats as [_ Hall].
+      pose proof (pargs_all (fun e => all_typerecs_simple e -> no_typerec (elim_typerec e) = true)
+                    c' s H1) as Hp.
+      clear - Hall Hp. revert Hall Hp.
+      induction s as [|x s IH]; cbn [all]; [ tauto | ].
+      intros [Hx Hs] [Hpx Hps]; split; [ apply Hpx; exact Hx | apply IH; assumption ]. }
+    subst name. assert (Hin := H).
+    apply tml_lookup in H. vm_compute in H. injection H as Hc' Hargs Ht. subst.
+    assert (Hlen : length s = 7) by (rewrite (pargs_len _ _ _ H1); reflexivity).
+    destruct s as [|e3 [|e2 [|e1 [|sg [|mu [|Gv [|Dv [|? ?]]]]]]]];
+      cbn [length] in Hlen; try discriminate Hlen.
+    (destruct H1 as [[[[[[[_ IHD] IHG] IHmu] IHsg] IH1] IH2] IH3]).
+    (destruct Hats as [Hsimple [Ha3 [Ha2 [Ha1 [Hasg [Hamu [HaG [HaD _]]]]]]]]).
+    inversion H0 as [|? ? ? ? ? W3 H0a]; subst; clear H0.
+    inversion H0a as [|? ? ? ? ? W2 H0b]; subst; clear H0a.
+    inversion H0b as [|? ? ? ? ? W1 H0c]; subst; clear H0b.
+    inversion H0c as [|? ? ? ? ? Wsg H0d]; subst; clear H0c.
+    inversion H0d as [|? ? ? ? ? Wmu H0e]; subst; clear H0d.
+    inversion H0e as [|? ? ? ? ? WG H0f]; subst; clear H0e.
+    inversion H0f as [|? ? ? ? ? WD H0g]; subst; clear H0f.
+    rewrite elim_typerec_con7.
+    assert (HD : no_typerec Dv = true)
+      by (eapply stratum_no_typerec; [ exact WD | in_strat ]).
+    assert (HG : no_typerec Gv = true)
+      by (eapply stratum_no_typerec; [ exact WG | in_strat ]).
+    assert (HS : no_typerec sg = true)
+      by (eapply stratum_no_typerec; [ exact Wsg | in_strat ]).
+    apply meta_typerec_no_typerec; try assumption.
+    + apply IH1; exact Ha1.
+    + apply IH2; exact Ha2.
+    + apply IH3; exact Ha3.
+  - destruct H.
+  - intro Hats. apply IHwf_term; exact Hats.
+Qed.
+
+(* ------------------------------------------------------------------ *)
+(* Transfer of typerec-free terms into the sublanguage                  *)
+(* ------------------------------------------------------------------ *)
+Definition sub_rule_ok (p : string * rule) : bool :=
+  match snd p with
+  | term_rule _ _ _ =>
+      eqb (fst p) "typerec"
+      || (match named_list_lookup_err target_multilanguage_without_typerec (fst p) with
+          | Some r => eqb r (snd p)
+          | None => false
+          end)
+  | _ => true
+  end.
+
+Lemma sub_rules_ok : forallb sub_rule_ok target_multilanguage = true.
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma term_rule_transfer name c' args t
+  : In (name, term_rule c' args t) target_multilanguage ->
+    name <> "typerec" ->
+    In (name, term_rule c' args t) target_multilanguage_without_typerec.
+Proof.
+  intros Hin Hne.
+  pose proof sub_rules_ok as Hb. rewrite forallb_forall in Hb.
+  specialize (Hb _ Hin). cbv [sub_rule_ok fst snd] in Hb.
+  pose proof (eqb_spec name "typerec") as Hsp.
+  destruct (eqb name "typerec"); [ contradiction | ].
+  cbn [orb] in Hb.
+  destruct (named_list_lookup_err target_multilanguage_without_typerec name) as [r|] eqn:Hl;
+    [ | discriminate ].
+  pose proof (eqb_spec r (term_rule c' args t)) as Hr.
+  destruct (eqb r (term_rule c' args t)); [ subst r | discriminate ].
+  apply named_list_lookup_err_in. symmetry. exact Hl.
+Qed.
+
+Section Conservativity.
+  Context (Hconserv : forall t t' : sort,
+              Core.eq_sort target_multilanguage [] t t' ->
+              Core.eq_sort target_multilanguage_without_typerec [] t t').
+
+  Lemma pargs_wf_args (c' : ctx) (s : list term)
+    : WfCutElim.P_args string
+        (fun e t => no_typerec e = true ->
+                    Core.wf_term target_multilanguage_without_typerec [] e t) s c' ->
+      forallb no_typerec s = true ->
+      @Model.wf_args _ _ _ (core_model target_multilanguage_without_typerec) [] s c'.
+  Proof.
+    revert s; induction c' as [| [n t] c' IH]; intros [|e s]; cbn [WfCutElim.P_args];
+      try tauto.
+    { intros _ _. constructor. }
+    intros [HP HPe] Hf. cbn [forallb] in Hf. apply andb_prop in Hf. destruct Hf as [He Hs].
+    constructor.
+    - apply HPe; exact He.
+    - apply IH; assumption.
+  Qed.
+
+  Lemma no_typerec_transfer : forall (t : sort) (e : term),
+      Core.wf_term target_multilanguage [] e t ->
+      no_typerec e = true ->
+      Core.wf_term target_multilanguage_without_typerec [] e t.
+  Proof.
+    induction 1 using wf_term_cut_ind.
+    - rewrite no_typerec_unfold. intro Hnt.
+      apply andb_prop in Hnt. destruct Hnt as [Hname Hargs].
+      pose proof (eqb_spec name "typerec") as Hsp.
+      destruct (eqb name "typerec"); [ discriminate Hname | ].
+      eapply Core.wf_term_by.
+      + apply term_rule_transfer; [ exact H | exact Hsp ].
+      + apply pargs_wf_args; assumption.
+    - destruct H.
+    - intro Hnt. eapply Core.wf_term_conv; [ apply IHwf_term; exact Hnt | ].
+      apply Hconserv; exact H0.
+  Qed.
+
+  Theorem partial_eval_wf_in_no_typerec_lang_modulo : forall (t : sort) (e : term),
+      Core.wf_term target_multilanguage [] e t ->
+      all_typerecs_simple e ->
+      Core.wf_term target_multilanguage_without_typerec [] (elim_typerec e) t.
+  Proof.
+    intros t e H Hats.
+    apply no_typerec_transfer with (t := t).
+    - apply partial_eval_wf_in_target; assumption.
+    - eapply elim_typerec_no_typerec; eassumption.
+  Qed.
+End Conservativity.
+
+(* ------------------------------------------------------------------ *)
+(* Conservativity of the typerec extension for sort equality.           *)
+(* [target_multilanguage_without_typerec] contains every rule of         *)
+(* [target_multilanguage] whose sort is type-level ([ty_env], [env],     *)
+(* [ty], [ty_sub]); sorts only mention type-level terms, so a sort       *)
+(* equality in the full target is derivable in the sublanguage           *)
+(* (Theory/Conservativity.v, via the cut-free induction principle).      *)
+
+Definition tml_stratum (n : string) : bool := inb n strat_names.
+
+Lemma tml_conservative_check :
+  @Conservativity.lang_conservative string _ tml_stratum target_multilanguage
+    target_multilanguage_without_typerec = true.
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma eq_sort_conservative_tml : forall t t',
+    eq_sort target_multilanguage [] t t' ->
+    eq_sort target_multilanguage_without_typerec [] t t'.
+Proof.
+  apply (proj1 (@Conservativity.eq_conservative_check string _ _ _ _ _
+                  target_multilanguage_wf target_multilanguage_without_typerec_wf
+                  tml_stratum tml_conservative_check []
+                  ltac:(constructor) ltac:(constructor))).
+Qed.
+
 Theorem partial_eval_wf_in_no_typerec_lang : forall (t : sort) (e : term),
     Core.wf_term target_multilanguage [] e t ->
     all_typerecs_simple e ->
@@ -1218,7 +1565,10 @@ Theorem partial_eval_wf_in_no_typerec_lang : forall (t : sort) (e : term),
       []
       (elim_typerec e)
       t.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof.
+  apply partial_eval_wf_in_no_typerec_lang_modulo.
+  exact eq_sort_conservative_tml.
+Qed.
 
 (* The form in which the theorem above is meant to be used: for compiled
    source terms the [all_typerecs_simple] hypothesis is discharged by
@@ -1233,4 +1583,3 @@ Proof.
   apply partial_eval_wf_in_no_typerec_lang; [ exact Htgt | ].
   eapply can_eliminate_typerec; exact Hsrc.
 Qed.
-
