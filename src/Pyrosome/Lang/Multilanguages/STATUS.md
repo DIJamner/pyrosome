@@ -1071,3 +1071,238 @@ noted.
 
 The only remaining `Admitted`s in the folder are those last two lemmas of stage
 H; neither is e-graph-bound.
+
+---
+
+## UPDATE (partial-evaluator metatheory session, 2026-09-15) -- Stage H
+
+Goal of the session: the two remaining `Admitted`s of `TyperecPartialEval.v`,
+`partial_eval_preserves_equality` (A) and `partial_eval_wf_in_no_typerec_lang`
+(B).  (A) is now **Qed and axiom-free**; (B) is still `Admitted`, for one
+precisely localized reason (below), and a **Qed** weakening of it
+(`partial_eval_wf_in_target`, the same statement in the full target language)
+was proved instead.
+
+### Two bugs in the partial evaluator that had to be fixed first
+
+Both made the old statement of (A) literally false.
+
+1. **`meta_typerec` dropped `sigma`.**  Its arrow case substituted
+   `[v3; t1; comp_t1; t2; comp_t2; G; D]` into `func_partial_eval_term`, but
+   `"sigma"` occurs free in that term (`fv func_partial_eval_term` contains
+   four occurrences).  So `elim_typerec` of a *closed* term had a free
+   variable `"sigma"` in it.  Fixed by adding `("sigma", sigma)`.
+
+2. **The arrow case was not an instance of the `"typerec func"` RHS.**
+   `func_partial_eval_term` was elaborated separately from the rule, and the
+   two elaborations disagree on the *implicit* environment and type arguments
+   of the outermost `#"val_subst"`: elaborating the rule simplifies the
+   environment to `#"ext" D G (...)`, elaborating the standalone term leaves
+   it as `#"env_ty_subst" D (ty_snoc ...) (#"ext" ...)`.  The two terms are
+   equal in the language but not syntactically, so no substitution instance of
+   `func_partial_eval_term` is ever produced by the rule.  Fixed by reading
+   the template off the rule itself:
+
+   ```
+   Fixpoint abstract_typerec (e : term) : term :=
+     match e with
+     | con "typerec" [_;_;_;_;var "t1";_;_] => var "comp_t1"
+     | con "typerec" [_;_;_;_;var "t2";_;_] => var "comp_t2"
+     | con n l => con n (map abstract_typerec l)
+     | var x => var x
+     end.
+   Definition fpe2 := Eval vm_compute in abstract_typerec R_func_r.
+   ```
+
+   so that `R_func_r[/s/] = fpe2[/s'/]` holds by `vm_compute; reflexivity`.
+   `fpe2` is well-typed in `fpe2_ctx` (`= func_partial_eval_ctx` up to the
+   order of the two `comp_t*` entries) by `compute_term_wf` (12.7 s).
+   `func_partial_eval_term` / `func_partial_eval_term_wf` are retained but are
+   no longer used by anything.
+
+### `is_simple_type` is now indexed by the type environment
+
+`simple_type_at D mu` says `mu` is built from `#"*"`, `#"bool"`, `#"->"` *at
+the type environment `D`* (i.e. each node's type-environment argument is `D`);
+`is_simple_type := simple_type_at {{e #"ty_emp"}}`.  `typerec_mu_ok` now reads
+the node's own `D`:
+
+```
+Definition typerec_mu_ok (n : string) (s : list term) : Prop :=
+  if eqb n "typerec"
+  then match s with [_;_;_;_;mu;_;D] => simple_type_at D mu | _ => True end
+  else True.
+```
+
+**Why this is necessary.**  The arrow step of (A) instantiates the
+`"typerec func"` rule, whose LHS is `#"typerec" D G (#"->" D t1 t2) ...`: the
+`#"->"` node's type environment must be *the same term* as the `#"typerec"`
+node's.  Without the index one only knows `wf_term [] (#"->" D' t1 t2)
+(#"ty" D)`, and `target_multilanguage` has no sort equations and no
+sort-injectivity principle, so `D' = D` is not recoverable.  This is the same
+obstruction recorded for `ty_inversion_lemma_tml`.
+
+Consequential edits, all still Qed:
+* `typerecs_are_var` now also requires each `#"typerec"` node's type
+  environment to be literally `#"ty_emp"` (via a new `typerec_head_ok`), which
+  `cmp_cases_ok` still verifies by `vm_compute` -- the two typerec nodes in
+  `simple_multilang_compiler ++ interoperating_langs_compiler` are
+  `("dtt", mu = "A", D = #"ty_emp")` and `("ttd", mu = "A", D = #"ty_emp")`.
+* `ats_subst`'s typerec case reads `D` back with `eqb_spec`.
+* `compiled_types_are_simple` discharges the new `D' = D` conjuncts by
+  `reflexivity` (`compile_star`/`compile_bool`/`compile_arrow` all produce
+  `#"ty_emp"`).
+* `can_eliminate_typerec` is unchanged and still Qed / axiom-free.
+
+`meta_typerec`, `elim_typerec`, `simple_type_at` and `all_typerecs_simple` are
+now written with boolean head tests (`if eqb n "..." then ...`) rather than
+nested constructor patterns, so that they reduce under a hypothesis about the
+head name -- the same reason the previous session gave for
+`all_typerecs_simple`.
+
+### (A) is a corollary of a statement about the target language alone
+
+The plan in the previous session was to run the induction on
+`wf_term source_multilanguage [] e t` and handle the generic case uniformly in
+the rule name (needing an `elim_typerec`/substitution commutation lemma, a
+`combine_r_padded` lemma, and a substitution congruence).  That is not needed:
+the whole content is a statement about `target_multilanguage`,
+
+```
+Theorem elim_typerec_eq : forall (t : sort) (e : term),
+    Core.wf_term target_multilanguage [] e t ->
+    all_typerecs_simple e ->
+    Core.eq_term target_multilanguage [] t e (elim_typerec e).
+```
+
+proved by `wf_term_cut_ind` on the *target*:
+
+* non-`typerec` constructor: `elim_typerec (con n s) = con n (map elim_typerec s)`
+  and `Core.term_con_congruence` applied to
+  `eq_args target_multilanguage [] c' (map elim_typerec s) s`, which is read
+  straight off `WfCutElim.P_args` (lemma `eq_args_elim`).  No compiler bodies,
+  no `combine_r_padded`, no substitution congruence.
+* `typerec`: the rule is looked up reflectively (`tml_lookup`, `vm_compute`),
+  the argument list is forced to length 7 by a new `pargs_len`, and the goal is
+  split into (i) a congruence step that pushes `elim_typerec` into `v1`,`v2`,`v3`
+  only (leaving `D`,`G`,`mu`,`sigma` alone -- pushing it into `mu` would not
+  match `meta_typerec`'s output) and (ii) `typerec_elim_eq`.
+* conversion: `eq_term_conv`.
+
+and the key lemma
+
+```
+Theorem typerec_elim_eq : forall mu, simple_type_at D mu ->
+  eq_term target_multilanguage [] (Sgt D G sigma mu)
+    (con "typerec" [v3;v2;v1;sigma;mu;G;D]) (meta_typerec D G mu sigma v1 v2 v3)
+```
+
+(in a section fixing `D G sigma v1 v2 v3` and their well-formedness) is by
+induction on `mu`: the `#"*"`/`#"bool"` cases are one `eq_term_by` +
+`eq_term_subst` each (`eq_by_rule`), the arrow case is `eq_term_by` on
+`"typerec func"` followed by `eq_term_subst` on `fpe2_wf` with an `eq_subst`
+whose `comp_t1`/`comp_t2` components are the two induction hypotheses.  No
+e-graph tactic is used anywhere in this development; `by_reduction` was never
+needed.  Supporting well-formedness comes from `simple_type_wf`
+(`simple_type_at D mu -> wf_term target_multilanguage [] mu {{s #"ty" D}}`,
+by `wf_term_by` on the `#"*"`/`#"bool"`/`#"->"` rules) and from
+`eq_term_wf_r` applied to the induction hypotheses.
+
+(A) itself is then three lines: `elim_typerec_eq` applied to the compiled
+term, whose well-typedness is `term_wf_preserving_sem` from
+`sml_semantics_preserving` and whose `all_typerecs_simple` is
+`can_eliminate_typerec`.
+
+### (B): still ADMITTED, with the residual goal
+
+`partial_eval_wf_in_no_typerec_lang` is unchanged in statement and still
+`Admitted. (* ISSUE: see STATUS.md *)`.  What is now known:
+
+* By `vm_compute`, the rules of `target_multilanguage` that are **not** in
+  `target_multilanguage_without_typerec` are exactly
+  `["val_subst typerec"; "ty_subst typerec"; "typerec func"; "typerec bool";
+  "typerec star"; "typerec"]`, of which exactly one (`"typerec"`) is a *term*
+  rule.  So the constructor case of the induction transfers by a reflective
+  membership check, and the `#"typerec"` case is discharged by `meta_typerec`,
+  whose output contains no typerec.
+* The blocker is the **conversion case**: `wf_term_cut_ind` hands us
+  `eq_sort target_multilanguage [] t t'`, and `wf_term_conv` in the
+  sublanguage needs
+  `eq_sort target_multilanguage_without_typerec [] t t'`.
+  `target_multilanguage` has no sort equations, so this `eq_sort` is built by
+  sort congruence over *term* equalities inside the sort arguments, and those
+  may legitimately use the five typerec equations.  Transferring it is a
+  conservativity statement about the extension, which Pyrosome does not
+  provide.  The exact residual goal recorded in the file is
+
+  ```
+  forall t t', eq_sort target_multilanguage [] t t' ->
+               wf_sort target_multilanguage_without_typerec [] t ->
+               wf_sort target_multilanguage_without_typerec [] t' ->
+               eq_sort target_multilanguage_without_typerec [] t t'.
+  ```
+
+* The sanctioned weakening **is proved**:
+  `partial_eval_wf_in_target : wf_term target_multilanguage [] e t ->
+  all_typerecs_simple e -> wf_term target_multilanguage [] (elim_typerec e) t`
+  (Qed, axiom-free), by `eq_term_wf_r` on `elim_typerec_eq`.
+* `compiled_partial_eval_wf` is unchanged (Qed, one axiom:
+  `partial_eval_wf_in_no_typerec_lang`).
+
+### Stage H result table (superseding the rows above)
+
+| Definition | Method | Time | Result | Issue |
+|---|---|---|---|---|
+| `fpe2_ctx_wf` | `solve_wf_ctx` | <1s | Qed | new |
+| `fpe2_wf` | `compute_term_wf` | 12.7s | Qed | new; replaces `func_partial_eval_term_wf` as the arrow-case template |
+| `simple_type_wf` | `term_ind_all` + `wf_term_by` | <1s | Qed | new |
+| `eq_by_rule` / `wf_by_rule` / `tml_eq_rule_ctx_wf` | reflective lookup + `eq_term_subst` | <1s | Qed | new helpers |
+| `typerec_elim_eq` | induction on `simple_type_at` | <1s | Qed | new; the arrow case is `"typerec func"` + `eq_term_subst` on `fpe2_wf` |
+| `eq_args_elim`, `pargs_len`, `elim_typerec_con7`, `meta_typerec_arrow` | -- | <1s | Qed | new helpers |
+| `elim_typerec_eq` | `wf_term_cut_ind` on `target_multilanguage` | ~1.5s (Qed) | **Qed** | new; the general form of (A) |
+| `partial_eval_preserves_equality` | corollary of `elim_typerec_eq` | <1s | **Qed** | **CLOSED this session**; axiom-free |
+| `partial_eval_wf_in_target` | `eq_term_wf_r` | <1s | **Qed** | new; the weakening of (B) |
+| `partial_eval_wf_in_no_typerec_lang` | -- | -- | **ADMITTED** | conversion case / conservativity, see above |
+| `can_eliminate_typerec`, `compiled_types_are_simple`, `ats_subst`, `cmp_cases_ok` | as before, adapted to `simple_type_at` | -- | Qed | statements strengthened (type-environment index) |
+
+Whole-file build after the session: **4m20s**, EXIT 0, one Coq process, no OOM.
+
+### `Print Assumptions` (this session)
+
+| Theorem | Result |
+|---|---|
+| `typerec_elim_eq` | Closed under the global context |
+| `elim_typerec_eq` | Closed under the global context |
+| `partial_eval_preserves_equality` | Closed under the global context |
+| `partial_eval_wf_in_target` | Closed under the global context |
+| `can_eliminate_typerec` | Closed under the global context |
+| `simple_type_wf`, `fpe2_wf` | Closed under the global context |
+| `sml_semantics_preserving`, `eq_sort_sml_implies_eq_sort_tml` | Closed under the global context |
+| `compiled_partial_eval_wf` | one axiom: `partial_eval_wf_in_no_typerec_lang` |
+
+### Final status of every theorem in this folder (refreshed)
+
+| File | Theorem | Status | Assumptions |
+|---|---|---|---|
+| ParamFragments.v | all fragment `*_wf` / `*_ty_subst_wf` | Qed | -- |
+| InteropLangs.v | `simple_interoperating_langs_wf`, `polymorphic_interoperating_langs_wf`, `interoperating_langs_compiler_preserving` | Qed | -- |
+| Boundaries.v | `boundaries_wf` | Qed | -- |
+| TypeCasing.v | `type_casing_rest_wf`, `type_casing_vs_wf`, `type_casing_wf`, `source_multilanguage_wf`, `target_multilanguage_pre_wf` | Qed | -- |
+| TrecTerms.v | `boundary_cases_wf`, `target_multilanguage_wf`, `trec_boundaries_wf` | Qed | -- |
+| SimpleMultilangCompiler.v | `dtt_case_tgt_wf`, `ttd_case_tgt_wf`, `dtt_case_wf`, `ttd_case_wf`, `I1_wf`, `J1_wf`, the 13 `eq_*` equation lemmas | Qed | -- |
+| SimpleMultilangCompiler.v | `simple_multilang_compiler_preserving` | Qed | Closed under the global context |
+| PolyBoundaries.v | `boundaries_parameterized_wf`, `boundaries_ty_subst_wf`, `poly_boundaries_wf`, `lump_cancellation_*`, `trec_boundaries_poly_wf`, `poly_dtt_case_tgt_wf`, `poly_ttd_case_tgt_wf`, `poly_dtt_case_wf`, `poly_ttd_case_wf`, `PI1_wf`, `PJ1_wf`, the 13 `peq_*` equation lemmas | Qed | -- |
+| PolyBoundaries.v | `poly_multilang_compiler_preserving` | Qed | Closed under the global context |
+| TyperecPartialEval.v | `func_partial_eval_term_wf`, `fpe2_ctx_wf`, `fpe2_wf`, `ats_subst`, `cmp_cases_ok`, `compiled_types_are_simple`, `ty_inversion_lemma`, `ty_inversion_lemma_tml`, `interop_preserving_tml`, `source_multilanguage_compiler_preserving`, `simple_type_wf`, `eq_by_rule`, `wf_by_rule`, `eq_args_elim`, `pargs_len` | Qed | -- |
+| TyperecPartialEval.v | `can_eliminate_typerec` | Qed | Closed under the global context |
+| TyperecPartialEval.v | `sml_semantics_preserving` | Qed | Closed under the global context |
+| TyperecPartialEval.v | `eq_sort_sml_implies_eq_sort_tml` | Qed | Closed under the global context |
+| TyperecPartialEval.v | `typerec_elim_eq` | **Qed** | Closed under the global context |
+| TyperecPartialEval.v | `elim_typerec_eq` | **Qed** | Closed under the global context |
+| TyperecPartialEval.v | `partial_eval_preserves_equality` | **Qed** | Closed under the global context |
+| TyperecPartialEval.v | `partial_eval_wf_in_target` | **Qed** | Closed under the global context |
+| TyperecPartialEval.v | `compiled_partial_eval_wf` | Qed | one axiom: `partial_eval_wf_in_no_typerec_lang` |
+| TyperecPartialEval.v | `partial_eval_wf_in_no_typerec_lang` | **Admitted** | conversion case is a conservativity statement (residual goal above) |
+
+The only remaining `Admitted` in the folder is
+`partial_eval_wf_in_no_typerec_lang`.
