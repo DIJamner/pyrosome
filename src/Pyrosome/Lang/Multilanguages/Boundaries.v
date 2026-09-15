@@ -1,3 +1,6 @@
+(* The boundary fragment of the source multilanguage: conversions between
+   the typed and the untyped language, and their defining equations. *)
+
 Set Implicit Arguments.
 
 From coqutil Require Import Datatypes.String.
@@ -7,11 +10,9 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 
-(* imports for compilers *)
-(* copied from LinearCPS.v *)
+(* Compiler infrastructure. *)
 From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
-Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
-(* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
+Import CompilerDefs.Notations. (* for `match # from <lang> with` compiler syntax *)
 
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
@@ -20,25 +21,26 @@ Import Core.Notations.
 
 From Stdlib Require derive.Derive.
 
-(* import the relevant language fragments *)
-From Pyrosome.Lang Require Import SimpleVSTLC. 
-From Pyrosome.Lang Require Import UTLC. 
-From Pyrosome.Lang Require Import BoolType. 
+(* The language fragments that make up the two interoperating languages. *)
+From Pyrosome.Lang Require Import SimpleVSTLC.
+From Pyrosome.Lang Require Import UTLC.
+From Pyrosome.Lang Require Import BoolType.
 From Pyrosome.Lang Require Import SimpleVProd.
 
 
-(* imports for polymorphism *)
+(* Machinery for building the polymorphic (parameterized) versions of those fragments. *)
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
-From Pyrosome.Lang Require Import PolyCompilerLangs PolyCompilersCPS PolyCompilers. (* for parameterizing existing languages*)
+From Pyrosome.Lang Require Import PolyCompilerLangs PolyCompilersCPS PolyCompilers.
 From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab.
 From Pyrosome.Lang.Multilanguages Require Export InteropLangs.
 
-(* Now the multilanguages *)
-
-(* First, we define the boundaries fragment. To me, it seems like this is the natural embedding. TODO: see if you can, as Dustin said, simulate the lump embedding. *)
+(* The boundaries fragment: the two conversion forms [#"ttd"] (typed to
+   dynamic) and [#"dtt"] (dynamic to typed), with the equations describing
+   how they behave on each type former.  This is the natural embedding;
+   TODO: check whether the lump embedding can be simulated on top of it. *)
 Definition boundaries_def : lang :=
-  {[l/subst [exp_subst++value_subst] 
+  {[l/subst [exp_subst++value_subst]
     [:| "G" : #"env",
         "A" : #"ty",
         "e" : #"exp" "G" "A"
@@ -123,12 +125,12 @@ Definition boundaries_def : lang :=
     ]
   ]}.
 Derive boundaries
-        in (elab_lang_ext (utlc ++ 
-                                stlc ++ 
+        in (elab_lang_ext (utlc ++
+                                stlc ++
                                 typed_bool ++
                                 untyped_bool ++
                                 error_t ++ star_type ++
-                                exp_subst++value_subst) 
+                                exp_subst++value_subst)
                 boundaries_def boundaries)
         as boundaries_wf.
 Proof. auto_elab. Qed.

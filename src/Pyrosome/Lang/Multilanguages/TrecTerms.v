@@ -1,3 +1,7 @@
+(* The boundary case constants [#"bstar"], [#"bbool"] and [#"bfunc"] that
+   [#"typerec"] recurses with, the full [target_multilanguage] they complete,
+   and [trec_boundaries], the derived coercion pair at an arbitrary type. *)
+
 Set Implicit Arguments.
 
 From coqutil Require Import Datatypes.String.
@@ -7,11 +11,9 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 
-(* imports for compilers *)
-(* copied from LinearCPS.v *)
+(* Compiler infrastructure. *)
 From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
-Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
-(* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
+Import CompilerDefs.Notations. (* for `match # from <lang> with` compiler syntax *)
 
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
@@ -21,22 +23,22 @@ Import Core.Notations.
 From Stdlib Require derive.Derive.
 From Pyrosome Require Import Tools.EGraph.InjRuleGen.
 
-(* import the relevant language fragments *)
-From Pyrosome.Lang Require Import SimpleVSTLC. 
-From Pyrosome.Lang Require Import UTLC. 
-From Pyrosome.Lang Require Import BoolType. 
+(* The language fragments that make up the two interoperating languages. *)
+From Pyrosome.Lang Require Import SimpleVSTLC.
+From Pyrosome.Lang Require Import UTLC.
+From Pyrosome.Lang Require Import BoolType.
 From Pyrosome.Lang Require Import SimpleVProd.
 
 
-(* imports for polymorphism *)
+(* Machinery for building the polymorphic (parameterized) versions of those fragments. *)
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
-From Pyrosome.Lang Require Import PolyCompilerLangs PolyCompilersCPS PolyCompilers. (* for parameterizing existing languages*)
+From Pyrosome.Lang Require Import PolyCompilerLangs PolyCompilersCPS PolyCompilers.
 From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab.
 From Pyrosome.Lang.Multilanguages Require Export TypeCasing.
 
 
-(* deriving the terms used in the compiler *)
+(* Helpers for de Bruijn-style value variables in the derived terms. *)
 Fixpoint wkn_n n :=
   match n with
   | 0 => {{e #"id"}}
@@ -45,28 +47,21 @@ Fixpoint wkn_n n :=
     {{e #"cmp" #"wkn" {wkn_n n'} }}
   end.
 
-Definition ovar n := {{e #"val_subst" {wkn_n n} #"hd" }}.  
+Definition ovar n := {{e #"val_subst" {wkn_n n} #"hd" }}.
 
-(* (* it seems this is still needed *) *)
-(* (* replaced by assert (wf_lang target_multilanguage) by prove_by_lang_db. *) *)
-(* (* gonna comment this out to see if it's still needed *) *)
-(* Lemma target_multilanguage_wf : wf_lang target_multilanguage. *)
-(* Proof. prove_by_lang_db. Qed. *)
-(* #[local] Definition target_multilanguage_entry := *)
-(*   lang_entry target_multilanguage_wf. *)
-(* #[export] Hint Resolve target_multilanguage_entry : wf_lang_db. *)
-
-Ltac solve_eq_sort_disj := (* no longer used *)
+Ltac solve_eq_sort_disj :=
   right; compute_eq_compilation; sort_cong; repeat by_reduction.
 
+(* Discharges an [elab_term] (or the sort side condition of one) in
+   [language].  The trailing [by_reduction] after the [repeat by_reduction]
+   is load-bearing: the leaves left over from the repeat are order-sensitive,
+   and one further round closes them. *)
 Ltac solve_elab_term_or_sort language :=
   assert (wf_lang language) by prove_by_lang_db;
-  (* NOTE: the by_reduction below seems to me redundant given the def of solve_eq_sort_disj, but it's necessary for trec_boundaries and for both elab_term goals in the compiler *)
-  (* the elab_term goals in the compiler were goals that I had to do out of order. Wonder if that has to do with it? *)
-  (* and now that I think about it, the way I was doing the elab_term goals in trec_boundaries was doing the last one first. Then the rest went through. So it does seem like an order thing... but this solves it? *)
   unshelve (repeat t; decompose_sort_eq; repeat by_reduction; by_reduction); compute_term_wf.
 
-(* tactic to see if progress can be made on an elab_term goal. unused, but keeping because it's a good example of pyrosome workflow. *)
+(* Diagnostic: reports whether an [elab_term] goal can be decomposed
+   further.  Unused, but kept as an example of the Pyrosome workflow. *)
 Ltac quick_goal_match :=
   lazymatch goal with
   | |- elab_term _ _ (con ?s _) (con ?s _) _ =>
@@ -78,14 +73,16 @@ Ltac quick_goal_match :=
 
 
 (* ------------------------------------------------------------------ *)
-(* The three boundary cases, as VALUE CONSTANTS.
+(* The three boundary cases, as value constants.
 
-   Previously these were three big derived terms plugged into [#"typerec"].
-   Substituting through them (either a term substitution, for the
-   ["exp_subst dtt"]/["exp_subst ttd"] equations, or the type substitution
-   that ["typerec func"] produces) meant traversing the whole wrapper, which
-   the e-graph could not do in 900s.  As constants with defining equations,
-   a substitution passes through them in a single rewrite.               *)
+   Each case is a constant with a defining equation rather than a derived
+   term plugged directly into [#"typerec"].  This matters for substitution:
+   pushing a substitution -- a term substitution, for the
+   ["exp_subst dtt"] / ["exp_subst ttd"] equations, or the type substitution
+   produced by ["typerec func"] -- through a derived term means traversing
+   its whole body, which is far beyond what the e-graph can do, whereas a
+   constant absorbs it in a single rewrite from its ["val_subst"] /
+   ["ty_subst"] equation.                                                 *)
 
 (* [P X] is [sigma[X]] for the concrete [sigma] used by the boundaries,
    [sigma] being [prod (arrow ty_hd star) (arrow star ty_hd)]. *)
@@ -96,9 +93,9 @@ Definition Pa := Eval compute in P tva.
 Definition Pb := Eval compute in P tvb.
 Definition Pab := Eval compute in P {{e #"->" {tva} {tvb} }}.
 
-(* [#"bfunc"] now takes its instantiation as explicit arguments: the two
-   types and the two recursive results.  This is what makes ["typerec func"]
-   cheap: the instantiating type substitution it produces is absorbed by
+(* [#"bfunc"] takes its instantiation as explicit arguments: the two types
+   and the two recursive results.  This is what makes ["typerec func"] cheap:
+   the instantiating type substitution it produces is absorbed by
    ["ty_subst bfunc"] in one rewrite instead of being pushed through the
    whole wrapper body. *)
 Definition bfunc_ty := Eval compute in P {{e #"->" "t1" "t2"}}.
@@ -113,10 +110,10 @@ Definition bbool_body :=
       (#"lambda" #"bool" (#"if" (#"ret" #"hd") (#"ret" #"uT") (#"ret" #"uF")))
       (#"lambda" #"*" (#"mif" (#"ret" #"hd") (#"ret" #"T") (#"ret" #"F"))) }}.
 
-(* The two wrappers.  The recursive results are now the explicit arguments
-   ["c1"] / ["c2"] (weakened under the three binders that separate them from
-   the environment [G]), and the two types are ["t1"] / ["t2"] instead of the
-   bound type variables. *)
+(* The two wrappers.  The recursive results are the explicit arguments
+   ["c1"] / ["c2"], weakened under the three binders that separate them from
+   the environment [G], and the two types are the arguments ["t1"] / ["t2"]
+   rather than bound type variables. *)
 Definition c1w := {{e #"val_subst" {wkn_n 3} "c1" }}.
 Definition c2w := {{e #"val_subst" {wkn_n 3} "c2" }}.
 
@@ -220,7 +217,7 @@ Definition boundary_cases :=
     infer_lang_ext_simple_incr 10 100 target_multilanguage_pre boundary_cases_def.
 
 Lemma boundary_cases_wf : wf_lang_ext target_multilanguage_pre boundary_cases.
-Proof. Time compute_wf_lang. Qed.
+Proof. compute_wf_lang. Qed.
 #[local] Definition boundary_cases_entry := lang_entry boundary_cases_wf.
 #[export] Hint Resolve boundary_cases_entry : wf_lang_db.
 
@@ -234,8 +231,9 @@ Proof. prove_by_lang_db. Qed.
 #[export] Hint Resolve target_multilanguage_entry : wf_lang_db.
 
 (* ------------------------------------------------------------------ *)
-(* [trec_boundaries] is now just the [#"typerec"] value applied to the three
-   constants.                                                              *)
+(* [trec_boundaries] is the [#"typerec"] value applied to the three boundary
+   case constants: the pair of coercions between a type [A] and the dynamic
+   type, built by recursion on [A].                                        *)
 Definition trec_boundaries_unelab :=
   {{e #"typerec" "A" {boundary_sigma} #"bstar" #"bbool"
        (#"bfunc" {tva} {tvb} {ovar 1} {ovar 0}) }}.
@@ -253,4 +251,4 @@ Derive trec_boundaries
          trec_boundaries
          trec_boundaries_sort
      ) as trec_boundaries_wf.
-Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed.
+Proof. solve_elab_term_or_sort target_multilanguage. Qed.

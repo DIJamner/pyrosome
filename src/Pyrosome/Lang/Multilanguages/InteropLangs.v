@@ -1,3 +1,9 @@
+(* The two multilanguage sources: [simple_interoperating_langs], the
+   simply-typed combination of STLC and UTLC with booleans, and
+   [polymorphic_interoperating_langs], its parameterized counterpart built
+   from the fragments in ParamFragments.v, plus the compiler embedding the
+   former into the latter at the empty type environment. *)
+
 Set Implicit Arguments.
 
 From coqutil Require Import Datatypes.String.
@@ -7,11 +13,9 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 
-(* imports for compilers *)
-(* copied from LinearCPS.v *)
+(* Compiler infrastructure. *)
 From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
-Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
-(* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
+Import CompilerDefs.Notations. (* for `match # from <lang> with` compiler syntax *)
 
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
@@ -20,32 +24,31 @@ Import Core.Notations.
 
 From Stdlib Require derive.Derive.
 
-(* import the relevant language fragments *)
-From Pyrosome.Lang Require Import SimpleVSTLC. 
-From Pyrosome.Lang Require Import UTLC. 
-From Pyrosome.Lang Require Import BoolType. 
+(* The language fragments that make up the two interoperating languages. *)
+From Pyrosome.Lang Require Import SimpleVSTLC.
+From Pyrosome.Lang Require Import UTLC.
+From Pyrosome.Lang Require Import BoolType.
 From Pyrosome.Lang Require Import SimpleVProd.
 
 
-(* imports for polymorphism *)
+(* Machinery for building the polymorphic (parameterized) versions of those fragments. *)
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
-From Pyrosome.Lang Require Import PolyCompilerLangs PolyCompilersCPS PolyCompilers. (* for parameterizing existing languages*)
+From Pyrosome.Lang Require Import PolyCompilerLangs PolyCompilersCPS PolyCompilers.
 From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab.
 From Pyrosome.Lang.Multilanguages Require Export ParamFragments.
 
 
-
 Definition simple_interoperating_langs :=
   boolhuh ++
     mif ++
-    utlc_bool ++ 
-    utlc ++ 
-    untyped_bool ++ 
-    star_type ++ error_t ++ 
-    typed_bool ++ 
-    stlc ++ 
-    exp_subst ++ 
+    utlc_bool ++
+    utlc ++
+    untyped_bool ++
+    star_type ++ error_t ++
+    typed_bool ++
+    stlc ++
+    exp_subst ++
     value_subst.
 
 Definition polymorphic_interoperating_langs :=
@@ -58,7 +61,10 @@ Definition polymorphic_interoperating_langs :=
     star_type_parameterized ++ error_t_parameterized ++
     typed_bool_ty_subst ++ typed_bool_parameterized ++
     stlc_ty_subst ++ stlc_parameterized ++
-    (* all polymorphic base stuff. Don't need poly because we don't have type lambdas or type application. but we might as well add it now bc we'll extend this list with polymorphic stuff for the polymorphic to polymorphic compiler *)
+    (* The polymorphic base.  [poly] is not strictly needed here, since this
+       language has no type lambdas or type application, but it is included
+       so that the list extends directly to a polymorphic-to-polymorphic
+       compiler. *)
     poly ++
     exp_param_substs ++
     exp_ty_subst ++
@@ -117,12 +123,12 @@ Definition interoperating_langs_compiler_def : compiler :=
   end.
 
 Derive interoperating_langs_compiler
-        in (elab_preserving_compiler 
+        in (elab_preserving_compiler
                     []
                     polymorphic_interoperating_langs
                     interoperating_langs_compiler_def
                     interoperating_langs_compiler
-                    simple_interoperating_langs) 
+                    simple_interoperating_langs)
         as interoperating_langs_compiler_preserving.
 Proof. auto_elab_compiler. Qed.
 #[local] Definition interoperating_langs_entry :=

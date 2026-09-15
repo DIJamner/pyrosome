@@ -1,3 +1,8 @@
+(* The type-casing fragment: [#"typerec"], a value-level recursor over
+   types, and the languages it sits on top of.  Also assembles
+   [source_multilanguage] and [target_multilanguage_pre], the target
+   multilanguage minus the boundary case constants added in TrecTerms.v. *)
+
 Set Implicit Arguments.
 
 From coqutil Require Import Datatypes.String.
@@ -7,11 +12,9 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 
-(* imports for compilers *)
-(* copied from LinearCPS.v *)
+(* Compiler infrastructure. *)
 From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
-Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
-(* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
+Import CompilerDefs.Notations. (* for `match # from <lang> with` compiler syntax *)
 
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
@@ -21,21 +24,23 @@ Import Core.Notations.
 From Stdlib Require derive.Derive.
 From Pyrosome Require Import Tools.EGraph.InjRuleGen.
 
-(* import the relevant language fragments *)
-From Pyrosome.Lang Require Import SimpleVSTLC. 
-From Pyrosome.Lang Require Import UTLC. 
-From Pyrosome.Lang Require Import BoolType. 
+(* The language fragments that make up the two interoperating languages. *)
+From Pyrosome.Lang Require Import SimpleVSTLC.
+From Pyrosome.Lang Require Import UTLC.
+From Pyrosome.Lang Require Import BoolType.
 From Pyrosome.Lang Require Import SimpleVProd.
 
 
-(* imports for polymorphism *)
+(* Machinery for building the polymorphic (parameterized) versions of those fragments. *)
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
-From Pyrosome.Lang Require Import PolyCompilerLangs PolyCompilersCPS PolyCompilers. (* for parameterizing existing languages*)
+From Pyrosome.Lang Require Import PolyCompilerLangs PolyCompilersCPS PolyCompilers.
 From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab.
 From Pyrosome.Lang.Multilanguages Require Export Boundaries.
 
-(* now we define the type casing fragment for the target multilanguage without boundaries. First, some helpers. *)
+(* The type-casing fragment of the target multilanguage (the multilanguage
+   without boundary forms).  First, some helpers for building type
+   substitutions and de Bruijn-style type variables. *)
 Fixpoint ty_wkn_n n :=
   match n with
   | 0 => {{e #"ty_id"}}
@@ -44,23 +49,25 @@ Fixpoint ty_wkn_n n :=
   end.
 
 Definition ty_ovar n :=
-  match n with 
+  match n with
   | 0 => {{e #"ty_hd"}} (* bc ty_subst ty_id ty_hd is just ty_hd *)
   | S _ => {{e #"ty_subst" {ty_wkn_n n} #"ty_hd" }}
-  end.  
+  end.
 
 (* ------------------------------------------------------------------ *)
-(* VALUE-LEVEL typerec (this session's redesign).
+(* Value-level typerec.
 
-   [#"typerec"] now returns a [#"val"], not an [#"exp"], and its function
-   case is a *value* built by substituting the two recursive results into a
+   [#"typerec"] returns a [#"val"], not an [#"exp"], and its function case
+   is a *value* obtained by substituting the two recursive results into a
    single value variable ["v3"] that abstracts over two type variables and
-   two term variables.  The old formulation returned an expression and the
-   ["typerec func"] rule applied [#"@"]/[#"app"] to the *expressions*
-   [#"typerec" "t1" ...]/[#"typerec" "t2" ...]; for a metavariable type
-   those are stuck, so [STLC-beta] (which needs [#"ret" "v"]) never fired
-   and the compiled boundary equations at type [#"->" "A" "B"] were
-   unprovable.                                                            *)
+   two term variables.
+
+   The value level is what makes the fragment usable: an expression-level
+   formulation would have ["typerec func"] apply [#"app"] to the expressions
+   [#"typerec" "t1" ...] / [#"typerec" "t2" ...], which are stuck when the
+   type is a metavariable, so [STLC-beta] -- which needs a [#"ret" "v"]
+   argument -- could never apply and the boundary equations at type
+   [#"->" "A" "B"] would not be provable.                                 *)
 
 (* [sigma] instantiated at [X] (X : ty D), i.e. sigma[X] *)
 Definition Sg X := {{e #"ty_subst" (#"ty_snoc" #"ty_id" {X}) "sigma" }}.
@@ -160,9 +167,9 @@ Definition type_casing_rest_def : lang :=
 
 
 (* The ["val_subst typerec"] rule is elaborated separately: type inference
-   leaves the environment of ["v3"] as a hole here (it is only determined
-   through the doubly-lifted substitution [g_lift]), so this one rule goes
-   through [auto_elab] instead. *)
+   leaves the environment of ["v3"] as a hole here, because it is only
+   determined through the doubly-lifted substitution [g_lift], so this one
+   rule goes through [auto_elab] instead. *)
 Definition val_subst_typerec_def : lang :=
   {[l
     [:= "D" : #"ty_env",
@@ -189,24 +196,23 @@ Definition TC_BASE :=
     stlc_parameterized ++
     star_type_parameterized ++ error_t_parameterized ++
     poly ++ (* needed for #"All" *)
-    (* base polymorphic stuff *)
+    (* the polymorphic base *)
     exp_param_substs ++ exp_ty_subst ++
     val_param_substs ++ val_ty_subst ++
     env_ty_subst ++ ty_subst_lang ++
     exp_parameterized ++ val_parameterized ++ ty_env_lang.
 
-(* NOTE (this session): [auto_elab] OOMs on the whole value-level
-   [type_casing] (killed at 11m51s / 7GB), so the five rules that type
-   inference gets right are elaborated by the computational pathway, and the
-   one rule it does not (["val_subst typerec"], whose ["v3"] environment is
-   only determined through the doubly-lifted substitution [g_lift] and comes
-   back as a hole) is elaborated by [auto_elab] on its own.               *)
+(* [type_casing] is elaborated in two pieces.  The five rules that type
+   inference resolves completely go through the computational pathway
+   ([infer_lang_ext_simple_incr] plus [compute_wf_lang]), which scales to the
+   whole fragment; the remaining rule, ["val_subst typerec"], is elaborated
+   by [auto_elab] on its own below. *)
 Definition type_casing_rest :=
   Eval vm_compute in
     infer_lang_ext_simple_incr 10 100 TC_BASE type_casing_rest_def.
 
 Lemma type_casing_rest_wf : wf_lang_ext TC_BASE type_casing_rest.
-Proof. Time compute_wf_lang. Qed.
+Proof. compute_wf_lang. Qed.
 #[local] Definition type_casing_rest_entry := lang_entry type_casing_rest_wf.
 #[export] Hint Resolve type_casing_rest_entry : wf_lang_db.
 
@@ -214,9 +220,10 @@ Derive type_casing_vs
   in (elab_lang_ext (type_casing_rest ++ TC_BASE)
         val_subst_typerec_def type_casing_vs)
   as type_casing_vs_wf.
-(* [auto_elab] itself fails here (its [cleanup_auto_elab] is not wrapped in
-   [try], and some of the 281 leaves need [by_reduction] instead), so the
-   same steps are run with the leaf tactics made total. *)
+(* [auto_elab] cannot be used directly here: its [cleanup_auto_elab] step is
+   not wrapped in [try], while some leaves of this rule need [by_reduction]
+   instead.  The same steps are therefore run with the leaf tactics made
+   total. *)
 Proof.
   setup_elab_lang.
   unshelve (eapply eq_term_rule;

@@ -18,12 +18,10 @@ From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
-Require Coq.derive.Derive.
-
 (* import the relevant language fragments *)
-From Pyrosome.Lang Require Import SimpleVSTLC. 
-From Pyrosome.Lang Require Import UTLC. 
-From Pyrosome.Lang Require Import BoolType. 
+From Pyrosome.Lang Require Import SimpleVSTLC.
+From Pyrosome.Lang Require Import UTLC.
+From Pyrosome.Lang Require Import BoolType.
 From Pyrosome.Lang Require Import SimpleVProd.
 From Pyrosome.Lang.Multilanguages Require Import SimpleBoundaries.
 
@@ -37,55 +35,42 @@ From Pyrosome.Lang Require Import PolyCompilers PolyCompilerLangs PolyCompilersC
 From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab.
 
-(* Now the compiler. Three parts: base identity compiler, then a first pass partial evaluation to get rid of #"All" in typerecs, and then a second pass to get rid of the boundaries *)
+(* Partial evaluation of [#"typerec"] in the multilanguage target.
+
+   [elim_typerec] rewrites every [#"typerec"] node whose type argument is a
+   *simple* type (built from [#"*"], [#"bool"] and [#"->"]) into the
+   corresponding case of the typerec, recursively.  The file establishes:
+     - [can_eliminate_typerec]: every compiled source term only contains
+       typerecs at simple types;
+     - [elim_typerec_eq] / [partial_eval_preserves_equality]: the partial
+       evaluation is an equality in the target;
+     - [partial_eval_wf_in_no_typerec_lang] / [compiled_partial_eval_wf]: the
+       result is well typed in [target_multilanguage_without_typerec], the
+       target with the typerec rules removed.
+   See README.md in this directory for how this fits into the multilanguage
+   compiler pipeline. *)
 Local Notation compiler := (compiler string).
 
 Local Notation preserving_compiler_ext tgt cmp_pre cmp src := (* copied from Paramaterizer, 2523 *)
   (preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src).
 
 
-(* partial evaluator to get rid of type casing. *)
-Definition func_partial_eval_ctx' :=
-  Eval vm_compute in Rule.get_ctx (named_list_lookup default target_multilanguage "typerec func").
-
-Definition comp_t1_type := {{s #"val" "D" "G" (#"ty_subst" "D" (#"ty_ext" "D") (#"ty_snoc" "D" "D" (#"ty_id" "D") "t1") "sigma") }}.
-
-Definition comp_t2_type := {{s #"val" "D" "G" (#"ty_subst" "D" (#"ty_ext" "D") (#"ty_snoc" "D" "D" (#"ty_id" "D") "t2") "sigma") }}.
-
-Definition func_partial_eval_ctx := Eval vm_compute in [("comp_t2", comp_t2_type); ("comp_t1", comp_t1_type); ("v3", named_list_lookup default func_partial_eval_ctx' "v3"); ("t2", named_list_lookup default func_partial_eval_ctx' "t2"); ("t1", named_list_lookup default func_partial_eval_ctx' "t1"); ("sigma", named_list_lookup default func_partial_eval_ctx' "sigma"); ("G", named_list_lookup default func_partial_eval_ctx' "G"); ("D", named_list_lookup default func_partial_eval_ctx' "D")]. 
-
-(* NOTE (value-level typerec): the arrow case of the partial evaluator is now
-   the *value* produced by the new ["typerec func"] rule, i.e. the two
-   recursive results substituted into the (type-instantiated) function case
-   ["v3"], rather than two [#"@"]/[#"app"] applications. *)
-Definition func_partial_eval_term_def :=
-  {{e #"val_subst" (#"snoc" (#"snoc" #"id" "comp_t1") "comp_t2")
-      (#"val_ty_subst" (#"ty_snoc" (#"ty_snoc" #"ty_id" "t1") "t2") "v3") }}.
-
-Derive func_partial_eval_term
-  in ( elab_term target_multilanguage
-         func_partial_eval_ctx
-         func_partial_eval_term_def
-         func_partial_eval_term
-         {{s #"val" "D" "G" (#"ty_subst" "D" (#"ty_ext" "D") (#"ty_snoc" "D" "D" (#"ty_id" "D") (#"->" "D" "t1" "t2")) "sigma") }}
-     ) as func_partial_eval_term_wf. 
-Proof. solve_elab_term_or_sort target_multilanguage. Qed.
-
 (* ------------------------------------------------------------------ *)
-(* The arrow case of the partial evaluator (rewritten this session).     *)
-(*                                                                       *)
-(* It used to be built from [func_partial_eval_term], the separately      *)
-(* elaborated copy of the right-hand side of ["typerec func"].  The two   *)
-(* elaborations differ in the *implicit* environment/type arguments of    *)
-(* the outermost [#"val_subst"] (elaborating the rule simplifies an       *)
-(* [#"env_ty_subst"] away, elaborating the standalone term does not), so  *)
-(* an instance of the rule's RHS was not syntactically an instance of     *)
-(* [func_partial_eval_term], and the metatheory could not be closed.      *)
-(* [fpe2] below is read off from the rule itself: it *is* the RHS of      *)
-(* ["typerec func"] with the two recursive [#"typerec"] calls replaced by *)
-(* the variables ["comp_t1"]/["comp_t2"].  The old substitution was also  *)
-(* missing ["sigma"], which occurs free in the RHS, so [elim_typerec] of  *)
-(* a closed term used to have a free variable in it.                      *)
+(* Definitions of the partial evaluator.                                *)
+(* ------------------------------------------------------------------ *)
+
+(* The arrow case, [fpe2], is read off from the ["typerec func"] rule itself:
+   it *is* the right-hand side of that rule with the two recursive
+   [#"typerec"] calls replaced by the variables ["comp_t1"]/["comp_t2"].
+   It is deliberately not a separately elaborated copy of that right-hand
+   side: the two elaborations differ in the *implicit* environment/type
+   arguments of the outermost [#"val_subst"] (elaborating the rule simplifies
+   an [#"env_ty_subst"] away, elaborating a standalone term does not), so an
+   instance of the rule's right-hand side would not be an instance of the
+   standalone term, and the metatheory below could not be closed.  ["sigma"]
+   occurs free in the right-hand side, so it must be part of the
+   substitution; otherwise [elim_typerec] of a closed term would have a free
+   variable in it. *)
 Definition rule_parts (n : string) :=
   match named_list_lookup_err target_multilanguage n with
   | Some (term_eq_rule c e1 e2 t) => (c,e1,e2,t)
@@ -156,8 +141,8 @@ Fixpoint elim_typerec (program : term) : term :=
       else con n (map elim_typerec s)
   end.
 
-(* NOTE (this session): [is_simple_type] is now indexed by the type
-   environment: [simple_type_at D mu] says that [mu] is built from [#"*"],
+(* [is_simple_type] is indexed by the type environment:
+   [simple_type_at D mu] says that [mu] is built from [#"*"],
    [#"bool"] and [#"->"] *at the type environment [D]*.  Without that index
    the arrow case of [typerec_elim_eq] is unprovable: the ["typerec func"]
    rule instance needs the [#"->"] node's type-environment argument to be the
@@ -180,13 +165,13 @@ Fixpoint simple_type_at (D mu : term) {struct mu} : Prop :=
 
 Definition is_simple_type (mu : term) : Prop := simple_type_at {{e #"ty_emp"}} mu.
 
-(* NOTE (previous session): stated so that the "typerec" case is selected by a
+(* Stated so that the "typerec" case is selected by a
    *boolean* test on the head name rather than by a nested pattern match.  This
    makes [all_typerecs_simple (con n s)] reducible when [n] is a variable known
    to be different from "typerec", which is what the cheap (non-enumerating)
    inversion below needs.  It recurses into *every* argument of a [#"typerec"]
-   node, not just [e1], [e2], [e3].  This session: the type argument is now
-   required to be simple *at the node's own type environment*. *)
+   node, not just [e1], [e2], [e3].  The type argument is required to be
+   simple *at the node's own type environment*. *)
 Definition typerec_mu_ok (n : string) (s : list term) : Prop :=
   if eqb n "typerec"
   then match s with
@@ -212,9 +197,9 @@ Ltac invert_wf_args :=
 (* The cut-free induction [wf_term_cut_ind] hands us a hypothesis      *)
 (* [In (name, term_rule c' args t) l].  Destructing that membership    *)
 (* enumerates the whole language (193s / 6.5GB for                     *)
-(* [source_multilanguage], see STATUS.md).  Instead we (a) turn the    *)
-(* membership into a *lookup* equation, which is cheap because the     *)
-(* languages are [all_fresh], and (b) restrict [name] to a handful of  *)
+(* [source_multilanguage]).  Instead we (a) turn the membership into a *)
+(* *lookup* equation, which is cheap because the languages are         *)
+(* [all_fresh], and (b) restrict [name] to a handful of                *)
 (* candidates with a boolean [forallb] check over the language,        *)
 (* discharged once and for all by [vm_compute].                        *)
 (* ------------------------------------------------------------------ *)
@@ -286,9 +271,6 @@ Fixpoint typerec_mu_vars (e : term) : list string :=
       ++ (fix f (l : list term) : list string :=
             match l with [] => [] | x::l' => typerec_mu_vars x ++ f l' end) s
   end.
-
-Lemma all_app A (P : A -> Prop) l1 l2 : all P (l1 ++ l2) <-> all P l1 /\ all P l2.
-Proof. induction l1; cbn; tauto. Qed.
 
 Lemma ats_lookup s n
   : all (fun p => all_typerecs_simple (snd p)) s ->
@@ -421,7 +403,7 @@ Qed.
 Lemma no_sort_eqns_in_sml : Is_true (no_sort_eqns source_multilanguage).
 Proof. apply I. Qed.
 
-(* source_multilanguage_wf is now proved in TypeCasing.v (Stage D). *)
+(* [source_multilanguage_wf] is proved in TypeCasing.v. *)
 
 Lemma ty_eq_sort_lemma : forall (t : sort), Core.wf_sort source_multilanguage [] t -> eq_sort source_multilanguage [] t {{s #"ty"}} <-> t = {{s #"ty" }}.
 Proof.
@@ -434,7 +416,7 @@ Proof.
                      | solve [ apply conj; intros; inversion H0; rewrite <- H7 in H1; inversion H1;
                                [ reflexivity
                                | pose proof source_multilanguage_wf; sort_cong ] ] ]
-            | .. ]); 
+            | .. ]);
     destruct H0.
 Qed.
 
@@ -449,11 +431,11 @@ Proof.
     all: repeat invert_wf_args; subst; eauto 10.
   - destruct H0.
   - intros Ht; rewrite Ht in H1.
-    apply IHwf_term. 
+    apply IHwf_term.
     + rewrite <- Ht in H1. apply eq_sort_sym in H1. apply ty_eq_sort_lemma in Ht;
-        [ eapply (eq_sort_wf_r source_multilanguage_wf wf_ctx_nil); apply H1 | apply H ]. 
+        [ eapply (eq_sort_wf_r source_multilanguage_wf wf_ctx_nil); apply H1 | apply H ].
     + apply ty_eq_sort_lemma;
-        [ eapply (eq_sort_wf_l source_multilanguage_wf wf_ctx_nil); apply H1 | apply H1 ]. 
+        [ eapply (eq_sort_wf_l source_multilanguage_wf wf_ctx_nil); apply H1 | apply H1 ].
 Qed.
 
 Lemma ty_inversion_lemma : forall (e : term),
@@ -461,7 +443,7 @@ Lemma ty_inversion_lemma : forall (e : term),
 Proof.
   intros. eapply ty_inversion_lemma'.
   - assert (Core.wf_sort source_multilanguage {{c }} {{s #"ty" }});
-      [ pose proof source_multilanguage_wf; compute_sort_wf | apply H0 ]. 
+      [ pose proof source_multilanguage_wf; compute_sort_wf | apply H0 ].
   - apply H.
   - reflexivity.
 Qed.
@@ -488,14 +470,12 @@ Proof.
     + eapply (eq_sort_wf_l source_multilanguage_wf wf_ctx_nil). apply H0.
 Qed.
 
-Ltac compute_match t :=
-  let v := eval vm_compute in t in
-    change_no_check t with v.
-
+(* Every [#"typerec"] in the image of the compiler has a simple type
+   argument. *)
 Theorem can_eliminate_typerec :
   forall (t: sort) (e : term),
     Core.wf_term source_multilanguage [] e t ->
-    all_typerecs_simple (compile (simple_multilang_compiler ++ interoperating_langs_compiler) e). 
+    all_typerecs_simple (compile (simple_multilang_compiler ++ interoperating_langs_compiler) e).
 Proof.
   induction 1 using wf_term_cut_ind.
   - destruct (inb name ["dtt";"ttd"]) eqn:Hd.
@@ -533,14 +513,17 @@ Proof.
   - apply IHwf_term.
 Qed.
 
-(* target_multilanguage_wf is now proved in TypeCasing.v (Stage D). *)
+(* ------------------------------------------------------------------ *)
+(* Inversion for the target language.                                   *)
+(* ------------------------------------------------------------------ *)
+(* [target_multilanguage_wf] is proved in TypeCasing.v. *)
 
 Lemma no_sort_eqns_in_tml : Is_true (no_sort_eqns target_multilanguage).
 Proof. apply I. Qed.
 
 Lemma ty_env_eq_sort_lemma_tml : forall (t : sort), Core.wf_sort target_multilanguage [] t -> eq_sort target_multilanguage [] t {{s #"ty_env"}} <-> t = {{s #"ty_env" }}.
 Proof.
-  intros t H. inversion H. vm_compute in H0. 
+  intros t H. inversion H. vm_compute in H0.
     repeat (simpl in H0; destruct H0;
             [> first [ solve [ injection H0; intros HF; inversion HF ]
                      | solve [ apply conj; inversion H0; intros;
@@ -549,12 +532,12 @@ Proof.
                      | solve [ apply conj; intros; inversion H0; rewrite <- H7 in H1; inversion H1;
                                [ reflexivity
                                | pose proof target_multilanguage_wf; sort_cong ] ] ]
-            | .. ]); 
+            | .. ]);
       destruct H0.
 Qed.
 
 (* The seven term rules of [target_multilanguage] whose result sort is
-   [#"ty" _] are, by computation (see STATUS.md, stage H):
+   [#"ty" _] are, by computation:
      "prod", "*", "bool", "->", "All", "ty_hd", "ty_subst".
    Note that the type-environment argument of the head constructor need not be
    syntactically the [D] of the ascribed sort: [target_multilanguage] has no
@@ -641,7 +624,7 @@ Proof.
 Qed.
 
 (* ------------------------------------------------------------------ *)
-(* Metatheory of the partial evaluator (this session).                  *)
+(* Metatheory of [elim_typerec]: it is an equality in the target.       *)
 (*                                                                      *)
 (* [Implicit Arguments] is off in this block: the lemmas below are       *)
 (* applied with positional arguments.                                   *)
@@ -686,7 +669,6 @@ Ltac norm_eq_hyp H :=
   end.
 
 
-
 Lemma R_star_lookup : named_list_lookup_err target_multilanguage "typerec star"
   = Some (term_eq_rule R_star_c (snd (fst (fst R_star))) (snd (fst R_star)) (snd R_star)).
 Proof. vm_compute. reflexivity. Qed.
@@ -728,7 +710,6 @@ Proof.
 Qed.
 
 
-
 Lemma simple_type_wf D (HD : Core.wf_term target_multilanguage [] D {{s #"ty_env"}})
   : forall mu, simple_type_at D mu -> Core.wf_term target_multilanguage [] mu {{s #"ty" {D} }}.
 Proof.
@@ -765,7 +746,6 @@ Lemma meta_typerec_arrow D G sigma X t1 t2 e1 e2 e3
     = MT_func D G sigma t1 t2 (meta_typerec D G t1 sigma e1 e2 e3)
         (meta_typerec D G t2 sigma e1 e2 e3) e3.
 Proof. reflexivity. Qed.
-
 
 
 Section TyperecElim.
@@ -879,7 +859,6 @@ Lemma elim_typerec_con7 (D G mu sigma e1 e2 e3 : term) :
 Proof. reflexivity. Qed.
 
 
-
 Theorem elim_typerec_eq : forall (t : sort) (e : term),
     Core.wf_term target_multilanguage [] e t ->
     all_typerecs_simple e ->
@@ -949,109 +928,6 @@ Qed.
 Set Implicit Arguments.
 
 
-
-(* 
-(* OLD. Doesn't work for typerec because we don't have the inversion lemma and we have stuck terms with typerec *)
-Theorem partial_eval_preserves_equality :
-  forall (t : sort) (e : term),
-    Core.wf_term target_multilanguage [] e t ->
-    (* would need to say there are _no_ typerecs at all. that's a bit strong for what I had in mind. *)
-    Core.eq_term target_multilanguage [] t e (elim_typerec e).
-Proof.
-  induction 1 using wf_term_cut_ind.
-  - vm_compute in H. pose proof target_multilanguage_wf as tml_wf. 
-    unshelve (repeat (destruct H;
-                      [> first [ solve [ injection H; intros HF; inversion HF ]
-                               | inversion H; rewrite <- H4 in H0; repeat invert_wf_args;
-                                        subst; destruct H1; repeat destruct H0;
-                                        setup_eq_terms; repeat eq_term_and_sort_solver ]
-                      | .. ]); destruct H).
-    + (* we need a type inversion lemma! *) admit. 
-  - inversion H.
-  - eq_term_and_sort_solver. 
-Admitted.
- *)
-
-(* Ltac compile_on := Transparent compile; Transparent simple_multilang_compiler; Transparent interoperating_langs_compiler. *)
-
-(* Ltac compile_off := Opaque compile; Opaque simple_multilang_compiler; Opaque interoperating_langs_compiler. *)
-
-
-Ltac do_substitutions := simpl; cbv [term_subst_lookup named_list_lookup]; simpl.
-Ltac setup_eq_terms :=
-  cbn [elim_typerec map]; do_substitutions; simpl in *; cbv [term_subst_lookup named_list_lookup] in *; simpl in *.
-Ltac crush_eqs := do_substitutions; eauto using eq_term_conv.
-Ltac sv :=
-  match goal with
-  | |- eq_term _ _ _ (con "typerec" _) _ => shelve
-  | |- eq_term _ _ _ (con ?s _) (con ?s _) => term_cong; crush_eqs
-  | |- eq_sort _ _ (scon ?s _) (scon ?s _) => sort_cong; crush_eqs
-  | |- _ \/ _ => left
-  | |- _ => eapply eq_term_conv; crush_eqs
-  end.
-
-Ltac contains_var t :=
-  first
-    [ is_var t
-    | lazymatch t with
-      | con ?n ?s =>
-          first [ contains_var n | contains_var s ]
-      | scon ?n ?s =>
-          first [ contains_var n | contains_var s ]
-      | cons ?n ?s =>
-          first [ contains_var n | contains_var s ]
-      end
-    ].
-
-Ltac act_depending_on_var e :=
-  tryif contains_var e then
-    idtac
-    (* let x := fresh "c" in set (x := compile (simple_multilang_compiler ++ interoperating_langs_compiler) e) in * *)
-  else 
-    vm_compute in e.
-
-Ltac generalize_compiles :=
-  repeat match goal with
-    | H : context[compile (simple_multilang_compiler ++ interoperating_langs_compiler) ?e] |- _ => act_depending_on_var e
-    end.
-
-Ltac collapse_match :=
-  match goal with
-  | |- context[match ?t with _ => _ end] =>
-      let t' := eval vm_compute in t in
-      change t with t'; compute_match t'
-  end.
-
-Ltac collapse_match_in H :=
-  cbv [compile_sort] in H;
-  match type of H with
-  | context[match ?t with _ => _ end] =>
-      let t' := eval vm_compute in t in
-        change t with t' in H
-  end.
-
-Ltac collapse_match_in_hyps :=
-  repeat match goal with
-    | H : eq_term _ _ _ _ _ |- _ =>
-        progress (repeat collapse_match_in H; cbv iota in H; cbv [map combine_r_padded] in H)
-  | _ => idtac
-    end.
-
-Ltac remove_compile_sorts :=
-  cbv [compile_sort]; repeat collapse_match; collapse_match_in_hyps.
-
-Ltac setup_eq_goal H H0 H1 name :=
-  injection H; intros Hsort Hargs H4 Hname; rewrite <- H4 in H0; cbn [compile]; 
-      compute_match (named_list_lookup_err (simple_multilang_compiler ++ interoperating_langs_compiler) name); rewrite <- Hname;
-      repeat invert_wf_args; subst; destruct H1; repeat destruct H0;
-  remove_compile_sorts; cbv [map combine_r_padded].
-
-Ltac first_pass :=
-  do_substitutions; simpl in *; cbv [term_subst_lookup named_list_lookup_err] in *; simpl in *; sv; sv; sv; sv.
-
-Ltac solve_eq_goal :=
-  with_strategy opaque [compile simple_multilang_compiler interoperating_langs_compiler] first_pass; with_strategy transparent [compile simple_multilang_compiler interoperating_langs_compiler] simpl; repeat sv.
-
 Local Notation semantics_preserving tgt cmp :=
   (semantics_preserving (tgt_Model := core_model tgt)
      (compile cmp)
@@ -1060,9 +936,12 @@ Local Notation semantics_preserving tgt cmp :=
      (compile_args cmp)
      (compile_subst cmp)).
 
-(* The whole simple-multilanguage compiler, as a compiler with an empty prefix.
-   Modulo simple_multilang_compiler_preserving, which is Admitted upstream
-   (see STATUS.md, stage F). *)
+(* ------------------------------------------------------------------ *)
+(* Semantics preservation of the source-to-target compiler.             *)
+(* ------------------------------------------------------------------ *)
+
+(* The interoperation compiler, as a compiler into the full target with an
+   empty prefix. *)
 Lemma interop_preserving_tml
   : preserving_compiler_ext target_multilanguage []
       interoperating_langs_compiler simple_interoperating_langs.
@@ -1072,9 +951,7 @@ Proof.
   compute_incl.
 Qed.
 
-(* The whole simple-multilanguage compiler, with an empty prefix.
-   Modulo simple_multilang_compiler_preserving, which is Admitted upstream
-   (see STATUS.md, stage F). *)
+(* The whole simple-multilanguage compiler, with an empty prefix. *)
 Lemma source_multilanguage_compiler_preserving
   : preserving_compiler_ext target_multilanguage []
       (simple_multilang_compiler ++ interoperating_langs_compiler)
@@ -1117,11 +994,6 @@ Proof.
   apply (Hs []); eauto with lang_core utils.
 Qed.
 
-(* Restore the old behavior because the new one broke this proof*)
-Ltac compute_match t ::=
-   let v := eval vm_compute in t in
-     replace t with v by (vm_compute; reflexivity).
-
 Theorem partial_eval_preserves_equality :
 forall (t: sort) (e : term),
     Core.wf_term source_multilanguage [] e t ->
@@ -1144,8 +1016,9 @@ Proof.
 Qed.
 
 (* Well-typedness of the partially evaluated term, in the *full* target.
-   (The sublanguage version is below; see STATUS.md for why it does not
-   follow from this one.) *)
+   The sublanguage version ([partial_eval_wf_in_no_typerec_lang]) is proved
+   at the end of the file; it needs the conservativity argument below, so it
+   does not follow directly from this corollary. *)
 Corollary partial_eval_wf_in_target : forall (t : sort) (e : term),
     Core.wf_term target_multilanguage [] e t ->
     all_typerecs_simple e ->
@@ -1162,7 +1035,10 @@ Qed.
 Definition target_multilanguage_without_typerec :=
   boundary_cases ++
   let_eta_parameterized ++ let_ty_subst ++ let_parameterized ++
-    prod_ty_subst ++ prod_parameterized ++ (* can we also get rid of these? idt we partially evaluate that away but I think we could *)
+    (* [prod_ty_subst]/[prod_parameterized] are kept: they are not what the
+       partial evaluator removes, though in principle they could also be
+       eliminated. *)
+    prod_ty_subst ++ prod_parameterized ++
     polymorphic_interoperating_langs.
 
 Lemma target_multilanguage_without_typerec_wf : wf_lang target_multilanguage_without_typerec.
@@ -1171,54 +1047,25 @@ Proof.
   apply wf_lang_concat; [ prove_by_lang_db | ].
   (* [boundary_cases] does not mention [#"typerec"], so it is still an
      extension of the typerec-free target. *)
-  Time compute_wf_lang.
+  compute_wf_lang.
 Qed.
 #[local] Definition target_multilanguage_without_typerec_entry :=
   lang_entry target_multilanguage_without_typerec_wf.
 #[export] Hint Resolve target_multilanguage_without_typerec_entry : wf_lang_db.
 
-(* STATEMENT FIXED (this session).  The old statement -- without the
-   [all_typerecs_simple] hypothesis -- is false: [elim_typerec] only removes a
-   [#"typerec"] node whose type argument is a *simple* type ([meta_typerec]
-   falls through to [| _ => mu] otherwise), so a term containing
-   [#"typerec" D G "A" ...] at a type variable or an [#"All"] type is left
-   unchanged and still mentions [#"typerec"], which is not a constructor of
-   [target_multilanguage_without_typerec].
+(* The [all_typerecs_simple] hypothesis of the theorems below is necessary:
+   [elim_typerec] only removes a [#"typerec"] node whose type argument is a
+   *simple* type ([meta_typerec] falls through to [| _ => mu] otherwise), so a
+   term containing [#"typerec" D G "A" ...] at a type variable or at an
+   [#"All"] type is left unchanged, and still mentions [#"typerec"], which is
+   not a constructor of [target_multilanguage_without_typerec].
 
-   STILL ADMITTED (this session), for one localized reason: the *conversion*
-   case of [wf_term_cut_ind].  Everything else is now in place:
-   [partial_eval_wf_in_target] above gives well-typedness of [elim_typerec e]
-   in the full [target_multilanguage], and by computation the only rules of
-   [target_multilanguage] that are absent from
-   [target_multilanguage_without_typerec] are the six typerec rules
-   ["typerec"], ["typerec star"], ["typerec bool"], ["typerec func"],
-   ["ty_subst typerec"], ["val_subst typerec"] -- of which exactly one,
-   ["typerec"], is a *term* rule.  So the constructor case transfers by a
-   [vm_compute]d membership check, and the [#"typerec"] case is discharged by
-   [meta_typerec] (whose output mentions no typerec).  What does not transfer
-   is the hypothesis [eq_sort target_multilanguage [] t t'] of the conversion
-   case: to re-apply [wf_term_conv] in the sublanguage one needs
-   [eq_sort target_multilanguage_without_typerec [] t t'], and
-   [target_multilanguage] has no sort equations, so this [eq_sort] is built
-   from sort-congruence over *term* equalities inside the sort arguments,
-   which may legitimately use the five typerec equations.  Transferring it is
-   a conservativity statement about the extension
-   [target_multilanguage_without_typerec] |- [target_multilanguage], which
-   Pyrosome does not currently provide.  The residual goal is exactly:
-
-     forall t t', eq_sort target_multilanguage [] t t' ->
-                  wf_sort target_multilanguage_without_typerec [] t ->
-                  wf_sort target_multilanguage_without_typerec [] t' ->
-                  eq_sort target_multilanguage_without_typerec [] t t'.
- *)
-(* [partial_eval_wf_in_no_typerec_lang] and [compiled_partial_eval_wf] are
+   [partial_eval_wf_in_no_typerec_lang] and [compiled_partial_eval_wf] are
    stated and proved at the end of the file. *)
-
-
 
 (* ================================================================== *)
 (* Metatheory: the partially evaluated term lives in the typerec-free  *)
-(* sublanguage (modulo conservativity of the sort equality).           *)
+(* sublanguage.                                                        *)
 (* ================================================================== *)
 (* ------------------------------------------------------------------ *)
 (* [no_typerec]: a syntactic check that a term mentions no [#"typerec"] *)
@@ -1557,6 +1404,9 @@ Proof.
                   ltac:(constructor) ltac:(constructor))).
 Qed.
 
+(* ------------------------------------------------------------------ *)
+(* Final theorems.                                                      *)
+(* ------------------------------------------------------------------ *)
 Theorem partial_eval_wf_in_no_typerec_lang : forall (t : sort) (e : term),
     Core.wf_term target_multilanguage [] e t ->
     all_typerecs_simple e ->
@@ -1572,7 +1422,7 @@ Qed.
 
 (* The form in which the theorem above is meant to be used: for compiled
    source terms the [all_typerecs_simple] hypothesis is discharged by
-   [can_eliminate_typerec], which is now Qed. *)
+   [can_eliminate_typerec]. *)
 Corollary compiled_partial_eval_wf : forall (t t' : sort) (e : term),
     Core.wf_term source_multilanguage [] e t ->
     Core.wf_term target_multilanguage [] (compile CMP e) t' ->
