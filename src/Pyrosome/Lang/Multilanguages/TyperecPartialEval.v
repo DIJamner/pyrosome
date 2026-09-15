@@ -70,47 +70,126 @@ Derive func_partial_eval_term
      ) as func_partial_eval_term_wf. 
 Proof. solve_elab_term_or_sort target_multilanguage. Qed.
 
-Fixpoint meta_typerec (D G mu sigma e1 e2 e3 : term) : term :=
+(* ------------------------------------------------------------------ *)
+(* The arrow case of the partial evaluator (rewritten this session).     *)
+(*                                                                       *)
+(* It used to be built from [func_partial_eval_term], the separately      *)
+(* elaborated copy of the right-hand side of ["typerec func"].  The two   *)
+(* elaborations differ in the *implicit* environment/type arguments of    *)
+(* the outermost [#"val_subst"] (elaborating the rule simplifies an       *)
+(* [#"env_ty_subst"] away, elaborating the standalone term does not), so  *)
+(* an instance of the rule's RHS was not syntactically an instance of     *)
+(* [func_partial_eval_term], and the metatheory could not be closed.      *)
+(* [fpe2] below is read off from the rule itself: it *is* the RHS of      *)
+(* ["typerec func"] with the two recursive [#"typerec"] calls replaced by *)
+(* the variables ["comp_t1"]/["comp_t2"].  The old substitution was also  *)
+(* missing ["sigma"], which occurs free in the RHS, so [elim_typerec] of  *)
+(* a closed term used to have a free variable in it.                      *)
+Definition rule_parts (n : string) :=
+  match named_list_lookup_err target_multilanguage n with
+  | Some (term_eq_rule c e1 e2 t) => (c,e1,e2,t)
+  | _ => ([],var "",var "",{{s #"X"}})
+  end.
+Definition R_star := Eval vm_compute in rule_parts "typerec star".
+Definition R_bool := Eval vm_compute in rule_parts "typerec bool".
+Definition R_func := Eval vm_compute in rule_parts "typerec func".
+Definition R_star_c := Eval vm_compute in fst (fst (fst R_star)).
+Definition R_bool_c := Eval vm_compute in fst (fst (fst R_bool)).
+Definition R_func_c := Eval vm_compute in fst (fst (fst R_func)).
+Definition R_func_r := Eval vm_compute in snd (fst R_func).
+Definition R_func_t := Eval vm_compute in snd R_func.
+
+(* [#"val" D G (sigma[X])], the sort of [#"typerec"] at type [X]. *)
+Definition Sgt (D G sigma X : term) : sort :=
+  {{s #"val" {D} {G} (#"ty_subst" {D} (#"ty_ext" {D}) (#"ty_snoc" {D} {D} (#"ty_id" {D}) {X}) {sigma}) }}.
+
+Fixpoint abstract_typerec (e : term) : term :=
+  match e with
+  | con "typerec" [_;_;_;_;var "t1";_;_] => var "comp_t1"
+  | con "typerec" [_;_;_;_;var "t2";_;_] => var "comp_t2"
+  | con n l => con n (map abstract_typerec l)
+  | var x => var x
+  end.
+Definition fpe2 := Eval vm_compute in abstract_typerec R_func_r.
+Definition fpe2_ctx := Eval vm_compute in
+  ("comp_t2", Sgt {{e "D"}} {{e "G"}} {{e "sigma"}} {{e "t2"}})
+  :: ("comp_t1", Sgt {{e "D"}} {{e "G"}} {{e "sigma"}} {{e "t1"}})
+  :: (filter (fun p => negb (orb (eqb (fst p) "v1") (eqb (fst p) "v2"))) R_func_c).
+
+Lemma fpe2_ctx_wf : @Model.wf_ctx _ _ _ (core_model target_multilanguage) fpe2_ctx.
+Proof. pose proof target_multilanguage_wf. solve_wf_ctx. Qed.
+
+Lemma fpe2_wf : Core.wf_term target_multilanguage fpe2_ctx fpe2 R_func_t.
+Proof. pose proof target_multilanguage_wf. compute_term_wf. Qed.
+
+Definition MT_func (D G sigma t1 t2 r1 r2 v3 : term) : term :=
+  fpe2[/[("comp_t2",r2);("comp_t1",r1);("v3",v3);("t2",t2);("t1",t1);
+         ("sigma",sigma);("G",G);("D",D)]/].
+
+Fixpoint meta_typerec (D G mu sigma e1 e2 e3 : term) {struct mu} : term :=
   match mu with
-  | {{e #"*" {_} }} => e1
-  | {{e #"bool" {_} }} => e2
-  | {{e #"->" {_} {t1} {t2} }} =>
-      func_partial_eval_term [/ [ ("v3", e3);
-                                  ("t1", t1);
-                                  ("comp_t1", meta_typerec D G t1 sigma e1 e2 e3);
-                                  ("t2", t2);
-                                  ("comp_t2", meta_typerec D G t2 sigma e1 e2 e3);
-                                  ("G", G);
-                                  ("D", D) ] /]
-  | _ => mu
+  | var _ => mu
+  | con n l =>
+      if eqb n "*" then e1
+      else if eqb n "bool" then e2
+      else if eqb n "->" then
+             match l with
+             | [t2;t1;_] =>
+                 MT_func D G sigma t1 t2
+                   (meta_typerec D G t1 sigma e1 e2 e3)
+                   (meta_typerec D G t2 sigma e1 e2 e3) e3
+             | _ => mu end
+      else mu
   end.
 
 Fixpoint elim_typerec (program : term) : term :=
   match program with
-  | {{e #"typerec" {D} {G} {mu} {sigma} {e1} {e2} {e3} }} => meta_typerec D G mu sigma (elim_typerec e1) (elim_typerec e2) (elim_typerec e3)
-  | con n s => con n (map elim_typerec s)
   | var n => var n
+  | con n s =>
+      if eqb n "typerec"
+      then match s with
+           | [e3;e2;e1;sigma;mu;G;D] =>
+               meta_typerec D G mu sigma (elim_typerec e1) (elim_typerec e2) (elim_typerec e3)
+           | _ => con n (map elim_typerec s)
+           end
+      else con n (map elim_typerec s)
   end.
 
-Fixpoint is_simple_type (mu : term) : Prop :=
+(* NOTE (this session): [is_simple_type] is now indexed by the type
+   environment: [simple_type_at D mu] says that [mu] is built from [#"*"],
+   [#"bool"] and [#"->"] *at the type environment [D]*.  Without that index
+   the arrow case of [typerec_elim_eq] is unprovable: the ["typerec func"]
+   rule instance needs the [#"->"] node's type-environment argument to be the
+   same term as the [#"typerec"] node's, and [target_multilanguage] has no
+   sort-injectivity principle to recover it.  [is_simple_type] is the instance
+   at the empty type environment, which is where every *compiled* source type
+   lives ([compile_star] / [compile_bool] / [compile_arrow]). *)
+Fixpoint simple_type_at (D mu : term) {struct mu} : Prop :=
   match mu with
-  | {{e #"*" {_} }} => True
-  | {{e #"bool" {_} }} => True
-  | {{e #"->" {_} {t1} {t2} }} => is_simple_type t1 /\ is_simple_type t2
-  | _ => False
+  | var _ => False
+  | con n l =>
+      if eqb n "*" then match l with [D'] => D' = D | _ => False end
+      else if eqb n "bool" then match l with [D'] => D' = D | _ => False end
+      else if eqb n "->" then
+             match l with
+             | [t2;t1;D'] => D' = D /\ simple_type_at D t1 /\ simple_type_at D t2
+             | _ => False end
+      else False
   end.
 
-(* NOTE (this session): restated so that the "typerec" case is selected by a
+Definition is_simple_type (mu : term) : Prop := simple_type_at {{e #"ty_emp"}} mu.
+
+(* NOTE (previous session): stated so that the "typerec" case is selected by a
    *boolean* test on the head name rather than by a nested pattern match.  This
    makes [all_typerecs_simple (con n s)] reducible when [n] is a variable known
    to be different from "typerec", which is what the cheap (non-enumerating)
-   inversion below needs.  The new definition is also slightly stronger than the
-   old one: it recurses into *every* argument of a [#"typerec"] node, not just
-   [e1], [e2], [e3]. *)
+   inversion below needs.  It recurses into *every* argument of a [#"typerec"]
+   node, not just [e1], [e2], [e3].  This session: the type argument is now
+   required to be simple *at the node's own type environment*. *)
 Definition typerec_mu_ok (n : string) (s : list term) : Prop :=
   if eqb n "typerec"
   then match s with
-       | [_;_;_;_;mu;_;_] => is_simple_type mu
+       | [_;_;_;_;mu;_;D] => simple_type_at D mu
        | _ => True
        end
   else True.
@@ -172,17 +251,22 @@ Section TermIndAll.
     end.
 End TermIndAll.
 
-(* every #"typerec" node's type argument is a variable *)
+(* every #"typerec" node's type argument is a variable, and its type
+   environment is the empty one (so that a substitution instance is simple
+   *at that node's own type environment*, which is what [typerec_mu_ok]
+   now demands) *)
+Definition typerec_head_ok (s : list term) : bool :=
+  match s with
+  | [_;_;_;_;mu;_;D] =>
+      (match mu with var _ => true | _ => false end) && eqb D {{e #"ty_emp"}}
+  | _ => false
+  end.
+
 Fixpoint typerecs_are_var (e : term) : bool :=
   match e with
   | var _ => true
   | con n s =>
-      (if eqb n "typerec"
-       then match s with
-            | [_;_;_;_;var _;_;_] => true
-            | _ => false
-            end
-       else true)
+      (if eqb n "typerec" then typerec_head_ok s else true)
       && (fix f (l : list term) : bool :=
             match l with [] => true | x::l' => typerecs_are_var x && f l' end) s
   end.
@@ -232,10 +316,14 @@ Proof.
     split.
     { cbv [typerec_mu_ok] in *.
       destruct (eqb n "typerec"); [ | exact I ].
-      repeat (destruct l as [| ? l]; [ exact I | ]).
-      destruct l; [ | exact I ].
-      cbn in Hv1, Hm1. destruct t3; [ | destruct Hv1 ].
-      cbn. cbn in Hm1. destruct Hm1 as [Hm1 _]. exact Hm1. }
+      cbv [typerec_head_ok] in Hv1.
+      destruct l as [|a0 [|a1 [|a2 [|a3 [|a4 [|a5 [|a6 [|? ?]]]]]]]];
+        try solve [ destruct Hv1 ].
+      destruct a4 as [m|]; [ | destruct Hv1 ].
+      cbn [andb] in Hv1. apply Is_true_eq_true in Hv1.
+      pose proof (eqb_spec a6 {{e #"ty_emp"}}) as Hsp; rewrite Hv1 in Hsp; subst a6.
+      cbn [map term_subst term_var_map].
+      cbn in Hm1. destruct Hm1 as [Hm1 _]. exact Hm1. }
     { clear Hm1 Hv1.
       revert Hm2 Hv2. induction l as [|x l IH']; cbn; [ intros; exact I | ].
       intros Hm2 Hv2. apply andb_prop_elim in Hv2; destruct Hv2 as [Hx Hl].
@@ -387,11 +475,12 @@ Proof.
     destruct (sml_ty_rule_name H) as [-> | [-> | ->]];
       apply sml_lookup in H; vm_compute in H;
       injection H; intros; subst; repeat invert_wf_args; subst.
-    + rewrite compile_star; exact I.
-    + rewrite compile_bool; exact I.
+    + rewrite compile_star; exact eq_refl.
+    + rewrite compile_bool; exact eq_refl.
     + rewrite compile_arrow.
-      cbn [is_simple_type]; cbn [WfCutElim.P_args] in H1; destruct H1 as [[_ Pe0] Pe];
-        split; [ apply Pe0 | apply Pe ]; reflexivity.
+      cbv [is_simple_type]; cbn [simple_type_at];
+        cbn [WfCutElim.P_args] in H1; destruct H1 as [[_ Pe0] Pe];
+        split; [ reflexivity | split; [ apply Pe0 | apply Pe ]; reflexivity ].
   - destruct H.
   - intros Ht; rewrite Ht in H0. apply ty_eq_sort_lemma in H0.
     + apply IHwf_term in H0. apply H0.
@@ -549,6 +638,316 @@ Lemma ty_inversion_lemma_tml : forall (e ty_env : term),
 Proof.
   intros e ty_env H. eapply ty_inversion_lemma_tml'; [ exact H | reflexivity ].
 Qed.
+
+(* ------------------------------------------------------------------ *)
+(* Metatheory of the partial evaluator (this session).                  *)
+(*                                                                      *)
+(* [Implicit Arguments] is off in this block: the lemmas below are       *)
+(* applied with positional arguments.                                   *)
+(* ------------------------------------------------------------------ *)
+Unset Implicit Arguments.
+Local Notation wf_ctx' c := (@Model.wf_ctx _ _ _ (core_model target_multilanguage) c).
+Local Notation wf_subst' s c := (@Model.wf_subst _ _ _ (core_model target_multilanguage) [] s c).
+Local Notation wf_args' s c := (@Model.wf_args _ _ _ (core_model target_multilanguage) [] s c).
+Local Notation eq_subst' c s1 s2 := (@Model.eq_subst _ _ _ (core_model target_multilanguage) [] c s1 s2).
+Local Notation eq_args' c s1 s2 := (@Model.eq_args _ _ _ (core_model target_multilanguage) [] c s1 s2).
+
+Ltac to_core := cbv beta iota zeta delta [Model.wf_term Model.eq_term core_model] in *.
+Ltac norm_sort_goal :=
+  to_core;
+  match goal with
+  | |- Core.wf_term ?l ?c ?e ?T => let T' := eval vm_compute in T in change (Core.wf_term l c e T')
+  | |- Core.eq_term ?l ?c ?T ?A ?B =>
+      let T' := eval vm_compute in T in
+      let A' := eval vm_compute in A in
+      let B' := eval vm_compute in B in change (Core.eq_term l c T' A' B')
+  end.
+Ltac norm_sort_only :=
+  to_core;
+  match goal with
+  | |- Core.wf_term ?l ?c ?e ?T => let T' := eval vm_compute in T in change (Core.wf_term l c e T')
+  | |- Core.eq_term ?l ?c ?T ?A ?B => let T' := eval vm_compute in T in change (Core.eq_term l c T' A B)
+  end.
+
+Ltac norm_wf_hyp H :=
+  to_core;
+  match type of H with
+  | Core.wf_term ?l ?c ?e ?T => let T' := eval vm_compute in T in change (Core.wf_term l c e T') in H
+  end.
+
+Ltac norm_eq_hyp H :=
+  match type of H with
+  | Core.eq_term ?l ?c ?T ?A ?B =>
+      let T' := eval vm_compute in T in
+      let A' := eval vm_compute in A in
+      let B' := eval vm_compute in B in
+      change (Core.eq_term l c T' A' B') in H
+  end.
+
+
+
+Lemma R_star_lookup : named_list_lookup_err target_multilanguage "typerec star"
+  = Some (term_eq_rule R_star_c (snd (fst (fst R_star))) (snd (fst R_star)) (snd R_star)).
+Proof. vm_compute. reflexivity. Qed.
+Lemma R_bool_lookup : named_list_lookup_err target_multilanguage "typerec bool"
+  = Some (term_eq_rule R_bool_c (snd (fst (fst R_bool))) (snd (fst R_bool)) (snd R_bool)).
+Proof. vm_compute. reflexivity. Qed.
+Lemma R_func_lookup : named_list_lookup_err target_multilanguage "typerec func"
+  = Some (term_eq_rule R_func_c (snd (fst (fst R_func))) R_func_r R_func_t).
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma tml_eq_rule_ctx_wf name c' e1 e2 t :
+  In (name, term_eq_rule c' e1 e2 t) target_multilanguage -> wf_ctx' c'.
+Proof.
+  intro Hin. pose proof (rule_in_wf _ _ target_multilanguage_wf Hin) as Hr.
+  rewrite app_nil_r in Hr. inversion Hr; subst; assumption.
+Qed.
+
+Lemma eq_by_rule (name : string) (c' : ctx) (t:sort) e1 e2 (s : subst)
+  : named_list_lookup_err target_multilanguage name = Some (term_eq_rule c' e1 e2 t) ->
+    wf_subst' s c' ->
+    Core.eq_term target_multilanguage [] t[/s/] e1[/s/] e2[/s/].
+Proof.
+  intros Hl Hs.
+  assert (In (name, term_eq_rule c' e1 e2 t) target_multilanguage)
+    by (apply named_list_lookup_err_in; symmetry; exact Hl).
+  eapply eq_term_subst.
+  - eapply eq_term_by; eauto.
+  - apply eq_subst_refl; exact Hs.
+  - eapply tml_eq_rule_ctx_wf; eauto.
+Qed.
+
+Lemma wf_by_rule (name : string) (c' : ctx) (t:sort) args (s : list term)
+  : named_list_lookup_err target_multilanguage name = Some (term_rule c' args t) ->
+    wf_args' s c' ->
+    Core.wf_term target_multilanguage [] (con name s) t[/with_names_from c' s/].
+Proof.
+  intros Hl Hs. eapply wf_term_by; [ | exact Hs ].
+  apply named_list_lookup_err_in; symmetry; exact Hl.
+Qed.
+
+
+
+Lemma simple_type_wf D (HD : Core.wf_term target_multilanguage [] D {{s #"ty_env"}})
+  : forall mu, simple_type_at D mu -> Core.wf_term target_multilanguage [] mu {{s #"ty" {D} }}.
+Proof.
+  induction mu using term_ind_all; [ intros [] | ].
+  cbn [simple_type_at]. intro Hs.
+  pose proof (eqb_spec n "*") as Hn1; destruct (eqb n "*"); [ subst n | ].
+  { destruct l as [|D' [|? ?]]; try contradiction. cbn in Hs. subst D'.
+    pose proof (wf_by_rule "*" [("D", {{s #"ty_env"}})] {{s #"ty" "D"}} [] [D]
+                  ltac:(vm_compute; reflexivity)) as Hb.
+    norm_sort_goal. apply Hb. to_core.
+    econstructor; [ norm_sort_goal; exact HD | econstructor ]. }
+  pose proof (eqb_spec n "bool") as Hn2; destruct (eqb n "bool"); [ subst n | ].
+  { destruct l as [|D' [|? ?]]; try contradiction. cbn in Hs. subst D'.
+    pose proof (wf_by_rule "bool" [("D", {{s #"ty_env"}})] {{s #"ty" "D"}} [] [D]
+                  ltac:(vm_compute; reflexivity)) as Hb.
+    norm_sort_goal. apply Hb. to_core.
+    econstructor; [ norm_sort_goal; exact HD | econstructor ]. }
+  pose proof (eqb_spec n "->") as Hn3; destruct (eqb n "->"); [ subst n | contradiction ].
+  destruct l as [|t2 [|t1 [|D' [|? ?]]]]; try contradiction.
+  destruct Hs as [HD' [Hs1 Hs2]]. subst D'.
+  cbn [all] in H. destruct H as [IH2 [IH1 _]].
+  pose proof (wf_by_rule "->" [("t'", {{s #"ty" "D"}});("t", {{s #"ty" "D"}});("D", {{s #"ty_env"}})]
+                {{s #"ty" "D"}} ["t'";"t"] [t2;t1;D]
+                ltac:(vm_compute; reflexivity)) as Hb.
+  norm_sort_goal. apply Hb. to_core.
+  econstructor; [ norm_sort_goal; apply IH2; exact Hs2 | ].
+  econstructor; [ norm_sort_goal; apply IH1; exact Hs1 | ].
+  econstructor; [ norm_sort_goal; exact HD | econstructor ].
+Qed.
+
+
+Lemma meta_typerec_arrow D G sigma X t1 t2 e1 e2 e3
+  : meta_typerec D G (con "->" [t2;t1;X]) sigma e1 e2 e3
+    = MT_func D G sigma t1 t2 (meta_typerec D G t1 sigma e1 e2 e3)
+        (meta_typerec D G t2 sigma e1 e2 e3) e3.
+Proof. reflexivity. Qed.
+
+
+
+Section TyperecElim.
+  Context (D G sigma v1 v2 v3 : term)
+    (HD : Core.wf_term target_multilanguage [] D {{s #"ty_env"}})
+    (HG : Core.wf_term target_multilanguage [] G {{s #"env" {D} }})
+    (Hsig : Core.wf_term target_multilanguage [] sigma {{s #"ty" (#"ty_ext" {D}) }})
+    (Hv1 : Core.wf_term target_multilanguage [] v1 (Sgt D G sigma {{e #"*" {D} }}))
+    (Hv2 : Core.wf_term target_multilanguage [] v2 (Sgt D G sigma {{e #"bool" {D} }}))
+    (Hv3 : Core.wf_term target_multilanguage [] v3 ((named_list_lookup default R_func_c "v3")
+                                     [/[("sigma",sigma);("G",G);("D",D)]/])).
+
+  Ltac wf_solve := norm_sort_goal; cbv [Sgt] in *; assumption.
+
+  Lemma base_subst_wf : wf_subst' [("v3",v3);("v2",v2);("v1",v1);("sigma",sigma);("G",G);("D",D)] R_star_c.
+  Proof.
+    cbv [R_star_c]. repeat apply Model.wf_subst_cons.
+    all: try apply Model.wf_subst_nil.
+    all: wf_solve.
+  Qed.
+
+  Lemma base_subst_wf_b : wf_subst' [("v3",v3);("v2",v2);("v1",v1);("sigma",sigma);("G",G);("D",D)] R_bool_c.
+  Proof.
+    cbv [R_bool_c]. repeat apply Model.wf_subst_cons.
+    all: try apply Model.wf_subst_nil.
+    all: wf_solve.
+  Qed.
+
+  Lemma func_subst_wf t1 t2
+    (Ht1 : Core.wf_term target_multilanguage [] t1 {{s #"ty" {D} }})
+    (Ht2 : Core.wf_term target_multilanguage [] t2 {{s #"ty" {D} }})
+    : wf_subst' [("v3",v3);("v2",v2);("v1",v1);("t2",t2);("t1",t1);("sigma",sigma);("G",G);("D",D)] R_func_c.
+  Proof.
+    cbv [R_func_c]. repeat apply Model.wf_subst_cons.
+    all: try apply Model.wf_subst_nil.
+    all: wf_solve.
+  Qed.
+
+  Theorem typerec_elim_eq : forall mu, simple_type_at D mu ->
+    Core.eq_term target_multilanguage [] (Sgt D G sigma mu)
+      (con "typerec" [v3;v2;v1;sigma;mu;G;D])
+      (meta_typerec D G mu sigma v1 v2 v3).
+  Proof.
+    induction mu using term_ind_all; [ intros [] | ].
+    cbn [simple_type_at]. intro Hs.
+    pose proof (eqb_spec n "*") as Hn1; destruct (eqb n "*"); [ subst n | ].
+    { destruct l as [|D' [|? ?]]; try contradiction. cbn in Hs; subst D'.
+      pose proof (eq_by_rule _ _ _ _ _ _ R_star_lookup base_subst_wf) as Hq.
+      norm_eq_hyp Hq. cbv [Sgt meta_typerec]. exact Hq. }
+    pose proof (eqb_spec n "bool") as Hn2; destruct (eqb n "bool"); [ subst n | ].
+    { destruct l as [|D' [|? ?]]; try contradiction. cbn in Hs; subst D'.
+      pose proof (eq_by_rule _ _ _ _ _ _ R_bool_lookup base_subst_wf_b) as Hq.
+      norm_eq_hyp Hq. cbv [Sgt meta_typerec]. exact Hq. }
+    pose proof (eqb_spec n "->") as Hn3; destruct (eqb n "->"); [ subst n | contradiction ].
+    destruct l as [|t2 [|t1 [|D' [|? ?]]]]; try contradiction.
+    destruct Hs as [HD' [Hs1 Hs2]]; subst D'.
+    cbn [all] in H; destruct H as [IH2 [IH1 _]].
+    assert (Ht1 : Core.wf_term target_multilanguage [] t1 {{s #"ty" {D} }})
+      by (apply (simple_type_wf D HD); exact Hs1).
+    assert (Ht2 : Core.wf_term target_multilanguage [] t2 {{s #"ty" {D} }})
+      by (apply (simple_type_wf D HD); exact Hs2).
+    pose proof (eq_by_rule _ _ _ _ _ _ R_func_lookup (func_subst_wf t1 t2 Ht1 Ht2)) as Hq.
+    norm_eq_hyp Hq.
+    rewrite meta_typerec_arrow.
+    eapply eq_term_trans; [ | ].
+    2:{ (* fpe2[/sa/] = fpe2[/sb/] *)
+      pose proof (eq_term_subst (l:=target_multilanguage) (c:=[]) (c':=fpe2_ctx)
+                    (s1:=[("comp_t2", con "typerec" [v3;v2;v1;sigma;t2;G;D]);
+                          ("comp_t1", con "typerec" [v3;v2;v1;sigma;t1;G;D]);
+                          ("v3",v3);("t2",t2);("t1",t1);("sigma",sigma);("G",G);("D",D)])
+                    (s2:=[("comp_t2", meta_typerec D G t2 sigma v1 v2 v3);
+                          ("comp_t1", meta_typerec D G t1 sigma v1 v2 v3);
+                          ("v3",v3);("t2",t2);("t1",t1);("sigma",sigma);("G",G);("D",D)])
+                    (t:=R_func_t) (e1:=fpe2) (e2:=fpe2)) as Hsub.
+      cbv [MT_func].
+      apply Hsub; [ apply eq_term_refl; apply fpe2_wf | | apply fpe2_ctx_wf ].
+      cbv [fpe2_ctx]. repeat apply Model.eq_subst_cons.
+      all: try apply Model.eq_subst_nil.
+      all: to_core.
+      all: try (norm_sort_only; solve [ apply eq_term_refl; cbv [Sgt] in *; assumption ]).
+      all: norm_sort_only.
+      - cbv [Sgt] in IH1. apply IH1; exact Hs1.
+      - cbv [Sgt] in IH2. apply IH2; exact Hs2. }
+    exact Hq.
+  Qed.
+End TyperecElim.
+
+Lemma eq_args_elim : forall c' s,
+    WfCutElim.P_args string
+      (fun e t => all_typerecs_simple e -> Core.eq_term target_multilanguage [] t e (elim_typerec e)) s c' ->
+    all all_typerecs_simple s ->
+    eq_args' c' (map elim_typerec s) s.
+Proof.
+  induction c' as [|[n t] c' IH]; intros [|e s]; cbn [WfCutElim.P_args map all]; try tauto.
+  - intros _ _. apply Model.eq_args_nil.
+  - intros [Hp Hpe] [Ha Has]. apply Model.eq_args_cons.
+    + apply IH; assumption.
+    + apply eq_term_sym. apply Hpe. exact Ha.
+Qed.
+
+Lemma pargs_len : forall (P : term -> sort -> Prop) c' s,
+    WfCutElim.P_args string P s c' -> length s = length c'.
+Proof.
+  induction c' as [|[n t] c' IH]; intros [|e s]; cbn [WfCutElim.P_args length]; try tauto.
+  intros [Hp _]; f_equal; apply IH; exact Hp.
+Qed.
+
+Lemma elim_typerec_con7 (D G mu sigma e1 e2 e3 : term) :
+  elim_typerec (con "typerec" [e3;e2;e1;sigma;mu;G;D])
+  = meta_typerec D G mu sigma (elim_typerec e1) (elim_typerec e2) (elim_typerec e3).
+Proof. reflexivity. Qed.
+
+
+
+Theorem elim_typerec_eq : forall (t : sort) (e : term),
+    Core.wf_term target_multilanguage [] e t ->
+    all_typerecs_simple e ->
+    Core.eq_term target_multilanguage [] t e (elim_typerec e).
+Proof.
+  induction 1 using wf_term_cut_ind.
+  - intro Hats.
+    pose proof (eqb_spec name "typerec") as Hn; destruct (eqb name "typerec") eqn:Hnb.
+    2:{
+      assert (Helim : elim_typerec (con name s) = con name (map elim_typerec s))
+        by (cbn [elim_typerec]; rewrite Hnb; reflexivity).
+      rewrite Helim. apply eq_term_sym.
+      eapply term_con_congruence;
+        [ exact H | right; reflexivity | exact target_multilanguage_wf | ].
+      apply eq_args_elim; [ exact H1 | ]. destruct Hats as [_ Hall]; exact Hall. }
+    subst name. assert (Hin := H).
+    apply tml_lookup in H. vm_compute in H. injection H as Hc' Hargs Ht. subst.
+    assert (Hlen : length s = 7) by (rewrite (pargs_len _ _ _ H1); reflexivity).
+    destruct s as [|e3 [|e2 [|e1 [|sg [|mu [|Gv [|Dv [|? ?]]]]]]]];
+      cbn [length] in Hlen; try discriminate Hlen.
+    (destruct H1 as [[[[[[[_ IHD] IHG] IHmu] IHsg] IH1] IH2] IH3]).
+    (destruct Hats as [Hsimple [Ha3 [Ha2 [Ha1 [Hasg [Hamu [HaG [HaD _]]]]]]]]).
+    inversion H0 as [|? ? ? ? ? W3 H0a]; subst; clear H0.
+    inversion H0a as [|? ? ? ? ? W2 H0b]; subst; clear H0a.
+    inversion H0b as [|? ? ? ? ? W1 H0c]; subst; clear H0b.
+    inversion H0c as [|? ? ? ? ? Wsg H0d]; subst; clear H0c.
+    inversion H0d as [|? ? ? ? ? Wmu H0e]; subst; clear H0d.
+    inversion H0e as [|? ? ? ? ? WG H0f]; subst; clear H0e.
+    inversion H0f as [|? ? ? ? ? WD H0g]; subst; clear H0f.
+    norm_wf_hyp W3. norm_wf_hyp W2. norm_wf_hyp W1.
+    norm_wf_hyp Wsg. norm_wf_hyp Wmu. norm_wf_hyp WG. norm_wf_hyp WD.
+    assert (Hnil : wf_ctx' (@nil (string * sort))) by constructor.
+    rewrite elim_typerec_con7.
+    eapply eq_term_trans
+      with (e12 := con "typerec" [elim_typerec e3; elim_typerec e2; elim_typerec e1; sg; mu; Gv; Dv]).
+    { eapply term_con_congruence;
+        [ exact Hin | right; vm_compute; reflexivity | exact target_multilanguage_wf | ].
+      repeat apply Model.eq_args_cons.
+      all: try apply Model.eq_args_nil.
+      all: try (norm_sort_only; solve [ apply eq_term_refl; assumption ]).
+      all: norm_sort_only.
+      - apply IH1; exact Ha1.
+      - apply IH2; exact Ha2.
+      - apply IH3; exact Ha3. }
+    assert (E1 : Core.wf_term target_multilanguage [] (elim_typerec e1)
+                   (Sgt Dv Gv sg {{e #"*" {Dv} }}))
+      by (cbv [Sgt]; eapply eq_term_wf_r;
+          try typeclasses eauto; try exact target_multilanguage_wf; try exact Hnil;
+          norm_sort_only; apply IH1; exact Ha1).
+    assert (E2 : Core.wf_term target_multilanguage [] (elim_typerec e2)
+                   (Sgt Dv Gv sg {{e #"bool" {Dv} }}))
+      by (cbv [Sgt]; eapply eq_term_wf_r;
+          try typeclasses eauto; try exact target_multilanguage_wf; try exact Hnil;
+          norm_sort_only; apply IH2; exact Ha2).
+    assert (E3 : Core.wf_term target_multilanguage [] (elim_typerec e3)
+                   ((named_list_lookup default R_func_c "v3")
+                      [/[("sigma",sg);("G",Gv);("D",Dv)]/]))
+      by (norm_sort_only; eapply eq_term_wf_r;
+          try typeclasses eauto; try exact target_multilanguage_wf; try exact Hnil;
+          norm_sort_only; apply IH3; exact Ha3).
+    norm_sort_only.
+    pose proof (typerec_elim_eq Dv Gv sg _ _ _ WD WG Wsg E1 E2 E3 mu Hsimple) as Hfin.
+    cbv [Sgt] in Hfin. exact Hfin.
+  - destruct H.
+  - intro Hats. eapply eq_term_conv; [ apply IHwf_term; exact Hats | exact H0 ].
+Qed.
+Set Implicit Arguments.
+
+
 
 (* 
 (* OLD. Doesn't work for typerec because we don't have the inversion lemma and we have stuck terms with typerec *)
@@ -730,23 +1129,34 @@ forall (t: sort) (e : term),
       (compile_sort (simple_multilang_compiler ++ interoperating_langs_compiler) t)
       (compile (simple_multilang_compiler ++ interoperating_langs_compiler) e)
       (elim_typerec (compile (simple_multilang_compiler ++ interoperating_langs_compiler) e)).
-Admitted. (* ISSUE: see STATUS.md *)
-(* Partial proof (2 of 13 cases admitted; also not run because the enumeration
-   over source_multilanguage exhausts the 7GB box, as for can_eliminate_typerec):
 Proof.
-  induction 1 using wf_term_cut_ind.
-  - vm_compute in H. pose proof target_multilanguage_wf as tml_wf. 
-    unshelve (repeat (destruct H;
-                      [> first [ solve [ injection H; intros HF; inversion HF ]
-                               | shelve ]
-                      | .. ]); destruct H).
-    1-2: admit.
-    all: setup_eq_goal H H0 H1 name; solve_eq_goal.
-  - inversion H.
-  - apply eq_sort_sml_implies_eq_sort_tml in H0. sv. 
-Admitted.
+  intros t e H.
+  apply elim_typerec_eq.
+  - (* the compiled term is well-typed in the target *)
+    pose proof (proj1 (proj2 (proj2 (proj2 (proj2 sml_semantics_preserving))))) as Hw.
+    unfold term_wf_preserving_sem in Hw.
+    specialize (Hw [] e t H ltac:(constructor)).
+    cbv beta iota zeta delta [core_model] in Hw.
+    cbn [compile_ctx] in Hw. exact Hw.
+  - (* every typerec it contains has a simple type argument *)
+    eapply can_eliminate_typerec; exact H.
+Qed.
 
-*)
+(* Well-typedness of the partially evaluated term, in the *full* target.
+   (The sublanguage version is below; see STATUS.md for why it does not
+   follow from this one.) *)
+Corollary partial_eval_wf_in_target : forall (t : sort) (e : term),
+    Core.wf_term target_multilanguage [] e t ->
+    all_typerecs_simple e ->
+    Core.wf_term target_multilanguage [] (elim_typerec e) t.
+Proof.
+  intros t e H Hats.
+  eapply eq_term_wf_r;
+    try typeclasses eauto;
+    try exact target_multilanguage_wf;
+    try (constructor; fail);
+    apply elim_typerec_eq; assumption.
+Qed.
 
 Definition target_multilanguage_without_typerec :=
   boundary_cases ++
@@ -772,7 +1182,34 @@ Qed.
    falls through to [| _ => mu] otherwise), so a term containing
    [#"typerec" D G "A" ...] at a type variable or an [#"All"] type is left
    unchanged and still mentions [#"typerec"], which is not a constructor of
-   [target_multilanguage_without_typerec]. *)
+   [target_multilanguage_without_typerec].
+
+   STILL ADMITTED (this session), for one localized reason: the *conversion*
+   case of [wf_term_cut_ind].  Everything else is now in place:
+   [partial_eval_wf_in_target] above gives well-typedness of [elim_typerec e]
+   in the full [target_multilanguage], and by computation the only rules of
+   [target_multilanguage] that are absent from
+   [target_multilanguage_without_typerec] are the six typerec rules
+   ["typerec"], ["typerec star"], ["typerec bool"], ["typerec func"],
+   ["ty_subst typerec"], ["val_subst typerec"] -- of which exactly one,
+   ["typerec"], is a *term* rule.  So the constructor case transfers by a
+   [vm_compute]d membership check, and the [#"typerec"] case is discharged by
+   [meta_typerec] (whose output mentions no typerec).  What does not transfer
+   is the hypothesis [eq_sort target_multilanguage [] t t'] of the conversion
+   case: to re-apply [wf_term_conv] in the sublanguage one needs
+   [eq_sort target_multilanguage_without_typerec [] t t'], and
+   [target_multilanguage] has no sort equations, so this [eq_sort] is built
+   from sort-congruence over *term* equalities inside the sort arguments,
+   which may legitimately use the five typerec equations.  Transferring it is
+   a conservativity statement about the extension
+   [target_multilanguage_without_typerec] |- [target_multilanguage], which
+   Pyrosome does not currently provide.  The residual goal is exactly:
+
+     forall t t', eq_sort target_multilanguage [] t t' ->
+                  wf_sort target_multilanguage_without_typerec [] t ->
+                  wf_sort target_multilanguage_without_typerec [] t' ->
+                  eq_sort target_multilanguage_without_typerec [] t t'.
+ *)
 Theorem partial_eval_wf_in_no_typerec_lang : forall (t : sort) (e : term),
     Core.wf_term target_multilanguage [] e t ->
     all_typerecs_simple e ->
