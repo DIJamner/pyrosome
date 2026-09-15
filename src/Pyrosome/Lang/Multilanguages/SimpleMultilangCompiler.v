@@ -256,38 +256,37 @@ Definition c_exp_subst_dtt := Eval vm_compute in gctx "exp_subst dtt".
 Definition s_exp_subst_dtt := Eval vm_compute in gsrt "exp_subst dtt".
 Definition l_exp_subst_dtt := Eval vm_compute in glhs "exp_subst dtt".
 Definition r_exp_subst_dtt := Eval vm_compute in grhs "exp_subst dtt".
-(* ISSUE: see STATUS.md -- localized to [func_case_subst] above (the [#"->"]
-   case of the typerec); the [#"*"] and [#"bool"] cases are proved above. *)
+(* Qed under the value-level typerec: the three cases are now constants with
+   one-step substitution rules ("val_subst bstar"/"bbool"/"bfunc"). *)
 Lemma eq_exp_subst_dtt : eq_term target_multilanguage c_exp_subst_dtt s_exp_subst_dtt l_exp_subst_dtt r_exp_subst_dtt.
-(* NOT RE-RUN this session: the two build attempts of this file under the
-   value-level typerec were cut off before finishing.  Intended proof:
-   [unfold c_exp_subst_dtt, s_exp_subst_dtt, l_exp_subst_dtt, r_exp_subst_dtt. by_reduction_checked.] *)
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold c_exp_subst_dtt, s_exp_subst_dtt, l_exp_subst_dtt, r_exp_subst_dtt. Time Timeout 900 by_reduction_checked. Time Qed.
 
 Definition c_exp_subst_ttd := Eval vm_compute in gctx "exp_subst ttd".
 Definition s_exp_subst_ttd := Eval vm_compute in gsrt "exp_subst ttd".
 Definition l_exp_subst_ttd := Eval vm_compute in glhs "exp_subst ttd".
 Definition r_exp_subst_ttd := Eval vm_compute in grhs "exp_subst ttd".
-(* ISSUE: see STATUS.md -- localized to [func_case_subst] above, as "exp_subst dtt". *)
+(* Qed, as "exp_subst dtt". *)
 Lemma eq_exp_subst_ttd : eq_term target_multilanguage c_exp_subst_ttd s_exp_subst_ttd l_exp_subst_ttd r_exp_subst_ttd.
-(* NOT RE-RUN this session: the two build attempts of this file under the
-   value-level typerec were cut off before finishing.  Intended proof:
-   [unfold c_exp_subst_ttd, s_exp_subst_ttd, l_exp_subst_ttd, r_exp_subst_ttd. by_reduction_checked.] *)
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold c_exp_subst_ttd, s_exp_subst_ttd, l_exp_subst_ttd, r_exp_subst_ttd. Time Timeout 900 by_reduction_checked. Time Qed.
 
 (* ------------------------------------------------------------------ *)
-(* ISSUE: see STATUS.md, Stage F.  6 of the 13 boundary equations are not
-   discharged: the six [typerec func] / [exp_subst] equations still time out
-   (re-measured at 400s after the let-binding change).  "dtt star" and
-   "ttd star", previously believed false, are now Qed thanks to the
-   let-binding in the compiler plus the "let eta" rule.  The theorem is
-   therefore still admitted; the seven equations that do go through are
-   proved above.                                                         *)
+(* ISSUE: see STATUS.md, Stage F.  9 of the 13 boundary equations are now
+   discharged: the value-level [typerec] redesign closed both [#"exp_subst"]
+   equations (the three boundary cases are now the constants [#"bstar"] /
+   [#"bbool"] / [#"bfunc"], whose substitution rules are one-step rewrites).
+   The 4 remaining are exactly the ones that need ["typerec func"]
+   ("dtt func", "ttd func", "dtt uT mismatch", "dtt uF mismatch"); all four
+   TIMEOUT at 900s.  Root cause: ["typerec func"] instantiates the function
+   case by the *type* substitution [ty_snoc (ty_snoc ty_id t1) t2], and
+   [boundary_cases] has no ["ty_subst bfunc"] rule that can absorb an
+   instantiating type substitution, so the e-graph must unfold ["bfunc def"]
+   and push [#"val_ty_subst"] through the whole (large) [bfunc_body].
+   The theorem is therefore still admitted.                               *)
 Lemma simple_multilang_compiler_preserving
   : preserving_compiler_ext (tgt_Model := core_model target_multilanguage)
       interoperating_langs_compiler simple_multilang_compiler boundaries.
-(* NOT RE-RUN this session; intended proof:
-   [compute_preserving_compiler simple_interoperating_langs.] *)
+(* Cannot be assembled: 4 of the 13 equation lemmas above are still
+   Admitted (see STATUS.md, Stage F). *)
 Admitted. (* ISSUE: see STATUS.md *)
 
 #[local] Definition simple_multilang_compiler_entry :=
