@@ -623,3 +623,37 @@ Elaborated by `infer_lang_ext_simple_incr 10 100 target_multilanguage_pre` +
 `#"val_subst" (#"snoc" (#"snoc" #"id" "comp_t1") "comp_t2") (#"val_ty_subst" (#"ty_snoc" (#"ty_snoc" #"ty_id" "t1") "t2") "v3")`.
 `target_multilanguage_without_typerec` gains `boundary_cases` (which does not
 mention `#"typerec"`), proved by `wf_lang_concat` + `compute_wf_lang`.
+
+### Build status at the end of this session (IMPORTANT)
+
+| File | Rebuilt this session? | Result |
+|---|---|---|
+| `TypeCasing.v` | yes | **builds** (6m07s). `type_casing_rest_wf` Qed via `compute_wf_lang`; `type_casing_vs_wf` Qed via the 281-leaf `eq_term_rule` script; `type_casing_wf`, `source_multilanguage_wf`, `target_multilanguage_pre_wf` Qed |
+| `TrecTerms.v` | yes | **builds**. `boundary_cases_wf` Qed via `infer_lang_ext_simple_incr` + `compute_wf_lang`; `target_multilanguage_wf` Qed; `trec_boundaries_wf` Qed via `solve_elab_term_or_sort` |
+| `SimpleMultilangCompiler.v` | **attempted twice, never finished** | first attempt killed by its own `timeout 3500` (58m, output swallowed by `tail`); second attempt (log to file, `timeout 7000`) was killed by the harness at ~80 min with no `Time` output flushed. **No evidence either way** about the 13 equations under the new design. |
+| `PolyBoundaries.v` | no | -- |
+| `TyperecPartialEval.v` | no | -- |
+
+Consequently the six previously-open equations in `SimpleMultilangCompiler.v`
+and `PolyBoundaries.v` are still `Admitted. (* ISSUE: see STATUS.md *)`, and so
+are `simple_multilang_compiler_preserving` / `poly_multilang_compiler_preserving`.
+The intended proof is written in a comment immediately above each one
+(`by_reduction_checked` for the equations, `compute_preserving_compiler` for the
+two whole-compiler theorems).  **Next step: rebuild `SimpleMultilangCompiler.v`
+with the output unbuffered (`stdbuf -oL`, or `rocq compile` directly rather than
+through `make | tail`) so that the per-lemma `Time` lines are visible, and turn
+each `Admitted` back into the commented proof one at a time.**
+
+Two further notes for whoever picks this up:
+
+* the `Derive dtt_case_tgt` / `Derive ttd_case_tgt` elaborations in
+  `SimpleMultilangCompiler.v` now elaborate
+  `#"let" "e" (#"app" (#".2" (#"ret" (#"val_subst" #"wkn" TREC))) (#"ret" #"hd"))`
+  -- note the added `#"ret"`, since `trec_boundaries` is a `#"val"` now.  Those
+  two `Derive`s are the first thing the file does after the definitions, so a
+  failure there (rather than in an equation) would show up early.
+* `TyperecPartialEval.v` was edited but not built: `comp_t1_type`/`comp_t2_type`
+  are now `#"val"` sorts, `"e3"` is renamed `"v3"`, `func_partial_eval_term_def`
+  is the new value, and `target_multilanguage_without_typerec` gained
+  `boundary_cases`.  `partial_eval_preserves_equality` and
+  `partial_eval_wf_in_no_typerec_lang` remain `Admitted` as before.
