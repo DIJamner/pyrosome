@@ -921,3 +921,153 @@ touch).  `compiled_partial_eval_wf`, `source_multilanguage_compiler_preserving`,
 (2 of 13 boundary equations open, see stage F), so they are not yet
 admission-free.  `partial_eval_preserves_equality` and
 `partial_eval_wf_in_no_typerec_lang` are unchanged (`Admitted`).
+
+## UPDATE (dtt/ttd func session, 2026-09-15)
+
+### The discrepancy: none.  It was the reduce-and-restart loop, not the shapes.
+
+`W1`/`W2` in `"bfunc def"` **are** the compiled images of the boundary rules'
+right-hand sides; every `ovar` index and every weakening lines up.  What blocks
+`"dtt func"` / `"ttd func"` is the search strategy:
+
+* `egraph_reducing_equal` saturates only until either side's **weight
+  decreases**, then extracts the smallest representative and **restarts** from
+  it.
+* The one rewrite these two equations need first, `"typerec func"`, strictly
+  **grows** the term (it replaces a `#"typerec"` node by a `#"bfunc"` node
+  carrying two further `#"typerec"`s).  Extraction therefore always throws it
+  away, so the `#"typerec"` at `#"->" "A" "B"` is re-created un-unfolded at
+  every restart and the rest of the work (`"bfunc def"`, STLC-beta,
+  `"bool?-func"`, `"mif false"`, the substitution laws) never runs in the same
+  round.  That is the TIMEOUT, and it is also why the `"... mismatch"`
+  equations *do* work: their right-hand side is the small `#"Error"` term.
+
+Diagnosed by instrumenting `egraph_reducing_equal_step` in a probe and printing
+the extracted pair after each restart: the first rounds only do
+`#"val_subst" #"id" #"hd" -> #"hd"` and the two `#"let" (#"ret" _)` steps, and
+then the trace stops making progress.
+
+### The fix: two hops per equation.
+
+`I1` / `J1` (stage F), `PI1` / `PJ1` (stage G) are the compiled left-hand sides
+with `#"typerec" (#"->" "A" "B") ...` replaced by its `"typerec func"` reduct
+`#"bfunc" "A" "B" TREC["A"] TREC["B"]`, elaborated with
+`solve_elab_term_or_sort`.  Each equation is then
+`eq_term_trans` of two `by_reduction_checked` hops.  No language or term
+definition had to change.
+
+| lemma (stage F) | tactic | Qed |
+|---|---|---|
+| `I1` (elaboration) | 111.6s | -- |
+| `eq_dtt_func_hop1` (`"typerec func"`) | 156.0s | 186.6s |
+| `eq_dtt_func_hop2` (rest) | 212.6s | 243.3s |
+| `J1` (elaboration) | 110.2s | -- |
+| `eq_ttd_func_hop1` | 158.7s | 189.5s |
+| `eq_ttd_func_hop2` | 215.3s | 246.4s |
+
+`eq_dtt_func` / `eq_ttd_func` are then `eq_term_trans` (instant).
+**All 13 boundary equations are Qed in stage F.**
+
+### Second bug found: the compiler list was in the wrong order.
+
+`boundaries` (and `boundaries_parameterized`) list their term rules, head-first,
+as `... ; "dtt"; "exp_subst ttd"; "ttd"`, but `simple_multilang_compiler` /
+`poly_multilang_compiler` listed `"ttd"` first.  `preserving_compiler_ext`
+cannot be assembled at all in that order (the `term` constructor tries to unify
+`"dtt"` with `"ttd"`).  Both compilers are now `dtt`-first.  Compilation is by
+name lookup, so no compiled term changed.
+
+### Assembling the whole-compiler theorems.
+
+`compute_preserving_compiler` is unusable here: its `eq_term_oracle` re-runs the
+e-graph on every equation, including the two that only converge when split.  The
+theorems are assembled from the 13 equation lemmas plus `dtt_case_wf` /
+`ttd_case_wf` by repeated application of the `preserving_compiler_ext`
+constructors.  Two obstacles, both handled in the files:
+
+* `CompilerDefs.preserving_compiler_term` **cannot be applied**: its conclusion
+  mentions `map fst c`, and unifying `map fst ?c` with a `term_case`'s literal
+  argument list is not something Coq can invert.  `pct` / `ppct` restate the
+  constructor with `map fst c = cargs` as an explicit premise, discharged by
+  `vm_compute; reflexivity`.
+* `boundaries_parameterized` is a *computed* term, so its cons cells are not
+  visible to `constructor`; `boundaries_parameterized_lit_eq` rewrites it to a
+  literal first.
+
+Assembly itself is instant (0.05s / 0.15s / 0.17s for the repeat, the leaves and
+the `Qed` in stage F).
+
+### Stage G: PolyBoundaries.v (general `D`)
+
+The port is literal: `PI1` / `PJ1` are written with exactly the same
+unelaborated text as `I1` / `J1` (the `"D"` is inferred by elaboration), and
+`ppct` is `pct` with `polymorphic_interoperating_langs_compiler`.  Two
+file-local gotchas:
+
+* `preserving_compiler_ext` is a **local notation** here that takes the target
+  language positionally, so `(tgt_Model := ...)` is a syntax error, and the
+  goal pattern in the assembly tactic must name the constant
+  (`CompilerDefs.preserving_compiler_ext _ _ _`).
+* `boundaries_parameterized` is a *computed* term (`parameterize_lang ...`),
+  so `boundaries_parameterized_lit_eq` turns it into a literal before the
+  constructors run.
+
+| lemma | tactic | Qed |
+|---|---|---|
+| `PI1` (elaboration) | 110.7s | 35.5s |
+| `PJ1` (elaboration) | 109.4s | 35.4s |
+| `peq_dtt_func_hop1` | 154.6s | 184.5s |
+| `peq_dtt_func_hop2` | 215.0s | 245.9s |
+| `peq_ttd_func_hop1` | 153.9s | 184.6s |
+| `peq_ttd_func_hop2` | 220.2s | 252.8s |
+| `poly_multilang_compiler_preserving` (assembly) | 0.07s + 0.60s | 0.41s |
+
+**All 13 equations of `boundaries_parameterized` are Qed**, and
+`poly_multilang_compiler_preserving` is Qed.
+
+### Stage H: TyperecPartialEval.v
+
+Rebuilt with **no source change**: 4m07s, EXIT 0.  `eq_sort_sml_implies_eq_sort_tml`
+is now **closed under the global context** (its dependence on
+`simple_multilang_compiler_preserving` is discharged).  `compiled_partial_eval_wf`
+depends on exactly one axiom, the still-`Admitted`
+`partial_eval_wf_in_no_typerec_lang` (unchanged by this session, and not
+e-graph-bound).  `partial_eval_preserves_equality` also remains `Admitted`.
+
+### Builds this session
+
+| File | Time | Result |
+|---|---|---|
+| `SimpleMultilangCompiler.v` | 63m54s | EXIT 0 |
+| `PolyBoundaries.v` | 70m28s | EXIT 0 |
+| `TyperecPartialEval.v` | 4m07s | EXIT 0 |
+
+### Final status of every theorem in this folder
+
+`Print Assumptions` was run on the six theorems marked (PA) below; the rest are
+`Qed` in files that are themselves closed under the global context except where
+noted.
+
+| File | Theorem | Status | Assumptions |
+|---|---|---|---|
+| ParamFragments.v | all fragment `*_wf` / `*_ty_subst_wf` | Qed | -- |
+| InteropLangs.v | `simple_interoperating_langs_wf`, `polymorphic_interoperating_langs_wf`, `interoperating_langs_compiler_preserving` | Qed | -- |
+| Boundaries.v | `boundaries_wf` | Qed | -- |
+| TypeCasing.v | `type_casing_rest_wf`, `type_casing_vs_wf`, `type_casing_wf`, `source_multilanguage_wf`, `target_multilanguage_pre_wf` | Qed | -- |
+| TrecTerms.v | `boundary_cases_wf`, `target_multilanguage_wf`, `trec_boundaries_wf` | Qed | -- |
+| SimpleMultilangCompiler.v | `dtt_case_tgt_wf`, `ttd_case_tgt_wf`, `dtt_case_wf`, `ttd_case_wf`, `I1_wf`, `J1_wf` | Qed | -- |
+| SimpleMultilangCompiler.v | the 13 `eq_*` equation lemmas (incl. `eq_dtt_func`, `eq_ttd_func` and the four hop lemmas) | **Qed** | -- |
+| SimpleMultilangCompiler.v | `simple_multilang_compiler_preserving` | **Qed** | **Closed under the global context** (PA) |
+| PolyBoundaries.v | `boundaries_parameterized_wf`, `boundaries_ty_subst_wf`, `poly_boundaries_wf`, `lump_cancellation_*`, `trec_boundaries_poly_wf`, `poly_dtt_case_tgt_wf`, `poly_ttd_case_tgt_wf`, `poly_dtt_case_wf`, `poly_ttd_case_wf`, `PI1_wf`, `PJ1_wf` | Qed | -- |
+| PolyBoundaries.v | the 13 `peq_*` equation lemmas (incl. `peq_dtt_func`, `peq_ttd_func` and the four hop lemmas) | **Qed** | -- |
+| PolyBoundaries.v | `poly_multilang_compiler_preserving` | **Qed** | **Closed under the global context** (PA) |
+| TyperecPartialEval.v | `func_partial_eval_term_wf`, `compiled_types_are_simple`, `ty_inversion_lemma`, `ty_inversion_lemma_tml`, `interop_preserving_tml`, `source_multilanguage_compiler_preserving` | Qed | -- |
+| TyperecPartialEval.v | `can_eliminate_typerec` | Qed | Closed under the global context (PA) |
+| TyperecPartialEval.v | `sml_semantics_preserving` | Qed | Closed under the global context (PA) |
+| TyperecPartialEval.v | `eq_sort_sml_implies_eq_sort_tml` | Qed | **Closed under the global context** (PA) |
+| TyperecPartialEval.v | `compiled_partial_eval_wf` | Qed | one axiom: `partial_eval_wf_in_no_typerec_lang` (PA) |
+| TyperecPartialEval.v | `partial_eval_preserves_equality` | **Admitted** | -- |
+| TyperecPartialEval.v | `partial_eval_wf_in_no_typerec_lang` | **Admitted** | -- |
+
+The only remaining `Admitted`s in the folder are those last two lemmas of stage
+H; neither is e-graph-bound.
