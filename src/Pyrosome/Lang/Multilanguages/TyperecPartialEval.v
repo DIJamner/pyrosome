@@ -47,21 +47,26 @@ Local Notation preserving_compiler_ext tgt cmp_pre cmp src := (* copied from Par
 Definition func_partial_eval_ctx' :=
   Eval vm_compute in Rule.get_ctx (named_list_lookup default target_multilanguage "typerec func").
 
-Definition comp_t1_type := {{s #"exp" "D" "G" (#"ty_subst" "D" (#"ty_ext" "D") (#"ty_snoc" "D" "D" (#"ty_id" "D") "t1") "sigma") }}.
+Definition comp_t1_type := {{s #"val" "D" "G" (#"ty_subst" "D" (#"ty_ext" "D") (#"ty_snoc" "D" "D" (#"ty_id" "D") "t1") "sigma") }}.
 
-Definition comp_t2_type := {{s #"exp" "D" "G" (#"ty_subst" "D" (#"ty_ext" "D") (#"ty_snoc" "D" "D" (#"ty_id" "D") "t2") "sigma") }}.
+Definition comp_t2_type := {{s #"val" "D" "G" (#"ty_subst" "D" (#"ty_ext" "D") (#"ty_snoc" "D" "D" (#"ty_id" "D") "t2") "sigma") }}.
 
-Definition func_partial_eval_ctx := Eval vm_compute in [("comp_t2", comp_t2_type); ("comp_t1", comp_t1_type); ("e3", named_list_lookup default func_partial_eval_ctx' "e3"); ("t2", named_list_lookup default func_partial_eval_ctx' "t2"); ("t1", named_list_lookup default func_partial_eval_ctx' "t1"); ("sigma", named_list_lookup default func_partial_eval_ctx' "sigma"); ("G", named_list_lookup default func_partial_eval_ctx' "G"); ("D", named_list_lookup default func_partial_eval_ctx' "D")]. 
+Definition func_partial_eval_ctx := Eval vm_compute in [("comp_t2", comp_t2_type); ("comp_t1", comp_t1_type); ("v3", named_list_lookup default func_partial_eval_ctx' "v3"); ("t2", named_list_lookup default func_partial_eval_ctx' "t2"); ("t1", named_list_lookup default func_partial_eval_ctx' "t1"); ("sigma", named_list_lookup default func_partial_eval_ctx' "sigma"); ("G", named_list_lookup default func_partial_eval_ctx' "G"); ("D", named_list_lookup default func_partial_eval_ctx' "D")]. 
 
-Definition func_partial_eval_term_def := (* comp_t1 ie computation of type t1. cf substitution in meta_typerec *)
-  {{e #"app" (#"@" (#"app" (#"@" "e3" "t1") "comp_t1") "t2") "comp_t2" }}.
+(* NOTE (value-level typerec): the arrow case of the partial evaluator is now
+   the *value* produced by the new ["typerec func"] rule, i.e. the two
+   recursive results substituted into the (type-instantiated) function case
+   ["v3"], rather than two [#"@"]/[#"app"] applications. *)
+Definition func_partial_eval_term_def :=
+  {{e #"val_subst" (#"snoc" (#"snoc" #"id" "comp_t1") "comp_t2")
+      (#"val_ty_subst" (#"ty_snoc" (#"ty_snoc" #"ty_id" "t1") "t2") "v3") }}.
 
 Derive func_partial_eval_term
   in ( elab_term target_multilanguage
          func_partial_eval_ctx
          func_partial_eval_term_def
          func_partial_eval_term
-         {{s #"exp" "D" "G" (#"ty_subst" "D" (#"ty_ext" "D") (#"ty_snoc" "D" "D" (#"ty_id" "D") (#"->" "D" "t1" "t2")) "sigma") }}
+         {{s #"val" "D" "G" (#"ty_subst" "D" (#"ty_ext" "D") (#"ty_snoc" "D" "D" (#"ty_id" "D") (#"->" "D" "t1" "t2")) "sigma") }}
      ) as func_partial_eval_term_wf. 
 Proof. solve_elab_term_or_sort target_multilanguage. Qed.
 
@@ -70,7 +75,7 @@ Fixpoint meta_typerec (D G mu sigma e1 e2 e3 : term) : term :=
   | {{e #"*" {_} }} => e1
   | {{e #"bool" {_} }} => e2
   | {{e #"->" {_} {t1} {t2} }} =>
-      func_partial_eval_term [/ [ ("e3", e3);
+      func_partial_eval_term [/ [ ("v3", e3);
                                   ("t1", t1);
                                   ("comp_t1", meta_typerec D G t1 sigma e1 e2 e3);
                                   ("t2", t2);
@@ -744,12 +749,19 @@ Admitted.
 *)
 
 Definition target_multilanguage_without_typerec :=
+  boundary_cases ++
   let_eta_parameterized ++ let_ty_subst ++ let_parameterized ++
     prod_ty_subst ++ prod_parameterized ++ (* can we also get rid of these? idt we partially evaluate that away but I think we could *)
     polymorphic_interoperating_langs.
 
 Lemma target_multilanguage_without_typerec_wf : wf_lang target_multilanguage_without_typerec.
-Proof. prove_by_lang_db. Qed.
+Proof.
+  unfold target_multilanguage_without_typerec.
+  apply wf_lang_concat; [ prove_by_lang_db | ].
+  (* [boundary_cases] does not mention [#"typerec"], so it is still an
+     extension of the typerec-free target. *)
+  Time compute_wf_lang.
+Qed.
 #[local] Definition target_multilanguage_without_typerec_entry :=
   lang_entry target_multilanguage_without_typerec_wf.
 #[export] Hint Resolve target_multilanguage_without_typerec_entry : wf_lang_db.

@@ -19,6 +19,7 @@ From Pyrosome Require Import Theory.Core Elab.Elab
 Import Core.Notations.
 
 From Stdlib Require derive.Derive.
+From Pyrosome Require Import Tools.EGraph.InjRuleGen.
 
 (* import the relevant language fragments *)
 From Pyrosome.Lang Require Import SimpleVSTLC. 
@@ -55,10 +56,6 @@ Definition ovar n := {{e #"val_subst" {wkn_n n} #"hd" }}.
 (*   lang_entry target_multilanguage_wf. *)
 (* #[export] Hint Resolve target_multilanguage_entry : wf_lang_db. *)
 
-Ltac derive_elab_term := (* no longer used *)
-  assert (wf_lang target_multilanguage) by prove_by_lang_db;
-  unshelve (repeat t); t'. (* repeat t then unshelve; then on the unshelved do t'. *)
-
 Ltac solve_eq_sort_disj := (* no longer used *)
   right; compute_eq_compilation; sort_cong; repeat by_reduction.
 
@@ -79,106 +76,150 @@ Ltac quick_goal_match :=
   | |- _  => idtac "neither case"
   end.
 
-Definition trec_star_case_unelab :=
-  {{e #"pair"
-      (#"ret" (#"lambda" #"*" (#"ret" #"hd")))
-      (#"ret" (#"lambda" #"*" (#"ret" #"hd"))) }}.
-Derive trec_star_case
-  in ( elab_term target_multilanguage
-         [("G", {{s #"env" #"ty_emp"}})]
-         trec_star_case_unelab
-         trec_star_case
-         {{s #"exp" #"ty_emp" "G"
-             (#"prod" #"ty_emp"
-                (#"->" #"ty_emp" (#"*" #"ty_emp") (#"*" #"ty_emp"))
-                (#"->" #"ty_emp" (#"*" #"ty_emp") (#"*" #"ty_emp"))
-             )
-         }}
-     ) as trec_star_case_wf.
-Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed. (* used to be derive_elab_term *)
 
-Definition trec_bool_case_unelab :=
-  {{e #"pair"
-      (#"ret" (#"lambda" #"bool" (#"if" (#"ret" #"hd") (#"ret" #"uT") (#"ret" #"uF"))))
-      (#"ret" (#"lambda" #"*" (#"mif" (#"ret" #"hd") (#"ret" #"T") (#"ret" #"F")))) }}. 
-Derive trec_bool_case
-  in ( elab_term target_multilanguage
-         [("G", {{s #"env" #"ty_emp"}})]
-         trec_bool_case_unelab
-         trec_bool_case
-         {{s #"exp" #"ty_emp" "G"
-             (#"prod" #"ty_emp"
-                (#"->" #"ty_emp" (#"bool" #"ty_emp") (#"*" #"ty_emp"))
-                (#"->" #"ty_emp" (#"*" #"ty_emp") (#"bool" #"ty_emp"))
-             )
-         }}
-     ) as trec_bool_case_wf. 
-Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed. (* used to be derive_elab_term *)
+(* ------------------------------------------------------------------ *)
+(* The three boundary cases, as VALUE CONSTANTS.
 
-Derive trec_func_case_sort
-  in (elab_sort target_multilanguage
-        [("G", {{s #"env" #"ty_emp"}})]
-        {{s #"exp" #"ty_emp" "G"
-            (#"All" 
-               (#"->" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
-                  (#"All"
-                     (#"->" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
-                        (#"prod" (#"->" (#"->" {ty_ovar 1} {ty_ovar 0}) #"*") (#"->" #"*" (#"->" {ty_ovar 1} {ty_ovar 0}))))))) }}
-        trec_func_case_sort
-     )
-    as trec_func_case_sort_wf.
-Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed. (* used to be derive_elab_term *)
+   Previously these were three big derived terms plugged into [#"typerec"].
+   Substituting through them (either a term substitution, for the
+   ["exp_subst dtt"]/["exp_subst ttd"] equations, or the type substitution
+   that ["typerec func"] produces) meant traversing the whole wrapper, which
+   the e-graph could not do in 900s.  As constants with defining equations,
+   a substitution passes through them in a single rewrite.               *)
 
-(* The two wrappers are written so that they are *literally* the compiled image
-   of the boundary rules' right-hand sides:
-   - [#".1"] (the [ttd] direction) mirrors ("ttd func");
-   - [#".2"] (the [dtt] direction) mirrors ("dtt func"), and eagerly checks with
-     [#"bool?"]/[#"mif"] that the untyped value really is a function, so that
-     [#"dtt" (#"->" "A" "B") (#"ret" #"uT"/#"uF")] reduces to [#"Error"].
-   Inside the two [#"Lam"]s, [ty_ovar 1] is the domain type and [ty_ovar 0] the
-   codomain; the two [#"lambda"]-bound pair variables hold the recursive
-   [typerec] results for those two types.                                     *)
-Definition trec_func_case_unelab :=
-  {{e #"ret" (#"Lam" (#"ret" (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
-     (#"ret" (#"Lam" (#"ret" (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
-       (#"pair"
-          (#"ret" (#"lambda" (#"->" {ty_ovar 1} {ty_ovar 0})
-             (#"ret" (#"ulambda"
-                (#"let" (#"app" (#"ret" {ovar 1})
+(* [P X] is [sigma[X]] for the concrete [sigma] used by the boundaries,
+   [sigma] being [prod (arrow ty_hd star) (arrow star ty_hd)]. *)
+Definition P X := {{e #"prod" (#"->" {X} #"*") (#"->" #"*" {X}) }}.
+Definition boundary_sigma := Eval compute in P {{e #"ty_hd"}}.
+
+Definition Pa := Eval compute in P tva.
+Definition Pb := Eval compute in P tvb.
+Definition Pab := Eval compute in P {{e #"->" {tva} {tvb} }}.
+
+Definition bfunc_sort :=
+  {{s #"val" (#"ty_ext" (#"ty_ext" "D")) (#"ext" (#"ext" {G2} {Pa}) {Pb}) {Pab} }}.
+Definition bfunc_sort' :=
+  {{s #"val" (#"ty_ext" (#"ty_ext" "D")) (#"ext" (#"ext" {G2'} {Pa}) {Pb}) {Pab} }}.
+
+Definition bstar_body :=
+  {{e #"pair_val" (#"lambda" #"*" (#"ret" #"hd")) (#"lambda" #"*" (#"ret" #"hd")) }}.
+
+Definition bbool_body :=
+  {{e #"pair_val"
+      (#"lambda" #"bool" (#"if" (#"ret" #"hd") (#"ret" #"uT") (#"ret" #"uF")))
+      (#"lambda" #"*" (#"mif" (#"ret" #"hd") (#"ret" #"T") (#"ret" #"F"))) }}.
+
+(* The two wrappers, verbatim from the old [trec_func_case]: at the point of
+   the [#"pair"] the old term's environment was [ext (ext G Pa) Pb] too, so
+   every [ovar] index is unchanged.  [{ovar 1}] is the recursive result for
+   the domain type [a], [{ovar 0}] the one for the codomain [b].          *)
+Definition bfunc_body :=
+  {{e #"pair_val"
+      (#"lambda" (#"->" {tva} {tvb})
+         (#"ret" (#"ulambda"
+            (#"let" (#"app" (#"ret" {ovar 1})
+                            (#"let" (#"ret" {ovar 0})
+                                    (#"app" (#".2" (#"ret" {ovar 4})) (#"ret" {ovar 0}))))
+                    (#"app" (#".1" (#"ret" {ovar 3})) (#"ret" {ovar 0}))))))
+      (#"lambda" #"*"
+         (#"mif" (#"bool?" (#"ret" {ovar 0}))
+            (#"Error" (#"->" {tva} {tvb}))
+            (#"ret" (#"lambda" {tva}
+               (#"let" (#"uapp" (#"ret" {ovar 1})
                                 (#"let" (#"ret" {ovar 0})
-                                        (#"app" (#".2" (#"ret" {ovar 4})) (#"ret" {ovar 0}))))
-                        (#"app" (#".1" (#"ret" {ovar 3})) (#"ret" {ovar 0})))))))
-          (#"ret" (#"lambda" #"*"
-             (#"mif" (#"bool?" (#"ret" {ovar 0}))
-                (#"Error" (#"->" {ty_ovar 1} {ty_ovar 0}))
-                (#"ret" (#"lambda" {ty_ovar 1}
-                   (#"let" (#"uapp" (#"ret" {ovar 1})
-                                    (#"let" (#"ret" {ovar 0})
-                                            (#"app" (#".1" (#"ret" {ovar 4})) (#"ret" {ovar 0}))))
-                           (#"app" (#".2" (#"ret" {ovar 3})) (#"ret" {ovar 0}))))))))
-       )))))))) }}.
-Derive trec_func_case
-  in ( elab_term target_multilanguage
-         [("G", {{s #"env" #"ty_emp"}})]
-         trec_func_case_unelab
-         trec_func_case
-         trec_func_case_sort
-     ) as trec_func_case_wf.
-Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed. 
+                                        (#"app" (#".1" (#"ret" {ovar 4})) (#"ret" {ovar 0}))))
+                       (#"app" (#".2" (#"ret" {ovar 3})) (#"ret" {ovar 0}))))))) }}.
 
+Definition boundary_cases_def : lang :=
+  {[l
+    [:| "D" : #"ty_env", "G" : #"env" "D"
+        -----------------------------------------------
+        #"bstar" : #"val" "D" "G" {P {{e #"*"}} }
+    ];
+    [:| "D" : #"ty_env", "G" : #"env" "D"
+        -----------------------------------------------
+        #"bbool" : #"val" "D" "G" {P {{e #"bool"}} }
+    ];
+    [:| "D" : #"ty_env", "G" : #"env" "D"
+        -----------------------------------------------
+        #"bfunc" : {bfunc_sort}
+    ];
+    [:= "D" : #"ty_env", "G" : #"env" "D", "G'" : #"env" "D",
+        "g" : #"sub" "D" "G'" "G"
+        ----------------------------------------------- ("val_subst bstar")
+        #"val_subst" "g" #"bstar" = #"bstar" : #"val" "D" "G'" {P {{e #"*"}} }
+    ];
+    [:= "D" : #"ty_env", "G" : #"env" "D", "G'" : #"env" "D",
+        "g" : #"sub" "D" "G'" "G"
+        ----------------------------------------------- ("val_subst bbool")
+        #"val_subst" "g" #"bbool" = #"bbool" : #"val" "D" "G'" {P {{e #"bool"}} }
+    ];
+    [:= "D" : #"ty_env", "G" : #"env" "D", "G'" : #"env" "D",
+        "g" : #"sub" "D" "G'" "G"
+        ----------------------------------------------- ("val_subst bfunc")
+        #"val_subst" {g_lift} #"bfunc" = #"bfunc" : {bfunc_sort'}
+    ];
+    [:= "D" : #"ty_env", "D'" : #"ty_env", "G" : #"env" "D",
+        "g" : #"ty_sub" "D'" "D"
+        ----------------------------------------------- ("ty_subst bstar")
+        #"val_ty_subst" "g" #"bstar" = #"bstar"
+        : #"val" "D'" (#"env_ty_subst" "g" "G") {P {{e #"*"}} }
+    ];
+    [:= "D" : #"ty_env", "D'" : #"ty_env", "G" : #"env" "D",
+        "g" : #"ty_sub" "D'" "D"
+        ----------------------------------------------- ("ty_subst bbool")
+        #"val_ty_subst" "g" #"bbool" = #"bbool"
+        : #"val" "D'" (#"env_ty_subst" "g" "G") {P {{e #"bool"}} }
+    ];
+    [:= "D" : #"ty_env", "G" : #"env" "D"
+        ----------------------------------------------- ("bstar def")
+        #"bstar" = {bstar_body} : #"val" "D" "G" {P {{e #"*"}} }
+    ];
+    [:= "D" : #"ty_env", "G" : #"env" "D"
+        ----------------------------------------------- ("bbool def")
+        #"bbool" = {bbool_body} : #"val" "D" "G" {P {{e #"bool"}} }
+    ];
+    [:= "D" : #"ty_env", "G" : #"env" "D"
+        ----------------------------------------------- ("bfunc def")
+        #"bfunc" = {bfunc_body} : {bfunc_sort}
+    ]
+  ]}.
+
+Definition boundary_cases :=
+  Eval vm_compute in
+    infer_lang_ext_simple_incr 10 100 target_multilanguage_pre boundary_cases_def.
+
+Lemma boundary_cases_wf : wf_lang_ext target_multilanguage_pre boundary_cases.
+Proof. Time compute_wf_lang. Qed.
+#[local] Definition boundary_cases_entry := lang_entry boundary_cases_wf.
+#[export] Hint Resolve boundary_cases_entry : wf_lang_db.
+
+Definition target_multilanguage := boundary_cases ++ target_multilanguage_pre.
+Hint Unfold target_multilanguage : auto_elab.
+
+Lemma target_multilanguage_wf : wf_lang target_multilanguage.
+Proof. prove_by_lang_db. Qed.
+#[local] Definition target_multilanguage_entry :=
+  lang_entry target_multilanguage_wf.
+#[export] Hint Resolve target_multilanguage_entry : wf_lang_db.
+
+(* ------------------------------------------------------------------ *)
+(* [trec_boundaries] is now just the [#"typerec"] value applied to the three
+   constants.                                                              *)
 Definition trec_boundaries_unelab :=
-  {{e #"typerec" "A" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
-      {trec_star_case_unelab}
-      {trec_bool_case_unelab}
-      {trec_func_case_unelab} }}.
+  {{e #"typerec" "A" {boundary_sigma} #"bstar" #"bbool" #"bfunc" }}.
+
+Definition trec_boundaries_sort :=
+  {{s #"val" #"ty_emp" "G"
+      (#"prod" #"ty_emp"
+         (#"->" #"ty_emp" "A" (#"*" #"ty_emp"))
+         (#"->" #"ty_emp" (#"*" #"ty_emp") "A")) }}.
+
 Derive trec_boundaries
-         in ( elab_term target_multilanguage
-                [("A", {{s #"ty" #"ty_emp"}}); ("G", {{s #"env" #"ty_emp"}})]
-                trec_boundaries_unelab
-                trec_boundaries
-                {{s #"exp" #"ty_emp" "G"
-                    (#"prod" #"ty_emp"
-                       (#"->" #"ty_emp" "A" (#"*" #"ty_emp"))
-                       (#"->" #"ty_emp" (#"*" #"ty_emp") "A")) }}
-            ) as trec_boundaries_wf.
+  in ( elab_term target_multilanguage
+         [("A", {{s #"ty" #"ty_emp"}}); ("G", {{s #"env" #"ty_emp"}})]
+         trec_boundaries_unelab
+         trec_boundaries
+         trec_boundaries_sort
+     ) as trec_boundaries_wf.
 Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed.

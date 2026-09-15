@@ -223,10 +223,10 @@ Fixpoint forall_partial_eval (program : term) : term :=
 Definition poly_multilang_compiler_def : compiler :=
   match # from boundaries_parameterized with
   | {{e #"dtt" "D" "G" "A" "e"}} =>
-      {{e #"let" "e" (#"app" (#".2" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+      {{e #"let" "e" (#"app" (#".2" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
                              (#"ret" #"hd")) }}
   | {{e #"ttd" "D" "G" "A" "e"}} =>
-      {{e #"let" "e" (#"app" (#".1" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+      {{e #"let" "e" (#"app" (#".1" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
                              (#"ret" #"hd")) }}
     (* we don't need a type variable case, since it's the same as the old compiler! *)
   end.
@@ -253,7 +253,7 @@ Derive trec_boundaries_poly
          [("A", {{s #"ty" "D"}}); ("G", {{s #"env" "D"}}); ("D", {{s #"ty_env"}})]
          trec_boundaries_unelab
          trec_boundaries_poly
-         {{s #"exp" "D" "G"
+         {{s #"val" "D" "G"
              (#"prod" "D"
                 (#"->" "D" "A" (#"*" "D"))
                 (#"->" "D" (#"*" "D") "A")) }}
@@ -266,7 +266,7 @@ Proof. Time Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Time Qe
    [#"let" "e" (#"ret" #"hd")].  Elaborated individually, as in stage F. *)
 
 Definition poly_dtt_case_unelab :=
-  {{e #"let" "e" (#"app" (#".2" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+  {{e #"let" "e" (#"app" (#".2" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
                          (#"ret" #"hd")) }}.
 
 Derive poly_dtt_case_tgt
@@ -282,7 +282,7 @@ Derive poly_dtt_case_tgt
 Proof. Time Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Time Qed.
 
 Definition poly_ttd_case_unelab :=
-  {{e #"let" "e" (#"app" (#".1" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+  {{e #"let" "e" (#"app" (#".1" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
                          (#"ret" #"hd")) }}.
 
 Derive poly_ttd_case_tgt
@@ -402,7 +402,7 @@ Definition pl_dtt_func := Eval vm_compute in pglhs "dtt func".
 Definition pr_dtt_func := Eval vm_compute in pgrhs "dtt func".
 (* ISSUE: see STATUS.md -- TIMEOUT 240s: needs the "typerec func" rule of [type_casing]; same saturation wall as stage F (which also failed at 900s). *)
 Lemma peq_dtt_func : eq_term target_multilanguage pc_dtt_func ps_dtt_func pl_dtt_func pr_dtt_func.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_dtt_func, ps_dtt_func, pl_dtt_func, pr_dtt_func. Time Timeout 1500 by_reduction_checked. Time Qed.
 
 Definition pc_ttd_func := Eval vm_compute in pgctx "ttd func".
 Definition ps_ttd_func := Eval vm_compute in pgsrt "ttd func".
@@ -410,7 +410,7 @@ Definition pl_ttd_func := Eval vm_compute in pglhs "ttd func".
 Definition pr_ttd_func := Eval vm_compute in pgrhs "ttd func".
 (* ISSUE: see STATUS.md -- as "dtt func". *)
 Lemma peq_ttd_func : eq_term target_multilanguage pc_ttd_func ps_ttd_func pl_ttd_func pr_ttd_func.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_ttd_func, ps_ttd_func, pl_ttd_func, pr_ttd_func. Time Timeout 1500 by_reduction_checked. Time Qed.
 
 Definition pc_dtt_ulambda_mismatch := Eval vm_compute in pgctx "dtt ulambda mismatch".
 Definition ps_dtt_ulambda_mismatch := Eval vm_compute in pgsrt "dtt ulambda mismatch".
@@ -425,7 +425,7 @@ Definition pl_dtt_uT_mismatch := Eval vm_compute in pglhs "dtt uT mismatch".
 Definition pr_dtt_uT_mismatch := Eval vm_compute in pgrhs "dtt uT mismatch".
 (* ISSUE: see STATUS.md -- TIMEOUT 240s: at type [#"->" "A" "B"], so it needs "typerec func". *)
 Lemma peq_dtt_uT_mismatch : eq_term target_multilanguage pc_dtt_uT_mismatch ps_dtt_uT_mismatch pl_dtt_uT_mismatch pr_dtt_uT_mismatch.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_dtt_uT_mismatch, ps_dtt_uT_mismatch, pl_dtt_uT_mismatch, pr_dtt_uT_mismatch. Time Timeout 1500 by_reduction_checked. Time Qed.
 
 Definition pc_dtt_uF_mismatch := Eval vm_compute in pgctx "dtt uF mismatch".
 Definition ps_dtt_uF_mismatch := Eval vm_compute in pgsrt "dtt uF mismatch".
@@ -433,7 +433,7 @@ Definition pl_dtt_uF_mismatch := Eval vm_compute in pglhs "dtt uF mismatch".
 Definition pr_dtt_uF_mismatch := Eval vm_compute in pgrhs "dtt uF mismatch".
 (* ISSUE: see STATUS.md -- as "dtt uT mismatch". *)
 Lemma peq_dtt_uF_mismatch : eq_term target_multilanguage pc_dtt_uF_mismatch ps_dtt_uF_mismatch pl_dtt_uF_mismatch pr_dtt_uF_mismatch.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_dtt_uF_mismatch, ps_dtt_uF_mismatch, pl_dtt_uF_mismatch, pr_dtt_uF_mismatch. Time Timeout 1500 by_reduction_checked. Time Qed.
 
 Definition pc_exp_subst_dtt := Eval vm_compute in pgctx "exp_subst dtt".
 Definition ps_exp_subst_dtt := Eval vm_compute in pgsrt "exp_subst dtt".
@@ -441,7 +441,7 @@ Definition pl_exp_subst_dtt := Eval vm_compute in pglhs "exp_subst dtt".
 Definition pr_exp_subst_dtt := Eval vm_compute in pgrhs "exp_subst dtt".
 (* ISSUE: see STATUS.md -- TIMEOUT 240s: pushing [#"exp_subst"] through the whole [trec_boundaries_poly] term. *)
 Lemma peq_exp_subst_dtt : eq_term target_multilanguage pc_exp_subst_dtt ps_exp_subst_dtt pl_exp_subst_dtt pr_exp_subst_dtt.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_exp_subst_dtt, ps_exp_subst_dtt, pl_exp_subst_dtt, pr_exp_subst_dtt. Time Timeout 1500 by_reduction_checked. Time Qed.
 
 Definition pc_exp_subst_ttd := Eval vm_compute in pgctx "exp_subst ttd".
 Definition ps_exp_subst_ttd := Eval vm_compute in pgsrt "exp_subst ttd".
@@ -449,7 +449,7 @@ Definition pl_exp_subst_ttd := Eval vm_compute in pglhs "exp_subst ttd".
 Definition pr_exp_subst_ttd := Eval vm_compute in pgrhs "exp_subst ttd".
 (* ISSUE: see STATUS.md -- as "exp_subst dtt". *)
 Lemma peq_exp_subst_ttd : eq_term target_multilanguage pc_exp_subst_ttd ps_exp_subst_ttd pl_exp_subst_ttd pr_exp_subst_ttd.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_exp_subst_ttd, ps_exp_subst_ttd, pl_exp_subst_ttd, pr_exp_subst_ttd. Time Timeout 1500 by_reduction_checked. Time Qed.
 
 (* ------------------------------------------------------------------ *)
 (* ISSUE: see STATUS.md, Stage G.  Exactly as in stage F, 7 of the 13
@@ -461,4 +461,4 @@ Lemma poly_multilang_compiler_preserving
   : preserving_compiler_ext target_multilanguage
       polymorphic_interoperating_langs_compiler poly_multilang_compiler
       boundaries_parameterized.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. Time compute_preserving_compiler polymorphic_interoperating_langs. Time Qed.

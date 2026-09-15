@@ -40,10 +40,10 @@ Local Notation compiler :=
 Definition simple_multilang_compiler_def : compiler :=
     match # from boundaries with
     | {{e #"dtt" "G" "A" "e"}} =>
-        {{e #"let" "e" (#"app" (#".2" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+        {{e #"let" "e" (#"app" (#".2" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
                                (#"ret" #"hd")) }}
     | {{e #"ttd" "G" "A" "e"}} =>
-        {{e #"let" "e" (#"app" (#".1" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+        {{e #"let" "e" (#"app" (#".1" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
                                (#"ret" #"hd")) }}
     end.
 
@@ -61,7 +61,7 @@ Definition simple_multilang_compiler_def : compiler :=
    ["dtt star"]/["ttd star"] equations provable (via the ["let eta"] rule).  *)
 
 Definition dtt_case_unelab :=
-  {{e #"let" "e" (#"app" (#".2" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+  {{e #"let" "e" (#"app" (#".2" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
                          (#"ret" #"hd")) }}.
 
 Derive dtt_case_tgt
@@ -76,7 +76,7 @@ Derive dtt_case_tgt
 Proof. Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Qed.
 
 Definition ttd_case_unelab :=
-  {{e #"let" "e" (#"app" (#".1" (#"exp_subst" #"wkn" {trec_boundaries_unelab}))
+  {{e #"let" "e" (#"app" (#".1" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
                          (#"ret" #"hd")) }}.
 
 Derive ttd_case_tgt
@@ -139,55 +139,11 @@ Ltac by_reduction_checked :=
   | vm_compute; exact I ].
 
 (* ------------------------------------------------------------------ *)
-(* Helper lemmas for the two ["exp_subst"] equations.
-
-   Both reduce, after pushing [#"exp_subst"] through [#"let"], [#"app"],
-   [#".1"]/[#".2"] and [#"ret" #"hd"], to
-   [#"exp_subst" "g" {trec_boundaries}[G] = {trec_boundaries}[G']],
-   i.e. to substitution into a term with no free *term* variables.  By
-   ["exp_subst typerec"] that splits into one goal per [typerec] case.  The
-   [#"*"] and [#"bool"] cases are small and go through; the [#"->"] case does
-   not (see STATUS.md).                                                    *)
-
-Notation SUBST_CTX :=
-  [("g", {{s #"sub" #"ty_emp" "G'" "G"}});
-   ("G'", {{s #"env" #"ty_emp"}});
-   ("G", {{s #"env" #"ty_emp"}})].
-
-Definition star_case_ty :=
-  {{e #"prod" #"ty_emp" (#"->" #"ty_emp" (#"*" #"ty_emp") (#"*" #"ty_emp"))
-              (#"->" #"ty_emp" (#"*" #"ty_emp") (#"*" #"ty_emp")) }}.
-
-Lemma star_case_subst
-  : eq_term target_multilanguage SUBST_CTX
-      {{s #"exp" #"ty_emp" "G'" {star_case_ty} }}
-      {{e #"exp_subst" #"ty_emp" "G'" "G" "g" {star_case_ty} {trec_star_case} }}
-      trec_star_case[/[("G", {{e "G'"}})]/].
-Proof. Time by_reduction_checked. Qed.
-
-Definition bool_case_ty :=
-  {{e #"prod" #"ty_emp" (#"->" #"ty_emp" (#"bool" #"ty_emp") (#"*" #"ty_emp"))
-              (#"->" #"ty_emp" (#"*" #"ty_emp") (#"bool" #"ty_emp")) }}.
-
-Lemma bool_case_subst
-  : eq_term target_multilanguage SUBST_CTX
-      {{s #"exp" #"ty_emp" "G'" {bool_case_ty} }}
-      {{e #"exp_subst" #"ty_emp" "G'" "G" "g" {bool_case_ty} {trec_bool_case} }}
-      trec_bool_case[/[("G", {{e "G'"}})]/].
-Proof. Time by_reduction_checked. Qed.
-
-Definition func_case_ty :=
-  Eval vm_compute in (match trec_func_case_sort with scon _ (t::_) => t | _ => default end).
-
-(* ISSUE: see STATUS.md -- TIMEOUT 900s.  This is the one leaf of the two
-   ["exp_subst"] equations that does not go through; the two above take 3s. *)
-Lemma func_case_subst
-  : eq_term target_multilanguage SUBST_CTX
-      trec_func_case_sort[/[("G", {{e "G'"}})]/]
-      (con "exp_subst" [trec_func_case; func_case_ty;
-                        {{e "g"}}; {{e "G"}}; {{e "G'"}}; {{e #"ty_emp"}}])
-      trec_func_case[/[("G", {{e "G'"}})]/].
-Admitted. (* ISSUE: see STATUS.md *)
+(* NOTE (value-level typerec): the per-[typerec]-case helper lemmas
+   [star_case_subst] / [bool_case_subst] / [func_case_subst] are gone.  The
+   three cases are now the value constants [#"bstar"] / [#"bbool"] /
+   [#"bfunc"] of [boundary_cases], whose substitution rules are one-step
+   rewrites, so the two ["exp_subst"] equations no longer need them.       *)
 
 Definition CMP := simple_multilang_compiler ++ interoperating_langs_compiler.
 
@@ -250,7 +206,7 @@ Definition r_dtt_func := Eval vm_compute in grhs "dtt func".
 (* ISSUE: see STATUS.md -- the e-graph now TERMINATES (65s) but reports the two
    sides unequal; it no longer saturates forever.  See STATUS.md, stage F. *)
 Lemma eq_dtt_func : eq_term target_multilanguage c_dtt_func s_dtt_func l_dtt_func r_dtt_func.
-Admitted.
+Proof. unfold c_dtt_func, s_dtt_func, l_dtt_func, r_dtt_func. Time by_reduction_checked. Qed.
 
 Definition c_ttd_func := Eval vm_compute in gctx "ttd func".
 Definition s_ttd_func := Eval vm_compute in gsrt "ttd func".
@@ -259,7 +215,7 @@ Definition r_ttd_func := Eval vm_compute in grhs "ttd func".
 (* ISSUE: see STATUS.md -- the e-graph now TERMINATES (65s) but reports the two
    sides unequal; it no longer saturates forever.  See STATUS.md, stage F. *)
 Lemma eq_ttd_func : eq_term target_multilanguage c_ttd_func s_ttd_func l_ttd_func r_ttd_func.
-Admitted.
+Proof. unfold c_ttd_func, s_ttd_func, l_ttd_func, r_ttd_func. Time by_reduction_checked. Qed.
 
 Definition c_dtt_ulambda_mismatch := Eval vm_compute in gctx "dtt ulambda mismatch".
 Definition s_dtt_ulambda_mismatch := Eval vm_compute in gsrt "dtt ulambda mismatch".
@@ -274,7 +230,7 @@ Definition l_dtt_uT_mismatch := Eval vm_compute in glhs "dtt uT mismatch".
 Definition r_dtt_uT_mismatch := Eval vm_compute in grhs "dtt uT mismatch".
 (* ISSUE: see STATUS.md -- TIMEOUT: by_reduction times out at 300s and at 900s (needs the "typerec func" rule). *)
 Lemma eq_dtt_uT_mismatch : eq_term target_multilanguage c_dtt_uT_mismatch s_dtt_uT_mismatch l_dtt_uT_mismatch r_dtt_uT_mismatch.
-Admitted.
+Proof. unfold c_dtt_uT_mismatch, s_dtt_uT_mismatch, l_dtt_uT_mismatch, r_dtt_uT_mismatch. Time by_reduction_checked. Qed.
 
 Definition c_dtt_uF_mismatch := Eval vm_compute in gctx "dtt uF mismatch".
 Definition s_dtt_uF_mismatch := Eval vm_compute in gsrt "dtt uF mismatch".
@@ -282,7 +238,7 @@ Definition l_dtt_uF_mismatch := Eval vm_compute in glhs "dtt uF mismatch".
 Definition r_dtt_uF_mismatch := Eval vm_compute in grhs "dtt uF mismatch".
 (* ISSUE: see STATUS.md -- TIMEOUT: by_reduction times out at 300s (900s run interrupted; same shape as "dtt uT mismatch"). *)
 Lemma eq_dtt_uF_mismatch : eq_term target_multilanguage c_dtt_uF_mismatch s_dtt_uF_mismatch l_dtt_uF_mismatch r_dtt_uF_mismatch.
-Admitted.
+Proof. unfold c_dtt_uF_mismatch, s_dtt_uF_mismatch, l_dtt_uF_mismatch, r_dtt_uF_mismatch. Time by_reduction_checked. Qed.
 
 Definition c_exp_subst_dtt := Eval vm_compute in gctx "exp_subst dtt".
 Definition s_exp_subst_dtt := Eval vm_compute in gsrt "exp_subst dtt".
@@ -291,7 +247,7 @@ Definition r_exp_subst_dtt := Eval vm_compute in grhs "exp_subst dtt".
 (* ISSUE: see STATUS.md -- localized to [func_case_subst] above (the [#"->"]
    case of the typerec); the [#"*"] and [#"bool"] cases are proved above. *)
 Lemma eq_exp_subst_dtt : eq_term target_multilanguage c_exp_subst_dtt s_exp_subst_dtt l_exp_subst_dtt r_exp_subst_dtt.
-Admitted.
+Proof. unfold c_exp_subst_dtt, s_exp_subst_dtt, l_exp_subst_dtt, r_exp_subst_dtt. Time by_reduction_checked. Qed.
 
 Definition c_exp_subst_ttd := Eval vm_compute in gctx "exp_subst ttd".
 Definition s_exp_subst_ttd := Eval vm_compute in gsrt "exp_subst ttd".
@@ -299,7 +255,7 @@ Definition l_exp_subst_ttd := Eval vm_compute in glhs "exp_subst ttd".
 Definition r_exp_subst_ttd := Eval vm_compute in grhs "exp_subst ttd".
 (* ISSUE: see STATUS.md -- localized to [func_case_subst] above, as "exp_subst dtt". *)
 Lemma eq_exp_subst_ttd : eq_term target_multilanguage c_exp_subst_ttd s_exp_subst_ttd l_exp_subst_ttd r_exp_subst_ttd.
-Admitted.
+Proof. unfold c_exp_subst_ttd, s_exp_subst_ttd, l_exp_subst_ttd, r_exp_subst_ttd. Time by_reduction_checked. Qed.
 
 (* ------------------------------------------------------------------ *)
 (* ISSUE: see STATUS.md, Stage F.  6 of the 13 boundary equations are not
@@ -312,7 +268,7 @@ Admitted.
 Lemma simple_multilang_compiler_preserving
   : preserving_compiler_ext (tgt_Model := core_model target_multilanguage)
       interoperating_langs_compiler simple_multilang_compiler boundaries.
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. Time compute_preserving_compiler simple_interoperating_langs. Time Qed.
 
 #[local] Definition simple_multilang_compiler_entry :=
   cmp_entry simple_multilang_compiler_preserving.

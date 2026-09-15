@@ -521,3 +521,105 @@ The residual risk flagged in the previous session -- that `eq_sort` in the
 bigger language cannot be transferred to the sublanguage -- is still open; the
 fallback is to weaken the conclusion to well-typedness in `target_multilanguage`
 itself.
+
+---
+
+## UPDATE (this session): value-level `typerec` + `boundary_cases`
+
+**Root cause that was fixed.**  `type_casing`'s `typerec` used to return an
+*expression*, and `"typerec func"` rewrote it to an `#"app"`/`#"@"` applied to
+the *expressions* `#"typerec" "t1" ...` / `#"typerec" "t2" ...`.  For a
+metavariable type those are stuck normal forms, `STLC-beta` needs `#"ret" "v"`,
+so the compiled LHS of every `func`/`mismatch`-at-arrow equation never reached
+the wrapper (the e-graph reported the two sides unequal after 65 s), and
+pushing a substitution through the big case terms (`func_case_subst`) timed out
+at 900 s.
+
+**The redesign.**  `#"typerec"` is now a **value** former, and the three
+boundary cases are **value constants** with defining equations.
+
+### Stage D: TypeCasing.v -- new `type_casing` (6 rules)
+
+With `sigma[X] := #"ty_subst" (#"ty_snoc" #"ty_id" X) "sigma"`,
+`S2 X := #"ty_subst" (#"ty_snoc" {ty_wkn_n 2} X) "sigma"`,
+`a := {ty_ovar 1}`, `b := {ty_ovar 0}`,
+`G2 := #"env_ty_subst" {ty_wkn_n 2} "G"`, and
+`v3_sort := #"val" (ty_ext (ty_ext D)) (ext (ext G2 (S2 a)) (S2 b)) (S2 (-> a b))`:
+
+| rule | statement |
+|---|---|
+| `typerec` | `#"typerec" "mu" "sigma" "v1" "v2" "v3" : #"val" "D" "G" sigma[mu]`, with `v1 : val D G sigma[*]`, `v2 : val D G sigma[bool]`, `v3 : v3_sort` |
+| `"typerec star"` | `typerec * sigma v1 v2 v3 = v1` |
+| `"typerec bool"` | `typerec bool sigma v1 v2 v3 = v2` |
+| `"typerec func"` | `typerec (-> t1 t2) sigma v1 v2 v3 = val_subst (snoc (snoc id (typerec t1 ...)) (typerec t2 ...)) (val_ty_subst (ty_snoc (ty_snoc ty_id t1) t2) v3)` |
+| `"val_subst typerec"` | `val_subst g (typerec mu sigma v1 v2 v3) = typerec mu sigma (val_subst g v1) (val_subst g v2) (val_subst g_lift v3)`, `g_lift = snoc (cmp wkn (snoc (cmp wkn (sub_ty_subst {ty_wkn_n 2} g)) hd)) hd` |
+| `"ty_subst typerec"` | `val_ty_subst d (typerec mu sigma v1 v2 v3) = typerec (ty_subst d mu) (ty_subst (ty_snoc (ty_cmp ty_wkn d) ty_hd) sigma) (val_ty_subst d v1) (val_ty_subst d v2) (val_ty_subst d2 v3)`, `d2` = `d` lifted twice |
+
+`#"All"`/`#"@"`/`#"Lam"` no longer occur in any `type_casing` rule (`poly` is
+still in the base language).
+
+**Elaboration.**  `auto_elab` on the whole language **OOMs** (killed at 11m51s,
+7 GB).  The five rules other than `"val_subst typerec"` are elaborated by
+`infer_lang_ext_simple_incr 10 100 TC_BASE` + `compute_wf_lang`
+(`type_casing_rest`).  Type inference **fails on `"val_subst typerec"`**: the
+environment of `"v3"` comes back as the hole `#"?#79"` (it is only determined
+through the doubly-lifted `g_lift`, which the engine does not invert), and
+`compute_wf_lang` then reports
+`"val_subst typerec" / "not proven to be a well-formed rule"`, localized further
+to `compute_wf_ctx` returning `None` on exactly the `"v3"` binding.  Patching
+just the context is *not* enough (the holes also sit inside the elaborated
+terms).  That one rule is therefore elaborated on its own
+(`type_casing_vs`, `elab_lang_ext (type_casing_rest ++ TC_BASE)`).  Plain
+`auto_elab` still fails on it because `auto_elab`'s `cleanup_auto_elab` is not
+wrapped in `try`; running its own steps with total leaf tactics
+(`setup_elab_lang; unshelve (eapply eq_term_rule; [...]); all: try (try apply
+eq_term_refl; try by_reduction; try cleanup_auto_elab)`) closes all **281**
+leaves.  `type_casing := type_casing_vs ++ type_casing_rest`.
+
+Also note: the explicit-argument notation `@"val_subst" @("G" := ...)` inside a
+`{[l ... ]}` *rule* makes `break_elab_rule` fail silently (it leaves the whole
+`elab_rule` goal untouched); it must be written as a plain `#"val_subst"`.
+
+`target_multilanguage` is renamed to `target_multilanguage_pre` in this file;
+the full `target_multilanguage` is defined in TrecTerms.v.
+
+### Stage E: TrecTerms.v -- new language `boundary_cases` (11 rules)
+
+Over `target_multilanguage_pre`, with `P X := #"prod" (#"->" X #"*") (#"->" #"*" X)`
+and `boundary_sigma := P #"ty_hd"`:
+
+| rule | statement |
+|---|---|
+| `bstar` | `#"bstar" : #"val" "D" "G" (P *)` |
+| `bbool` | `#"bbool" : #"val" "D" "G" (P bool)` |
+| `bfunc` | `#"bfunc" : #"val" (ty_ext (ty_ext D)) (ext (ext G2 (P a)) (P b)) (P (-> a b))` |
+| `"val_subst bstar"` / `"val_subst bbool"` | `val_subst g b* = b*` |
+| `"val_subst bfunc"` | `val_subst g_lift bfunc = bfunc` |
+| `"ty_subst bstar"` / `"ty_subst bbool"` | `val_ty_subst g b* = b*` |
+| `"bstar def"` | `bstar = pair_val (lambda * (ret hd)) (lambda * (ret hd))` |
+| `"bbool def"` | `bbool = pair_val (lambda bool (if (ret hd) (ret uT) (ret uF))) (lambda * (mif (ret hd) (ret T) (ret F)))` |
+| `"bfunc def"` | `bfunc = pair_val W1 W2`, the two wrappers of the old `trec_func_case`, unchanged: at the point of the old `#"pair"` the environment was already `ext (ext G (P a)) (P b)`, so every `ovar` index carries over verbatim |
+
+Elaborated by `infer_lang_ext_simple_incr 10 100 target_multilanguage_pre` +
+`compute_wf_lang` (no hand-holding needed).
+`target_multilanguage := boundary_cases ++ target_multilanguage_pre`.
+
+`trec_star_case`, `trec_bool_case`, `trec_func_case_sort`, `trec_func_case` are
+**deleted**; `trec_boundaries` is now just
+`#"typerec" "A" {boundary_sigma} #"bstar" #"bbool" #"bfunc"`, elaborated at sort
+`#"val" #"ty_emp" "G" (prod (-> A *) (-> * A))`.
+
+### Stage F/G: compilers
+
+`dtt`/`ttd` now compile to
+`#"let" "e" (#"app" (#".2"/#".1" (#"ret" (#"val_subst" #"wkn" TREC))) (#"ret" #"hd"))`
+(the `#"ret"` is new: `TREC` is a value now, so the projection needs it).
+
+### Stage H: TyperecPartialEval.v
+
+`#"typerec"` keeps arity 7, so the shape-based lemmas are untouched.
+`comp_t1_type`/`comp_t2_type` become `#"val"` sorts, `"e3"` becomes `"v3"`, and
+`func_partial_eval_term_def` becomes the value
+`#"val_subst" (#"snoc" (#"snoc" #"id" "comp_t1") "comp_t2") (#"val_ty_subst" (#"ty_snoc" (#"ty_snoc" #"ty_id" "t1") "t2") "v3")`.
+`target_multilanguage_without_typerec` gains `boundary_cases` (which does not
+mention `#"typerec"`), proved by `wf_lang_concat` + `compute_wf_lang`.
