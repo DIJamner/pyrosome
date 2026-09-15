@@ -297,10 +297,14 @@ Derive poly_ttd_case_tgt
      ) as poly_ttd_case_tgt_wf.
 Proof. Time Timeout 1500 (solve_elab_term_or_sort target_multilanguage). Time Qed.
 
+(* NOTE: the entries must be in the SAME ORDER as the term rules of
+   [boundaries_parameterized] (["dtt"] before ["ttd"]); see the note in
+   SimpleMultilangCompiler.v.  Compilation is by name lookup, so the order
+   changes no compiled term. *)
 Definition poly_multilang_compiler
   : @CompilerDefs.compiler string (Term.term string) (Term.sort string) :=
-  [("ttd", term_case ["e"; "A"; "G"; "D"] poly_ttd_case_tgt);
-   ("dtt", term_case ["e"; "A"; "G"; "D"] poly_dtt_case_tgt)].
+  [("dtt", term_case ["e"; "A"; "G"; "D"] poly_dtt_case_tgt);
+   ("ttd", term_case ["e"; "A"; "G"; "D"] poly_ttd_case_tgt)].
 
 Lemma poly_dtt_case_wf
   : wf_term target_multilanguage
@@ -404,23 +408,66 @@ Definition pc_dtt_func := Eval vm_compute in pgctx "dtt func".
 Definition ps_dtt_func := Eval vm_compute in pgsrt "dtt func".
 Definition pl_dtt_func := Eval vm_compute in pglhs "dtt func".
 Definition pr_dtt_func := Eval vm_compute in pgrhs "dtt func".
-(* ISSUE: see STATUS.md -- TIMEOUT 240s: needs the "typerec func" rule of [type_casing]; same saturation wall as stage F (which also failed at 900s). *)
-Lemma peq_dtt_func : eq_term target_multilanguage pc_dtt_func ps_dtt_func pl_dtt_func pr_dtt_func.
-(* NOT RE-RUN this session (the file was not rebuilt under the value-level
-   typerec).  Intended proof: [unfold pc_dtt_func, ps_dtt_func, pl_dtt_func, pr_dtt_func.
-   by_reduction_checked.] *)
-Admitted. (* ISSUE: see STATUS.md *)
+(* Proved below, after the hop lemmas. *)
 
 Definition pc_ttd_func := Eval vm_compute in pgctx "ttd func".
 Definition ps_ttd_func := Eval vm_compute in pgsrt "ttd func".
 Definition pl_ttd_func := Eval vm_compute in pglhs "ttd func".
 Definition pr_ttd_func := Eval vm_compute in pgrhs "ttd func".
-(* ISSUE: see STATUS.md -- as "dtt func". *)
+(* Proved below, after the hop lemmas. *)
+
+(* ------------------------------------------------------------------ *)
+(* The two ["func"] equations, in TWO HOPS (see SimpleMultilangCompiler.v
+   for the diagnosis): the ["typerec func"] rewrite strictly grows the term,
+   and [egraph_reducing_equal] restarts saturation from the smallest
+   extracted representative, so it never runs in the same round as the rest.
+   [PI1] / [PJ1] are the compiled left-hand sides with the [#"typerec"] at
+   [#"->" "A" "B"] replaced by its ["typerec func"] reduct.               *)
+
+Definition PTRECv X := {{e #"typerec" {X} {boundary_sigma} #"bstar" #"bbool"
+                           (#"bfunc" {tva} {tvb} {ovar 1} {ovar 0}) }}.
+
+Definition PI1_unelab :=
+  {{e #"let" (#"ret" (#"ulambda" "e"))
+       (#"app" (#".2" (#"ret" (#"val_subst" #"wkn"
+          (#"bfunc" "A" "B" {PTRECv {{e "A"}} } {PTRECv {{e "B"}} }))))
+          (#"ret" #"hd")) }}.
+
+Derive PI1 in (elab_term target_multilanguage pc_dtt_func PI1_unelab PI1 ps_dtt_func)
+  as PI1_wf.
+Proof. Time Timeout 1800 (solve_elab_term_or_sort target_multilanguage). Time Qed.
+
+Definition PJ1_unelab :=
+  {{e #"let" (#"ret" "v")
+       (#"app" (#".1" (#"ret" (#"val_subst" #"wkn"
+          (#"bfunc" "A" "B" {PTRECv {{e "A"}} } {PTRECv {{e "B"}} }))))
+          (#"ret" #"hd")) }}.
+
+Derive PJ1 in (elab_term target_multilanguage pc_ttd_func PJ1_unelab PJ1 ps_ttd_func)
+  as PJ1_wf.
+Proof. Time Timeout 1800 (solve_elab_term_or_sort target_multilanguage). Time Qed.
+
+Lemma peq_dtt_func_hop1
+  : eq_term target_multilanguage pc_dtt_func ps_dtt_func pl_dtt_func PI1.
+Proof. unfold pl_dtt_func, pc_dtt_func, ps_dtt_func. Time Timeout 1800 by_reduction_checked. Time Qed.
+
+Lemma peq_dtt_func_hop2
+  : eq_term target_multilanguage pc_dtt_func ps_dtt_func PI1 pr_dtt_func.
+Proof. unfold pr_dtt_func, pc_dtt_func, ps_dtt_func. Time Timeout 2400 by_reduction_checked. Time Qed.
+
+Lemma peq_ttd_func_hop1
+  : eq_term target_multilanguage pc_ttd_func ps_ttd_func pl_ttd_func PJ1.
+Proof. unfold pl_ttd_func, pc_ttd_func, ps_ttd_func. Time Timeout 1800 by_reduction_checked. Time Qed.
+
+Lemma peq_ttd_func_hop2
+  : eq_term target_multilanguage pc_ttd_func ps_ttd_func PJ1 pr_ttd_func.
+Proof. unfold pr_ttd_func, pc_ttd_func, ps_ttd_func. Time Timeout 2400 by_reduction_checked. Time Qed.
+
+Lemma peq_dtt_func : eq_term target_multilanguage pc_dtt_func ps_dtt_func pl_dtt_func pr_dtt_func.
+Proof. eapply eq_term_trans; [apply peq_dtt_func_hop1 | apply peq_dtt_func_hop2]. Qed.
+
 Lemma peq_ttd_func : eq_term target_multilanguage pc_ttd_func ps_ttd_func pl_ttd_func pr_ttd_func.
-(* NOT RE-RUN this session (the file was not rebuilt under the value-level
-   typerec).  Intended proof: [unfold pc_ttd_func, ps_ttd_func, pl_ttd_func, pr_ttd_func.
-   by_reduction_checked.] *)
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. eapply eq_term_trans; [apply peq_ttd_func_hop1 | apply peq_ttd_func_hop2]. Qed.
 
 Definition pc_dtt_ulambda_mismatch := Eval vm_compute in pgctx "dtt ulambda mismatch".
 Definition ps_dtt_ulambda_mismatch := Eval vm_compute in pgsrt "dtt ulambda mismatch".
@@ -464,17 +511,49 @@ Lemma peq_exp_subst_ttd : eq_term target_multilanguage pc_exp_subst_ttd ps_exp_s
 Proof. unfold pc_exp_subst_ttd, ps_exp_subst_ttd, pl_exp_subst_ttd, pr_exp_subst_ttd. Time Timeout 900 by_reduction_checked. Time Qed.
 
 (* ------------------------------------------------------------------ *)
-(* ISSUE: see STATUS.md, Stage G.  As in stage F, 11 of the 13 equations of
-   [boundaries_parameterized] go through: the explicit-argument [#"bfunc"]
-   plus the forward-only reversibility filter closed both mismatch equations
-   at [#"->"].  The two remaining are "dtt func" / "ttd func", whose compiled
-   right-hand sides contain further [#"typerec"] terms at the metavariable
-   types "A" and "B"; those stay stuck and the e-graph does not saturate
-   (forward-only, TIMEOUT 1500s in stage F).                              *)
+(* All 13 equations of [boundaries_parameterized] are discharged, so the
+   whole-compiler theorem is assembled by hand, exactly as in stage F. *)
+(* [boundaries_parameterized] is a computed term, not a literal list, so the
+   constructors cannot see its cons cells; force it to a literal first. *)
+Definition boundaries_parameterized_lit := Eval vm_compute in boundaries_parameterized.
+Lemma boundaries_parameterized_lit_eq
+  : boundaries_parameterized = boundaries_parameterized_lit.
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma ppct
+  : forall cmp l n c args e t cargs,
+    preserving_compiler_ext target_multilanguage
+      polymorphic_interoperating_langs_compiler cmp l ->
+    map fst c = cargs ->
+    Model.wf_term (Model := core_model target_multilanguage)
+      (compile_ctx (cmp ++ polymorphic_interoperating_langs_compiler) c) e
+      (compile_sort (cmp ++ polymorphic_interoperating_langs_compiler) t) ->
+    preserving_compiler_ext target_multilanguage
+      polymorphic_interoperating_langs_compiler ((n, term_case cargs e)::cmp)
+      ((n, term_rule c args t) :: l).
+Proof. intros; subst; constructor; auto. Qed.
+
+Ltac solve_poly_boundary_case :=
+  solve [ exact poly_dtt_case_wf | exact poly_ttd_case_wf
+        | exact peq_dtt_star | exact peq_ttd_star
+        | exact peq_dtt_True | exact peq_dtt_False
+        | exact peq_ttd_True | exact peq_ttd_False
+        | exact peq_dtt_func | exact peq_ttd_func
+        | exact peq_dtt_ulambda_mismatch
+        | exact peq_dtt_uT_mismatch | exact peq_dtt_uF_mismatch
+        | exact peq_exp_subst_dtt | exact peq_exp_subst_ttd ].
+
 Lemma poly_multilang_compiler_preserving
   : preserving_compiler_ext target_multilanguage
       polymorphic_interoperating_langs_compiler poly_multilang_compiler
       boundaries_parameterized.
-(* Cannot be assembled: 2 of the 13 equation lemmas above are still
-   Admitted (see STATUS.md, Stage G). *)
-Admitted. (* ISSUE: see STATUS.md *)
+Proof.
+  rewrite boundaries_parameterized_lit_eq.
+  unfold boundaries_parameterized_lit, poly_multilang_compiler.
+  Time (repeat lazymatch goal with
+        | |- CompilerDefs.preserving_compiler_ext _ _ _ =>
+            first [ eapply ppct; [ | vm_compute; reflexivity | ]
+                  | constructor ]
+        end).
+  Time all: solve_poly_boundary_case.
+Time Qed.
