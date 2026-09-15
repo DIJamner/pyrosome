@@ -330,10 +330,14 @@ Ltac ctw_checked :=
     (inj_rules := Automation.empty_inj_rules);
   [ assumption | solve_wf_ctx | vm_compute; exact I ].
 
+(* Forward-only reversibility filter; see the note in
+   SimpleMultilangCompiler.v.  All rules left-to-right only. *)
+Definition pnorev : string * Rule.rule string -> bool := fun _ => false.
+
 Ltac by_reduction_checked :=
   pose proof target_multilanguage_wf;
   apply (Automation.egraph_sound 100 100 100 100 Automation.filter_rules
-           (fun _ : string * Rule.rule string => true) Automation.empty_inj_rules);
+           pnorev Automation.empty_inj_rules);
   [ prove_by_lang_db
   | solve_wf_ctx
   | ctw_checked
@@ -429,23 +433,17 @@ Definition pc_dtt_uT_mismatch := Eval vm_compute in pgctx "dtt uT mismatch".
 Definition ps_dtt_uT_mismatch := Eval vm_compute in pgsrt "dtt uT mismatch".
 Definition pl_dtt_uT_mismatch := Eval vm_compute in pglhs "dtt uT mismatch".
 Definition pr_dtt_uT_mismatch := Eval vm_compute in pgrhs "dtt uT mismatch".
-(* ISSUE: see STATUS.md -- TIMEOUT 240s: at type [#"->" "A" "B"], so it needs "typerec func". *)
+(* Qed (this session): explicit-argument [#"bfunc"] + forward-only filter. *)
 Lemma peq_dtt_uT_mismatch : eq_term target_multilanguage pc_dtt_uT_mismatch ps_dtt_uT_mismatch pl_dtt_uT_mismatch pr_dtt_uT_mismatch.
-(* NOT RE-RUN this session (the file was not rebuilt under the value-level
-   typerec).  Intended proof: [unfold pc_dtt_uT_mismatch, ps_dtt_uT_mismatch, pl_dtt_uT_mismatch, pr_dtt_uT_mismatch.
-   by_reduction_checked.] *)
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_dtt_uT_mismatch, ps_dtt_uT_mismatch, pl_dtt_uT_mismatch, pr_dtt_uT_mismatch. Time Timeout 900 by_reduction_checked. Time Qed.
 
 Definition pc_dtt_uF_mismatch := Eval vm_compute in pgctx "dtt uF mismatch".
 Definition ps_dtt_uF_mismatch := Eval vm_compute in pgsrt "dtt uF mismatch".
 Definition pl_dtt_uF_mismatch := Eval vm_compute in pglhs "dtt uF mismatch".
 Definition pr_dtt_uF_mismatch := Eval vm_compute in pgrhs "dtt uF mismatch".
-(* ISSUE: see STATUS.md -- as "dtt uT mismatch". *)
+(* Qed (this session), as "dtt uT mismatch". *)
 Lemma peq_dtt_uF_mismatch : eq_term target_multilanguage pc_dtt_uF_mismatch ps_dtt_uF_mismatch pl_dtt_uF_mismatch pr_dtt_uF_mismatch.
-(* NOT RE-RUN this session (the file was not rebuilt under the value-level
-   typerec).  Intended proof: [unfold pc_dtt_uF_mismatch, ps_dtt_uF_mismatch, pl_dtt_uF_mismatch, pr_dtt_uF_mismatch.
-   by_reduction_checked.] *)
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold pc_dtt_uF_mismatch, ps_dtt_uF_mismatch, pl_dtt_uF_mismatch, pr_dtt_uF_mismatch. Time Timeout 900 by_reduction_checked. Time Qed.
 
 Definition pc_exp_subst_dtt := Eval vm_compute in pgctx "exp_subst dtt".
 Definition ps_exp_subst_dtt := Eval vm_compute in pgsrt "exp_subst dtt".
@@ -466,16 +464,17 @@ Lemma peq_exp_subst_ttd : eq_term target_multilanguage pc_exp_subst_ttd ps_exp_s
 Proof. unfold pc_exp_subst_ttd, ps_exp_subst_ttd, pl_exp_subst_ttd, pr_exp_subst_ttd. Time Timeout 900 by_reduction_checked. Time Qed.
 
 (* ------------------------------------------------------------------ *)
-(* ISSUE: see STATUS.md, Stage G.  As in stage F, 9 of the 13 equations of
-   [boundaries_parameterized] go through: the value-level typerec redesign
-   closed both [#"exp_subst"] equations.  The 4 that need ["typerec func"]
-   still TIMEOUT (900s in stage F), because ["typerec func"] instantiates the
-   function case by a type substitution and [boundary_cases] has no
-   ["ty_subst bfunc"] rule that can absorb it.                            *)
+(* ISSUE: see STATUS.md, Stage G.  As in stage F, 11 of the 13 equations of
+   [boundaries_parameterized] go through: the explicit-argument [#"bfunc"]
+   plus the forward-only reversibility filter closed both mismatch equations
+   at [#"->"].  The two remaining are "dtt func" / "ttd func", whose compiled
+   right-hand sides contain further [#"typerec"] terms at the metavariable
+   types "A" and "B"; those stay stuck and the e-graph does not saturate
+   (forward-only, TIMEOUT 1500s in stage F).                              *)
 Lemma poly_multilang_compiler_preserving
   : preserving_compiler_ext target_multilanguage
       polymorphic_interoperating_langs_compiler poly_multilang_compiler
       boundaries_parameterized.
-(* Cannot be assembled: 4 of the 13 equation lemmas above are still
+(* Cannot be assembled: 2 of the 13 equation lemmas above are still
    Admitted (see STATUS.md, Stage G). *)
 Admitted. (* ISSUE: see STATUS.md *)

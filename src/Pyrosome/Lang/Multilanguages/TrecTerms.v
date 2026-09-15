@@ -96,10 +96,14 @@ Definition Pa := Eval compute in P tva.
 Definition Pb := Eval compute in P tvb.
 Definition Pab := Eval compute in P {{e #"->" {tva} {tvb} }}.
 
+(* [#"bfunc"] now takes its instantiation as explicit arguments: the two
+   types and the two recursive results.  This is what makes ["typerec func"]
+   cheap: the instantiating type substitution it produces is absorbed by
+   ["ty_subst bfunc"] in one rewrite instead of being pushed through the
+   whole wrapper body. *)
+Definition bfunc_ty := Eval compute in P {{e #"->" "t1" "t2"}}.
 Definition bfunc_sort :=
-  {{s #"val" (#"ty_ext" (#"ty_ext" "D")) (#"ext" (#"ext" {G2} {Pa}) {Pb}) {Pab} }}.
-Definition bfunc_sort' :=
-  {{s #"val" (#"ty_ext" (#"ty_ext" "D")) (#"ext" (#"ext" {G2'} {Pa}) {Pb}) {Pab} }}.
+  {{s #"val" "D" "G" {bfunc_ty} }}.
 
 Definition bstar_body :=
   {{e #"pair_val" (#"lambda" #"*" (#"ret" #"hd")) (#"lambda" #"*" (#"ret" #"hd")) }}.
@@ -109,26 +113,29 @@ Definition bbool_body :=
       (#"lambda" #"bool" (#"if" (#"ret" #"hd") (#"ret" #"uT") (#"ret" #"uF")))
       (#"lambda" #"*" (#"mif" (#"ret" #"hd") (#"ret" #"T") (#"ret" #"F"))) }}.
 
-(* The two wrappers, verbatim from the old [trec_func_case]: at the point of
-   the [#"pair"] the old term's environment was [ext (ext G Pa) Pb] too, so
-   every [ovar] index is unchanged.  [{ovar 1}] is the recursive result for
-   the domain type [a], [{ovar 0}] the one for the codomain [b].          *)
+(* The two wrappers.  The recursive results are now the explicit arguments
+   ["c1"] / ["c2"] (weakened under the three binders that separate them from
+   the environment [G]), and the two types are ["t1"] / ["t2"] instead of the
+   bound type variables. *)
+Definition c1w := {{e #"val_subst" {wkn_n 3} "c1" }}.
+Definition c2w := {{e #"val_subst" {wkn_n 3} "c2" }}.
+
 Definition bfunc_body :=
   {{e #"pair_val"
-      (#"lambda" (#"->" {tva} {tvb})
+      (#"lambda" (#"->" "t1" "t2")
          (#"ret" (#"ulambda"
             (#"let" (#"app" (#"ret" {ovar 1})
                             (#"let" (#"ret" {ovar 0})
-                                    (#"app" (#".2" (#"ret" {ovar 4})) (#"ret" {ovar 0}))))
-                    (#"app" (#".1" (#"ret" {ovar 3})) (#"ret" {ovar 0}))))))
+                                    (#"app" (#".2" (#"ret" {c1w})) (#"ret" {ovar 0}))))
+                    (#"app" (#".1" (#"ret" {c2w})) (#"ret" {ovar 0}))))))
       (#"lambda" #"*"
          (#"mif" (#"bool?" (#"ret" {ovar 0}))
-            (#"Error" (#"->" {tva} {tvb}))
-            (#"ret" (#"lambda" {tva}
+            (#"Error" (#"->" "t1" "t2"))
+            (#"ret" (#"lambda" "t1"
                (#"let" (#"uapp" (#"ret" {ovar 1})
                                 (#"let" (#"ret" {ovar 0})
-                                        (#"app" (#".1" (#"ret" {ovar 4})) (#"ret" {ovar 0}))))
-                       (#"app" (#".2" (#"ret" {ovar 3})) (#"ret" {ovar 0}))))))) }}.
+                                        (#"app" (#".1" (#"ret" {c1w})) (#"ret" {ovar 0}))))
+                       (#"app" (#".2" (#"ret" {c2w})) (#"ret" {ovar 0}))))))) }}.
 
 Definition boundary_cases_def : lang :=
   {[l
@@ -140,9 +147,12 @@ Definition boundary_cases_def : lang :=
         -----------------------------------------------
         #"bbool" : #"val" "D" "G" {P {{e #"bool"}} }
     ];
-    [:| "D" : #"ty_env", "G" : #"env" "D"
+    [:| "D" : #"ty_env", "G" : #"env" "D",
+        "t1" : #"ty" "D", "t2" : #"ty" "D",
+        "c1" : #"val" "D" "G" {P {{e "t1"}} },
+        "c2" : #"val" "D" "G" {P {{e "t2"}} }
         -----------------------------------------------
-        #"bfunc" : {bfunc_sort}
+        #"bfunc" "t1" "t2" "c1" "c2" : {bfunc_sort}
     ];
     [:= "D" : #"ty_env", "G" : #"env" "D", "G'" : #"env" "D",
         "g" : #"sub" "D" "G'" "G"
@@ -155,9 +165,14 @@ Definition boundary_cases_def : lang :=
         #"val_subst" "g" #"bbool" = #"bbool" : #"val" "D" "G'" {P {{e #"bool"}} }
     ];
     [:= "D" : #"ty_env", "G" : #"env" "D", "G'" : #"env" "D",
-        "g" : #"sub" "D" "G'" "G"
+        "g" : #"sub" "D" "G'" "G",
+        "t1" : #"ty" "D", "t2" : #"ty" "D",
+        "c1" : #"val" "D" "G" {P {{e "t1"}} },
+        "c2" : #"val" "D" "G" {P {{e "t2"}} }
         ----------------------------------------------- ("val_subst bfunc")
-        #"val_subst" {g_lift} #"bfunc" = #"bfunc" : {bfunc_sort'}
+        #"val_subst" "g" (#"bfunc" "t1" "t2" "c1" "c2")
+        = #"bfunc" "t1" "t2" (#"val_subst" "g" "c1") (#"val_subst" "g" "c2")
+        : #"val" "D" "G'" {bfunc_ty}
     ];
     [:= "D" : #"ty_env", "D'" : #"ty_env", "G" : #"env" "D",
         "g" : #"ty_sub" "D'" "D"
@@ -179,9 +194,24 @@ Definition boundary_cases_def : lang :=
         ----------------------------------------------- ("bbool def")
         #"bbool" = {bbool_body} : #"val" "D" "G" {P {{e #"bool"}} }
     ];
-    [:= "D" : #"ty_env", "G" : #"env" "D"
+    [:= "D" : #"ty_env", "D'" : #"ty_env", "G" : #"env" "D",
+        "g" : #"ty_sub" "D'" "D",
+        "t1" : #"ty" "D", "t2" : #"ty" "D",
+        "c1" : #"val" "D" "G" {P {{e "t1"}} },
+        "c2" : #"val" "D" "G" {P {{e "t2"}} }
+        ----------------------------------------------- ("ty_subst bfunc")
+        #"val_ty_subst" "g" (#"bfunc" "t1" "t2" "c1" "c2")
+        = #"bfunc" (#"ty_subst" "g" "t1") (#"ty_subst" "g" "t2")
+            (#"val_ty_subst" "g" "c1") (#"val_ty_subst" "g" "c2")
+        : #"val" "D'" (#"env_ty_subst" "g" "G")
+            {P {{e #"->" (#"ty_subst" "g" "t1") (#"ty_subst" "g" "t2")}} }
+    ];
+    [:= "D" : #"ty_env", "G" : #"env" "D",
+        "t1" : #"ty" "D", "t2" : #"ty" "D",
+        "c1" : #"val" "D" "G" {P {{e "t1"}} },
+        "c2" : #"val" "D" "G" {P {{e "t2"}} }
         ----------------------------------------------- ("bfunc def")
-        #"bfunc" = {bfunc_body} : {bfunc_sort}
+        #"bfunc" "t1" "t2" "c1" "c2" = {bfunc_body} : {bfunc_sort}
     ]
   ]}.
 
@@ -207,7 +237,8 @@ Proof. prove_by_lang_db. Qed.
 (* [trec_boundaries] is now just the [#"typerec"] value applied to the three
    constants.                                                              *)
 Definition trec_boundaries_unelab :=
-  {{e #"typerec" "A" {boundary_sigma} #"bstar" #"bbool" #"bfunc" }}.
+  {{e #"typerec" "A" {boundary_sigma} #"bstar" #"bbool"
+       (#"bfunc" {tva} {tvb} {ovar 1} {ovar 0}) }}.
 
 Definition trec_boundaries_sort :=
   {{s #"val" #"ty_emp" "G"

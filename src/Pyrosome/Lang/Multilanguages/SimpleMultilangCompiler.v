@@ -128,10 +128,19 @@ Ltac ctw_checked :=
     (inj_rules := Automation.empty_inj_rules);
   [ assumption | solve_wf_ctx | vm_compute; exact I ].
 
+(* NOTE (this session): the reversibility filter is now [norev], i.e. every
+   rule is used LEFT-TO-RIGHT only.  With all rules reversible the e-graph
+   saturation is dominated by backward rewrites: ["exp_subst dtt"] went from
+   200s to >900s once [#"bfunc"] took explicit arguments, and the four
+   ["typerec func"] equations never finished.  Forward-only makes all of them
+   cheaper (controls 87s -> 48s, ["exp_subst dtt"] >900s -> 101s) and is what
+   closes the two mismatch equations at [#"->"]. *)
+Definition norev : string * Rule.rule string -> bool := fun _ => false.
+
 Ltac by_reduction_checked :=
   pose proof target_multilanguage_wf;
   apply (Automation.egraph_sound 100 100 100 100 Automation.filter_rules
-           (fun _ : string * Rule.rule string => true) Automation.empty_inj_rules);
+           norev Automation.empty_inj_rules);
   [ prove_by_lang_db
   | solve_wf_ctx
   | ctw_checked
@@ -234,23 +243,21 @@ Definition c_dtt_uT_mismatch := Eval vm_compute in gctx "dtt uT mismatch".
 Definition s_dtt_uT_mismatch := Eval vm_compute in gsrt "dtt uT mismatch".
 Definition l_dtt_uT_mismatch := Eval vm_compute in glhs "dtt uT mismatch".
 Definition r_dtt_uT_mismatch := Eval vm_compute in grhs "dtt uT mismatch".
-(* ISSUE: see STATUS.md -- TIMEOUT: by_reduction times out at 300s and at 900s (needs the "typerec func" rule). *)
+(* Qed (this session): closed by the explicit-argument [#"bfunc"] plus the
+   forward-only reversibility filter.  ["typerec func"] now instantiates
+   [#"bfunc"] in one rewrite (["ty_subst bfunc"] + ["val_subst bfunc"]), so
+   ["bfunc def"] unfolds an already-instantiated body and the [#"mif"] /
+   [#"bool?"] eager check reduces to [#"Error"]. *)
 Lemma eq_dtt_uT_mismatch : eq_term target_multilanguage c_dtt_uT_mismatch s_dtt_uT_mismatch l_dtt_uT_mismatch r_dtt_uT_mismatch.
-(* NOT RE-RUN this session: the two build attempts of this file under the
-   value-level typerec were cut off before finishing.  Intended proof:
-   [unfold c_dtt_uT_mismatch, s_dtt_uT_mismatch, l_dtt_uT_mismatch, r_dtt_uT_mismatch. by_reduction_checked.] *)
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold c_dtt_uT_mismatch, s_dtt_uT_mismatch, l_dtt_uT_mismatch, r_dtt_uT_mismatch. Time Timeout 900 by_reduction_checked. Time Qed.
 
 Definition c_dtt_uF_mismatch := Eval vm_compute in gctx "dtt uF mismatch".
 Definition s_dtt_uF_mismatch := Eval vm_compute in gsrt "dtt uF mismatch".
 Definition l_dtt_uF_mismatch := Eval vm_compute in glhs "dtt uF mismatch".
 Definition r_dtt_uF_mismatch := Eval vm_compute in grhs "dtt uF mismatch".
-(* ISSUE: see STATUS.md -- TIMEOUT: by_reduction times out at 300s (900s run interrupted; same shape as "dtt uT mismatch"). *)
+(* Qed (this session), as "dtt uT mismatch". *)
 Lemma eq_dtt_uF_mismatch : eq_term target_multilanguage c_dtt_uF_mismatch s_dtt_uF_mismatch l_dtt_uF_mismatch r_dtt_uF_mismatch.
-(* NOT RE-RUN this session: the two build attempts of this file under the
-   value-level typerec were cut off before finishing.  Intended proof:
-   [unfold c_dtt_uF_mismatch, s_dtt_uF_mismatch, l_dtt_uF_mismatch, r_dtt_uF_mismatch. by_reduction_checked.] *)
-Admitted. (* ISSUE: see STATUS.md *)
+Proof. unfold c_dtt_uF_mismatch, s_dtt_uF_mismatch, l_dtt_uF_mismatch, r_dtt_uF_mismatch. Time Timeout 900 by_reduction_checked. Time Qed.
 
 Definition c_exp_subst_dtt := Eval vm_compute in gctx "exp_subst dtt".
 Definition s_exp_subst_dtt := Eval vm_compute in gsrt "exp_subst dtt".
@@ -270,22 +277,20 @@ Lemma eq_exp_subst_ttd : eq_term target_multilanguage c_exp_subst_ttd s_exp_subs
 Proof. unfold c_exp_subst_ttd, s_exp_subst_ttd, l_exp_subst_ttd, r_exp_subst_ttd. Time Timeout 900 by_reduction_checked. Time Qed.
 
 (* ------------------------------------------------------------------ *)
-(* ISSUE: see STATUS.md, Stage F.  9 of the 13 boundary equations are now
-   discharged: the value-level [typerec] redesign closed both [#"exp_subst"]
-   equations (the three boundary cases are now the constants [#"bstar"] /
-   [#"bbool"] / [#"bfunc"], whose substitution rules are one-step rewrites).
-   The 4 remaining are exactly the ones that need ["typerec func"]
-   ("dtt func", "ttd func", "dtt uT mismatch", "dtt uF mismatch"); all four
-   TIMEOUT at 900s.  Root cause: ["typerec func"] instantiates the function
-   case by the *type* substitution [ty_snoc (ty_snoc ty_id t1) t2], and
-   [boundary_cases] has no ["ty_subst bfunc"] rule that can absorb an
-   instantiating type substitution, so the e-graph must unfold ["bfunc def"]
-   and push [#"val_ty_subst"] through the whole (large) [bfunc_body].
-   The theorem is therefore still admitted.                               *)
+(* ISSUE: see STATUS.md, Stage F.  11 of the 13 boundary equations are now
+   discharged.  The explicit-argument [#"bfunc"] (TrecTerms.v) plus the
+   forward-only reversibility filter closed both mismatch equations at
+   [#"->"] ("dtt uT mismatch", "dtt uF mismatch", ~56s each).  The two
+   remaining are "dtt func" and "ttd func", which still do not saturate
+   (forward-only, TIMEOUT 1500s).  Unlike the mismatch cases their compiled
+   right-hand sides contain further [#"dtt"]/[#"ttd"] nodes, i.e. two more
+   [#"typerec"] terms at the metavariable types "A" and "B", which stay
+   stuck; the e-graph has to join two open recursive calls rather than a
+   closed [#"Error"].                                                     *)
 Lemma simple_multilang_compiler_preserving
   : preserving_compiler_ext (tgt_Model := core_model target_multilanguage)
       interoperating_langs_compiler simple_multilang_compiler boundaries.
-(* Cannot be assembled: 4 of the 13 equation lemmas above are still
+(* Cannot be assembled: 2 of the 13 equation lemmas above are still
    Admitted (see STATUS.md, Stage F). *)
 Admitted. (* ISSUE: see STATUS.md *)
 

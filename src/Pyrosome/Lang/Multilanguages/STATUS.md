@@ -99,6 +99,43 @@ untyped scrutinee and a typed result (`"mif true"`/`"mif false"`/`"mif func"`/
 `#"Error" (#"->" "A" "B")`, and `#"dtt" (#"->" "A" "B") (#"ret" (#"ulambda" "e"))`
 to the `#"lambda"` wrapper.
 
+
+### UPDATE (explicit-argument `bfunc` session, 2026-09-15)
+
+`boundary_cases` was changed so that the function case takes its
+instantiation as **explicit arguments**:
+
+```
+"D":ty_env, "G":env D, "t1":ty D, "t2":ty D,
+"c1":val D G (P t1), "c2":val D G (P t2)
+|- bfunc t1 t2 c1 c2 : val D G (P (-> t1 t2))          with P X = prod (-> X *) (-> * X)
+```
+
+`#"bfunc"` therefore no longer lives at `#"ty_ext" (#"ty_ext" "D")`.  New /
+changed rules (all in `boundary_cases`, `type_casing` untouched):
+
+* `("val_subst bfunc")` `val_subst g (bfunc t1 t2 c1 c2)
+   = bfunc t1 t2 (val_subst g c1) (val_subst g c2)` (plain substitution now,
+  no `g_lift`);
+* `("ty_subst bfunc")` **new**, written by hand mirroring `"ty_subst bstar"`:
+  `val_ty_subst g (bfunc t1 t2 c1 c2)
+   = bfunc (ty_subst g t1) (ty_subst g t2) (val_ty_subst g c1) (val_ty_subst g c2)`;
+* `("bfunc def")` the same two wrappers as before with `a`/`b` replaced by
+  `"t1"`/`"t2"` and the two env variables `val_subst wkn hd` / `hd` replaced
+  by `c1`/`c2` weakened under the three intervening binders
+  (`val_subst (cmp wkn (cmp wkn wkn)) "c1"`, likewise `"c2"`; both wrappers
+  bind exactly three variables before the recursive results are used).
+
+`trec_boundaries` is now
+`typerec "A" boundary_sigma bstar bbool (bfunc {ty_ovar 1} {ty_ovar 0} {ovar 1} {ovar 0})`.
+
+| Definition | Method | Time | Result |
+|---|---|---|---|
+| boundary_cases (inference) | `infer_lang_ext_simple_incr 10 100` | -- | OK, no holes |
+| boundary_cases_wf | `compute_wf_lang` | probe: whole file to this point 4m13s | Qed |
+| trec_boundaries_wf | `solve_elab_term_or_sort` | -- | Qed |
+| **TrecTerms.vo (whole file)** | | **6m08s** (was 7m15s) | EXIT 0 |
+
 ## Stage F: SimpleMultilangCompiler.v
 
 **UPDATE (let-binding change).**  The compiler no longer emits
@@ -245,6 +282,68 @@ arbitrary value.
 assembled while 4 of the 13 equation lemmas are open.
 `simple_multilang_compiler_entry` is still `cmp_entry` of an admitted lemma.
 
+
+### UPDATE (explicit-argument `bfunc` + forward-only e-graph, 2026-09-15)
+
+Two changes, both needed:
+
+1. **`#"bfunc"` takes explicit arguments** (stage E above), so `"typerec func"`
+   no longer has to push `#"val_ty_subst"` through the whole wrapper: the
+   instantiating type substitution is absorbed by `"ty_subst bfunc"` and the
+   term substitution by `"val_subst bfunc"`, both one-step.
+2. **The reversibility filter is now forward-only** (`norev := fun _ => false`
+   passed to `Automation.egraph_sound`; previously every rule was reversible).
+   This was the dominant cost: with all rules reversible the e-graph spends
+   its budget on backward rewrites.
+
+Measured effect of (2) alone, on the file already carrying (1)
+(`by_reduction_checked` in a probe importing the built `.vo`):
+
+| Equation | all-reversible | forward-only |
+|---|---|---|
+| "dtt star" (control) | 35s tactic + 52s Qed | **48s total** |
+| "dtt ulambda mismatch" (control) | 35s + 52s | **49s** |
+| "exp_subst dtt" | **TIMEOUT 900s** (regressed from 200s by change (1)) | **101s** |
+| "exp_subst ttd" | TIMEOUT 900s | **100s** |
+| "dtt uT mismatch" | TIMEOUT 600s | **56s -- Qed (NEW)** |
+| "dtt uF mismatch" | TIMEOUT 600s | **56s -- Qed (NEW)** |
+| "dtt func" | TIMEOUT 600s | **TIMEOUT 1500s** |
+| "ttd func" | TIMEOUT 600s | not re-probed (same shape) |
+
+So change (1) on its own made things *worse* ("exp_subst dtt" 200s -> >900s,
+the four func equations still timing out at 600s); it is only in combination
+with (2) that the two mismatch equations close.
+
+**Per-equation status: 11 of 13 Qed.**
+
+| Equation | Time (tactic, forward-only) | Result |
+|---|---|---|
+| "dtt star", "ttd star", "dtt True", "dtt False", "ttd True", "ttd False", "dtt ulambda mismatch" | 48-49s each | Qed |
+| "dtt uT mismatch" | 56s | **Qed (NEW)** |
+| "dtt uF mismatch" | 56s | **Qed (NEW)** |
+| "exp_subst dtt" | 101s | Qed |
+| "exp_subst ttd" | 100s | Qed |
+| "dtt func" | TIMEOUT 1500s (forward-only), TIMEOUT 600s (all-reversible) | ADMITTED |
+| "ttd func" | TIMEOUT 600s (all-reversible) | ADMITTED |
+
+**Remaining obstruction ("dtt func" / "ttd func").**  These are the only two
+equations whose compiled *right-hand side* still contains `#"dtt"`/`#"ttd"`
+nodes, i.e. two further `#"typerec"` terms at the metavariable types `"A"`
+and `"B"`.  Those recursive calls are stuck (`"typerec star"`/`"typerec bool"`/
+`"typerec func"` all need a concrete head), so the e-graph must join two
+*open* recursive calls -- as opposed to the mismatch equations, whose RHS is
+the closed `#"Error" (#"->" "A" "B")` and which now close in 56s.  The
+diagnosis is no longer "the substitution cannot be absorbed"; it is that the
+proof needs the induction hypothesis of the typerec, which `by_reduction`
+cannot supply.  The natural next step is a guided proof
+(`eredex_steps_with "typerec func"`, then `term_cong` down to the two
+wrappers and `intermediate_term` at the beta redexes), not more fuel.
+
+`simple_multilang_compiler_preserving` therefore **stays `Admitted`**
+(2 of 13 equations open), and so do everything downstream of it.
+
+**Build:** `SimpleMultilangCompiler.vo` **32m20s**, EXIT 0.
+
 ## Stage G: PolyBoundaries.v
 
 PolyBoundaries.v now compiles end to end (14m31s originally; ~21m after the let-binding change, which adds two `solve_elab_term_or_sort` elaborations and two more `by_reduction_checked` equations).  The whole file builds as-is (with `Derive ... SuchThat ... As` modernized to
@@ -345,6 +444,25 @@ stage F: it cannot be assembled while 4 of the 13 equation lemmas are open.
 Generalizing the type environment from `#"ty_emp"` to `"D"` again made no
 difference to *which* equations work, only to cost (the poly `exp_subst`
 proofs cost the same ~200s + ~230s as the simple ones).
+
+
+### UPDATE (explicit-argument `bfunc` + forward-only e-graph, 2026-09-15)
+
+`PolyBoundaries.v` was given the same two changes as stage F: nothing in the
+file's definitions changed, only `by_reduction_checked`'s reversibility
+filter (now `pnorev := fun _ => false`), and the two mismatch equations
+`peq_dtt_uT_mismatch` / `peq_dtt_uF_mismatch` were un-admitted.
+`boundaries_parameterized`, `boundaries_ty_subst`, `poly_boundaries`,
+`lump_cancellation_*`, `trec_boundaries_poly` and the two `poly_*_case_tgt`
+elaborations all re-derive unchanged over the new `boundary_cases`.
+
+| Equation | Result |
+|---|---|
+| the 9 previously-Qed equations (7 + both `exp_subst`) | Qed, all faster under the forward-only filter |
+| "dtt uT mismatch", "dtt uF mismatch" | **Qed (NEW)** |
+| "dtt func", "ttd func" | ADMITTED -- same obstruction as stage F |
+
+`poly_multilang_compiler_preserving` stays `Admitted` (2 of 13 open).
 
 ## Stage H: TyperecPartialEval.v
 
@@ -791,3 +909,15 @@ whole-compiler theorems (`simple_multilang_compiler_preserving`,
 `poly_multilang_compiler_preserving`) remain `Admitted`; the blocker is the
 four `"typerec func"` equations and the missing `"ty_subst bfunc"` absorption
 (see Stage F above for the full diagnosis and the proposed fix).
+
+### UPDATE (explicit-argument `bfunc` session, 2026-09-15)
+
+`TyperecPartialEval.v` was **not edited**; it was rebuilt against the new
+`boundary_cases` / `trec_boundaries`.  All its own lemmas stay `Qed` (the
+shape-based ones use `typerec` at arity 7, which the `bfunc` change does not
+touch).  `compiled_partial_eval_wf`, `source_multilanguage_compiler_preserving`,
+`sml_semantics_preserving` and `eq_sort_sml_implies_eq_sort_tml` remain `Qed`
+**modulo `simple_multilang_compiler_preserving`**, which is still `Admitted`
+(2 of 13 boundary equations open, see stage F), so they are not yet
+admission-free.  `partial_eval_preserves_equality` and
+`partial_eval_wf_in_no_typerec_lang` are unchanged (`Admitted`).
