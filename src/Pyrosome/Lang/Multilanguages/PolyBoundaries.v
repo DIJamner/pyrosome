@@ -1,3 +1,13 @@
+(* Stage G: the polymorphic boundaries.
+
+   [boundaries] and its type-casing rules, re-derived at an arbitrary type
+   environment by the parameterizer, extended with the two quantifier
+   boundary rules of Matthews and Findler; then the poly -> poly compiler
+   into [target_multilanguage] and its preservation proof.
+
+   The structure mirrors SimpleMultilangCompiler.v (the unparameterized
+   version of the same compiler); see README.md for the file layout. *)
+
 Set Implicit Arguments.
 
 Require Import Datatypes.String Lists.List.
@@ -7,33 +17,31 @@ Open Scope list.
 From Utils Require Import Utils.
 
 (* imports for compilers *)
-(* copied from LinearCPS.v *)
 From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
-Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
-(* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
+Import CompilerDefs.Notations. (* for the `match # from _ with` compiler notation *)
 
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
   Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 (* import the relevant language fragments *)
-From Pyrosome.Lang Require Import SimpleVSTLC. 
-From Pyrosome.Lang Require Import UTLC. 
-From Pyrosome.Lang Require Import BoolType. 
+From Pyrosome.Lang Require Import SimpleVSTLC.
+From Pyrosome.Lang Require Import UTLC.
+From Pyrosome.Lang Require Import BoolType.
 From Pyrosome.Lang Require Import SimpleVProd.
-From Pyrosome.Lang.Multilanguages Require Import SimpleBoundaries. 
+From Pyrosome.Lang.Multilanguages Require Import SimpleBoundaries.
 
 
 (* imports for polymorphism *)
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
-From Pyrosome.Lang Require Import PolyCompilers. (* for parameterizing existing languages*)
+From Pyrosome.Lang Require Import PolyCompilerLangs PolyCompilersCPS PolyCompilers. (* for parameterizing existing languages*)
 From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab.
 
-Definition boundaries_parameterized := 
+Definition boundaries_parameterized :=
     let ps := (elab_param "D" (boundaries ++ stlc ++ typed_bool ++ untyped_bool ++ utlc ++ star_type ++ error_t ++ exp_ret ++ exp_subst_base ++ value_subst)
                [("sub", Some 2);
                 ("ty", Some 0);
@@ -42,7 +50,7 @@ Definition boundaries_parameterized :=
                 ("exp",Some 2)]) in
   parameterize_lang "D" {{s #"ty_env"}}
     ps boundaries.
-Local Definition evp'_boundaries : lang := 
+Local Definition evp'_boundaries : lang :=
     let ps := (elab_param "D" (boundaries ++ stlc ++ typed_bool ++ untyped_bool ++ utlc ++ star_type ++ error_t ++ exp_ret ++ exp_subst_base ++ value_subst)
                [("sub", Some 2);
                 ("ty", Some 0);
@@ -54,44 +62,35 @@ Local Definition evp'_boundaries : lang :=
 Lemma boundaries_parameterized_wf (* this is necessary *)
   : wf_lang_ext ((stlc_parameterized ++ typed_bool_parameterized ++ untyped_bool_parameterized ++ utlc_parameterized ++ star_type_parameterized ++ error_t_parameterized ++ exp_parameterized ++ val_parameterized) ++ ty_env_lang)
       boundaries_parameterized.
-Proof. 
+Proof.
   replace (stlc_parameterized ++ typed_bool_parameterized ++ untyped_bool_parameterized ++ utlc_parameterized ++ star_type_parameterized ++ error_t_parameterized ++ exp_parameterized ++ val_parameterized) with evp'_boundaries.
   - eapply parameterize_lang_preserving_ext;
-    try typeclasses eauto;
-    [repeat t';  constructor
-    | now prove_by_lang_db..
-    | vm_compute; exact I].
-  - cbv; reflexivity. 
-Qed. 
+      try typeclasses eauto;
+      [ repeat t'; constructor
+      | now prove_by_lang_db..
+      | vm_compute; exact I ].
+  - cbv; reflexivity.
+Qed.
 #[local] Definition boundaries_parameterized_entry :=
   lang_entry boundaries_parameterized_wf.
 #[export] Hint Resolve boundaries_parameterized_entry : wf_lang_db.
 
-Lemma polymorphic_interoperating_langs_wf :
-  wf_lang polymorphic_interoperating_langs.
-Proof. prove_by_lang_db. Qed.
-#[local] Definition polymorphic_interoperating_langs_entry :=
-  lang_entry polymorphic_interoperating_langs_wf.
-#[export] Hint Resolve polymorphic_interoperating_langs_entry : wf_lang_db.
-
-(* Lemma boundaries_parameterized_wf_2 : *)
-(*   wf_lang (boundaries_parameterized ++ polymorphic_interoperating_langs). *)
-(* Proof. prove_by_lang_db. Qed.  *)
+(* [polymorphic_interoperating_langs_wf] lives in InteropLangs.v. *)
 
 Definition boundaries_ty_subst_def := Eval vm_compute in ty_subst_def_maker boundaries_parameterized (stlc_parameterized ++ typed_bool_parameterized ++ untyped_bool_parameterized ++ utlc_parameterized ++ star_type_parameterized ++ error_t_parameterized).
 Derive boundaries_ty_subst
-  SuchThat (elab_lang_ext
+  in (elab_lang_ext
               (boundaries_parameterized ++ polymorphic_interoperating_langs)
               boundaries_ty_subst_def
               boundaries_ty_subst)
-  As boundaries_ty_subst_wf. 
-Proof. auto_elab. Qed. 
+  as boundaries_ty_subst_wf.
+Proof. auto_elab. Qed.
 #[local] Definition boundaries_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf boundaries_ty_subst_wf).
 #[export] Hint Resolve boundaries_ty_subst_entry : wf_lang_db.
 
 Definition poly_boundaries_def : lang := (* Matthews and Findler figure 11, page 12:33 *)
-  {[l/subst [exp_subst++value_subst] 
+  {[l/subst [exp_subst++value_subst]
     [:= "D" : #"ty_env",
         "G" : #"env" "D",
         "A" : #"ty" (#"ty_ext" "D"), (* tau in Matthews and Findler *)
@@ -100,7 +99,7 @@ Definition poly_boundaries_def : lang := (* Matthews and Findler figure 11, page
         #"dtt" (#"All" "A") "e" =
         #"ret" (#"Lam" (#"dtt" "A" (#"exp_ty_subst" #"ty_wkn" "e")))
         : #"exp" "D" "G" (#"All" "A")
-    ]; 
+    ];
     [:= "D" : #"ty_env",
         "G" : #"env" "D",
         "A" : #"ty" (#"ty_ext" "D"), (* tau in Matthews and Findler *)
@@ -108,25 +107,22 @@ Definition poly_boundaries_def : lang := (* Matthews and Findler figure 11, page
         ----------------------------------------------- ("ttd forall")
         #"ttd" (#"All" "A") "e" =
         #"ttd" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A") (#"@" "e" #"*") : #"exp" "D" "G" #"*"
-    ]     
+    ]
   ]}.
 
 Derive poly_boundaries
-  SuchThat (elab_lang_ext (boundaries_ty_subst ++
+  in (elab_lang_ext (boundaries_ty_subst ++
                              boundaries_parameterized ++ polymorphic_interoperating_langs)
                 poly_boundaries_def poly_boundaries)
-        As poly_boundaries_wf.
+        as poly_boundaries_wf.
 Proof. auto_elab. Qed.
 #[local] Definition poly_boundaries_entry :=
   lang_entry (elab_lang_implies_wf poly_boundaries_wf).
 #[export] Hint Resolve poly_boundaries_entry : wf_lang_db.
-(* Aight so the problem you were having had to do with names and prove_by_lang_db. I think the moral solution is to add ty_subst to all the wf proofs for ty_subst langs above. But whatever I did works enough it looks like. *)
-
-
 
 (* Matthews and Findler have lump cancellation as a rule. But, we don't need that rule, (I think) because we've collapsed the Lump and TST types! *)
 Definition lump_cancellation_term_unelab :=
-  {{e #"ttd" #"*" (#"dtt" #"*" "e") }}. 
+  {{e #"ttd" #"*" (#"dtt" #"*" "e") }}.
 Derive lump_cancellation_term
   in ( elab_term
          (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs)
@@ -136,9 +132,10 @@ Derive lump_cancellation_term
          lump_cancellation_term_unelab
          lump_cancellation_term
          {{s #"exp" "D" "G" (#"*" "D") }}
-     ) as lump_cancellation_term_wf. 
+     ) as lump_cancellation_term_wf.
 Proof.
-  solve_elab_term_or_sort (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs).
+  solve_elab_term_or_sort
+    (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs).
 Qed.
 
 Lemma lump_cancellation_holds :
@@ -151,7 +148,8 @@ Lemma lump_cancellation_holds :
     {{e "e" }}
     lump_cancellation_term.
 Proof.
-  assert (wf_lang (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs)) by prove_by_lang_db; by_reduction.
+  assert (wf_lang (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs)) by prove_by_lang_db.
+  by_reduction.
 Qed.
 
 
@@ -172,7 +170,7 @@ Lemma polymorphic_interoperating_langs_compiler_preserving :
     polymorphic_interoperating_langs_compiler
     polymorphic_interoperating_langs.
 Proof.
-  apply id_compiler_preserving; [ typeclasses eauto | prove_by_lang_db ]. 
+  apply id_compiler_preserving; [ typeclasses eauto | prove_by_lang_db ].
 Qed.
 #[local] Definition polymorphic_interoperating_langs_compiler_entry :=
   cmp_entry polymorphic_interoperating_langs_compiler_preserving.
@@ -183,7 +181,7 @@ Definition dtt_forall_partial_eval_ctx :=
   Eval vm_compute in Rule.get_ctx (named_list_lookup default poly_boundaries "dtt forall").
 
 Definition dtt_forall_partial_eval_term_def :=
-  {{e #"ret" (#"Lam" (#"dtt" "A" (#"exp_ty_subst" #"ty_wkn" "e"))) }}. 
+  {{e #"ret" (#"Lam" (#"dtt" "A" (#"exp_ty_subst" #"ty_wkn" "e"))) }}.
 
 Derive dtt_forall_partial_eval_term
   in ( elab_term (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs)
@@ -191,9 +189,10 @@ Derive dtt_forall_partial_eval_term
          dtt_forall_partial_eval_term_def
          dtt_forall_partial_eval_term
          {{s #"exp" "D" "G" (#"All" "D" "A") }}
-     ) as dtt_forall_partial_eval_term_wf. 
+     ) as dtt_forall_partial_eval_term_wf.
 Proof.
-  solve_elab_term_or_sort (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs).
+  solve_elab_term_or_sort
+    (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs).
 Qed.
 
 Definition ttd_forall_partial_eval_ctx :=
@@ -208,9 +207,10 @@ Derive ttd_forall_partial_eval_term
          ttd_forall_partial_eval_term_def
          ttd_forall_partial_eval_term
          {{s #"exp" "D" "G" (#"*" "D") }}
-     ) as ttd_forall_partial_eval_term_wf. 
+     ) as ttd_forall_partial_eval_term_wf.
 Proof.
-  solve_elab_term_or_sort (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs).
+  solve_elab_term_or_sort
+    (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs).
 Qed.
 
 Fixpoint forall_partial_eval (program : term) : term :=
@@ -226,16 +226,339 @@ Fixpoint forall_partial_eval (program : term) : term :=
 (* poly to poly compiler *)
 Definition poly_multilang_compiler_def : compiler :=
   match # from boundaries_parameterized with
-  | {{e #"dtt" "D" "G" "A" "e"}} => {{e #"app" (#".2" {trec_boundaries_unelab}) "e" }}
-  | {{e #"ttd" "D" "G" "A" "e"}} => {{e #"app" (#".1" {trec_boundaries_unelab}) "e" }}
+  | {{e #"dtt" "D" "G" "A" "e"}} =>
+      {{e #"let" "e" (#"app" (#".2" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
+                             (#"ret" #"hd")) }}
+  | {{e #"ttd" "D" "G" "A" "e"}} =>
+      {{e #"let" "e" (#"app" (#".1" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
+                             (#"ret" #"hd")) }}
     (* we don't need a type variable case, since it's the same as the old compiler! *)
   end.
-(* Derive poly_multilang_compiler  *)
-(*   SuchThat (elab_preserving_compiler  *)
-(*               interoperating_langs_compiler *)
-(*               target_multilanguage *)
-(*               poly_multilang_compiler_def *)
-(*               poly_multilang_compiler *)
-(*               boundaries)  *)
-(*   As poly_multilang_compiler_preserving.  *)
-(* Proof. solve_multilang_compiler. Qed.  *)
+(* ------------------------------------------------------------------ *)
+(* Stage G: the poly -> poly compiler.
+
+   The source language is [boundaries_parameterized]; its ambient prefix is
+   [polymorphic_interoperating_langs] (that is the language
+   [boundaries_parameterized_wf] extends, up to the fragments' ty_subst
+   rules).  So the prefix compiler is
+   [polymorphic_interoperating_langs_compiler], the *identity* compiler on
+   [polymorphic_interoperating_langs] -- NOT [interoperating_langs_compiler],
+   which has the *simple* (unparameterized) interoperating languages as its
+   source and would not typecheck here.  The target is
+   [target_multilanguage], which contains [polymorphic_interoperating_langs]
+   as a suffix, so the identity prefix compiler is target-valid.
+
+   As in SimpleMultilangCompiler.v, the two cases are elaborated by hand
+   from the [typerec] term; here it has to be re-elaborated at a general
+   type environment "D" (that file's [trec_boundaries] lives at
+   #"ty_emp").                                                            *)
+
+Derive trec_boundaries_poly
+  in ( elab_term target_multilanguage
+         [("A", {{s #"ty" "D"}}); ("G", {{s #"env" "D"}}); ("D", {{s #"ty_env"}})]
+         trec_boundaries_unelab
+         trec_boundaries_poly
+         {{s #"val" "D" "G"
+             (#"prod" "D"
+                (#"->" "D" "A" (#"*" "D"))
+                (#"->" "D" (#"*" "D") "A")) }}
+     ) as trec_boundaries_poly_wf.
+Proof. solve_elab_term_or_sort target_multilanguage. Qed.
+
+(* The compiled bodies let-bind the source argument "e" and apply the
+   boundary function to [#"ret" #"hd"], so that [STLC-beta] (which needs a
+   value argument) fires; ["let eta"] then collapses the residual
+   [#"let" "e" (#"ret" #"hd")].  Elaborated individually, as in
+   SimpleMultilangCompiler.v. *)
+
+Definition poly_dtt_case_unelab :=
+  {{e #"let" "e" (#"app" (#".2" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
+                         (#"ret" #"hd")) }}.
+
+Derive poly_dtt_case_tgt
+  in ( elab_term target_multilanguage
+         [("e", {{s #"exp" "D" "G" (#"*" "D")}});
+          ("A", {{s #"ty" "D"}});
+          ("G", {{s #"env" "D"}});
+          ("D", {{s #"ty_env"}})]
+         poly_dtt_case_unelab
+         poly_dtt_case_tgt
+         {{s #"exp" "D" "G" "A"}}
+     ) as poly_dtt_case_tgt_wf.
+Proof. solve_elab_term_or_sort target_multilanguage. Qed.
+
+Definition poly_ttd_case_unelab :=
+  {{e #"let" "e" (#"app" (#".1" (#"ret" (#"val_subst" #"wkn" {trec_boundaries_unelab})))
+                         (#"ret" #"hd")) }}.
+
+Derive poly_ttd_case_tgt
+  in ( elab_term target_multilanguage
+         [("e", {{s #"exp" "D" "G" "A"}});
+          ("A", {{s #"ty" "D"}});
+          ("G", {{s #"env" "D"}});
+          ("D", {{s #"ty_env"}})]
+         poly_ttd_case_unelab
+         poly_ttd_case_tgt
+         {{s #"exp" "D" "G" (#"*" "D")}}
+     ) as poly_ttd_case_tgt_wf.
+Proof. solve_elab_term_or_sort target_multilanguage. Qed.
+
+(* NOTE: the entries must be in the SAME ORDER as the term rules of
+   [boundaries_parameterized] (["dtt"] before ["ttd"]); see the note in
+   SimpleMultilangCompiler.v.  Compilation is by name lookup, so the order
+   changes no compiled term. *)
+Definition poly_multilang_compiler
+  : @CompilerDefs.compiler string (Term.term string) (Term.sort string) :=
+  [("dtt", term_case ["e"; "A"; "G"; "D"] poly_dtt_case_tgt);
+   ("ttd", term_case ["e"; "A"; "G"; "D"] poly_ttd_case_tgt)].
+
+Lemma poly_dtt_case_wf
+  : wf_term target_multilanguage
+      [("e", {{s #"exp" "D" "G" (#"*" "D")}});
+       ("A", {{s #"ty" "D"}});
+       ("G", {{s #"env" "D"}});
+       ("D", {{s #"ty_env"}})]
+      poly_dtt_case_tgt {{s #"exp" "D" "G" "A"}}.
+Proof. pose proof target_multilanguage_wf. compute_term_wf. Qed.
+
+Lemma poly_ttd_case_wf
+  : wf_term target_multilanguage
+      [("e", {{s #"exp" "D" "G" "A"}});
+       ("A", {{s #"ty" "D"}});
+       ("G", {{s #"env" "D"}});
+       ("D", {{s #"ty_env"}})]
+      poly_ttd_case_tgt {{s #"exp" "D" "G" (#"*" "D")}}.
+Proof. pose proof target_multilanguage_wf. compute_term_wf. Qed.
+
+(* ------------------------------------------------------------------ *)
+(* Per-equation machinery, as in SimpleMultilangCompiler.v.  Each compiled
+   equation is discharged by [by_reduction_fwd], that file's forward-only
+   e-graph tactic (every target rule used left-to-right only); the same
+   reasons for forward-only saturation apply here. *)
+
+Definition PCMP := poly_multilang_compiler ++ polymorphic_interoperating_langs_compiler.
+
+Definition pbrule (n:string) :=
+  named_list_lookup (Rule.sort_rule [] []) boundaries_parameterized n.
+Definition pgctx n := match pbrule n with Rule.term_eq_rule c _ _ _ => compile_ctx PCMP c | _ => [] end.
+Definition pgsrt n := match pbrule n with Rule.term_eq_rule _ _ _ t => compile_sort PCMP t | _ => default end.
+Definition pglhs n := match pbrule n with Rule.term_eq_rule _ e _ _ => compile PCMP e | _ => default end.
+Definition pgrhs n := match pbrule n with Rule.term_eq_rule _ _ e _ => compile PCMP e | _ => default end.
+
+(* ------------------------------------------------------------------ *)
+(* One [eq_term] lemma per equation of [boundaries_parameterized].       *)
+
+Definition pc_dtt_star := Eval vm_compute in pgctx "dtt star".
+Definition ps_dtt_star := Eval vm_compute in pgsrt "dtt star".
+Definition pl_dtt_star := Eval vm_compute in pglhs "dtt star".
+Definition pr_dtt_star := Eval vm_compute in pgrhs "dtt star".
+(* Provable because the compiler let-binds "e": the beta-redex has a value
+   (the variable [#"hd"]) as its argument, and ["let eta"] collapses the
+   residual [#"let" "e" (#"ret" #"hd")] back to "e". *)
+Lemma peq_dtt_star : eq_term target_multilanguage pc_dtt_star ps_dtt_star pl_dtt_star pr_dtt_star.
+Proof. unfold pc_dtt_star, ps_dtt_star, pl_dtt_star, pr_dtt_star. by_reduction_fwd. Qed.
+
+Definition pc_ttd_star := Eval vm_compute in pgctx "ttd star".
+Definition ps_ttd_star := Eval vm_compute in pgsrt "ttd star".
+Definition pl_ttd_star := Eval vm_compute in pglhs "ttd star".
+Definition pr_ttd_star := Eval vm_compute in pgrhs "ttd star".
+(* As "dtt star", through the [#".1"] projection. *)
+Lemma peq_ttd_star : eq_term target_multilanguage pc_ttd_star ps_ttd_star pl_ttd_star pr_ttd_star.
+Proof. unfold pc_ttd_star, ps_ttd_star, pl_ttd_star, pr_ttd_star. by_reduction_fwd. Qed.
+
+Definition pc_dtt_True := Eval vm_compute in pgctx "dtt True".
+Definition ps_dtt_True := Eval vm_compute in pgsrt "dtt True".
+Definition pl_dtt_True := Eval vm_compute in pglhs "dtt True".
+Definition pr_dtt_True := Eval vm_compute in pgrhs "dtt True".
+Lemma peq_dtt_True : eq_term target_multilanguage pc_dtt_True ps_dtt_True pl_dtt_True pr_dtt_True.
+Proof. unfold pc_dtt_True, ps_dtt_True, pl_dtt_True, pr_dtt_True. by_reduction_fwd. Qed.
+
+Definition pc_dtt_False := Eval vm_compute in pgctx "dtt False".
+Definition ps_dtt_False := Eval vm_compute in pgsrt "dtt False".
+Definition pl_dtt_False := Eval vm_compute in pglhs "dtt False".
+Definition pr_dtt_False := Eval vm_compute in pgrhs "dtt False".
+Lemma peq_dtt_False : eq_term target_multilanguage pc_dtt_False ps_dtt_False pl_dtt_False pr_dtt_False.
+Proof. unfold pc_dtt_False, ps_dtt_False, pl_dtt_False, pr_dtt_False. by_reduction_fwd. Qed.
+
+Definition pc_ttd_True := Eval vm_compute in pgctx "ttd True".
+Definition ps_ttd_True := Eval vm_compute in pgsrt "ttd True".
+Definition pl_ttd_True := Eval vm_compute in pglhs "ttd True".
+Definition pr_ttd_True := Eval vm_compute in pgrhs "ttd True".
+Lemma peq_ttd_True : eq_term target_multilanguage pc_ttd_True ps_ttd_True pl_ttd_True pr_ttd_True.
+Proof. unfold pc_ttd_True, ps_ttd_True, pl_ttd_True, pr_ttd_True. by_reduction_fwd. Qed.
+
+Definition pc_ttd_False := Eval vm_compute in pgctx "ttd False".
+Definition ps_ttd_False := Eval vm_compute in pgsrt "ttd False".
+Definition pl_ttd_False := Eval vm_compute in pglhs "ttd False".
+Definition pr_ttd_False := Eval vm_compute in pgrhs "ttd False".
+Lemma peq_ttd_False : eq_term target_multilanguage pc_ttd_False ps_ttd_False pl_ttd_False pr_ttd_False.
+Proof. unfold pc_ttd_False, ps_ttd_False, pl_ttd_False, pr_ttd_False. by_reduction_fwd. Qed.
+
+Definition pc_dtt_func := Eval vm_compute in pgctx "dtt func".
+Definition ps_dtt_func := Eval vm_compute in pgsrt "dtt func".
+Definition pl_dtt_func := Eval vm_compute in pglhs "dtt func".
+Definition pr_dtt_func := Eval vm_compute in pgrhs "dtt func".
+(* Proved below, after the hop lemmas. *)
+
+Definition pc_ttd_func := Eval vm_compute in pgctx "ttd func".
+Definition ps_ttd_func := Eval vm_compute in pgsrt "ttd func".
+Definition pl_ttd_func := Eval vm_compute in pglhs "ttd func".
+Definition pr_ttd_func := Eval vm_compute in pgrhs "ttd func".
+(* Proved below, after the hop lemmas. *)
+
+(* ------------------------------------------------------------------ *)
+(* The two ["func"] equations, in TWO HOPS (see SimpleMultilangCompiler.v
+   for the full diagnosis): the ["typerec func"] rewrite strictly grows the
+   term, and [egraph_reducing_equal] restarts saturation from the smallest
+   extracted representative, so it never runs in the same round as the rest.
+   [PI1] / [PJ1] are the compiled left-hand sides with the [#"typerec"] at
+   [#"->" "A" "B"] replaced by its ["typerec func"] reduct.               *)
+
+Definition PTRECv X := {{e #"typerec" {X} {boundary_sigma} #"bstar" #"bbool"
+                           (#"bfunc" {tva} {tvb} {ovar 1} {ovar 0}) }}.
+
+Definition PI1_unelab :=
+  {{e #"let" (#"ret" (#"ulambda" "e"))
+       (#"app" (#".2" (#"ret" (#"val_subst" #"wkn"
+          (#"bfunc" "A" "B" {PTRECv {{e "A"}} } {PTRECv {{e "B"}} }))))
+          (#"ret" #"hd")) }}.
+
+Derive PI1 in (elab_term target_multilanguage pc_dtt_func PI1_unelab PI1 ps_dtt_func)
+  as PI1_wf.
+Proof. solve_elab_term_or_sort target_multilanguage. Qed.
+
+Definition PJ1_unelab :=
+  {{e #"let" (#"ret" "v")
+       (#"app" (#".1" (#"ret" (#"val_subst" #"wkn"
+          (#"bfunc" "A" "B" {PTRECv {{e "A"}} } {PTRECv {{e "B"}} }))))
+          (#"ret" #"hd")) }}.
+
+Derive PJ1 in (elab_term target_multilanguage pc_ttd_func PJ1_unelab PJ1 ps_ttd_func)
+  as PJ1_wf.
+Proof. solve_elab_term_or_sort target_multilanguage. Qed.
+
+(* hop 1: ["typerec func"] only. *)
+Lemma peq_dtt_func_hop1
+  : eq_term target_multilanguage pc_dtt_func ps_dtt_func pl_dtt_func PI1.
+Proof. unfold pl_dtt_func, pc_dtt_func, ps_dtt_func. by_reduction_fwd. Qed.
+
+(* hop 2: ["bfunc def"], STLC-beta, ["bool?-func"], ["mif false"], substitution. *)
+Lemma peq_dtt_func_hop2
+  : eq_term target_multilanguage pc_dtt_func ps_dtt_func PI1 pr_dtt_func.
+Proof. unfold pr_dtt_func, pc_dtt_func, ps_dtt_func. by_reduction_fwd. Qed.
+
+Lemma peq_ttd_func_hop1
+  : eq_term target_multilanguage pc_ttd_func ps_ttd_func pl_ttd_func PJ1.
+Proof. unfold pl_ttd_func, pc_ttd_func, ps_ttd_func. by_reduction_fwd. Qed.
+
+Lemma peq_ttd_func_hop2
+  : eq_term target_multilanguage pc_ttd_func ps_ttd_func PJ1 pr_ttd_func.
+Proof. unfold pr_ttd_func, pc_ttd_func, ps_ttd_func. by_reduction_fwd. Qed.
+
+Lemma peq_dtt_func : eq_term target_multilanguage pc_dtt_func ps_dtt_func pl_dtt_func pr_dtt_func.
+Proof. eapply eq_term_trans; [apply peq_dtt_func_hop1 | apply peq_dtt_func_hop2]. Qed.
+
+Lemma peq_ttd_func : eq_term target_multilanguage pc_ttd_func ps_ttd_func pl_ttd_func pr_ttd_func.
+Proof. eapply eq_term_trans; [apply peq_ttd_func_hop1 | apply peq_ttd_func_hop2]. Qed.
+
+Definition pc_dtt_ulambda_mismatch := Eval vm_compute in pgctx "dtt ulambda mismatch".
+Definition ps_dtt_ulambda_mismatch := Eval vm_compute in pgsrt "dtt ulambda mismatch".
+Definition pl_dtt_ulambda_mismatch := Eval vm_compute in pglhs "dtt ulambda mismatch".
+Definition pr_dtt_ulambda_mismatch := Eval vm_compute in pgrhs "dtt ulambda mismatch".
+Lemma peq_dtt_ulambda_mismatch : eq_term target_multilanguage pc_dtt_ulambda_mismatch ps_dtt_ulambda_mismatch pl_dtt_ulambda_mismatch pr_dtt_ulambda_mismatch.
+Proof. unfold pc_dtt_ulambda_mismatch, ps_dtt_ulambda_mismatch, pl_dtt_ulambda_mismatch, pr_dtt_ulambda_mismatch. by_reduction_fwd. Qed.
+
+Definition pc_dtt_uT_mismatch := Eval vm_compute in pgctx "dtt uT mismatch".
+Definition ps_dtt_uT_mismatch := Eval vm_compute in pgsrt "dtt uT mismatch".
+Definition pl_dtt_uT_mismatch := Eval vm_compute in pglhs "dtt uT mismatch".
+Definition pr_dtt_uT_mismatch := Eval vm_compute in pgrhs "dtt uT mismatch".
+(* Closed by the explicit-argument [#"bfunc"] plus the forward-only filter:
+   ["typerec func"] instantiates [#"bfunc"] in one rewrite, so ["bfunc def"]
+   unfolds an already-instantiated body and the eager [#"mif"] / [#"bool?"]
+   check reduces to [#"Error"]. *)
+Lemma peq_dtt_uT_mismatch : eq_term target_multilanguage pc_dtt_uT_mismatch ps_dtt_uT_mismatch pl_dtt_uT_mismatch pr_dtt_uT_mismatch.
+Proof. unfold pc_dtt_uT_mismatch, ps_dtt_uT_mismatch, pl_dtt_uT_mismatch, pr_dtt_uT_mismatch. by_reduction_fwd. Qed.
+
+Definition pc_dtt_uF_mismatch := Eval vm_compute in pgctx "dtt uF mismatch".
+Definition ps_dtt_uF_mismatch := Eval vm_compute in pgsrt "dtt uF mismatch".
+Definition pl_dtt_uF_mismatch := Eval vm_compute in pglhs "dtt uF mismatch".
+Definition pr_dtt_uF_mismatch := Eval vm_compute in pgrhs "dtt uF mismatch".
+(* As "dtt uT mismatch". *)
+Lemma peq_dtt_uF_mismatch : eq_term target_multilanguage pc_dtt_uF_mismatch ps_dtt_uF_mismatch pl_dtt_uF_mismatch pr_dtt_uF_mismatch.
+Proof. unfold pc_dtt_uF_mismatch, ps_dtt_uF_mismatch, pl_dtt_uF_mismatch, pr_dtt_uF_mismatch. by_reduction_fwd. Qed.
+
+Definition pc_exp_subst_dtt := Eval vm_compute in pgctx "exp_subst dtt".
+Definition ps_exp_subst_dtt := Eval vm_compute in pgsrt "exp_subst dtt".
+Definition pl_exp_subst_dtt := Eval vm_compute in pglhs "exp_subst dtt".
+Definition pr_exp_subst_dtt := Eval vm_compute in pgrhs "exp_subst dtt".
+(* The three typerec cases are constants with one-step substitution rules
+   ("val_subst bstar"/"bbool"/"bfunc"), so [#"exp_subst"] does not have to be
+   pushed through the whole typerec body. *)
+Lemma peq_exp_subst_dtt : eq_term target_multilanguage pc_exp_subst_dtt ps_exp_subst_dtt pl_exp_subst_dtt pr_exp_subst_dtt.
+Proof. unfold pc_exp_subst_dtt, ps_exp_subst_dtt, pl_exp_subst_dtt, pr_exp_subst_dtt. by_reduction_fwd. Qed.
+
+Definition pc_exp_subst_ttd := Eval vm_compute in pgctx "exp_subst ttd".
+Definition ps_exp_subst_ttd := Eval vm_compute in pgsrt "exp_subst ttd".
+Definition pl_exp_subst_ttd := Eval vm_compute in pglhs "exp_subst ttd".
+Definition pr_exp_subst_ttd := Eval vm_compute in pgrhs "exp_subst ttd".
+(* As "exp_subst dtt". *)
+Lemma peq_exp_subst_ttd : eq_term target_multilanguage pc_exp_subst_ttd ps_exp_subst_ttd pl_exp_subst_ttd pr_exp_subst_ttd.
+Proof. unfold pc_exp_subst_ttd, ps_exp_subst_ttd, pl_exp_subst_ttd, pr_exp_subst_ttd. by_reduction_fwd. Qed.
+
+(* ------------------------------------------------------------------ *)
+(* All 13 equations of [boundaries_parameterized] are discharged above, so
+   the whole-compiler theorem is assembled from them by hand, as in
+   SimpleMultilangCompiler.v: [compute_preserving_compiler] is not usable,
+   since its [eq_term_oracle] would re-run the e-graph on every equation,
+   including the two ["func"] ones that only converge when split into hops.
+
+   [ppct] is [CompilerDefs.preserving_compiler_term] restated with the
+   [map fst c = cargs] side condition as an explicit (computational)
+   premise; the constructor as stated cannot be applied, since unifying
+   [map fst ?c] with the literal argument list of a [term_case] is not a
+   unification problem Coq can solve.
+
+   [boundaries_parameterized] is a computed term, not a literal list, so the
+   constructors cannot see its cons cells; force it to a literal first. *)
+Definition boundaries_parameterized_lit := Eval vm_compute in boundaries_parameterized.
+Lemma boundaries_parameterized_lit_eq
+  : boundaries_parameterized = boundaries_parameterized_lit.
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma ppct
+  : forall cmp l n c args e t cargs,
+    preserving_compiler_ext target_multilanguage
+      polymorphic_interoperating_langs_compiler cmp l ->
+    map fst c = cargs ->
+    Model.wf_term (Model := core_model target_multilanguage)
+      (compile_ctx (cmp ++ polymorphic_interoperating_langs_compiler) c) e
+      (compile_sort (cmp ++ polymorphic_interoperating_langs_compiler) t) ->
+    preserving_compiler_ext target_multilanguage
+      polymorphic_interoperating_langs_compiler ((n, term_case cargs e)::cmp)
+      ((n, term_rule c args t) :: l).
+Proof. intros; subst; constructor; auto. Qed.
+
+Ltac solve_poly_boundary_case :=
+  solve [ exact poly_dtt_case_wf | exact poly_ttd_case_wf
+        | exact peq_dtt_star | exact peq_ttd_star
+        | exact peq_dtt_True | exact peq_dtt_False
+        | exact peq_ttd_True | exact peq_ttd_False
+        | exact peq_dtt_func | exact peq_ttd_func
+        | exact peq_dtt_ulambda_mismatch
+        | exact peq_dtt_uT_mismatch | exact peq_dtt_uF_mismatch
+        | exact peq_exp_subst_dtt | exact peq_exp_subst_ttd ].
+
+Lemma poly_multilang_compiler_preserving
+  : preserving_compiler_ext target_multilanguage
+      polymorphic_interoperating_langs_compiler poly_multilang_compiler
+      boundaries_parameterized.
+Proof.
+  rewrite boundaries_parameterized_lit_eq.
+  unfold boundaries_parameterized_lit, poly_multilang_compiler.
+  repeat lazymatch goal with
+    | |- CompilerDefs.preserving_compiler_ext _ _ _ =>
+        first [ eapply ppct; [ | vm_compute; reflexivity | ]
+              | constructor ]
+    end.
+  all: solve_poly_boundary_case.
+Qed.
