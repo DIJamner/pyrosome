@@ -7,7 +7,7 @@
    equations of the polymorphic source [poly_source_boundaries]:
 
    - ["exp_ty_subst dtt"], ["exp_ty_subst ttd"]  (of [boundaries_ty_subst]),
-   - ["dtt forall"], ["ttd forall"]              (of [poly_boundaries_v]).
+   - ["dtt forall"], ["ttd forall"]              (of [poly_boundaries]).
 
    The compiler itself is UNCHANGED: the new source rules are all equations,
    so they add no compiler case.
@@ -298,7 +298,7 @@ Qed.
    four new rules to a literal first; the tail is [boundaries_parameterized],
    which the lifted theorem covers.                                        *)
 Definition poly_source_new_lit := Eval vm_compute in
-  (poly_boundaries_v ++ boundaries_ty_subst).
+  (poly_boundaries ++ boundaries_ty_subst).
 
 Lemma poly_source_boundaries_split
   : poly_source_boundaries = poly_source_new_lit ++ boundaries_parameterized.

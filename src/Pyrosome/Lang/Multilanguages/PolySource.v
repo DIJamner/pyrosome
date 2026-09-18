@@ -1,12 +1,13 @@
 (* Stage G': the value-restricted polymorphic source boundaries.
 
-   [PolyBoundaries.v] defines [poly_boundaries], whose "dtt forall" rule
-   delays evaluation of the body expression [e] under a [Lam].  That
-   formulation is not preserved by a call-by-value compiler.  This file
-   defines the value-restricted replacement [poly_boundaries_v] (see
-   PLAN-poly.md decision 2) and assembles the new source multilanguage
-   [poly_source_multilanguage] (decision 6), without touching any existing
-   file. *)
+   An exp-level "dtt forall" rule (Matthews and Findler figure 11, page
+   12:33) -- #"dtt" (#"All" "A") "e" = #"ret" (#"Lam" (#"dtt" "A" ...))
+   on an arbitrary expression [e] -- was rejected: it delays evaluation of
+   [e] under a [Lam], and that formulation is not preserved by a
+   call-by-value compiler.  This file defines the value-restricted
+   [poly_boundaries] (see PLAN-poly.md decision 2) and assembles the new
+   source multilanguage [poly_source_multilanguage] (decision 6), without
+   touching any existing file. *)
 
 Set Implicit Arguments.
 
@@ -50,9 +51,9 @@ Local Open Scope lang_scope.
    11, page 12:33, restricted to values so that a call-by-value compiler
    preserves them; see PLAN-poly.md decision 2). There are no term rules
    here (only equations between terms already built from #"ret"), so unlike
-   [poly_boundaries_def] there is no need for the [{[l/subst ...]}] notation
+   [poly_boundaries_def] (this file's own) there is no need for the [{[l/subst ...]}] notation
    that auto-generates substitution rules. *)
-Definition poly_boundaries_v_def : lang :=
+Definition poly_boundaries_def : lang :=
   {[l
     [:= "D" : #"ty_env",
         "G" : #"env" "D",
@@ -74,18 +75,18 @@ Definition poly_boundaries_v_def : lang :=
     ]
   ]}.
 
-Derive poly_boundaries_v
+Derive poly_boundaries
   in (elab_lang_ext (boundaries_ty_subst ++
                              boundaries_parameterized ++ polymorphic_interoperating_langs)
-                poly_boundaries_v_def poly_boundaries_v)
-        as poly_boundaries_v_wf.
+                poly_boundaries_def poly_boundaries)
+        as poly_boundaries_wf.
 Proof. auto_elab. Qed.
-#[local] Definition poly_boundaries_v_entry :=
-  lang_entry (elab_lang_implies_wf poly_boundaries_v_wf).
-#[export] Hint Resolve poly_boundaries_v_entry : wf_lang_db.
+#[local] Definition poly_boundaries_entry :=
+  lang_entry (elab_lang_implies_wf poly_boundaries_wf).
+#[export] Hint Resolve poly_boundaries_entry : wf_lang_db.
 
 Definition poly_source_boundaries :=
-  poly_boundaries_v ++ boundaries_ty_subst ++ boundaries_parameterized.
+  poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized.
 Hint Unfold poly_source_boundaries : auto_elab.
 
 Definition poly_source_multilanguage :=

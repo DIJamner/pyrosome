@@ -1,9 +1,8 @@
 (* Stage G: the polymorphic boundaries.
 
    [boundaries] and its type-casing rules, re-derived at an arbitrary type
-   environment by the parameterizer, extended with the two quantifier
-   boundary rules of Matthews and Findler; then the poly -> poly compiler
-   into [target_multilanguage] and its preservation proof.
+   environment by the parameterizer; then the poly -> poly compiler into
+   [target_multilanguage] and its preservation proof.
 
    The structure mirrors SimpleMultilangCompiler.v (the unparameterized
    version of the same compiler); see README.md for the file layout. *)
@@ -89,72 +88,10 @@ Proof. auto_elab. Qed.
   lang_entry (elab_lang_implies_wf boundaries_ty_subst_wf).
 #[export] Hint Resolve boundaries_ty_subst_entry : wf_lang_db.
 
-Definition poly_boundaries_def : lang := (* Matthews and Findler figure 11, page 12:33 *)
-  {[l/subst [exp_subst++value_subst]
-    [:= "D" : #"ty_env",
-        "G" : #"env" "D",
-        "A" : #"ty" (#"ty_ext" "D"), (* tau in Matthews and Findler *)
-        "e" : #"exp" "D" "G" #"*"
-        ----------------------------------------------- ("dtt forall")
-        #"dtt" (#"All" "A") "e" =
-        #"ret" (#"Lam" (#"dtt" "A" (#"exp_ty_subst" #"ty_wkn" "e")))
-        : #"exp" "D" "G" (#"All" "A")
-    ];
-    [:= "D" : #"ty_env",
-        "G" : #"env" "D",
-        "A" : #"ty" (#"ty_ext" "D"), (* tau in Matthews and Findler *)
-        "e" : #"exp" "D" "G" (#"All" "A")
-        ----------------------------------------------- ("ttd forall")
-        #"ttd" (#"All" "A") "e" =
-        #"ttd" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A") (#"@" "e" #"*") : #"exp" "D" "G" #"*"
-    ]
-  ]}.
-
-Derive poly_boundaries
-  in (elab_lang_ext (boundaries_ty_subst ++
-                             boundaries_parameterized ++ polymorphic_interoperating_langs)
-                poly_boundaries_def poly_boundaries)
-        as poly_boundaries_wf.
-Proof. auto_elab. Qed.
-#[local] Definition poly_boundaries_entry :=
-  lang_entry (elab_lang_implies_wf poly_boundaries_wf).
-#[export] Hint Resolve poly_boundaries_entry : wf_lang_db.
-
-(* Matthews and Findler have lump cancellation as a rule. But, we don't need that rule, (I think) because we've collapsed the Lump and TST types! *)
-Definition lump_cancellation_term_unelab :=
-  {{e #"ttd" #"*" (#"dtt" #"*" "e") }}.
-Derive lump_cancellation_term
-  in ( elab_term
-         (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs)
-         [("e", {{s #"exp" "D" "G" (#"*" "D")}}); (* the order of these matters! *)
-          ("G", {{s #"env" "D"}});
-          ("D", {{s #"ty_env"}})]
-         lump_cancellation_term_unelab
-         lump_cancellation_term
-         {{s #"exp" "D" "G" (#"*" "D") }}
-     ) as lump_cancellation_term_wf.
-Proof.
-  solve_elab_term_or_sort
-    (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs).
-Qed.
-
-Lemma lump_cancellation_holds :
-  eq_term
-    (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs)
-    [("e", {{s #"exp" "D" "G" (#"*" "D")}}); (* the order of these matters! *)
-     ("G", {{s #"env" "D"}});
-     ("D", {{s #"ty_env"}})]
-    {{s #"exp" "D" "G" (#"*" "D") }}
-    {{e "e" }}
-    lump_cancellation_term.
-Proof.
-  assert (wf_lang (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs)) by prove_by_lang_db.
-  by_reduction.
-Qed.
-
-
-
-(* Now the compiler. Three parts: base identity compiler, then a first pass partial evaluation to get rid of #"All" in typerecs, and then a second pass to get rid of the boundaries *)
+(* Now the compiler. The source's quantifier rules live in PolySource.v
+   (the value-restricted [poly_boundaries]); the compiler here is the
+   boundary compiler common to the two, and is proved to preserve those
+   quantifier rules in PolyMultilangCompiler.v. *)
 Local Notation compiler := (compiler string).
 
 Local Notation preserving_compiler_ext tgt cmp_pre cmp src := (* copied from Paramaterizer, 2523 *)
@@ -175,53 +112,6 @@ Qed.
 #[local] Definition polymorphic_interoperating_langs_compiler_entry :=
   cmp_entry polymorphic_interoperating_langs_compiler_preserving.
 #[export] Hint Resolve polymorphic_interoperating_langs_compiler_entry : preserving_db.
-
-(* begin getting the partial evaluator *)
-Definition dtt_forall_partial_eval_ctx :=
-  Eval vm_compute in Rule.get_ctx (named_list_lookup default poly_boundaries "dtt forall").
-
-Definition dtt_forall_partial_eval_term_def :=
-  {{e #"ret" (#"Lam" (#"dtt" "A" (#"exp_ty_subst" #"ty_wkn" "e"))) }}.
-
-Derive dtt_forall_partial_eval_term
-  in ( elab_term (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs)
-         dtt_forall_partial_eval_ctx
-         dtt_forall_partial_eval_term_def
-         dtt_forall_partial_eval_term
-         {{s #"exp" "D" "G" (#"All" "D" "A") }}
-     ) as dtt_forall_partial_eval_term_wf.
-Proof.
-  solve_elab_term_or_sort
-    (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs).
-Qed.
-
-Definition ttd_forall_partial_eval_ctx :=
-  Eval vm_compute in Rule.get_ctx (named_list_lookup default poly_boundaries "ttd forall").
-
-Definition ttd_forall_partial_eval_term_def :=
-  {{e #"ttd" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A") (#"@" "e" #"*") }}.
-
-Derive ttd_forall_partial_eval_term
-  in ( elab_term (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs)
-         ttd_forall_partial_eval_ctx
-         ttd_forall_partial_eval_term_def
-         ttd_forall_partial_eval_term
-         {{s #"exp" "D" "G" (#"*" "D") }}
-     ) as ttd_forall_partial_eval_term_wf.
-Proof.
-  solve_elab_term_or_sort
-    (poly_boundaries ++ boundaries_ty_subst ++ boundaries_parameterized ++ polymorphic_interoperating_langs).
-Qed.
-
-Fixpoint forall_partial_eval (program : term) : term :=
-  match program with
-  | {{e #"dtt" {D} {G} (#"All" {_} {A}) {e} }} =>
-      dtt_forall_partial_eval_term [/ [ ("e", e); ("A", A); ("G", G); ("D", D) ] /]
-  | {{e #"ttd" {D} {G} (#"All" {_} {A}) {e} }} =>
-      ttd_forall_partial_eval_term [/ [ ("e", e); ("A", A); ("G", G); ("D", D) ] /]
-  | con n s => con n (map forall_partial_eval s)
-  | var n => var n
-  end.
 
 (* poly to poly compiler *)
 Definition poly_multilang_compiler_def : compiler :=
