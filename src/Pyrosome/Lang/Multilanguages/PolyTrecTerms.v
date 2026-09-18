@@ -272,9 +272,150 @@ Proof. compute_wf_lang. Qed.
 
 
 (* ------------------------------------------------------------------ *)
+(* Stage 5: [#"btrec"], the boundary-specialized recursor.
+
+   [mono] (Monomorphize.v) rewrites bottom-up with RigidRewrite.v, whose gate
+   requires every con node of a rule's LHS to FIT: its instantiated output
+   sort must be syntactically the sort its position expects.  A rule that
+   pushes a type substitution into a [#"typerec"] cannot satisfy this.  Its
+   LHS is [#"val_ty_subst" "g" A (#"typerec" "D" "G" "mu" {boundary_sigma} ...)],
+   and by the time the root is reached the explicit type argument [A] has
+   already been normalized to [#"prod" (#"->" "mu" #"*") (#"->" #"*" "mu")],
+   while [#"typerec"]'s own output sort is
+   [#"ty_subst" (#"ty_snoc" #"ty_id" "mu") {boundary_sigma}].  The two are
+   equal only up to [eq_sort], so either the rule does not fit (gate fails) or
+   it does not match (the rule is dead -- this is what happens to
+   ["ty_subst typerec'"]).
+
+   [#"btrec" "mu" "v1" "v2" "v3"] is [#"typerec"] specialized to
+   [boundary_sigma], with its result sort *stated* as [P mu] -- already in the
+   form [mono] normalizes to, exactly as [#"bstar"] / [#"bbool"] state theirs.
+   Its type-substitution law is therefore rigid.  [mono] folds every boundary
+   [#"typerec"] into a [#"btrec"] (["typerec to btrec"]), pushes type
+   substitutions through it (["ty_subst btrec"]), and a final de-sugaring pass
+   with ["btrec def"] turns the [#"btrec"]s back into [#"typerec"]s for
+   TyperecPartialEval.v's [elim_typerec].
+
+   The four rules are built programmatically from the elaborated [#"typerec"]
+   rule, so they cannot drift from it.                                      *)
+
+Definition target_multilanguage_rigid :=
+  rigid_ty_subst ++ typerec_All ++ bAll_cases ++ poly_ty_subst ++ target_multilanguage.
+Hint Unfold target_multilanguage_rigid : auto_elab.
+
+Lemma target_multilanguage_rigid_wf : wf_lang target_multilanguage_rigid.
+Proof. prove_by_lang_db. Qed.
+#[local] Definition target_multilanguage_rigid_entry :=
+  lang_entry target_multilanguage_rigid_wf.
+#[export] Hint Resolve target_multilanguage_rigid_entry : wf_lang_db.
+
+(* The elaborated [boundary_sigma], read off the ["typerec All"] equation's
+   LHS (its [#"typerec"] node's fourth argument). *)
+Definition boundary_sigma_elab :=
+  Eval vm_compute in
+  match named_list_lookup_err target_multilanguage_rigid "typerec All" with
+  | Some (term_eq_rule _ (Term.con _ s0) _ _) => nth 3 s0 (Term.var "mu")
+  | _ => Term.var "mu"
+  end.
+
+Definition sigma_b_subst := [("sigma", boundary_sigma_elab)].
+
+(* The rules that put a type argument into [mono]-normal form.  Just enough to
+   normalize [#"ty_subst" (#"ty_snoc" #"ty_id" "mu") {boundary_sigma}] to
+   [P "mu"]; a sublist of [mono_rule_names], which is defined below. *)
+Definition mono_A_rules : list string :=
+  ["ty_subst prod"; "ty_subst ->"; "ty_subst *"; "ty_snoc_hd"].
+
+(* [P "mu"], i.e. [#"btrec"]'s result type. *)
+Definition btrec_ty :=
+  Eval vm_compute in
+  match named_list_lookup_err target_multilanguage_rigid "typerec" with
+  | Some (term_rule _ _ (Term.scon _ l)) =>
+      RigidRewrite.rewrite_n (V:=string) target_multilanguage_rigid mono_A_rules
+        1000 ((nth 0 l (Term.var "mu"))[/sigma_b_subst/])
+  | _ => Term.var "mu"
+  end.
+
+Definition btrec_rule : rule :=
+  Eval vm_compute in
+  match named_list_lookup_err target_multilanguage_rigid "typerec" with
+  | Some (term_rule cT a (Term.scon n l)) =>
+      term_rule
+        (map (fun p => (fst p, (snd p)[/sigma_b_subst/]))
+           (filter (fun p => negb (String.eqb (fst p) "sigma")) cT))
+        (filter (fun x => negb (String.eqb x "sigma")) a)
+        (Term.scon n (btrec_ty :: skipn 1 l))
+  | _ => sort_rule [] []
+  end.
+
+Definition btrec_ctx :=
+  Eval vm_compute in
+  match btrec_rule with term_rule cB _ _ => cB | _ => [] end.
+
+(* [#"typerec" "D" "G" "mu" {boundary_sigma} "v1" "v2" "v3"] and
+   [#"btrec" "D" "G" "mu" "v1" "v2" "v3"], as patterns over [btrec_ctx]. *)
+Definition trec_b_pat :=
+  Eval vm_compute in
+  match named_list_lookup_err target_multilanguage_rigid "typerec" with
+  | Some (term_rule cT _ _) =>
+      Term.con "typerec"
+        (map (fun p => if String.eqb (fst p) "sigma" then boundary_sigma_elab
+                       else Term.var (fst p)) cT)
+  | _ => Term.var "mu"
+  end.
+
+Definition btrec_pat :=
+  Eval vm_compute in Term.con "btrec" (map (fun p => Term.var (fst p)) btrec_ctx).
+
+(* [#"typerec"]'s own output sort at [sigma := boundary_sigma]. *)
+Definition trec_b_sort :=
+  Eval vm_compute in
+  match named_list_lookup_err target_multilanguage_rigid "typerec" with
+  | Some (term_rule _ _ tT) => tT[/sigma_b_subst/]
+  | _ => Term.scon "ty_env" []
+  end.
+
+(* ["ty_subst btrec"], built from the [sigma := boundary_sigma] instance of
+   ["ty_subst typerec"]: the [#"val_ty_subst"] type argument becomes
+   [btrec_ty], both [#"typerec"] nodes become [#"btrec"] nodes, and the sort
+   is restated by root fit. *)
+Definition ty_subst_btrec_rule : rule :=
+  Eval vm_compute in
+  match named_list_lookup_err target_multilanguage_rigid "ty_subst typerec",
+        named_list_lookup_err target_multilanguage_rigid "val_ty_subst" with
+  | Some (term_eq_rule c lhs rhs _), Some (term_rule cR _ tR) =>
+      match lhs[/sigma_b_subst/], rhs[/sigma_b_subst/] with
+      | Term.con n s0, Term.con _ rs =>
+          let s0' := [btrec_pat; btrec_ty] ++ skipn 2 s0 in
+          term_eq_rule
+            (map (fun p => (fst p, (snd p)[/sigma_b_subst/]))
+               (filter (fun p => negb (String.eqb (fst p) "sigma")) c))
+            (Term.con n s0')
+            (Term.con "btrec" (firstn 3 rs ++ skipn 4 rs))
+            (tR[/with_names_from cR s0'/])
+      | _, _ => sort_rule [] []
+      end
+  | _, _ => sort_rule [] []
+  end.
+
+Definition btrec_cases : lang :=
+  [("ty_subst btrec", ty_subst_btrec_rule);
+   ("typerec to btrec", term_eq_rule btrec_ctx trec_b_pat btrec_pat trec_b_sort);
+   ("btrec def", term_eq_rule btrec_ctx btrec_pat trec_b_pat
+                   (match btrec_rule with term_rule _ _ tB => tB | _ => Term.scon "ty_env" [] end));
+   ("btrec", btrec_rule)].
+
+Lemma btrec_cases_wf : wf_lang_ext target_multilanguage_rigid btrec_cases.
+Proof. compute_wf_lang. Qed.
+#[local] Definition btrec_cases_entry := lang_entry btrec_cases_wf.
+#[export] Hint Resolve btrec_cases_entry : wf_lang_db.
+
+
+(* ------------------------------------------------------------------ *)
 (* The polymorphic target multilanguage. *)
 Definition poly_target_multilanguage :=
-  rigid_ty_subst ++ typerec_All ++ bAll_cases ++ poly_ty_subst ++ target_multilanguage.
+  btrec_cases ++ rigid_ty_subst ++ typerec_All ++ bAll_cases ++ poly_ty_subst
+    ++ target_multilanguage.
 Hint Unfold poly_target_multilanguage : auto_elab.
 
 Lemma poly_target_multilanguage_wf : wf_lang poly_target_multilanguage.
@@ -314,8 +455,15 @@ Definition mono_pushes_ty_subst (n : string) : bool :=
   || String.prefix "sub_ty_subst " n
   || String.prefix "env_ty_subst " n.
 
+(* ["typerec to btrec"] is the one mono rule whose name does not follow the
+   ["<action> <constructor>"] convention, so it is listed explicitly.
+   ["btrec def"] is deliberately NOT here: it is the de-sugaring pass, run
+   after monomorphization, and adding it would undo ["typerec to btrec"]. *)
+Definition mono_extra : list string := ["typerec to btrec"].
+
 Definition mono_rule_names : list string :=
   Eval vm_compute in
+  mono_extra ++
   filter (fun n => negb (mono_mem n mono_excluded)
                    && (mono_pushes_ty_subst n
                        || mono_mem n mono_ty_laws
@@ -325,4 +473,14 @@ Definition mono_rule_names : list string :=
 Lemma mono_rules_rigid
   : forallb (RigidRewrite.rewrite_rule_ok (V:=string) poly_target_multilanguage)
       mono_rule_names = true.
+Proof. vm_compute. reflexivity. Qed.
+
+(* The de-sugaring pass: ["btrec def"] alone, run on [mono]'s output to turn
+   the [#"btrec"]s back into [#"typerec"]s.  It terminates because nothing in
+   this rule set produces a [#"btrec"]. *)
+Definition desugar_rule_names : list string := ["btrec def"].
+
+Lemma desugar_rules_rigid
+  : forallb (RigidRewrite.rewrite_rule_ok (V:=string) poly_target_multilanguage)
+      desugar_rule_names = true.
 Proof. vm_compute. reflexivity. Qed.
