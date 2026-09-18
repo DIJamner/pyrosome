@@ -9,7 +9,8 @@
    Monomorphization is not complete (System F is not monomorphizable), so
    the pipeline's completeness is a *decidable side condition*:
    [all_typerecs_simple_b] (a boolean refinement of TyperecPartialEval.v's
-   [all_typerecs_simple]) together with [WfTransfer.avoids ["bAll"]].  When
+   [all_typerecs_simple]) together with
+   [WfTransfer.avoids ["btrec"; "bAll"]].  When
    both hold, the term transfers down to [target_multilanguage] and
    TyperecPartialEval.v's partial evaluator [elim_typerec] finishes the job:
    [mono_elim_eq] / [mono_elim_wf].
@@ -45,17 +46,68 @@ Local Notation lang := (@Rule.lang string).
 
 Definition mono_fuel := 1000.
 
-Definition mono (e : term) : term :=
+(* [mono] is two passes of the engine: monomorphize (["Lam-beta"], the
+   type-substitution pushes and laws, and ["typerec to btrec"]), then
+   de-sugar the [#"btrec"]s back into [#"typerec"]s with ["btrec def"] so
+   that TyperecPartialEval.v's [elim_typerec] applies.  The de-sugaring pass
+   has to be separate: ["btrec def"] is the converse of ["typerec to btrec"],
+   so running them together would loop. *)
+Definition monomorphize (e : term) : term :=
   RigidRewrite.rewrite_n (V:=string) poly_target_multilanguage mono_rule_names mono_fuel e.
+
+Definition desugar (e : term) : term :=
+  RigidRewrite.rewrite_n (V:=string) poly_target_multilanguage desugar_rule_names mono_fuel e.
+
+Definition mono (e : term) : term := desugar (monomorphize e).
+
+Theorem monomorphize_sound : forall e t,
+    wf_term poly_target_multilanguage [] e t ->
+    eq_term poly_target_multilanguage [] t e (monomorphize e).
+Proof.
+  intros e t Hwf. unfold monomorphize.
+  apply (RigidRewrite.rewrite_n_sound (V:=string) poly_target_multilanguage_wf
+           mono_rule_names mono_rules_rigid ltac:(constructor) mono_fuel).
+  exact Hwf.
+Qed.
+
+Theorem monomorphize_wf : forall e t,
+    wf_term poly_target_multilanguage [] e t ->
+    wf_term poly_target_multilanguage [] (monomorphize e) t.
+Proof.
+  intros e t Hwf. unfold monomorphize.
+  apply (RigidRewrite.rewrite_n_wf (V:=string) poly_target_multilanguage_wf
+           mono_rule_names mono_rules_rigid ltac:(constructor) mono_fuel).
+  exact Hwf.
+Qed.
+
+Theorem desugar_sound : forall e t,
+    wf_term poly_target_multilanguage [] e t ->
+    eq_term poly_target_multilanguage [] t e (desugar e).
+Proof.
+  intros e t Hwf. unfold desugar.
+  apply (RigidRewrite.rewrite_n_sound (V:=string) poly_target_multilanguage_wf
+           desugar_rule_names desugar_rules_rigid ltac:(constructor) mono_fuel).
+  exact Hwf.
+Qed.
+
+Theorem desugar_wf : forall e t,
+    wf_term poly_target_multilanguage [] e t ->
+    wf_term poly_target_multilanguage [] (desugar e) t.
+Proof.
+  intros e t Hwf. unfold desugar.
+  apply (RigidRewrite.rewrite_n_wf (V:=string) poly_target_multilanguage_wf
+           desugar_rule_names desugar_rules_rigid ltac:(constructor) mono_fuel).
+  exact Hwf.
+Qed.
 
 Theorem mono_sound : forall e t,
     wf_term poly_target_multilanguage [] e t ->
     eq_term poly_target_multilanguage [] t e (mono e).
 Proof.
   intros e t Hwf. unfold mono.
-  apply (RigidRewrite.rewrite_n_sound (V:=string) poly_target_multilanguage_wf
-           mono_rule_names mono_rules_rigid ltac:(constructor) mono_fuel).
-  exact Hwf.
+  eapply eq_term_trans;
+    [ apply monomorphize_sound; exact Hwf
+    | apply desugar_sound; apply monomorphize_wf; exact Hwf ].
 Qed.
 
 Theorem mono_wf : forall e t,
@@ -63,9 +115,7 @@ Theorem mono_wf : forall e t,
     wf_term poly_target_multilanguage [] (mono e) t.
 Proof.
   intros e t Hwf. unfold mono.
-  apply (RigidRewrite.rewrite_n_wf (V:=string) poly_target_multilanguage_wf
-           mono_rule_names mono_rules_rigid ltac:(constructor) mono_fuel).
-  exact Hwf.
+  apply desugar_wf; apply monomorphize_wf; exact Hwf.
 Qed.
 
 (* ---------------- 2. the decidable simplicity check ---------------- *)
@@ -164,7 +214,24 @@ Qed.
 
 (* ---------------- 3. transfer down to [target_multilanguage] ---------------- *)
 
-Definition mono_excluded_cons : list string := ["bAll"].
+(* The two constructors of the polymorphic extension that
+   [target_multilanguage] does not have, and that therefore have to be gone
+   before the term can be handed to TyperecPartialEval.v.
+
+   Neither is guaranteed to disappear, which is why this is a per-term
+   decidable side condition rather than a theorem:
+     - [#"btrec"] is introduced by ["typerec to btrec"] during
+       monomorphization and removed again by the de-sugaring pass, but only
+       at nodes where ["btrec def"] matches;
+     - [#"bAll"] is introduced by ["typerec All"], i.e. by a boundary at a
+       polymorphic type; nothing removes it, so a program whose boundaries
+       survive monomorphization at an [#"All"] type fails this check (as it
+       must -- it also fails [all_typerecs_simple_b]).
+   In particular [mono] never introduces either constructor at a node where
+   the input had none: the only rules that produce one are ["typerec to
+   btrec"] (from a [#"typerec"]) and, outside [mono_rule_names] entirely,
+   ["typerec All"].                                                        *)
+Definition mono_excluded_cons : list string := ["btrec"; "bAll"].
 
 Lemma poly_to_tml_cov
   : WfTransfer.term_rules_covered string mono_excluded_cons
@@ -191,7 +258,7 @@ Qed.
 Lemma tml_incl_poly : incl target_multilanguage poly_target_multilanguage.
 Proof.
   unfold poly_target_multilanguage.
-  do 4 apply incl_appr. apply incl_refl.
+  do 5 apply incl_appr. apply incl_refl.
 Qed.
 
 Theorem mono_elim_eq : forall e t,
@@ -330,34 +397,15 @@ Proof. rewrite ex2_compiled_eq. vm_cast_no_check (@eq_refl term ex2_mono). Qed.
 Lemma ex2_not_simple : all_typerecs_simple_b (mono (compile PCMP ex2)) = false.
 Proof. rewrite ex2_mono_eq. vm_cast_no_check (@eq_refl bool false). Qed.
 
-(* --- A third example, currently BLOCKED by a missing rule.
+(* --- Second positive example: a *polymorphic* to-dynamic function,
+   instantiated.
 
-   [((Lam. lambda x:ty_hd. ttd_ty_hd x) @ bool) T] instantiates a
-   *polymorphic* to-dynamic function at [#"bool"] and applies it, so after
-   monomorphization the boundary should be at the concrete type [#"bool"].
-   [mono] does not get there.  The residual redex is
-
-     #"val_ty_subst" "g" (#"ty_subst" (#"ty_snoc" #"ty_id" "mu") "sigma")
-       (#"typerec" "D" "G" "mu" "sigma" "v1" "v2" "v3")
-
-   i.e. an instance of ["ty_subst typerec'"].  Its LHS mentions the
-   [#"typerec"] node's own type, [#"ty_subst" (#"ty_snoc" #"ty_id" "mu")
-   "sigma"], as an explicit argument of [#"val_ty_subst"]; but
-   [RigidRewrite.pass] is *bottom-up*, so by the time the root is tried that
-   argument has already been normalized by ["ty_subst prod"] / ["ty_subst ->"]
-   into [#"prod" (#"->" "mu" #"*") (#"->" #"*" "mu")] and the pattern no
-   longer matches.  ["ty_subst typerec'"] is therefore dead in [mono].
-
-   The fix is a further restated copy in PolyTrecTerms.v (which this file
-   must not modify): ["ty_subst typerec"] with ["sigma"] specialized to
-   [boundary_sigma] and the [#"val_ty_subst"] type argument written in
-   [mono]-normal form, i.e. LHS
-
-     #"val_ty_subst" "g" (#"prod" (#"->" "mu" #"*") (#"->" #"*" "mu"))
-       (#"typerec" "D" "G" "mu" {boundary_sigma} "v1" "v2" "v3").
-
-   Until that rule exists the check below is [false]; the example is kept
-   (rather than weakened) as the regression test for it.                    *)
+   [((Lam. lambda x:ty_hd. ttd_ty_hd x) @ bool) T] sends its argument to the
+   dynamic side at the *bound type variable* [#"ty_hd"], so the boundary only
+   becomes concrete after monomorphization.  This is the example that
+   motivated [#"btrec"] (PolyTrecTerms.v Stage 5): with ["ty_subst typerec'"]
+   alone the type substitution could never be pushed into the [#"typerec"]
+   node, and the check below was [false].                                   *)
 Definition ex3_unelab : term :=
   {{e #"app" (#"@" (#"ret" (#"Lam" (#"ret" (#"lambda" #"ty_hd"
                               (#"ttd" #"ty_hd" (#"ret" #"hd")))))) #"bool")
@@ -377,5 +425,37 @@ Proof. vm_cast_no_check (@eq_refl term ex3_compiled). Qed.
 Lemma ex3_mono_eq : mono (compile PCMP ex3) = ex3_mono.
 Proof. rewrite ex3_compiled_eq. vm_cast_no_check (@eq_refl term ex3_mono). Qed.
 
-Lemma ex3_blocked : all_typerecs_simple_b (mono (compile PCMP ex3)) = false.
-Proof. rewrite ex3_mono_eq. vm_cast_no_check (@eq_refl bool false). Qed.
+Lemma ex3_simple : all_typerecs_simple_b (mono (compile PCMP ex3)) = true.
+Proof. rewrite ex3_mono_eq. vm_cast_no_check (@eq_refl bool true). Qed.
+
+Lemma ex3_avoids
+  : WfTransfer.avoids string mono_excluded_cons (mono (compile PCMP ex3)) = true.
+Proof. rewrite ex3_mono_eq. vm_cast_no_check (@eq_refl bool true). Qed.
+
+Lemma ex3_no_typerec
+  : no_typerec (elim_typerec (mono (compile PCMP ex3))) = true.
+Proof. rewrite ex3_mono_eq. vm_cast_no_check (@eq_refl bool true). Qed.
+
+Corollary ex3_pipeline : forall t,
+    wf_term poly_target_multilanguage [] (compile PCMP ex3) t ->
+    eq_term poly_target_multilanguage [] t (compile PCMP ex3)
+      (elim_typerec (mono (compile PCMP ex3)))
+    /\ wf_term target_multilanguage_without_typerec []
+         (elim_typerec (mono (compile PCMP ex3))) t.
+Proof.
+  intros t Hwf.
+  exact (conj (mono_elim_eq Hwf ex3_simple ex3_avoids)
+              (mono_elim_wf Hwf ex3_simple ex3_avoids)).
+Qed.
+
+(* [Eval vm_compute in (elim_typerec (mono (compile PCMP ex3)))] is
+
+   #"app" (#"ret" (#"lambda" #"bool"
+             (#"let" (#"ret" #"hd")
+                (#"app" (#".1" (#"ret" (#"val_subst" #"wkn" #"bbool")))
+                        (#"ret" #"hd")))))
+          (#"ret" #"T")
+
+   (implicit arguments elided): the polymorphic to-dynamic function has been
+   specialized to [#"bool"] and its boundary has become the [#"bbool"] case.
+   No [#"btrec"], no [#"bAll"], no [#"typerec"] remain.                     *)
