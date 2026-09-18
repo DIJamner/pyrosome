@@ -38,6 +38,8 @@ Import Core.Notations.
 
 From Stdlib Require derive.Derive.
 From Pyrosome Require Import Tools.EGraph.InjRuleGen.
+From Pyrosome.Theory Require Import PatternRigidity RigidRewrite.
+From Stdlib Require Strings.String.
 
 From Pyrosome.Lang Require Import SimpleVSTLC UTLC BoolType SimpleVProd.
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
@@ -211,9 +213,68 @@ Proof. auto_elab. Qed.
 
 
 (* ------------------------------------------------------------------ *)
+(* Stage 4: restated type-substitution laws for the monomorphizer.
+
+   The generic rewriting engine of Theory/RigidRewrite.v only accepts an
+   equation whose stated sort is SYNTACTICALLY the output sort of its LHS
+   head constructor, instantiated with the LHS arguments ("root fit").  Five
+   of the type-substitution laws of the target fail that check because their
+   sort was simplified -- by hand for ["ty_subst bstar"], ["ty_subst bbool"]
+   and ["ty_subst typerec"], and by type inference for ["ty_subst @"] and
+   ["ty_subst bAll"], which fuses [#"ty_subst" "g" (#"ty_subst" ...)] and
+   pushes [#"ty_subst"] under [#"prod"]/[#"->"]/[#"All"].
+
+   [rigid_ty_subst] restates exactly those five: same context, same left- and
+   right-hand sides, but with the root-fitting sort.  The rules are built
+   programmatically from the elaborated originals, so the two statements
+   cannot drift apart.  The originals are kept (they are what the rest of the
+   development rewrites with); the monomorphizer uses the primed copies.   *)
+
+Definition target_multilanguage_trec_All := typerec_All ++ target_multilanguage_bAll.
+Hint Unfold target_multilanguage_trec_All : auto_elab.
+
+Lemma target_multilanguage_trec_All_wf : wf_lang target_multilanguage_trec_All.
+Proof. prove_by_lang_db. Qed.
+#[local] Definition target_multilanguage_trec_All_entry :=
+  lang_entry target_multilanguage_trec_All_wf.
+#[export] Hint Resolve target_multilanguage_trec_All_entry : wf_lang_db.
+
+(* [restate_sort l n n0] is the equation named [n] of [l] with its sort
+   replaced by the output sort of the term rule [n0] (the head constructor of
+   the equation's LHS) instantiated with the LHS's arguments. *)
+Definition restate_sort (l : lang) (n n0 : string) : rule :=
+  match named_list_lookup_err l n, named_list_lookup_err l n0 with
+  | Some (term_eq_rule c' lhs e2 t), Some (term_rule cR _ tR) =>
+      match lhs with
+      | Term.con _ s0 => term_eq_rule c' lhs e2 (tR[/with_names_from cR s0/])
+      | _ => term_eq_rule c' lhs e2 t
+      end
+  | _, _ => sort_rule [] []
+  end.
+
+Definition rigid_ty_subst : lang :=
+  Eval vm_compute in
+  [("ty_subst bAll'",
+     restate_sort target_multilanguage_trec_All "ty_subst bAll" "val_ty_subst");
+   ("ty_subst @'",
+     restate_sort target_multilanguage_trec_All "ty_subst @" "exp_ty_subst");
+   ("ty_subst typerec'",
+     restate_sort target_multilanguage_trec_All "ty_subst typerec" "val_ty_subst");
+   ("ty_subst bstar'",
+     restate_sort target_multilanguage_trec_All "ty_subst bstar" "val_ty_subst");
+   ("ty_subst bbool'",
+     restate_sort target_multilanguage_trec_All "ty_subst bbool" "val_ty_subst")].
+
+Lemma rigid_ty_subst_wf : wf_lang_ext target_multilanguage_trec_All rigid_ty_subst.
+Proof. compute_wf_lang. Qed.
+#[local] Definition rigid_ty_subst_entry := lang_entry rigid_ty_subst_wf.
+#[export] Hint Resolve rigid_ty_subst_entry : wf_lang_db.
+
+
+(* ------------------------------------------------------------------ *)
 (* The polymorphic target multilanguage. *)
 Definition poly_target_multilanguage :=
-  typerec_All ++ bAll_cases ++ poly_ty_subst ++ target_multilanguage.
+  rigid_ty_subst ++ typerec_All ++ bAll_cases ++ poly_ty_subst ++ target_multilanguage.
 Hint Unfold poly_target_multilanguage : auto_elab.
 
 Lemma poly_target_multilanguage_wf : wf_lang poly_target_multilanguage.
@@ -221,3 +282,47 @@ Proof. prove_by_lang_db. Qed.
 #[local] Definition poly_target_multilanguage_entry :=
   lang_entry poly_target_multilanguage_wf.
 #[export] Hint Resolve poly_target_multilanguage_entry : wf_lang_db.
+
+
+(* ------------------------------------------------------------------ *)
+(* The rewrite rules the monomorphizer will run with, and the reflective
+   proof that every one of them passes RigidRewrite's gate.
+
+   The list is computed by a filter over the rule names of
+   [poly_target_multilanguage] rather than maintained by hand: it is every
+   equation that pushes a type substitution through a constructor, plus the
+   type-substitution action and category laws, plus ["Lam-beta"] (the
+   redex that monomorphization actually contracts).  The five originals
+   restated in [rigid_ty_subst] are replaced by their primed copies.       *)
+Definition mono_excluded : list string :=
+  ["ty_subst bbool"; "ty_subst bstar"; "ty_subst typerec";
+   "ty_subst @"; "ty_subst bAll"].
+
+Definition mono_ty_laws : list string :=
+  ["ty_act_id"; "ty_act_cmp"; "env_ty_act_id"; "env_ty_act_cmp";
+   "ty_snoc_wkn_hd"; "ty_cmp_snoc"; "ty_snoc_hd"; "ty_wkn_snoc";
+   "ty_id_emp_forget"; "ty_cmp_forget"; "ty_cmp_assoc";
+   "ty_id_left"; "ty_id_right"].
+
+Definition mono_mem (n : string) (l : list string) : bool :=
+  existsb (String.eqb n) l.
+
+Definition mono_pushes_ty_subst (n : string) : bool :=
+  String.prefix "exp_ty_subst " n
+  || String.prefix "val_ty_subst " n
+  || String.prefix "ty_subst " n
+  || String.prefix "sub_ty_subst " n
+  || String.prefix "env_ty_subst " n.
+
+Definition mono_rule_names : list string :=
+  Eval vm_compute in
+  filter (fun n => negb (mono_mem n mono_excluded)
+                   && (mono_pushes_ty_subst n
+                       || mono_mem n mono_ty_laws
+                       || String.eqb n "Lam-beta"))
+    (map fst poly_target_multilanguage).
+
+Lemma mono_rules_rigid
+  : forallb (RigidRewrite.rewrite_rule_ok (V:=string) poly_target_multilanguage)
+      mono_rule_names = true.
+Proof. vm_compute. reflexivity. Qed.
