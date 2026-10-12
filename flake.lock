@@ -1,0 +1,63 @@
+{
+  "nodes": {
+    "canonical-binary-tries": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1633953749,
+        "narHash": "sha256-ecxLveFO7VVPiD8RM0V4/9Px0J1TAhYSJ4p/HRSJW8U=",
+        "owner": "xavierleroy",
+        "repo": "canonical-binary-tries",
+        "rev": "60b616370ba29f527bf98b541c232da508492093",
+        "type": "github"
+      },
+      "original": {
+        "owner": "xavierleroy",
+        "repo": "canonical-binary-tries",
+        "rev": "60b616370ba29f527bf98b541c232da508492093",
+        "type": "github"
+      }
+    },
+    "coqutil": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1764154960,
+        "narHash": "sha256-OF8xkmwQX2Lm3C7a4jggaZNIlKw+v7V1tmluf33kd8I=",
+        "owner": "mit-plv",
+        "repo": "coqutil",
+        "rev": "f595ddf0de48aae23862dc146928825db960c955",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mit-plv",
+        "repo": "coqutil",
+        "rev": "f595ddf0de48aae23862dc146928825db960c955",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1782847189,
+        "narHash": "sha256-twXPFqFsrrY5r28Zh7Homgcp2gUMBgQ6WDS98Q/3xFI=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "b6018f87da91d19d0ab4cf979885689b469cdd41",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-25.11",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "canonical-binary-tries": "canonical-binary-tries",
+        "coqutil": "coqutil",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

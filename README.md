@@ -1,5 +1,7 @@
 # Build
 
+For the POPL artifact VM, see [ARTIFACT.md](ARTIFACT.md).
+
 Tested with Rocq 9.1, but may work with version 9.0 onward.
 
 You can clone this repository with
