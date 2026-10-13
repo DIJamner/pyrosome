@@ -15,6 +15,5 @@ out=$(nix --extra-experimental-features 'nix-command flakes' \
         build --no-link --print-out-paths ".#vm-$fmt")
 mkdir -p artifact/out
 install -m 644 "$out"/*."$ext" "artifact/out/pyrosome-artifact.$ext"
-install -m 644 ARTIFACT.md artifact/out/
 install -m 755 artifact/run-qemu.sh artifact/out/
 ls -l artifact/out
