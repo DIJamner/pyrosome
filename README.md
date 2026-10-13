@@ -44,3 +44,7 @@ and a corresponding projection. The `compute_wf_lang` tactic uses the
 e-graph machinery described in this paper to compute equivalence between types.
 We invite the reviewers to test more complex examples, for example additional compilers,
 but do not include explicit instructions here as such examples would be more involved.
+
+Note that the above examples are primarily Pyrosome examples. However, as our e-graphs
+are now the default automation in Pyrosome, we believe that they still reflect the
+reusability of our contributions.
