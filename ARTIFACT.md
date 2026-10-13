@@ -1,7 +1,7 @@
 # Pyrosome artifact: VM guide
 
 The VM is an x86_64 NixOS system with Rocq 9.1 and its Stdlib, and a small
-IceWM desktop with Emacs and Proof General. The sources are in `~/pyrosome`,
+Xfce desktop with Emacs and Proof General. The sources are in `~/pyrosome`,
 with the `coqutil` and `canonical-binary-tries` dependencies already included.
 
 - Login: user `artifact`, password `artifact`. Both the desktop and the

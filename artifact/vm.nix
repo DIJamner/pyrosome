@@ -1,9 +1,7 @@
-# Minimal NixOS guest for evaluating the artifact: an IceWM desktop with
+# Small NixOS guest for evaluating the artifact: an Xfce desktop with
 # Emacs + Proof General, plus a text console on the serial port.
 { config, lib, pkgs, modulesPath, src, coqPackages, ... }:
 {
-  imports = [ (modulesPath + "/profiles/minimal.nix") ];
-
   # Per-format settings.
   image.modules.qemu = {
     imports = [ (modulesPath + "/profiles/qemu-guest.nix") ];
@@ -36,17 +34,22 @@
     settings.PasswordAuthentication = true;
   };
 
-  # Graphical session: log straight into IceWM.
+  # Graphical session: log straight into Xfce, with a terminal open in ~/pyrosome.
   services.xserver = {
     enable = true;
-    windowManager.icewm.enable = true;
-    displayManager.sessionCommands = "cd ~/pyrosome && ${pkgs.xterm}/bin/xterm &";
+    desktopManager.xfce.enable = true;
   };
+  environment.etc."xdg/autostart/pyrosome-terminal.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Pyrosome terminal
+    Exec=xfce4-terminal --working-directory=/home/artifact/pyrosome
+  '';
   # X pulls these in by default; unneeded for Emacs, and ~1.5 GB together.
   hardware.graphics.enable = lib.mkForce false; # Mesa/LLVM; X falls back to software rendering
   services.speechd.enable = false;
   services.displayManager = {
-    defaultSession = "none+icewm";
+    defaultSession = "xfce";
     autoLogin = {
       enable = true;
       user = "artifact";
@@ -57,7 +60,6 @@
     coqPackages.coq
     coqPackages.stdlib
     pkgs.gnumake
-    pkgs.xterm
     # Native compilation would add gcc and libgccjit to the image.
     ((pkgs.emacsPackagesFor (pkgs.emacs.override { withNativeCompilation = false; })).emacsWithPackages
       (epkgs: [ epkgs.proof-general ]))
@@ -84,7 +86,8 @@
     Build all proofs with:  cd ~/pyrosome && make -j$(nproc)
   '';
 
-  # Keep the image small: no Nix tooling or nixpkgs copy inside the guest.
+  # Keep the image small: no docs, Nix tooling or nixpkgs copy inside the guest.
+  documentation.enable = false;
   nix.enable = false;
   nixpkgs.flake.setNixPath = false;
   nixpkgs.flake.setFlakeRegistry = false;
