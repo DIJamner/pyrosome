@@ -16,13 +16,13 @@ with the `coqutil` and `canonical-binary-tries` dependencies already included.
     ./run-qemu.sh pyrosome-artifact.qcow2
 
 The desktop opens in a window, and a text console runs in the terminal; press
-`Ctrl-a x` there to quit. With `NOGRAPHIC=1 ./run-qemu.sh ...` you get only
-the console, and with e.g. `RES=2560x1440 ./run-qemu.sh ...` a different
-screen resolution (default 1920x1080). You can also log in over SSH from another terminal with
-`ssh -p 2222 artifact@localhost`.
+`Ctrl-a x` there to quit. The screen is 1920x1080; set e.g. `RES=2560x1440`
+to change it, or `NOGRAPHIC=1` for the console only. You can also log in over
+SSH from another terminal with `ssh -p 2222 artifact@localhost`.
 
 **VirtualBox** (`pyrosome-artifact.ova`): use *File > Import Appliance*, then
-start the VM. The desktop resizes with the window. SSH is forwarded to host port 2222, as with QEMU.
+start the VM. The desktop resizes with the window. SSH is forwarded to host
+port 2222, as with QEMU.
 
 ## Checking the proofs
 
