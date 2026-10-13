@@ -1,11 +1,11 @@
 # Pyrosome artifact: VM guide
 
-The VM is a console-only x86_64 NixOS system with Rocq 9.1 and its Stdlib
-installed. The sources are in `~/pyrosome`, with the `coqutil` and
-`canonical-binary-tries` dependencies already included.
+The VM is an x86_64 NixOS system with Rocq 9.1 and its Stdlib, and a small
+IceWM desktop with Emacs and Proof General. The sources are in `~/pyrosome`,
+with the `coqutil` and `canonical-binary-tries` dependencies already included.
 
-- Login: user `artifact`, password `artifact`. The console logs in
-  automatically, and `sudo` does not ask for a password.
+- Login: user `artifact`, password `artifact`. Both the desktop and the
+  console log in automatically, and `sudo` does not ask for a password.
 - Resources: allocate at least 8 GB RAM and 4 cores. The disk grows as
   needed, up to 20 GB.
 
@@ -15,8 +15,10 @@ installed. The sources are in `~/pyrosome`, with the `coqutil` and
 
     ./run-qemu.sh pyrosome-artifact.qcow2
 
-The VM runs in the terminal. Press `Ctrl-a x` to quit. You can also log in
-over SSH from another terminal with `ssh -p 2222 artifact@localhost`.
+The desktop opens in a window, and a text console runs in the terminal; press
+`Ctrl-a x` there to quit. With `NOGRAPHIC=1 ./run-qemu.sh ...` you get only
+the console. You can also log in over SSH from another terminal with
+`ssh -p 2222 artifact@localhost`.
 
 **VirtualBox** (`pyrosome-artifact.ova`): use *File > Import Appliance*, then
 start the VM. SSH is forwarded to host port 2222, as with QEMU.
@@ -27,7 +29,13 @@ start the VM. SSH is forwarded to host port 2222, as with QEMU.
     make -j4
 
 This takes about 45 minutes with 4 cores. If the build finishes with exit
-status 0, every proof in `src/` has been checked. `README.md` describes how the sources are organized.
+status 0, every proof in `src/` has been checked. `README.md` describes how
+the sources are organized.
+
+To step through a proof interactively, use the terminal that opens on the
+desktop at login and run `emacs` on a file, e.g.
+`emacs src/Pyrosome/Theory/Core.v &`. Proof General needs the generated
+`_CoqProject` and compiled dependencies, so run `make` first.
 
 ## Rebuilding the image (optional)
 

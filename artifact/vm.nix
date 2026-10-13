@@ -1,4 +1,5 @@
-# Minimal console-only NixOS guest for evaluating the artifact.
+# Minimal NixOS guest for evaluating the artifact: an IceWM desktop with
+# Emacs + Proof General, plus a text console on the serial port.
 { config, lib, pkgs, modulesPath, src, coqPackages, ... }:
 {
   imports = [ (modulesPath + "/profiles/minimal.nix") ];
@@ -35,10 +36,31 @@
     settings.PasswordAuthentication = true;
   };
 
+  # Graphical session: log straight into IceWM.
+  services.xserver = {
+    enable = true;
+    windowManager.icewm.enable = true;
+    displayManager.sessionCommands = "cd ~/pyrosome && ${pkgs.xterm}/bin/xterm &";
+  };
+  # X pulls these in by default; unneeded for Emacs, and ~1.5 GB together.
+  hardware.graphics.enable = lib.mkForce false; # Mesa/LLVM; X falls back to software rendering
+  services.speechd.enable = false;
+  services.displayManager = {
+    defaultSession = "none+icewm";
+    autoLogin = {
+      enable = true;
+      user = "artifact";
+    };
+  };
+
   environment.systemPackages = [
     coqPackages.coq
     coqPackages.stdlib
     pkgs.gnumake
+    pkgs.xterm
+    # Native compilation would add gcc and libgccjit to the image.
+    ((pkgs.emacsPackagesFor (pkgs.emacs.override { withNativeCompilation = false; })).emacsWithPackages
+      (epkgs: [ epkgs.proof-general ]))
   ];
   environment.pathsToLink = [ "/lib/coq" ];
   environment.variables.ROCQPATH =
