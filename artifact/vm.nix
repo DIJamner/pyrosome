@@ -7,6 +7,8 @@
     imports = [ (modulesPath + "/profiles/qemu-guest.nix") ];
   };
   image.modules.virtualbox = {
+    # Guest Additions: the desktop resizes with the VirtualBox window.
+    virtualisation.virtualbox.guest.enable = true;
     virtualbox = {
       vmName = "Pyrosome artifact";
       memorySize = 8192;
@@ -60,6 +62,7 @@
     coqPackages.coq
     coqPackages.stdlib
     pkgs.gnumake
+    pkgs.xorg.xrandr
     # Native compilation would add gcc and libgccjit to the image.
     ((pkgs.emacsPackagesFor (pkgs.emacs.override { withNativeCompilation = false; })).emacsWithPackages
       (epkgs: [ epkgs.proof-general ]))
