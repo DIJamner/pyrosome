@@ -1,6 +1,24 @@
 # Small NixOS guest for evaluating the artifact: an Xfce desktop with
 # Emacs + Proof General, plus a text console on the serial port.
 { config, lib, pkgs, modulesPath, src, coqPackages, ... }:
+let
+  # Start the desktop at this resolution, whatever size the hypervisor's window
+  # reports, unless the user has saved their own choice in Xfce's Display settings.
+  resolution = "1920x1080";
+  setResolution = pkgs.writeShellScript "set-resolution" ''
+    PATH=${lib.makeBinPath [ pkgs.xorg.xrandr pkgs.libxcvt pkgs.gawk ]}
+    [ -e ~/.config/xfce4/xfconf/xfce-perchannel-xml/displays.xml ] && exit 0
+    res=${resolution}
+    out=$(xrandr | awk '/ connected/ { print $1; exit }')
+    [ -n "$out" ] || exit 0
+    if ! xrandr --output "$out" --mode "$res"; then
+      # Not offered by the display: define it ourselves.
+      xrandr --newmode "$res" $(cvt ''${res%x*} ''${res#*x} | awk '/Modeline/ { $1 = $2 = ""; print }')
+      xrandr --addmode "$out" "$res"
+      xrandr --output "$out" --mode "$res"
+    fi
+  '';
+in
 {
   # Per-format settings.
   image.modules.qemu = {
@@ -46,6 +64,12 @@
     Type=Application
     Name=Pyrosome terminal
     Exec=xfce4-terminal --working-directory=/home/artifact/pyrosome
+  '';
+  environment.etc."xdg/autostart/pyrosome-resolution.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Default screen resolution
+    Exec=${setResolution}
   '';
   # X pulls these in by default; unneeded for Emacs, and ~1.5 GB together.
   hardware.graphics.enable = lib.mkForce false; # Mesa/LLVM; X falls back to software rendering

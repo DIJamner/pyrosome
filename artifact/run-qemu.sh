@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # Boot the QEMU image: the desktop opens in a window, and a text console runs
-# in this terminal (exit with Ctrl-a x). Set NOGRAPHIC=1 for the console only,
-# or e.g. RES=2560x1440 to change the screen resolution (default 1920x1080).
+# in this terminal (exit with Ctrl-a x). Set NOGRAPHIC=1 for the console only.
 # SSH is forwarded: ssh -p 2222 artifact@localhost
 set -euo pipefail
 img=${1:-$(dirname "$0")/pyrosome-artifact.qcow2}
-res=${RES:-1920x1080}
 if [ -n "${NOGRAPHIC:-}" ]; then
   display=(-display none)
 else
-  display=(-vga none -device "virtio-vga,xres=${res%x*},yres=${res#*x}")
+  display=(-vga none -device "virtio-vga,xres=1920,yres=1080")
 fi
 exec qemu-system-x86_64 -accel kvm -accel hvf -accel tcg \
   -m 8G -smp 4 -drive "file=$img,if=virtio" \
