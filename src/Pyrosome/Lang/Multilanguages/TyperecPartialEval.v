@@ -1423,13 +1423,21 @@ Qed.
 (* The form in which the theorem above is meant to be used: for compiled
    source terms the [all_typerecs_simple] hypothesis is discharged by
    [can_eliminate_typerec]. *)
-Corollary compiled_partial_eval_wf : forall (t t' : sort) (e : term),
+Corollary compiled_partial_eval_wf : forall (t : sort) (e : term),
     Core.wf_term source_multilanguage [] e t ->
-    Core.wf_term target_multilanguage [] (compile CMP e) t' ->
     Core.wf_term target_multilanguage_without_typerec []
-      (elim_typerec (compile CMP e)) t'.
+      (elim_typerec (compile CMP e)) (compile_sort CMP t).
 Proof.
-  intros t t' e Hsrc Htgt.
-  apply partial_eval_wf_in_no_typerec_lang; [ exact Htgt | ].
-  eapply can_eliminate_typerec; exact Hsrc.
+  intros t e Hsrc.
+  apply partial_eval_wf_in_no_typerec_lang;
+    [| eapply can_eliminate_typerec; exact Hsrc].
+  change [] with (compile_ctx CMP []).
+  pose proof (fun H1 H2 => @inductive_implies_semantic string _
+                _ _
+                _ _ _ _ _
+                (@ModelImpls.core_model_ok string _ _ _ target_multilanguage_wf)
+                H1 H2 _ _
+                source_multilanguage_wf
+                source_multilanguage_compiler_preserving).
+  eapply H; eauto with lang_core.
 Qed.
